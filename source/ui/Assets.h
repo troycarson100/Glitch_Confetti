@@ -1,0 +1,15 @@
+#pragma once
+#include <juce_gui_basics/juce_gui_basics.h>
+
+struct UiAssets {
+    // one instance owned by PluginEditor
+    std::unique_ptr<juce::Drawable> backgroundMustard;
+    std::unique_ptr<juce::Drawable> effectPlate;
+    std::unique_ptr<juce::Drawable> stepActive, stepInactive, stepTopActive, stepTopInactive;
+    std::unique_ptr<juce::Drawable> knobRing, knobInside, knobMasterRing, knobMasterInside;
+    std::unique_ptr<juce::Drawable> tabTitleSpaceDelay;
+    std::unique_ptr<juce::Drawable> fxPowerOn, stepPowerOn, knobDice, diceLarge, macroAssign;
+    // … add only what Delay page & Sequencer need
+
+    bool loadAll();
+};

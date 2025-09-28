@@ -1,0 +1,239 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<magic>
+  <Styles>
+    <Style name="default" background-color="FF1E1E1E" color="FFFFFFFF"/>
+    <Style name="knob" knob-colour="FF9ACD32" track-colour="FF404040" text-colour="FFFFFFFF"/>
+    <Style name="button" button-colour="FF404040" button-on-colour="FFFF8800" text-colour="FFFFFFFF"/>
+    <Style name="header" background-color="FF2A2A2A" color="FF9ACD32"/>
+    <Style name="effects-panel" background-color="FF131313" border="1px solid FF444444"/>
+    <Style name="sequencer-panel" background-color="FF2A2A2A" border="1px solid FF444444"/>
+  </Styles>
+
+  <View id="root" display-order="flexbox" flex-direction="column" 
+        style-class="default" width="974" height="532"
+        background-image="ui/Background_Mustard.svg" background-mode="stretch">
+    
+    <!-- Header Section -->
+    <View id="header" flex="0 0 80px" display-order="flexbox" flex-direction="row" 
+          style-class="header" margin="5px" padding="15px" justify-content="space-between">
+      
+      <Label id="title" text="STEPPER" font-size="24" font-weight="bold"
+             text-alignment="left" color="FF9ACD32"/>
+      
+      <Label id="subtitle" text="Step Sequencer Plugin" font-size="14" 
+             text-alignment="right" color="FFAAAAAA"/>
+    </View>
+
+    <!-- Main Content Area -->
+    <View id="main" flex="1" display-order="flexbox" flex-direction="row" 
+          margin="5px" padding="5px">
+      
+      <!-- Left Panel: Input Meters -->
+      <View id="input-meters" flex="0 0 40px" display-order="flexbox" flex-direction="column"
+            margin="5px" padding="5px">
+        <Label id="input-label" text="IN" font-size="10" color="FFAAAAAA" 
+               text-alignment="centred" margin-bottom="5px"/>
+        <!-- Note: Level meters would need custom components -->
+      </View>
+      
+      <!-- Center Panel: Main Controls -->
+      <View id="center" flex="1" display-order="flexbox" flex-direction="column" 
+            margin="5px">
+        
+        <!-- Effect Parameters Section -->
+        <View id="effects" flex="0 0 200px" display-order="flexbox" flex-direction="column"
+              style-class="effects-panel" margin="5px" padding="15px"
+              background-image="ui/Effect_Background_Plate.svg" background-mode="maintain-aspect">
+          
+          <Label id="effects-title" text="EFFECTS" flex="0 0 25px" 
+                 font-size="14" font-weight="bold" color="FFFFFFFF" margin-bottom="10px"/>
+          
+          <!-- Knob Grid: 2 rows x 4 columns -->
+          <View id="knob-grid" flex="1" display-order="flexbox" flex-direction="column">
+            
+            <!-- Top Row: Party, Steps, Density, Reverse -->
+            <View id="row1" flex="1" display-order="flexbox" flex-direction="row">
+              <View id="party-container" flex="1" display-order="flexbox" flex-direction="column" margin="3px">
+                <Slider id="party" parameter="party" slider-style="rotary" 
+                        style-class="knob" flex="1"/>
+                <Label id="party-label" text="PARTY" font-size="10" color="FFAAAAAA" 
+                       text-alignment="centred" margin-top="3px"/>
+              </View>
+              <View id="steps-container" flex="1" display-order="flexbox" flex-direction="column" margin="3px">
+                <Slider id="steps" parameter="steps" slider-style="rotary" 
+                        style-class="knob" flex="1"/>
+                <Label id="steps-label" text="STEPS" font-size="10" color="FFAAAAAA" 
+                       text-alignment="centred" margin-top="3px"/>
+              </View>
+              <View id="density-container" flex="1" display-order="flexbox" flex-direction="column" margin="3px">
+                <Slider id="density" parameter="density" slider-style="rotary" 
+                        style-class="knob" flex="1"/>
+                <Label id="density-label" text="DENSITY" font-size="10" color="FFAAAAAA" 
+                       text-alignment="centred" margin-top="3px"/>
+              </View>
+              <View id="reverse-container" flex="1" display-order="flexbox" flex-direction="column" margin="3px">
+                <Slider id="reverse" parameter="rev_pc" slider-style="rotary" 
+                        style-class="knob" flex="1"/>
+                <Label id="reverse-label" text="REVERSE" font-size="10" color="FFAAAAAA" 
+                       text-alignment="centred" margin-top="3px"/>
+              </View>
+            </View>
+            
+            <!-- Bottom Row: Flick, Humanize, Mix, Output -->
+            <View id="row2" flex="1" display-order="flexbox" flex-direction="row">
+              <View id="flick-container" flex="1" display-order="flexbox" flex-direction="column" margin="3px">
+                <Slider id="flick" parameter="flick_pc" slider-style="rotary" 
+                        style-class="knob" flex="1"/>
+                <Label id="flick-label" text="FLICK" font-size="10" color="FFAAAAAA" 
+                       text-alignment="centred" margin-top="3px"/>
+              </View>
+              <View id="humanize-container" flex="1" display-order="flexbox" flex-direction="column" margin="3px">
+                <Slider id="humanize" parameter="humanize" slider-style="rotary" 
+                        style-class="knob" flex="1"/>
+                <Label id="humanize-label" text="HUMANIZE" font-size="10" color="FFAAAAAA" 
+                       text-alignment="centred" margin-top="3px"/>
+              </View>
+              <View id="mix-container" flex="1" display-order="flexbox" flex-direction="column" margin="3px">
+                <Slider id="mix" parameter="mix" slider-style="rotary" 
+                        style-class="knob" flex="1"/>
+                <Label id="mix-label" text="MIX" font-size="10" color="FFAAAAAA" 
+                       text-alignment="centred" margin-top="3px"/>
+              </View>
+              <View id="output-container" flex="1" display-order="flexbox" flex-direction="column" margin="3px">
+                <Slider id="output" parameter="out_db" slider-style="rotary" 
+                        style-class="knob" flex="1"/>
+                <Label id="output-label" text="OUTPUT" font-size="10" color="FFAAAAAA" 
+                       text-alignment="centred" margin-top="3px"/>
+              </View>
+            </View>
+          </View>
+        </View>
+
+        <!-- Step Sequencer Section -->
+        <View id="sequencer" flex="1" display-order="flexbox" flex-direction="column"
+              style-class="sequencer-panel" margin="5px" padding="15px"
+              background-image="ui/Step_Background_Plate.svg" background-mode="maintain-aspect">
+          
+          <Label id="seq-title" text="STEP SEQUENCER" flex="0 0 25px" 
+                 font-size="14" font-weight="bold" color="FFFFFFFF" margin-bottom="10px"/>
+          
+          <!-- Sequencer Controls -->
+          <View id="seq-controls" flex="0 0 35px" display-order="flexbox" flex-direction="row"
+                margin-bottom="10px">
+            <View id="division-container" flex="1" display-order="flexbox" flex-direction="row" margin="2px">
+              <Label id="div-label" text="DIV:" font-size="10" color="FFAAAAAA" 
+                     text-alignment="right" margin-right="5px" flex="0 0 30px"/>
+              <ComboBox id="division" parameter="seq_division" flex="1"
+                        items="1/4,1/8,1/16,1/32,Free"/>
+            </View>
+            <View id="steps-used-container" flex="1" display-order="flexbox" flex-direction="row" margin="2px">
+              <Label id="steps-label" text="STEPS:" font-size="10" color="FFAAAAAA" 
+                     text-alignment="right" margin-right="5px" flex="0 0 40px"/>
+              <Slider id="steps-used" parameter="seq_steps" slider-style="linear-horizontal" 
+                      flex="1"/>
+            </View>
+            <ToggleButton id="follow-host" text="FOLLOW" parameter="seq_follow_host" 
+                         style-class="button" flex="0 0 60px" margin="2px"/>
+            <ToggleButton id="run" text="RUN" parameter="seq_run" 
+                         style-class="button" flex="0 0 50px" margin="2px"/>
+          </View>
+          
+          <!-- Step Grid: 2 rows x 8 columns (16 steps total) -->
+          <View id="steps" flex="1" display-order="flexbox" flex-direction="column">
+            
+            <!-- Steps 1-8 -->
+            <View id="steps-row1" flex="1" display-order="flexbox" flex-direction="row" margin-bottom="3px">
+              <ToggleButton id="step1" text="1" parameter="seq_step1" 
+                           style-class="button" flex="1" margin="1px"
+                           background-image="ui/Step_Inactive.svg"
+                           background-on-image="ui/Step_Active.svg"/>
+              <ToggleButton id="step2" text="2" parameter="seq_step2" 
+                           style-class="button" flex="1" margin="1px"
+                           background-image="ui/Step_Inactive.svg"
+                           background-on-image="ui/Step_Active.svg"/>
+              <ToggleButton id="step3" text="3" parameter="seq_step3" 
+                           style-class="button" flex="1" margin="1px"
+                           background-image="ui/Step_Inactive.svg"
+                           background-on-image="ui/Step_Active.svg"/>
+              <ToggleButton id="step4" text="4" parameter="seq_step4" 
+                           style-class="button" flex="1" margin="1px"
+                           background-image="ui/Step_Inactive.svg"
+                           background-on-image="ui/Step_Active.svg"/>
+              <ToggleButton id="step5" text="5" parameter="seq_step5" 
+                           style-class="button" flex="1" margin="1px"
+                           background-image="ui/Step_Inactive.svg"
+                           background-on-image="ui/Step_Active.svg"/>
+              <ToggleButton id="step6" text="6" parameter="seq_step6" 
+                           style-class="button" flex="1" margin="1px"
+                           background-image="ui/Step_Inactive.svg"
+                           background-on-image="ui/Step_Active.svg"/>
+              <ToggleButton id="step7" text="7" parameter="seq_step7" 
+                           style-class="button" flex="1" margin="1px"
+                           background-image="ui/Step_Inactive.svg"
+                           background-on-image="ui/Step_Active.svg"/>
+              <ToggleButton id="step8" text="8" parameter="seq_step8" 
+                           style-class="button" flex="1" margin="1px"
+                           background-image="ui/Step_Inactive.svg"
+                           background-on-image="ui/Step_Active.svg"/>
+            </View>
+            
+            <!-- Steps 9-16 -->
+            <View id="steps-row2" flex="1" display-order="flexbox" flex-direction="row">
+              <ToggleButton id="step9" text="9" parameter="seq_step9" 
+                           style-class="button" flex="1" margin="1px"
+                           background-image="ui/Step_Inactive.svg"
+                           background-on-image="ui/Step_Active.svg"/>
+              <ToggleButton id="step10" text="10" parameter="seq_step10" 
+                           style-class="button" flex="1" margin="1px"
+                           background-image="ui/Step_Inactive.svg"
+                           background-on-image="ui/Step_Active.svg"/>
+              <ToggleButton id="step11" text="11" parameter="seq_step11" 
+                           style-class="button" flex="1" margin="1px"
+                           background-image="ui/Step_Inactive.svg"
+                           background-on-image="ui/Step_Active.svg"/>
+              <ToggleButton id="step12" text="12" parameter="seq_step12" 
+                           style-class="button" flex="1" margin="1px"
+                           background-image="ui/Step_Inactive.svg"
+                           background-on-image="ui/Step_Active.svg"/>
+              <ToggleButton id="step13" text="13" parameter="seq_step13" 
+                           style-class="button" flex="1" margin="1px"
+                           background-image="ui/Step_Inactive.svg"
+                           background-on-image="ui/Step_Active.svg"/>
+              <ToggleButton id="step14" text="14" parameter="seq_step14" 
+                           style-class="button" flex="1" margin="1px"
+                           background-image="ui/Step_Inactive.svg"
+                           background-on-image="ui/Step_Active.svg"/>
+              <ToggleButton id="step15" text="15" parameter="seq_step15" 
+                           style-class="button" flex="1" margin="1px"
+                           background-image="ui/Step_Inactive.svg"
+                           background-on-image="ui/Step_Active.svg"/>
+              <ToggleButton id="step16" text="16" parameter="seq_step16" 
+                           style-class="button" flex="1" margin="1px"
+                           background-image="ui/Step_Inactive.svg"
+                           background-on-image="ui/Step_Active.svg"/>
+            </View>
+          </View>
+
+          <!-- Preset Section -->
+          <View id="presets" flex="0 0 35px" display-order="flexbox" flex-direction="row"
+                margin-top="10px">
+            <Label id="preset-label" text="PRESET:" font-size="10" color="FFAAAAAA" 
+                   text-alignment="right" margin-right="5px" flex="0 0 50px"/>
+            <ComboBox id="preset-combo" flex="1" margin-right="5px"/>
+            <TextButton id="save-preset" text="SAVE" flex="0 0 50px" 
+                       button-colour="FF666666"/>
+          </View>
+        </View>
+      </View>
+      
+      <!-- Right Panel: Output Meters -->
+      <View id="output-meters" flex="0 0 40px" display-order="flexbox" flex-direction="column"
+            margin="5px" padding="5px">
+        <Label id="output-label" text="OUT" font-size="10" color="FFAAAAAA" 
+               text-alignment="centred" margin-bottom="5px"/>
+        <!-- Note: Level meters would need custom components -->
+      </View>
+    </View>
+  </View>
+</magic>
