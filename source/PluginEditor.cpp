@@ -30,6 +30,9 @@ PluginEditor::PluginEditor (PluginProcessor& p)
         // Setup effects area
         setupEffectsArea();
         
+        // Setup All Steps toggle
+        setupAllStepsToggle();
+        
         // Setup sequencer area
         setupSequencerArea();
         
@@ -306,14 +309,58 @@ void PluginEditor::timerCallback()
     updateSequencerUI();
 }
 
-    //==============================================================================
-    // CustomDiceButton Implementation
-    //==============================================================================
+//==============================================================================
+// AllStepsToggleButton Implementation
+//==============================================================================
 
-    CustomDiceButton::CustomDiceButton() : juce::Button("diceButton")
+AllStepsToggleButton::AllStepsToggleButton() : juce::Button("allStepsToggle")
+{
+    setClickingTogglesState(true);
+}
+
+void AllStepsToggleButton::paintButton(juce::Graphics& g, bool over, bool down)
+{
+    juce::ignoreUnused(over, down);
+    
+    auto bounds = getLocalBounds().toFloat();
+    
+    // Choose image based on toggle state
+    juce::Drawable* imageToDraw = nullptr;
+    if (getToggleState() && activeImage != nullptr)
     {
-        setClickingTogglesState(false);
+        imageToDraw = activeImage.get();
     }
+    else if (inactiveImage != nullptr)
+    {
+        imageToDraw = inactiveImage.get();
+    }
+    
+    if (imageToDraw != nullptr)
+    {
+        imageToDraw->drawWithin(g, bounds, juce::RectanglePlacement::centred, 1.0f);
+    }
+    else
+    {
+        // Fallback drawing
+        g.setColour(juce::Colours::white);
+        g.fillEllipse(bounds);
+    }
+}
+
+void AllStepsToggleButton::setImages(std::unique_ptr<juce::Drawable> inactive, std::unique_ptr<juce::Drawable> active)
+{
+    inactiveImage = std::move(inactive);
+    activeImage = std::move(active);
+}
+
+//==============================================================================
+// CustomDiceButton Implementation
+//==============================================================================
+
+CustomDiceButton::CustomDiceButton() : juce::Button("diceButton")
+{
+    setClickingTogglesState(false);
+}
 
     void CustomDiceButton::paintButton(juce::Graphics& g, bool over, bool down)
     {
@@ -673,6 +720,12 @@ void PluginEditor::setupKnobs()
                 {
                     updateParameterFromKnob(i);
                 }
+                
+                // If All Steps toggle is active, update all step snapshots
+                if (allStepsEnabled)
+                {
+                    updateAllStepSnapshots(i);
+                }
             };
         }
         
@@ -864,6 +917,55 @@ void PluginEditor::setupKnobs()
         
         DBG("[UI] Effects area setup complete");
     }
+
+//==============================================================================
+// All Steps Toggle Setup
+//==============================================================================
+
+void PluginEditor::setupAllStepsToggle()
+{
+    DBG("[UI] Setting up All Steps toggle...");
+    
+    // Effect area bounds
+    auto effectArea = juce::Rectangle<int>(25, 54, 413, 296);
+    
+    // Create All Steps toggle button
+    allStepsToggle = std::make_unique<AllStepsToggleButton>();
+    addAndMakeVisible(allStepsToggle.get());
+    
+    // Position at top middle of effect area, moved 30px right, increased 20% and moved up 6px total
+    const int buttonSize = 29; // 24 * 1.2 = 28.8, rounded to 29
+    allStepsToggle->setBounds(effectArea.getX() + effectArea.getWidth()/2 - buttonSize/2 + 30, effectArea.getY() - 1, buttonSize, buttonSize); // Moved up 2px more from 1 to -1
+    
+    // Set up images
+    if (assets.stepTopInactive != nullptr && assets.stepTopActive != nullptr)
+    {
+        static_cast<AllStepsToggleButton*>(allStepsToggle.get())->setImages(
+            assets.stepTopInactive->createCopy(),
+            assets.stepTopActive->createCopy()
+        );
+    }
+    
+    // Set up click handler
+    allStepsToggle->setToggleState(false, juce::dontSendNotification);
+    allStepsToggle->onClick = [this]() {
+        allStepsEnabled = allStepsToggle->getToggleState();
+        DBG("[UI] All Steps toggle: " << (allStepsEnabled ? "ON" : "OFF") << " toggleState=" << allStepsToggle->getToggleState());
+    };
+    
+    // Create "All Steps" label
+    allStepsLabel = std::make_unique<juce::Label>();
+    allStepsLabel->setText("All Steps", juce::dontSendNotification);
+    allStepsLabel->setFont(juce::Font(14.4f, juce::Font::bold)); // 12.0f * 1.2 = 14.4f (20% bigger)
+    allStepsLabel->setColour(juce::Label::textColourId, juce::Colours::white);
+    allStepsLabel->setJustificationType(juce::Justification::centredLeft);
+    addAndMakeVisible(allStepsLabel.get());
+    
+    // Position label to the right of the button, moved 30px right, moved up 4px
+    allStepsLabel->setBounds(effectArea.getX() + effectArea.getWidth()/2 + buttonSize/2 + 5 + 30, effectArea.getY() + 1, 80, 24); // Moved up 4px from 5 to 1
+    
+    DBG("[UI] All Steps toggle setup complete");
+}
 
 //==============================================================================
 // Sequencer Area Setup
@@ -1151,9 +1253,68 @@ void PluginEditor::updateParameterFromKnob(int knobIndex)
     }
 }
 
+void PluginEditor::updateAllStepSnapshots(int knobIndex)
+{
+    if (knobIndex >= 0 && knobIndex < 8 && knobs[knobIndex] != nullptr && knobIndex < processorRef.getParameters().size())
+    {
+        auto* param = processorRef.getParameters().getUnchecked(knobIndex);
+        float knobValue = knobs[knobIndex]->getValue();
+        
+        // Convert normalized value back to actual parameter value
+        float actualValue = 0.0f;
+        if (auto* floatParam = dynamic_cast<juce::AudioParameterFloat*>(param))
+        {
+            actualValue = floatParam->convertFrom0to1(knobValue);
+        }
+        
+        DBG("[UI] All Steps: Updating knob " << knobIndex << " with knobValue=" << knobValue << " actualValue=" << actualValue);
+        
+        // Update all 16 step snapshots with the new value
+        for (int step = 0; step < 16; ++step)
+        {
+            // Get current snapshot for this step
+            StepSnapshot snapshot = processorRef.getSafeSnapshot(step);
+            
+            // Update the specific parameter in the snapshot with proper conversion
+            switch (knobIndex)
+            {
+                case 0: snapshot.delay.timeMs = actualValue; break;
+                case 1: snapshot.delay.feedback = actualValue * 100.0f; break; // Convert to percentage
+                case 2: snapshot.delay.wowDepth = actualValue * 100.0f; break; // Convert to percentage
+                case 3: snapshot.delay.wowRate = actualValue; break;
+                case 4: snapshot.delay.saturation = actualValue * 100.0f; break; // Convert to percentage
+                case 5: snapshot.delay.highCut = actualValue; break;
+                case 6: snapshot.delay.lowCut = actualValue; break;
+                case 7: snapshot.delay.mix = actualValue * 100.0f; break; // Convert to percentage
+            }
+            
+            // Set the updated snapshot back
+            processorRef.setStepSnapshot(step, snapshot);
+        }
+        
+        DBG("[UI] Updated all 16 step snapshots for knob " << knobIndex << " with value " << actualValue);
+    }
+}
+
 void PluginEditor::onStepButtonClicked(int stepIndex)
 {
     DBG("[UI] Step button " << stepIndex << " clicked");
+    
+    // Save current step's snapshot before switching
+    int currentStep = processorRef.getSelectedStep();
+    if (currentStep >= 0 && currentStep < 16) {
+        StepSnapshot currentSnapshot;
+        currentSnapshot.delay.timeMs = processorRef.getAPVTS().getParameter("timeMs")->convertFrom0to1(processorRef.getAPVTS().getParameter("timeMs")->getValue());
+        currentSnapshot.delay.feedback = processorRef.getAPVTS().getParameter("feedback")->convertFrom0to1(processorRef.getAPVTS().getParameter("feedback")->getValue()) * 100.0f;
+        currentSnapshot.delay.wowDepth = processorRef.getAPVTS().getParameter("wowDepth")->convertFrom0to1(processorRef.getAPVTS().getParameter("wowDepth")->getValue()) * 100.0f;
+        currentSnapshot.delay.wowRate = processorRef.getAPVTS().getParameter("wowRate")->convertFrom0to1(processorRef.getAPVTS().getParameter("wowRate")->getValue());
+        currentSnapshot.delay.saturation = processorRef.getAPVTS().getParameter("drive")->convertFrom0to1(processorRef.getAPVTS().getParameter("drive")->getValue()) * 100.0f;
+        currentSnapshot.delay.highCut = processorRef.getAPVTS().getParameter("hiCut")->convertFrom0to1(processorRef.getAPVTS().getParameter("hiCut")->getValue());
+        currentSnapshot.delay.lowCut = processorRef.getAPVTS().getParameter("lowCut")->convertFrom0to1(processorRef.getAPVTS().getParameter("lowCut")->getValue());
+        currentSnapshot.delay.mix = processorRef.getAPVTS().getParameter("mix")->convertFrom0to1(processorRef.getAPVTS().getParameter("mix")->getValue()) * 100.0f;
+        processorRef.setStepSnapshot(currentStep, currentSnapshot);
+        DBG("[UI] Saved current step " << currentStep << " snapshot before switching");
+    }
     
     // Update selected step in processor
     processorRef.setSelectedStep(stepIndex);

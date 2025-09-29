@@ -29,6 +29,25 @@ private:
 };
 
 //==============================================================================
+// AllStepsToggleButton class
+//==============================================================================
+class AllStepsToggleButton : public juce::Button
+{
+public:
+    AllStepsToggleButton();
+    ~AllStepsToggleButton() override = default;
+    
+    void paintButton(juce::Graphics& g, bool over, bool down) override;
+    void setImages(std::unique_ptr<juce::Drawable> inactive, std::unique_ptr<juce::Drawable> active);
+    
+private:
+    std::unique_ptr<juce::Drawable> inactiveImage;
+    std::unique_ptr<juce::Drawable> activeImage;
+    
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (AllStepsToggleButton)
+};
+
+//==============================================================================
 // CustomDiceButton class
 //==============================================================================
 class CustomDiceButton : public juce::Button
@@ -165,6 +184,11 @@ public:
     bool timeSyncEnabled = false;
     int timeSyncStdMode = 0; // 0 straight, 1 triplet, 2 dotted
     
+    // All Steps toggle
+    std::unique_ptr<juce::Button> allStepsToggle;
+    std::unique_ptr<juce::Label> allStepsLabel;
+    bool allStepsEnabled = false;
+    
     // Sequencer area components
     std::array<std::unique_ptr<StepButton>, 16> stepButtons;
     std::unique_ptr<juce::Label> stepAmountLabel;
@@ -183,10 +207,12 @@ public:
         // Helper methods
         void setupKnobs();
         void setupEffectsArea();
+        void setupAllStepsToggle();
         void setupSequencerArea();
         void randomizeKnobValues();
         void randomizeIndividualKnob(int knobIndex);
         void updateParameterFromKnob(int knobIndex);
+        void updateAllStepSnapshots(int knobIndex);
         void onStepButtonClicked(int stepIndex);
         void updateSequencerUI();
         void setupUIToggle();
