@@ -1351,11 +1351,13 @@ void PluginEditor::setupStepPowerButton()
         stepAreaEnabled = stepPowerButton->getToggleState();
         DBG("[UI] Step area power: " << (stepAreaEnabled ? "ON" : "OFF"));
         
-        // Only force-disable the sequencer when powering OFF the step area.
-        // When powering ON, do not auto-enable playback; rely on host transport or the UI play button.
         if (!stepAreaEnabled) {
+            // Disable sequencer and reset state when turning OFF
             processorRef.setSequencerEnabled(false);
             processorRef.resetSequencerState();
+        } else {
+            // Enable sequencer when turning ON
+            processorRef.setSequencerEnabled(true);
         }
         
         // Update UI visibility and repaint
