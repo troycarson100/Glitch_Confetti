@@ -1,56 +1,65 @@
 #include "FxDelay.h"
 
+// Soft saturation helper
+static inline float softSat(float x, float gain)
+{
+    float driven = x * gain;
+    return std::tanh(driven) / gain;
+}
+
 FxDelay::FxDelay()
 {
 }
 
-void FxDelay::prepare(double sampleRate, int maxBlockSize)
+void FxDelay::prepare(double sr, int maxBlockSize)
 {
-    currentSampleRate = sampleRate;
+    sampleRate = sr;
     
-    // RE-201 style tape buffer - 4 seconds at max sample rate
-    bufferSize = (int) juce::nextPowerOfTwo((int) std::ceil(4.0 * sampleRate));
-    tapeBufferL.assign(bufferSize, 0.0f);
-    tapeBufferR.assign(bufferSize, 0.0f);
-    mask = bufferSize - 1;
+    // Ring buffer sized for 4 seconds max delay
+    int ringSize = (int)juce::nextPowerOfTwo((int)std::ceil(4.0 * sr));
+    ringL.assign(ringSize, 0.0f);
+    ringR.assign(ringSize, 0.0f);
+    mask = ringSize - 1;
     writePos = 0;
     
-    // Initialize parameter smoothers
-    timeMsSm.reset(sampleRate, 0.03);    // 30ms smoothing
-    feedbackSm.reset(sampleRate, 0.02);  // 20ms smoothing
-    mixSm.reset(sampleRate, 0.02);       // 20ms smoothing
-    driveSm.reset(sampleRate, 0.03);     // 30ms smoothing
-    hiCutSm.reset(sampleRate, 0.02);     // 20ms smoothing
-    loCutSm.reset(sampleRate, 0.02);     // 20ms smoothing
-    wowDepthSm.reset(sampleRate, 0.05);  // 50ms smoothing
-    wowRateSm.reset(sampleRate, 0.05);   // 50ms smoothing
+    // Musical slope limiting: 200ms per second max change rate
+    // This prevents artifacts while keeping changes musical
+    const float msPerSecond = 200.0f;
+    delaySampMaxStep = (msPerSecond * 0.001f) * (float)sampleRate / (float)sampleRate;
     
-    // Initialize filters
-    hiCutFilterL.setCutoff(20000.0f);
-    hiCutFilterR.setCutoff(20000.0f);
-    loCutFilterL.setCutoff(20.0f);
-    loCutFilterR.setCutoff(20.0f);
+    // Initialize current delay to a safe middle value
+    delaySampCurrent = 250.0f * 0.001f * (float)sampleRate;
     
-    DBG("[RE-201] Buffer size: " << bufferSize << " samples (" << (bufferSize/sampleRate) << "s)");
+    // Initialize smoothers with musical timing
+    timeMsSm.reset(sr, 0.020);     // 20ms for delay time
+    fbSm.reset(sr, 0.015);         // 15ms for feedback
+    mixSm.reset(sr, 0.010);        // 10ms for mix
+    driveSm.reset(sr, 0.015);      // 15ms for drive
+    hiCutHzSm.reset(sr, 0.040);    // 40ms for filters
+    lowCutHzSm.reset(sr, 0.040);   // 40ms for filters
+    wowDepthSm.reset(sr, 0.050);   // 50ms for modulation
+    wowRateSm.reset(sr, 0.050);    // 50ms for modulation
+    
+    // Initialize LFO phases
+    lfoPhase = 0.0;
+    lfoPhase2 = 0.0;
+    wowLP = 0.0f;
+    
+    // Initialize SVF
+    svf.prepare(sr);
 }
 
-void FxDelay::setTargets(const DelayTargets& targets)
+void FxDelay::setTargets(const Targets& t)
 {
-    // Map UI parameters to internal ranges
-    timeMsSm.setTargetValue(juce::jlimit(5.0f, 2000.0f, targets.timeMs));
-    feedbackSm.setTargetValue(juce::jlimit(0.0f, 0.95f, targets.feedback));
-    mixSm.setTargetValue(juce::jlimit(0.0f, 1.0f, targets.mix));
-    driveSm.setTargetValue(juce::jlimit(0.0f, 1.0f, targets.drive));
-    hiCutSm.setTargetValue(juce::jlimit(1000.0f, 20000.0f, targets.hiCutHz));
-    loCutSm.setTargetValue(juce::jlimit(20.0f, 2000.0f, targets.lowCutHz));
-    wowDepthSm.setTargetValue(juce::jlimit(0.0f, 1.0f, targets.wowDepth));
-    wowRateSm.setTargetValue(juce::jlimit(0.05f, 8.0f, targets.wowRate));
-    
-    // Update filter cutoffs
-    hiCutFilterL.setCutoff(targets.hiCutHz);
-    hiCutFilterR.setCutoff(targets.hiCutHz);
-    loCutFilterL.setCutoff(targets.lowCutHz);
-    loCutFilterR.setCutoff(targets.lowCutHz);
+    // Set parameter targets with safety limits
+    timeMsSm.setTargetValue(juce::jlimit(10.0f, 2000.0f, t.timeMs));
+    fbSm.setTargetValue(juce::jlimit(0.0f, 0.95f, t.feedback));
+    mixSm.setTargetValue(juce::jlimit(0.0f, 1.0f, t.mix));
+    driveSm.setTargetValue(juce::jlimit(0.0f, 1.0f, t.drive));
+    hiCutHzSm.setTargetValue(juce::jlimit(1000.0f, 20000.0f, t.hiCutHz));
+    lowCutHzSm.setTargetValue(juce::jlimit(20.0f, 2000.0f, t.lowCutHz));
+    wowDepthSm.setTargetValue(juce::jlimit(0.0f, 1.0f, t.wowDepth));
+    wowRateSm.setTargetValue(juce::jlimit(0.1f, 8.0f, t.wowRate));
 }
 
 void FxDelay::process(juce::AudioBuffer<float>& buffer, int numSamples)
@@ -65,84 +74,150 @@ void FxDelay::process(juce::AudioBuffer<float>& buffer, int numSamples)
     auto* outputL = buffer.getWritePointer(0);
     auto* outputR = (numChannels > 1) ? buffer.getWritePointer(1) : outputL;
     
-    // Get smoothed parameters
-    const float timeMs = timeMsSm.getNextValue();
-    const float feedback = feedbackSm.getNextValue();
-    const float mix = mixSm.getNextValue();
-    const float drive = driveSm.getNextValue();
-    
-    // Convert delay time to samples
-    float baseDelaySamples = timeMs * 0.001f * currentSampleRate;
-    baseDelaySamples = juce::jlimit(5.0f, (float)(bufferSize - 10), baseDelaySamples);
-    
-    // Process each sample
     for (int sample = 0; sample < numSamples; ++sample)
     {
-        // Generate wow and flutter modulation
-        float modulation = generateWowFlutter();
-        float delaySamples = baseDelaySamples + modulation;
+        // Update filter cutoffs
+        svf.setHiCut(hiCutHzSm.getNextValue());
+        svf.setLowCut(lowCutHzSm.getNextValue());
         
-        // Calculate read position
-        float readPos = wrapBuffer(writePos - delaySamples);
+        // Get current delay time with slope limiting for artifact-free changes
+        float targetDelaySamp = timeMsSm.getNextValue() * 0.001f * (float)sampleRate;
+        targetDelaySamp = juce::jlimit(5.0f * (float)sampleRate * 0.001f, 
+                                      2000.0f * (float)sampleRate * 0.001f, 
+                                      targetDelaySamp);
         
-        // Read delayed signal with interpolation
-        float delayedL = readDelay(tapeBufferL, readPos);
-        float delayedR = readDelay(tapeBufferR, readPos);
+        // Apply slope limiting to prevent artifacts
+        float delayDiff = targetDelaySamp - delaySampCurrent;
+        if (std::abs(delayDiff) > delaySampMaxStep) {
+            delaySampCurrent += (delayDiff > 0.0f) ? delaySampMaxStep : -delaySampMaxStep;
+        } else {
+            delaySampCurrent = targetDelaySamp;
+        }
+        
+        // Generate wow/flutter modulation
+        float wowDepth = wowDepthSm.getNextValue();
+        float wowRate = wowRateSm.getNextValue();
+        float modSamp = 0.0f;
+        
+        if (wowDepth > 0.001f) {
+            // Main wow LFO
+            lfoPhase += 2.0f * juce::MathConstants<float>::pi * wowRate / (float)sampleRate;
+            if (lfoPhase > 2.0f * juce::MathConstants<float>::pi) 
+                lfoPhase -= 2.0f * juce::MathConstants<float>::pi;
+            
+            // Secondary flutter LFO
+            lfoPhase2 += 2.0f * juce::MathConstants<float>::pi * (wowRate * 7.3f) / (float)sampleRate;
+            if (lfoPhase2 > 2.0f * juce::MathConstants<float>::pi) 
+                lfoPhase2 -= 2.0f * juce::MathConstants<float>::pi;
+            
+            float wow = (float)std::sin(lfoPhase) + 0.3f * (float)std::sin(lfoPhase * 1.7f);
+            float flutter = 0.15f * (float)std::sin(lfoPhase2);
+            
+            // Low-pass filter the modulation for tape-like smoothness
+            float rawMod = wow + flutter;
+            wowLP += 0.02f * (rawMod - wowLP); // Simple one-pole LP
+            
+            modSamp = wowLP * wowDepth * 3.5f * (float)sampleRate * 0.001f; // ±3.5ms in samples
+        }
+        
+        // Calculate read position with modulation
+        float readPos = wrapF((float)writePos - (delaySampCurrent + modSamp));
+        
+        // Read delayed samples using 4-point Lagrange interpolation
+        float wetL = lagrange4(ringL, readPos);
+        float wetR = lagrange4(ringR, readPos);
+        
+        // Feedback processing chain: LP -> HP -> softSat -> DC block
+        float fbAmt = fbSm.getNextValue();
+        float loopL = svf.hp(svf.lp(wetL));
+        float loopR = svf.hp(svf.lp(wetR));
+        
+        // Soft saturation with drive
+        const float g = 1.0f + 24.0f * driveSm.getNextValue();
+        loopL = dcL.process(softSat(loopL, g));
+        loopR = dcR.process(softSat(loopR, g));
         
         // Get input samples
         float inputSampleL = inputL[sample];
         float inputSampleR = inputR[sample];
         
-        // Apply feedback filters (RE-201 style)
-        float filteredL = delayedL;
-        float filteredR = delayedR;
-        
-        // High cut filter
-        filteredL = hiCutFilterL.processLowPass(filteredL, currentSampleRate);
-        filteredR = hiCutFilterR.processLowPass(filteredR, currentSampleRate);
-        
-        // Low cut filter
-        filteredL = loCutFilterL.processHighPass(filteredL, currentSampleRate);
-        filteredR = loCutFilterR.processHighPass(filteredR, currentSampleRate);
-        
-        // Apply tape saturation in feedback loop
-        float saturatedL = tapeSatL.process(filteredL, drive);
-        float saturatedR = tapeSatR.process(filteredR, drive);
-        
-        // Write to delay buffer: input + feedback
-        tapeBufferL[writePos] = inputSampleL + feedback * saturatedL;
-        tapeBufferR[writePos] = inputSampleR + feedback * saturatedR;
-        
-        // Advance write position
+        // Write to delay line (input + feedback)
+        ringL[writePos] = inputSampleL + fbAmt * loopL;
+        ringR[writePos] = inputSampleR + fbAmt * loopR;
         writePos = (writePos + 1) & mask;
         
-        // Mix dry and wet signals
-        outputL[sample] = (1.0f - mix) * inputSampleL + mix * delayedL;
-        outputR[sample] = (1.0f - mix) * inputSampleR + mix * delayedR;
+        // Dry/wet mixing with equal-power crossfade
+        const float mix = mixSm.getNextValue();
+        const float dryAmt = std::sqrt(juce::jlimit(0.0f, 1.0f, 1.0f - mix));
+        const float wetAmt = std::sqrt(juce::jlimit(0.0f, 1.0f, mix));
+        
+        outputL[sample] = dryAmt * inputSampleL + wetAmt * wetL;
+        outputR[sample] = dryAmt * inputSampleR + wetAmt * wetR;
     }
 }
 
-float FxDelay::generateWowFlutter()
+inline float FxDelay::lagrange4(const std::vector<float>& v, float idx) const
 {
-    const float wowDepth = wowDepthSm.getCurrentValue();
-    const float wowRate = wowRateSm.getCurrentValue();
+    // 4-point Lagrange interpolation for smooth, musical delay reads
+    int i = (int)std::floor(idx);
+    float f = idx - (float)i;
     
-    if (wowDepth < 0.001f) return 0.0f;
+    // Get 4 points: i-1, i, i+1, i+2 (wrapped)
+    int i0 = (i - 1) & mask;
+    int i1 = i & mask;
+    int i2 = (i + 1) & mask;
+    int i3 = (i + 2) & mask;
     
-    // Generate wow and flutter modulation
-    const float phaseIncrement = 2.0f * juce::MathConstants<float>::pi * wowRate / currentSampleRate;
-    lfoPhase += phaseIncrement;
+    float y0 = v[i0];
+    float y1 = v[i1];
+    float y2 = v[i2];
+    float y3 = v[i3];
     
-    // Combine multiple LFOs for realistic tape modulation
-    float wow = std::sin(lfoPhase) * 0.7f;
-    wow += std::sin(lfoPhase * 1.7f) * 0.3f;  // Secondary harmonic
-    wow += std::sin(lfoPhase * 0.3f) * 0.2f;  // Sub-harmonic
+    // Lagrange basis polynomials
+    float c0 = -f * (f - 1.0f) * (f - 2.0f) / 6.0f;
+    float c1 = (f + 1.0f) * (f - 1.0f) * (f - 2.0f) * 0.5f;
+    float c2 = -(f + 1.0f) * f * (f - 2.0f) * 0.5f;
+    float c3 = (f + 1.0f) * f * (f - 1.0f) / 6.0f;
     
-    // Add some flutter (higher frequency)
-    float flutter = std::sin(lfoPhase * 23.0f) * 0.1f;
-    
-    // Scale by depth and convert to samples
-    float modulation = (wow + flutter) * wowDepth * 2.5f; // ±2.5ms max
-    
-    return modulation * currentSampleRate * 0.001f; // Convert to samples
+    return c0 * y0 + c1 * y1 + c2 * y2 + c3 * y3;
+}
+
+// SVF implementation
+void FxDelay::SVF::prepare(double sr)
+{
+    this->sr = sr;
+    gLP = gHP = 1.0f;
+    z1LP = z1HP = 0.0f;
+}
+
+void FxDelay::SVF::setHiCut(float hz)
+{
+    // Low-pass for high-cut
+    float fc = juce::jlimit(100.0f, (float)(sr * 0.45), hz);
+    gLP = (float)std::tan(juce::MathConstants<float>::pi * fc / (float)sr);
+}
+
+void FxDelay::SVF::setLowCut(float hz)
+{
+    // High-pass for low-cut
+    float fc = juce::jlimit(10.0f, (float)(sr * 0.45), hz);
+    gHP = (float)std::tan(juce::MathConstants<float>::pi * fc / (float)sr);
+}
+
+float FxDelay::SVF::lp(float x)
+{
+    // Simple one-pole low-pass
+    float v = (x - z1LP) * gLP / (1.0f + gLP);
+    float y = v + z1LP;
+    z1LP = y + v;
+    return y;
+}
+
+float FxDelay::SVF::hp(float x)
+{
+    // Simple one-pole high-pass
+    float v = (x - z1HP) * gHP / (1.0f + gHP);
+    float y = x - (v + z1HP);
+    z1HP = v + z1HP;
+    return y;
 }

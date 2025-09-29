@@ -14,24 +14,22 @@ juce_add_binary_data(Assets SOURCES assets/gui.xml ${UI_SVGS} ${FONT_FILES})
 
 # Add the plugin
 juce_add_plugin(Stepper
-    VERSION 1.0.0
-    COMPANY_NAME "YourCompany"
-    PLUGIN_MANUFACTURER_CODE Stpr
-    PLUGIN_CODE Step
-    FORMATS VST3 AU Standalone
+    COMPANY_NAME "GlitchCorp"
+    COMPANY_ID "com.glitchcorp"
+    BUNDLE_ID "com.glitchcorp.stepper"
     PRODUCT_NAME "Stepper"
+    PLUGIN_NAME "Stepper"
+    PLUGIN_CODE Stp1
+    FORMATS VST3 AU Standalone
     IS_SYNTH FALSE
     NEEDS_MIDI_INPUT FALSE
     NEEDS_MIDI_OUTPUT FALSE
-    IS_MIDI_EFFECT FALSE
     EDITOR_WANTS_KEYBOARD_FOCUS FALSE
     COPY_PLUGIN_AFTER_BUILD TRUE
-    VST3_COPY_DIR ~/Library/Audio/Plug-Ins/VST3
-    AU_COPY_DIR ~/Library/Audio/Plug-Ins/Components
+    VST3_CATEGORIES "Fx"
 )
 
 # Source files
-# Source files (explicitly include intended files, exclude *_Original)
 set(SourceFiles
     ${CMAKE_CURRENT_SOURCE_DIR}/source/PluginProcessor.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/source/PluginProcessor.h
@@ -51,8 +49,6 @@ set(SourceFiles
 )
 
 target_sources(Stepper PRIVATE ${SourceFiles})
-
-# No external modules needed for standard JUCE approach
 
 # Compile definitions
 target_compile_definitions(Stepper
@@ -82,12 +78,12 @@ set_target_properties(Stepper_Standalone PROPERTIES
     XCODE_ATTRIBUTE_CODE_SIGNING_REQUIRED "NO"
     XCODE_ATTRIBUTE_DEVELOPMENT_TEAM ""
 )
-set_target_properties(Stepper_VST3 PROPERTIES
+set_target_properties(Stepper_AU PROPERTIES
     XCODE_ATTRIBUTE_CODE_SIGNING_ALLOWED "NO"
     XCODE_ATTRIBUTE_CODE_SIGNING_REQUIRED "NO"
     XCODE_ATTRIBUTE_DEVELOPMENT_TEAM ""
 )
-set_target_properties(Stepper_AU PROPERTIES
+set_target_properties(Stepper_VST3 PROPERTIES
     XCODE_ATTRIBUTE_CODE_SIGNING_ALLOWED "NO"
     XCODE_ATTRIBUTE_CODE_SIGNING_REQUIRED "NO"
     XCODE_ATTRIBUTE_DEVELOPMENT_TEAM ""

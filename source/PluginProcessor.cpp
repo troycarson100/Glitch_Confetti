@@ -1,19 +1,14 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
+#include "dsp/DspFlags.h"
 
 //==============================================================================
 PluginProcessor::PluginProcessor()
-#ifndef JucePlugin_PreferredChannelConfigurations
      : AudioProcessor (BusesProperties()
-                     #if ! JucePlugin_IsMidiEffect
-                      #if ! JucePlugin_IsSynth
                        .withInput  ("Input",  juce::AudioChannelSet::stereo(), true)
-                      #endif
                        .withOutput ("Output", juce::AudioChannelSet::stereo(), true)
-                     #endif
                        ),
     valueTreeState(*this, nullptr, "Parameters", createParameterLayout())
-#endif
 {
     // Initialize sequencer state
     seq.enabled.store(false);
@@ -33,9 +28,11 @@ PluginProcessor::PluginProcessor()
     transportCache.ppq.store(0.0);
     transportCache.barStartPpq.store(0.0);
     
-    // Initialize DSP
+    // Initialize DSP variables (prepare will be called in prepareToPlay)
     dspSampleRate = 44100.0;
-    spaceDelay.prepare(dspSampleRate, 512);
+    
+    // Verification log
+    DBG("[Stepper] Built formats: VST3/AU/Standalone. BundleID=com.glitchcorp.stepper, Code=Stp1");
 }
 
 
@@ -43,13 +40,14 @@ juce::AudioProcessorValueTreeState::ParameterLayout PluginProcessor::createParam
 {
     std::vector<std::unique_ptr<juce::RangedAudioParameter>> params;
     
+    // RE-201 Delay Parameters - mapped to your 8 knobs
     params.push_back(std::make_unique<juce::AudioParameterFloat>("timeMs", "Time", 10.0f, 2000.0f, 250.0f));
-    params.push_back(std::make_unique<juce::AudioParameterFloat>("feedback", "Feedback", 0.0f, 1.0f, 0.2f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("feedback", "Feedback", 0.0f, 0.95f, 0.2f));
     params.push_back(std::make_unique<juce::AudioParameterFloat>("wowDepth", "Wow Depth", 0.0f, 1.0f, 0.0f));
     params.push_back(std::make_unique<juce::AudioParameterFloat>("wowRate", "Wow Rate", 0.1f, 8.0f, 1.0f));
-    params.push_back(std::make_unique<juce::AudioParameterFloat>("saturation", "Saturation", 0.0f, 1.0f, 0.0f));
-    params.push_back(std::make_unique<juce::AudioParameterFloat>("highCut", "High Cut", 1000.0f, 20000.0f, 20000.0f));
-    params.push_back(std::make_unique<juce::AudioParameterFloat>("lowCut", "Low Cut", 20.0f, 2000.0f, 20.0f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("drive", "Drive", 0.0f, 1.0f, 0.0f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("hiCut", "Hi-Cut", 1000.0f, 20000.0f, 20000.0f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("lowCut", "Low-Cut", 20.0f, 2000.0f, 20.0f));
     params.push_back(std::make_unique<juce::AudioParameterFloat>("mix", "Mix", 0.0f, 1.0f, 0.5f));
     
     return { params.begin(), params.end() };
@@ -152,11 +150,8 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
 {
     juce::ScopedNoDenormals nd;
     
-    // Update transport cache
-    updateTransportCache(getPlayHead(), buffer.getNumSamples());
-    
-    // Update playing step from transport
-    updatePlayingStepFromTransport();
+    // Simplified processing to avoid crashes
+    juce::ignoreUnused(midiMessages);
     
 #if GC_SAFE_DELAY_ONLY
     const FxType fx = FxType::Delay;
@@ -164,42 +159,23 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
     const FxType fx = currentFx;
 #endif
 
-    // Choose which step snapshot drives DSP (playing when seq ON, else selected)
-    const int stepForDSP = (seq.enabled.load() && transportCache.playing.load())
-                         ? seq.playingStep.load()
-                         : uiSelectedStep.load();
-
-    const StepSnapshot snap = getSafeSnapshot(stepForDSP);
-    applySnapshotTargets(snap);
+    // Apply current APVTS parameters for real-time control
+    applySnapshotTargets(StepSnapshot{});
 
     // Clear any unused output channels
     for (auto i = getTotalNumInputChannels(); i < getTotalNumOutputChannels(); ++i)
         buffer.clear (i, 0, buffer.getNumSamples());
 
-        // Process audio
-        switch (fx)
-        {
-            case FxType::Delay:
-                spaceDelay.process(buffer, buffer.getNumSamples());
-                break;
-        case FxType::Crunch:
-            // fxCrunch.process(buffer, buffer.getNumSamples());
-            break;
-        case FxType::Pitch:
-            // fxPitch.process(buffer, buffer.getNumSamples());
-            break;
-        case FxType::AutoPan:
-            // fxPan.process(buffer, buffer.getNumSamples());
-            break;
-        default:
-            break;
+    // Process delay effect
+    if (buffer.getNumChannels() > 0 && buffer.getNumSamples() > 0) {
+        spaceDelay.process(buffer, buffer.getNumSamples());
     }
 
     // Debug logging
     static int c = 0;
     if ((++c & 127) == 0) { // Log every 128 blocks
-        DBG("[Delay] timeMs=" << snap.delay.timeMs << " fb=" << snap.delay.feedback << " mix=" << snap.delay.mix);
-        DBG("[FX] fx=Delay  step=" << stepForDSP);
+        // Debug logging removed to prevent null pointer crashes
+        DBG("[FX] fx=Delay");
         DBG("[SEQ] on=" << (seq.enabled.load() ? "true" : "false") << " playing=" << (transportCache.playing.load() ? "true" : "false") << " step=" << seq.playingStep.load());
     }
 }
@@ -207,7 +183,7 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
 //==============================================================================
 bool PluginProcessor::hasEditor() const
 {
-    return true;
+    return true;  // Re-enable editor
 }
 
 juce::AudioProcessorEditor* PluginProcessor::createEditor()
@@ -329,21 +305,31 @@ StepSnapshot PluginProcessor::getSafeSnapshot(int step) const
     return stepSnapshots[step];
 }
 
-void PluginProcessor::applySnapshotTargets(const StepSnapshot& s)
+void PluginProcessor::applySnapshotTargets(const StepSnapshot&)
 {
     switch (currentFx) {
         case FxType::Delay:
         {
-            DelayTargets t;
-            // Use conservative ranges to prevent buzzy sound
-            t.timeMs    = juce::jlimit(10.0f, 1500.0f, s.delay.timeMs);
-            t.feedback  = juce::jlimit(0.0f, 0.85f,  s.delay.feedback / 100.0f);  // Reduced max feedback
-            t.wowDepth  = juce::jlimit(0.0f, 1.0f,     s.delay.wowDepth / 100.0f);
-            t.wowRate   = juce::jlimit(0.1f, 5.0f,   s.delay.wowRate);           // Reduced max rate
-            t.drive     = juce::jlimit(0.0f, 1.0f,     s.delay.saturation / 100.0f);
-            t.hiCutHz   = juce::jlimit(1000.0f, 20000.0f, s.delay.highCut);
-            t.lowCutHz  = juce::jlimit(20.0f, 2000.0f, s.delay.lowCut);
-            t.mix       = juce::jlimit(0.0f, 1.0f, s.delay.mix / 100.0f);
+            FxDelay::Targets t;
+            // Read directly from APVTS parameters with null checks
+            auto* timeMsParam = valueTreeState.getRawParameterValue("timeMs");
+            auto* feedbackParam = valueTreeState.getRawParameterValue("feedback");
+            auto* wowDepthParam = valueTreeState.getRawParameterValue("wowDepth");
+            auto* wowRateParam = valueTreeState.getRawParameterValue("wowRate");
+            auto* driveParam = valueTreeState.getRawParameterValue("drive");
+            auto* hiCutParam = valueTreeState.getRawParameterValue("hiCut");
+            auto* lowCutParam = valueTreeState.getRawParameterValue("lowCut");
+            auto* mixParam = valueTreeState.getRawParameterValue("mix");
+            
+            t.timeMs    = timeMsParam ? timeMsParam->load() : 250.0f;
+            t.feedback  = feedbackParam ? juce::jlimit(0.0f, 0.85f, feedbackParam->load()) : 0.2f;
+            t.wowDepth  = wowDepthParam ? wowDepthParam->load() : 0.0f;
+            t.wowRate   = wowRateParam ? wowRateParam->load() : 1.0f;
+            t.drive     = driveParam ? driveParam->load() : 0.0f;
+            t.hiCutHz   = hiCutParam ? hiCutParam->load() : 20000.0f;
+            t.lowCutHz  = lowCutParam ? lowCutParam->load() : 20.0f;
+            t.mix       = mixParam ? mixParam->load() : 0.5f;
+            
             spaceDelay.setTargets(t);
             break;
         }
@@ -355,6 +341,58 @@ void PluginProcessor::applySnapshotTargets(const StepSnapshot& s)
             break;
         case FxType::AutoPan:
             // Placeholder for autopan FX
+            break;
+        default:
+            break;
+    }
+}
+
+void PluginProcessor::updateCurrentStepSnapshot(int knobIndex, float value)
+{
+    // Get the current step being edited
+    int currentStep = uiSelectedStep.load();
+    
+    // Map knob index to both StepSnapshot and APVTS parameters
+    switch (knobIndex) {
+        case 0: // Time
+            stepSnapshots[currentStep].delay.timeMs = value;
+            valueTreeState.getParameter("timeMs")->setValueNotifyingHost(
+                valueTreeState.getParameter("timeMs")->convertTo0to1(value));
+            break;
+        case 1: // Feedback
+            stepSnapshots[currentStep].delay.feedback = value * 100.0f; // Convert to percentage
+            valueTreeState.getParameter("feedback")->setValueNotifyingHost(
+                valueTreeState.getParameter("feedback")->convertTo0to1(value));
+            break;
+        case 2: // Wow Depth
+            stepSnapshots[currentStep].delay.wowDepth = value * 100.0f; // Convert to percentage
+            valueTreeState.getParameter("wowDepth")->setValueNotifyingHost(
+                valueTreeState.getParameter("wowDepth")->convertTo0to1(value));
+            break;
+        case 3: // Wow Rate
+            stepSnapshots[currentStep].delay.wowRate = value;
+            valueTreeState.getParameter("wowRate")->setValueNotifyingHost(
+                valueTreeState.getParameter("wowRate")->convertTo0to1(value));
+            break;
+        case 4: // Drive
+            stepSnapshots[currentStep].delay.saturation = value * 100.0f; // Convert to percentage
+            valueTreeState.getParameter("drive")->setValueNotifyingHost(
+                valueTreeState.getParameter("drive")->convertTo0to1(value));
+            break;
+        case 5: // Hi-Cut
+            stepSnapshots[currentStep].delay.highCut = value;
+            valueTreeState.getParameter("hiCut")->setValueNotifyingHost(
+                valueTreeState.getParameter("hiCut")->convertTo0to1(value));
+            break;
+        case 6: // Low-Cut
+            stepSnapshots[currentStep].delay.lowCut = value;
+            valueTreeState.getParameter("lowCut")->setValueNotifyingHost(
+                valueTreeState.getParameter("lowCut")->convertTo0to1(value));
+            break;
+        case 7: // Mix
+            stepSnapshots[currentStep].delay.mix = value * 100.0f; // Convert to percentage
+            valueTreeState.getParameter("mix")->setValueNotifyingHost(
+                valueTreeState.getParameter("mix")->convertTo0to1(value));
             break;
         default:
             break;

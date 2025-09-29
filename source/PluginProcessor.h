@@ -82,15 +82,6 @@ private:
     juce::AudioProcessorValueTreeState valueTreeState;
     juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
     
-    std::atomic<float>* timeParam = nullptr;
-    std::atomic<float>* feedbackParam = nullptr;
-    std::atomic<float>* wowDepthParam = nullptr;
-    std::atomic<float>* wowRateParam = nullptr;
-    std::atomic<float>* driveParam = nullptr;
-    std::atomic<float>* hiCutParam = nullptr;
-    std::atomic<float>* lowCutParam = nullptr;
-    std::atomic<float>* mixParam = nullptr;
-    
     // Transport cache
     mutable TransportCache transportCache;
     void updateTransportCache (juce::AudioPlayHead* playHead, int numSamples) noexcept;
@@ -106,6 +97,10 @@ private:
     void updatePlayingStepFromTransport();
     static inline double stepPeriodBeatsFromDivision(int idx);
     void applySnapshotTargets(const StepSnapshot& s);
+    
+public:
+    // Public method for UI to update snapshots
+    void updateCurrentStepSnapshot(int knobIndex, float value);
     
            // RE-201 Space Delay DSP - High Quality Implementation
            FxDelay spaceDelay;

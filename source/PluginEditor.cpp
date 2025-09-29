@@ -25,10 +25,13 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     }
     
         // Setup knobs
-        setupKnobs();
+    setupKnobs();
         
         // Setup effects area
         setupEffectsArea();
+        
+        // Start timer for UI updates
+        startTimer(100); // Update every 100ms for smoother knob interaction
         
         DBG("[UI] PluginEditor initialized with fresh start");
 }
@@ -147,7 +150,53 @@ void PluginEditor::drawMainAreas(juce::Graphics& g)
 
 void PluginEditor::timerCallback()
 {
-    // Empty for now
+    // Update knob values and UI based on parameter values
+    for (int i = 0; i < 8; ++i)
+    {
+        if (knobs[i] != nullptr && i < processorRef.getParameters().size())
+        {
+            auto* param = processorRef.getParameters().getUnchecked(i);
+            float paramValue = param->getValue();
+            
+            // Only update knob value if it's not currently being dragged
+            if (!knobs[i]->isMouseButtonDown())
+            {
+                knobs[i]->setValue(paramValue, juce::dontSendNotification);
+            }
+            
+            // Update value label
+            if (valueLabels[i] != nullptr)
+            {
+                // Format value based on parameter type
+                juce::String valueText;
+                if (auto* floatParam = dynamic_cast<juce::AudioParameterFloat*>(param))
+                {
+                    float actualValue = floatParam->convertFrom0to1(paramValue);
+                    if (i == 0) // Time - show in ms
+                        valueText = juce::String(actualValue, 0) + "ms";
+                    else if (i == 5 || i == 6) // Hi-Cut, Low-Cut - show in Hz
+                        valueText = juce::String(actualValue, 0) + "Hz";
+                    else if (i == 3) // Wow Rate - show in Hz
+                        valueText = juce::String(actualValue, 1) + "Hz";
+                    else // Others - show as percentage
+                        valueText = juce::String(actualValue * 100, 1) + "%";
+                }
+                else
+                {
+                    // Fallback for other parameter types
+                    valueText = juce::String(paramValue * 100, 1) + "%";
+                }
+                
+                valueLabels[i]->setText(valueText, juce::dontSendNotification);
+            }
+            
+            // Update indicator bar
+            if (indicatorBars[i] != nullptr)
+            {
+                indicatorBars[i]->setValue(paramValue);
+            }
+        }
+    }
 }
 
     //==============================================================================
@@ -247,10 +296,13 @@ CustomKnob::CustomKnob()
 {
     setSliderStyle(juce::Slider::RotaryVerticalDrag);
     setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
-    setRange(0.0, 1.0, 0.01);
+    setRange(0.0, 1.0, 0.001); // Finer resolution for smoother movement
     setValue(0.5);
     // Set rotation to start at -150 degrees and go to +150 degrees (300 degree total range)
     setRotaryParameters(-150.0f * juce::MathConstants<float>::pi / 180.0f, 150.0f * juce::MathConstants<float>::pi / 180.0f, true);
+    
+    // Set mouse drag sensitivity for smoother interaction
+    setMouseDragSensitivity(200); // Lower = more sensitive, higher = less sensitive
 }
 
 void CustomKnob::paint(juce::Graphics& g)
@@ -258,11 +310,7 @@ void CustomKnob::paint(juce::Graphics& g)
     auto bounds = getLocalBounds().toFloat();
     auto centre = bounds.getCentre();
     
-    DBG("[Knob] Painting knob - bounds: " << bounds.toString() << " centre: " << centre.toString());
-    DBG("[Knob] Inner image: " << (innerImage != nullptr ? "OK" : "NULL"));
-    DBG("[Knob] Ring image: " << (ringImage != nullptr ? "OK" : "NULL"));
-    DBG("[Knob] Value: " << getValue() << " rotation: " << (getValue() * 300.0f));
-    DBG("[Knob] Inner bounds reduction: " << (bounds.getWidth() * 0.04368f) << " x " << (bounds.getHeight() * 0.04368f));
+    // Paint knob without debug spam
     
     // Draw inner image with rotation first (bottom layer) - 4.368% smaller
     if (innerImage != nullptr)
@@ -271,11 +319,9 @@ void CustomKnob::paint(juce::Graphics& g)
         // Calculate rotation: 0.5 at value 0.5 should be straight up (0 degrees)
         // Map 0.0-1.0 to -150 to +150 degrees, then convert to radians
         float rotationAngle = (getValue() - 0.5f) * 300.0f * juce::MathConstants<float>::pi / 180.0f;
-        DBG("[Knob] Rotation angle: " << rotationAngle << " radians (" << (rotationAngle * 180.0f / juce::MathConstants<float>::pi) << " degrees)");
         g.addTransform(juce::AffineTransform::rotation(rotationAngle, centre.x, centre.y));
         // Make inner image 15% smaller from current size and bottom align
         auto innerBounds = bounds.reduced(bounds.getWidth() * 0.15f, bounds.getHeight() * 0.15f);
-        DBG("[Knob] Inner bounds after expansion: " << innerBounds.toString());
         innerImage->drawWithin(g, innerBounds, juce::RectanglePlacement::centred | juce::RectanglePlacement::yTop, 1.0f);
         g.restoreState();
     }
@@ -287,7 +333,6 @@ void CustomKnob::paint(juce::Graphics& g)
             // No rotation - keep normal orientation
             // Make ring 5% smaller
             auto ringBounds = bounds.reduced(bounds.getWidth() * 0.05f, bounds.getHeight() * 0.05f);
-            DBG("[Knob] Ring bounds: " << ringBounds.toString());
             // Draw the ring on top with bottom alignment
             ringImage->drawWithin(g, ringBounds, juce::RectanglePlacement::centred | juce::RectanglePlacement::yTop, 1.0f);
             g.restoreState();
@@ -319,8 +364,8 @@ void PluginEditor::setupKnobs()
     
         // Knob parameters
         std::vector<juce::String> knobNames = {
-            "Time", "Feedback", "Mix", "Drive",
-            "Low Cut", "High Cut", "Wow Rate", "Wow Depth"
+            "Time", "Feedback", "Wow Depth", "Wow Rate",
+            "Drive", "Hi-Cut", "Low-Cut", "Mix"
         };
         
         // Effect area bounds
@@ -335,6 +380,36 @@ void PluginEditor::setupKnobs()
         // Create knob
         knobs[i] = std::make_unique<CustomKnob>();
         addAndMakeVisible(knobs[i].get());
+        
+        // Connect to DSP parameters based on knob order
+        std::vector<juce::String> parameterIds = {
+            "timeMs", "feedback", "wowDepth", "wowRate",
+            "saturation", "highCut", "lowCut", "mix"
+        };
+        
+        // Set parameter ranges and initial values
+        if (i < processorRef.getParameters().size())
+        {
+            auto* param = processorRef.getParameters().getUnchecked(i);
+            
+            // All knobs use normalized 0-1 range for consistent UI behavior
+            knobs[i]->setRange(0.0, 1.0, 0.001);
+            
+            // Set initial value from parameter (already normalized)
+            if (auto* floatParam = dynamic_cast<juce::AudioParameterFloat*>(param))
+            {
+                knobs[i]->setValue(param->getValue(), juce::dontSendNotification);
+            }
+            else
+            {
+                knobs[i]->setValue(0.5, juce::dontSendNotification);
+            }
+            
+            // Add listener to update snapshots when knob changes
+            knobs[i]->onValueChange = [this, i]() {
+                updateParameterFromKnob(i);
+            };
+        }
         
             // Set images
             if (assets.knobRing != nullptr)
@@ -491,5 +566,20 @@ void PluginEditor::randomizeIndividualKnob(int knobIndex)
         indicatorBars[knobIndex]->setValue(randomValue);
         
         DBG("[UI] Knob " << knobIndex << " randomized to " << randomValue);
+    }
+}
+
+void PluginEditor::updateParameterFromKnob(int knobIndex)
+{
+    if (knobIndex >= 0 && knobIndex < 8 && knobs[knobIndex] != nullptr && knobIndex < processorRef.getParameters().size())
+    {
+        auto* param = processorRef.getParameters().getUnchecked(knobIndex);
+        float knobValue = knobs[knobIndex]->getValue();
+        
+        // Knob value is already normalized (0-1), so directly set parameter
+        param->setValueNotifyingHost(knobValue);
+        
+        // Note: Step snapshots can be updated later for sequencer functionality
+        // For now, we only update APVTS for real-time control
     }
 }

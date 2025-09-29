@@ -104,6 +104,7 @@ public:
         void setupEffectsArea();
         void randomizeKnobValues();
         void randomizeIndividualKnob(int knobIndex);
+        void updateParameterFromKnob(int knobIndex);
     void drawGridOverlay(juce::Graphics& g);
     void drawMainAreas(juce::Graphics& g);
 
