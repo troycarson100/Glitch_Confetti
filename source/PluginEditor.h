@@ -68,6 +68,46 @@ private:
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (CustomKnob)
 };
 
+//==============================================================================
+// CircularToggleButton class
+//==============================================================================
+class CircularToggleButton : public juce::Button
+{
+public:
+    CircularToggleButton();
+    ~CircularToggleButton() override = default;
+    
+    void paintButton(juce::Graphics& g, bool over, bool down) override;
+    
+private:
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (CircularToggleButton)
+};
+
+//==============================================================================
+// StepButton class for sequencer
+//==============================================================================
+class StepButton : public juce::Button
+{
+public:
+    StepButton(int stepIndex);
+    ~StepButton() override = default;
+    
+    void paintButton(juce::Graphics& g, bool over, bool down) override;
+    void setActiveImage(std::unique_ptr<juce::Drawable> active);
+    void setInactiveImage(std::unique_ptr<juce::Drawable> inactive);
+    void setSelected(bool selected);
+    void setPlaying(bool playing);
+    
+private:
+    int stepIndex;
+    bool isSelected = false;
+    bool isPlaying = false;
+    std::unique_ptr<juce::Drawable> activeImage;
+    std::unique_ptr<juce::Drawable> inactiveImage;
+    
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (StepButton)
+};
+
 
 //==============================================================================
 // PluginEditor class
@@ -99,12 +139,21 @@ public:
     std::unique_ptr<juce::Label> effectsTitle;
     std::unique_ptr<CustomDiceButton> diceButton;
     
+    // Sequencer area components
+    std::array<std::unique_ptr<StepButton>, 16> stepButtons;
+    std::unique_ptr<juce::Label> stepAmountLabel;
+    std::unique_ptr<juce::ComboBox> rateDropdown;
+    std::unique_ptr<CircularToggleButton> stdToggle;
+    
         // Helper methods
         void setupKnobs();
         void setupEffectsArea();
+        void setupSequencerArea();
         void randomizeKnobValues();
         void randomizeIndividualKnob(int knobIndex);
         void updateParameterFromKnob(int knobIndex);
+        void onStepButtonClicked(int stepIndex);
+        void updateSequencerUI();
     void drawGridOverlay(juce::Graphics& g);
     void drawMainAreas(juce::Graphics& g);
 

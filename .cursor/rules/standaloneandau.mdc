@@ -1,0 +1,5 @@
+---
+description: After every user request, update both au and standalone versions.
+globs:
+alwaysApply: true
+---

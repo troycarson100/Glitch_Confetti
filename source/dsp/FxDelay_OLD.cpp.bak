@@ -1,0 +1,413 @@
+#include "FxDelay.h"
+
+// Clickless package constants
+static constexpr float kMinDelayMs          = 5.0f;
+static constexpr float kBigJumpMs           = 3.0f;   // above this, treat as "big jump"
+static constexpr float kXfadeMs             = 60.0f;  // windowed crossfade length
+static constexpr int   kAlignWindowSamples  = 96;     // +/- window for alignment search
+static constexpr int   kAlignStep           = 1;      // search stride (samples)
+static constexpr float kWetDampDbDuringJump = -9.0f;  // briefly dim wet to hide seams
+static constexpr float kFbFreezeMs          = 8.0f;   // freeze feedback write-in
+
+// Helper: bounded alignment search around the target read position
+static int FxDelay_findBestAlignment(
+    const std::vector<float>& ring, int mask, float readBase, int halfWin, int step)
+{
+    // Evaluate sum of absolute value over a tiny window to find low-energy start
+    float bestScore = std::numeric_limits<float>::max();
+    int   bestOff = 0;
+
+    for (int off = -halfWin; off <= halfWin; off += step)
+    {
+        float idx = readBase + (float)off;
+        // sample 8 points around idx to score energy
+        float score = 0.0f;
+        for (int k = -4; k <= 4; ++k)
+        {
+            float ix = idx + 0.3f * (float)k; // sub-sample spacing
+            int i1 = (int)std::floor(ix);
+            float frac = ix - (float)i1;
+            int i2 = (i1 + 1) & mask;
+            i1 &= mask;
+            float s = ring[i1] + frac * (ring[i2] - ring[i1]);
+            score += std::abs(s);
+        }
+        if (score < bestScore) { bestScore = score; bestOff = off; }
+    }
+    return bestOff;
+}
+
+// Soft saturation helper
+static inline float softSat(float x, float gain)
+{
+    float driven = x * gain;
+    return std::tanh(driven) / gain;
+}
+
+FxDelay::FxDelay()
+{
+}
+
+void FxDelay::prepare(double sr, int maxBlockSize)
+{
+    sampleRate = sr;
+    
+    // Ring buffer sized for 4 seconds max delay
+    int ringSize = (int)juce::nextPowerOfTwo((int)std::ceil(4.0 * sr));
+    ringL.assign(ringSize, 0.0f);
+    ringR.assign(ringSize, 0.0f);
+    mask = ringSize - 1;
+    writePos = 0;
+    
+    // Configure slew rate - 150ms per second feels "tape-y" without zipper
+    const float msPerSecond = 150.0f;  // how fast Time can move when you turn the knob
+    delaySampMaxStep = (msPerSecond * 0.001f) * (float)sampleRate / (float)sampleRate;
+    // initialize to something sane
+    delaySampCurrent = delaySampTarget = juce::jlimit(5.0f, 2000.0f, 400.0f) * 0.001f * (float)sampleRate;
+    
+    // Initialize windowed crossfade
+    xfade.reset(sampleRate, 0.04); // 40 ms window
+    xfade.setCurrentAndTargetValue(0.0f);
+    xfadeActive = false;
+    wowFrozen = false;
+    
+    // Initialize clickless package state
+    fbWetSm.reset(sampleRate, 0.01); // 10ms de-zipper for feedback level
+    jumpActive = false; 
+    jumpWetGain = 1.0f; 
+    jumpSamplesRemain = 0;
+    
+    // Initialize Clean Time mode state
+    wetXfade.reset(sampleRate, 0.06); // 60ms default crossfade
+    wetXfade.setCurrentAndTargetValue(0.0f);
+    timelineSamples.store(0);
+    pendingUIMs.store(-1.0);
+    freezeWriteSamples = 0;
+    wetDamp = 1.0f;
+    
+    // Initialize smoothers with musical timing
+    timeMsSm.reset(sr, 0.020);     // 20ms for delay time
+    fbSm.reset(sr, 0.015);         // 15ms for feedback
+    mixSm.reset(sr, 0.010);        // 10ms for mix
+    driveSm.reset(sr, 0.015);      // 15ms for drive
+    hiCutHzSm.reset(sr, 0.040);    // 40ms for filters
+    lowCutHzSm.reset(sr, 0.040);   // 40ms for filters
+    wowDepthSm.reset(sr, 0.050);   // 50ms for modulation
+    wowRateSm.reset(sr, 0.050);    // 50ms for modulation
+    
+    // Initialize LFO phases
+    lfoPhase = 0.0;
+    lfoPhase2 = 0.0;
+    wowLP = 0.0f;
+    
+    // Initialize SVF
+    svf.prepare(sr);
+}
+
+void FxDelay::setTargets(const Targets& t)
+{
+    // Set parameter targets with safety limits
+    timeMsSm.setTargetValue(juce::jlimit(10.0f, 2000.0f, t.timeMs));
+    fbSm.setTargetValue(juce::jlimit(0.0f, 0.95f, t.feedback));
+    mixSm.setTargetValue(juce::jlimit(0.0f, 1.0f, t.mix));
+    driveSm.setTargetValue(juce::jlimit(0.0f, 1.0f, t.drive));
+    hiCutHzSm.setTargetValue(juce::jlimit(1000.0f, 20000.0f, t.hiCutHz));
+    lowCutHzSm.setTargetValue(juce::jlimit(20.0f, 2000.0f, t.lowCutHz));
+    wowDepthSm.setTargetValue(juce::jlimit(0.0f, 1.0f, t.wowDepth));
+    wowRateSm.setTargetValue(juce::jlimit(0.1f, 8.0f, t.wowRate));
+}
+
+void FxDelay::setTimeMode(TimeMode m) 
+{ 
+    timeMode.store(m, std::memory_order_relaxed); 
+}
+
+void FxDelay::postTimeFromUI(double timeMs)
+{
+    // On message thread: coalesce to latest; audio thread will pull at block boundary
+    pendingUIMs.store(juce::jlimit(5.0, 2000.0, timeMs), std::memory_order_relaxed);
+}
+
+void FxDelay::process(juce::AudioBuffer<float>& buffer, int numSamples)
+{
+    juce::ScopedNoDenormals noDenormals;
+    
+    const int numChannels = buffer.getNumChannels();
+    if (numChannels == 0 || numSamples <= 0) return;
+    
+    auto* inputL = buffer.getReadPointer(0);
+    auto* inputR = (numChannels > 1) ? buffer.getReadPointer(1) : inputL;
+    auto* outputL = buffer.getWritePointer(0);
+    auto* outputR = (numChannels > 1) ? buffer.getWritePointer(1) : outputL;
+    
+    // Advance global timeline
+    timelineSamples.fetch_add(numSamples, std::memory_order_relaxed);
+    
+    // Pull the latest coalesced UI time (if any), push ONE scheduled change per 50ms
+    static int uiCoalesceCounter = 0;
+    double pendingTime = pendingUIMs.load(std::memory_order_relaxed);
+    if (pendingTime >= 0.0) {
+        const int coalesceInterval = (int)(0.050 * sampleRate / juce::jmax(1, numSamples)); // every ~50ms of audio time
+        if (++uiCoalesceCounter >= coalesceInterval) {
+            uiCoalesceCounter = 0;
+            int start1, size1, start2, size2;
+            timeFifo.prepareToWrite(1, start1, size1, start2, size2);
+            if (size1 > 0) {
+                auto& t = timeQueue[start1];
+                t.targetTimeMs = pendingTime;
+                t.whenSamples = timelineSamples.load(std::memory_order_relaxed);      // start immediately at this block
+                t.rampMs = 60.0;        // 60 ms default crossfade window
+                timeFifo.finishedWrite(1);
+            }
+            pendingUIMs.store(-1.0, std::memory_order_relaxed);
+        }
+    }
+    
+    // Clean mode jump execution - consume pending schedule
+    int start1, size1, start2, size2;
+    timeFifo.prepareToRead(1, start1, size1, start2, size2);
+    if (size1 > 0) {
+        const auto ev = timeQueue[start1];
+        timeFifo.finishedRead(1);
+
+        const float newDelaySamp = (float)juce::jlimit(5.0, 2000.0, ev.targetTimeMs) * 0.001f * (float)sampleRate;
+
+        if (timeMode.load(std::memory_order_relaxed) == TimeMode::Tape) {
+            // Tape: just retarget smoother; current bend path handles it
+            timeMsSm.setTargetValue((float)ev.targetTimeMs);
+        } else {
+            // Clean: set up a B-path aligned read, xfade A→B, freeze feedback briefly
+            
+            // Helper: alignment search for low-energy starting point
+            auto pickAligned = [&](const std::vector<float>& ring, float base) -> float {
+                const int halfWin = 128, step = 1; 
+                float best = base; 
+                float bestScore = 1e9f;
+                for (int off = -halfWin; off <= halfWin; off += step) {
+                    float idx = wrapF(base + (float)off);
+                    // small energy score
+                    float s = 0; 
+                    for (int k = -4; k <= 4; k++) { 
+                        float ix = idx + 0.3f * (float)k;
+                        int i1 = (int)std::floor(ix) & mask, i2 = (i1 + 1) & mask; 
+                        float f = ix - (int)std::floor(ix);
+                        float v = ring[i1] + f * (ring[i2] - ring[i1]); 
+                        s += std::abs(v); 
+                    }
+                    if (s < bestScore) { bestScore = s; best = idx; }
+                }
+                return best;
+            };
+
+            // B is new target delay from writePos
+            const float tapBBase = wrapF((float)writePos - newDelaySamp);
+            pathB.tapPosL = pickAligned(ringL, tapBBase);
+            pathB.tapPosR = pickAligned(ringR, tapBBase);
+
+            // Start windowed crossfade over ev.rampMs
+            wetXfade.reset(sampleRate, (float)(ev.rampMs * 0.001));
+            wetXfade.setCurrentAndTargetValue(0.0f);
+            wetXfade.setTargetValue(1.0f);
+            jumpActive = true;
+            wetDamp = juce::Decibels::decibelsToGain(-9.0f);
+
+            // Freeze feedback injection for a short time
+            freezeWriteSamples = (int)std::round(0.010 * sampleRate); // 10ms
+        }
+    }
+    
+    // Dual wet path rendering helper
+    auto readTap = [&](WetPath& p, const std::vector<float>& ring, float readPos, bool isL) -> float {
+        // 4-point Lagrange interpolation
+        int i1 = (int)std::floor(readPos);
+        float frac = readPos - (float)i1;
+        const int i0 = (i1 - 1) & mask, i2 = (i1 + 1) & mask, i3 = (i1 + 2) & mask; 
+        i1 &= mask;
+        float y0 = ring[i0], y1 = ring[i1], y2 = ring[i2], y3 = ring[i3];
+        
+        // Lagrange basis polynomials
+        float c0 = -frac * (frac - 1.0f) * (frac - 2.0f) / 6.0f;
+        float c1 = (frac + 1.0f) * (frac - 1.0f) * (frac - 2.0f) * 0.5f;
+        float c2 = -(frac + 1.0f) * frac * (frac - 2.0f) * 0.5f;
+        float c3 = (frac + 1.0f) * frac * (frac - 1.0f) / 6.0f;
+        
+        float out = c0 * y0 + c1 * y1 + c2 * y2 + c3 * y3;
+        
+        // Optional Thiran all-pass to desensitize residual discontinuities
+        if (useThiran) {
+            const float a = (1.0f - frac) / (1.0f + frac + 1e-6f);
+            if (isL) {
+                float y = a * out + p.thZL; 
+                p.thZL = out - a * y; 
+                out = y;
+            } else {
+                float y = a * out + p.thZR; 
+                p.thZR = out - a * y; 
+                out = y;
+            }
+        }
+        return out;
+    };
+    
+    for (int sample = 0; sample < numSamples; ++sample)
+    {
+        // Update filter cutoffs
+        svf.setHiCut(hiCutHzSm.getNextValue());
+        svf.setLowCut(lowCutHzSm.getNextValue());
+        
+        // A path reads at current delay (with wow for Tape mode or small moves)
+        float wowDepth = wowDepthSm.getNextValue();
+        float wowRate = wowRateSm.getNextValue();
+        float modSamp = 0.0f;
+        
+        // Generate wow/flutter modulation (only in Tape mode or when not jumping)
+        if ((timeMode.load(std::memory_order_relaxed) == TimeMode::Tape || !jumpActive) && wowDepth > 0.001f) {
+            // Main wow LFO
+            lfoPhase += 2.0f * juce::MathConstants<float>::pi * wowRate / (float)sampleRate;
+            if (lfoPhase > 2.0f * juce::MathConstants<float>::pi) lfoPhase -= 2.0f * juce::MathConstants<float>::pi;
+            
+            // Secondary flutter LFO
+            lfoPhase2 += 2.0f * juce::MathConstants<float>::pi * (wowRate * 7.3f) / (float)sampleRate;
+            if (lfoPhase2 > 2.0f * juce::MathConstants<float>::pi) lfoPhase2 -= 2.0f * juce::MathConstants<float>::pi;
+            
+            float wow = (float)std::sin(lfoPhase) + 0.3f * (float)std::sin(lfoPhase * 1.7f);
+            float flutter = 0.15f * (float)std::sin(lfoPhase2);
+            
+            // Low-pass filter the modulation for tape-like smoothness
+            float rawMod = wow + flutter;
+            wowLP += 0.02f * (rawMod - wowLP); // Simple one-pole LP
+            
+            modSamp = wowLP * wowDepth * 3.5f * (float)sampleRate * 0.001f; // ±3.5ms in samples
+        }
+        
+        const float delaySampA = juce::jlimit(5.0f, 2000.0f, timeMsSm.getNextValue()) * 0.001f * (float)sampleRate;
+        const float tapA = wrapF((float)writePos - (delaySampA + modSamp));
+        float wetA_L = readTap(pathA, ringL, tapA, true);
+        float wetA_R = readTap(pathA, ringR, tapA, false);
+
+        float wetL = wetA_L, wetR = wetA_R;
+
+        if (jumpActive) {
+            // B path advances with write head (frozen offset), no modulation during xfade
+            float wetB_L = readTap(pathB, ringL, pathB.tapPosL, true);
+            float wetB_R = readTap(pathB, ringR, pathB.tapPosR, false);
+            
+            const float x = juce::jlimit(0.0f, 1.0f, wetXfade.getNextValue());
+            // Raised-cosine equal-power
+            const float a = std::sqrt(0.5f * (1.0f + std::cos(juce::MathConstants<float>::pi * x)));
+            const float b = std::sqrt(1.0f - 0.5f * (1.0f + std::cos(juce::MathConstants<float>::pi * x)));
+            
+            wetL = a * wetA_L + b * wetB_L;
+            wetR = a * wetA_R + b * wetB_R;
+            wetL *= wetDamp; 
+            wetR *= wetDamp;
+
+            // Advance B with write
+            pathB.tapPosL = wrapF(pathB.tapPosL + 1.0f);
+            pathB.tapPosR = wrapF(pathB.tapPosR + 1.0f);
+
+            if (x >= 0.999f) {
+                // Swap: B becomes new A anchor
+                pathA = pathB;
+                jumpActive = false;
+                wetDamp = 1.0f;
+            }
+        }
+
+        // ===== Feedback path (LP -> HP -> softSat -> DC) =====
+        // Apply short feedback freeze
+        float fbAmt = fbSm.getNextValue();
+        if (freezeWriteSamples > 0) { 
+            --freezeWriteSamples; 
+            fbAmt = 0.0f; 
+        }
+
+        float loopL = svf.hp(svf.lp(wetL));
+        float loopR = svf.hp(svf.lp(wetR));
+        const float g = 1.0f + 24.0f * driveSm.getNextValue();
+        loopL = dcL.process(softSat(loopL, g));
+        loopR = dcR.process(softSat(loopR, g));
+
+        // Get input samples
+        float inputSampleL = inputL[sample];
+        float inputSampleR = inputR[sample];
+
+        // Write (read-before-write respected)
+        ringL[writePos] = inputSampleL + fbAmt * loopL;
+        ringR[writePos] = inputSampleR + fbAmt * loopR;
+        writePos = (writePos + 1) & mask;
+
+        // Dry/wet equal-power
+        const float mix = mixSm.getNextValue();
+        const float aMix = std::sqrt(juce::jlimit(0.0f, 1.0f, 1.0f - mix));
+        const float bMix = std::sqrt(juce::jlimit(0.0f, 1.0f, mix));
+        outputL[sample] = aMix * inputSampleL + bMix * wetL;
+        outputR[sample] = aMix * inputSampleR + bMix * wetR;
+    }
+}
+
+inline float FxDelay::lagrange4(const std::vector<float>& v, float idx) const
+{
+    // 4-point Lagrange interpolation
+    int i = (int)std::floor(idx);
+    float f = idx - (float)i;
+    
+    // Get 4 points: i-1, i, i+1, i+2 (wrapped)
+    int i0 = (i - 1) & mask;
+    int i1 = i & mask;
+    int i2 = (i + 1) & mask;
+    int i3 = (i + 2) & mask;
+    
+    float y0 = v[i0];
+    float y1 = v[i1];
+    float y2 = v[i2];
+    float y3 = v[i3];
+    
+    // Lagrange basis polynomials
+    float c0 = -f * (f - 1.0f) * (f - 2.0f) / 6.0f;
+    float c1 = (f + 1.0f) * (f - 1.0f) * (f - 2.0f) * 0.5f;
+    float c2 = -(f + 1.0f) * f * (f - 2.0f) * 0.5f;
+    float c3 = (f + 1.0f) * f * (f - 1.0f) / 6.0f;
+    
+    return c0 * y0 + c1 * y1 + c2 * y2 + c3 * y3;
+}
+
+// SVF implementation
+void FxDelay::SVF::prepare(double sr)
+{
+    this->sr = sr;
+    gLP = gHP = 1.0f;
+    z1LP = z1HP = 0.0f;
+}
+
+void FxDelay::SVF::setHiCut(float hz)
+{
+    // Low-pass for high-cut
+    float fc = juce::jlimit(100.0f, (float)(sr * 0.45), hz);
+    gLP = (float)std::tan(juce::MathConstants<float>::pi * fc / (float)sr);
+}
+
+void FxDelay::SVF::setLowCut(float hz)
+{
+    // High-pass for low-cut
+    float fc = juce::jlimit(10.0f, (float)(sr * 0.45), hz);
+    gHP = (float)std::tan(juce::MathConstants<float>::pi * fc / (float)sr);
+}
+
+float FxDelay::SVF::lp(float x)
+{
+    // Simple one-pole low-pass
+    float v = (x - z1LP) * gLP / (1.0f + gLP);
+    float y = v + z1LP;
+    z1LP = y + v;
+    return y;
+}
+
+float FxDelay::SVF::hp(float x)
+{
+    // Simple one-pole high-pass
+    float v = (x - z1HP) * gHP / (1.0f + gHP);
+    float y = x - (v + z1HP);
+    z1HP = v + z1HP;
+    return y;
+}

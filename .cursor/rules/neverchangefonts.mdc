@@ -1,0 +1,5 @@
+---
+description: Never change fonts without user permissions or request.
+globs:
+alwaysApply: true
+---

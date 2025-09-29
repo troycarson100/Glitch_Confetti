@@ -1,0 +1,138 @@
+#pragma once
+
+#include <juce_audio_processors/juce_audio_processors.h>
+#include <juce_dsp/juce_dsp.h>
+
+class FxDelay
+{
+public:
+    FxDelay();
+    ~FxDelay() = default;
+
+    void prepare(double sampleRate, int maxBlockSize);
+    
+    struct Targets {
+        float timeMs = 250.0f;
+        float feedback = 0.2f;
+        float wowDepth = 0.0f;
+        float wowRate = 1.0f;
+        float drive = 0.0f;
+        float hiCutHz = 20000.0f;
+        float lowCutHz = 20.0f;
+        float mix = 0.5f;
+    };
+    
+    void setTargets(const Targets& t);
+    void process(juce::AudioBuffer<float>& buffer, int numSamples);
+    
+    enum class TimeMode { Tape, Clean };  // Tape = bend; Clean = clickless jump
+    void setTimeMode(TimeMode m);
+    void postTimeFromUI(double timeMs); // called from processor/editor to coalesce UI writes
+
+private:
+    double sampleRate = 44100.0;
+    
+    // Power-of-two ring
+    std::vector<float> ringL, ringR;
+    int mask = 0, writePos = 0;
+
+    // Delay length slew limiter (samples per sample)
+    float delaySampCurrent = 0.0f;
+    float delaySampTarget = 0.0f;
+    float delaySampMaxStep = 0.0f; // computed from ms/sec setting
+    
+    // Windowed crossfade state
+    juce::LinearSmoothedValue<float> xfade; // 0..1
+    bool xfadeActive = false;
+    float tapB_posFrozen = 0.0f;  // where B reads during xfade
+    bool wowFrozen = false;
+    float wowDepthSampCached = 0.0f;
+    float wowRateHzCached = 0.0f;
+
+    // TimeMode and scheduler
+    std::atomic<TimeMode> timeMode { TimeMode::Clean }; // default Clean
+    
+    // Scheduler for time changes (host/UI writes on message thread; audio thread consumes)
+    struct TimeChange {
+        double targetTimeMs;   // absolute target
+        int64_t whenSamples;   // absolute audio sample time to begin ramp
+        double rampMs;         // duration of crossfade ramp (e.g., 60 ms)
+    };
+    juce::AbstractFifo timeFifo { 64 };
+    std::array<TimeChange, 64> timeQueue;
+    std::atomic<int64_t> timelineSamples { 0 }; // increments each processBlock
+    std::atomic<double> pendingUIMs { -1.0 };   // last posted UI time (coalesced)
+    
+    // Dual wet paths for Clean mode
+    struct WetPath {
+        float tapPosL = 0.0f, tapPosR = 0.0f; // read pos
+        float thZL = 0.0f, thZR = 0.0f, thA = 0.0f;  // Thiran AP state (per path)
+    };
+    WetPath pathA, pathB;
+    juce::LinearSmoothedValue<float> wetXfade; // 0=A,1=B
+    
+    // Jump management
+    bool   jumpActive = false;
+    int    freezeWriteSamples = 0; // freeze feedback write for N samples
+    float  wetDamp = 1.0f;
+    
+    // Legacy jump state (kept for compatibility)
+    float  jumpWetGain = 1.0f;                 // temporary wet attenuator
+    int    jumpSamplesRemain = 0;              // counts down kFbFreezeMs
+    float  fbWriteHoldL = 0.0f, fbWriteHoldR = 0.0f; // frozen loop value during hold
+    float  tapB_posAligned = 0.0f;
+
+    // Simple de-zipper for feedback
+    juce::LinearSmoothedValue<float> fbWetSm;
+
+    // Optional all-pass for read (click-resilient alt to lagrange)
+    bool useThiran = true; // toggle for A/B
+
+    // Smoothed audible params
+    juce::LinearSmoothedValue<float> timeMsSm, fbSm, mixSm, driveSm;
+    juce::LinearSmoothedValue<float> hiCutHzSm, lowCutHzSm;
+    juce::LinearSmoothedValue<float> wowDepthSm, wowRateSm;
+
+    // Wow/flutter state
+    double lfoPhase = 0.0, lfoPhase2 = 0.0;
+    float wowLP = 0.0f; // short one-pole for flutter smoothing
+
+    // Feedback chain
+    struct DCBlock { 
+        float z = 0.0f; 
+        float process(float x) { 
+            float y = x - z + 0.995f * yPrev; 
+            z = x; 
+            yPrev = y; 
+            return y; 
+        } 
+    private: 
+        float yPrev = 0.0f; 
+    } dcL, dcR;
+    
+    struct SVF { // simple state-variable filters with smoothed cutoff
+        void prepare(double sr);
+        void setHiCut(float hz); 
+        void setLowCut(float hz);
+        float lp(float x); 
+        float hp(float x);
+    private: 
+        double sr = 44100.0; 
+        float gLP = 1.0f, gHP = 1.0f; 
+        float z1LP = 0, z1HP = 0;
+    } svf;
+    
+    // helpers
+    inline float wrapF(float i) const { 
+        float s = (float)(mask + 1); 
+        float x = std::fmod(i, s); 
+        if (x < 0) x += s; 
+        return x; 
+    }
+    
+    inline float lagrange4(const std::vector<float>& v, float idx) const;
+    
+    // Equal-power crossfade helpers
+    static inline float raisedCosL(float t) { return std::sqrt(0.5f * (1.0f + std::cos(juce::MathConstants<float>::pi * t))); }
+    static inline float raisedCosR(float t) { return std::sqrt(1.0f - 0.5f * (1.0f + std::cos(juce::MathConstants<float>::pi * t))); }
+};

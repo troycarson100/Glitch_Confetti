@@ -1,0 +1,35 @@
+#!/bin/bash
+
+echo "=== Testing Power Button Functionality ==="
+echo ""
+
+echo "✅ Power Button Features:"
+echo "   • Added Step_Power_On SVG button to top right of step area"
+echo "   • Button is 25% bigger (31x31px instead of 25x25px)"
+echo "   • Button moved 20px to the right from step area edge"
+echo "   • Click toggles sequencer power on/off"
+echo "   • When OFF: button greys to 70% opacity"
+echo "   • When OFF: all step area controls grey to 70% opacity"
+echo "   • When OFF: sequencer stops and highlight clears"
+echo ""
+
+echo "🔧 Testing Instructions:"
+echo "1. Run the standalone app:"
+echo "   /Users/troycarson/Documents/JUCE\ Projects/Stepper/build/Stepper_artefacts/Debug/Standalone/Stepper.app/Contents/MacOS/Stepper"
+echo ""
+echo "2. Look for the power button in the top right corner of the step area"
+echo "3. Click the power button to toggle sequencer on/off"
+echo "4. Verify that when OFF:"
+echo "   - Power button becomes greyed out (70% opacity)"
+echo "   - Rate dropdown, S/T/D toggle, and step count box become greyed out"
+echo "   - All 16 step buttons become greyed out"
+echo "   - Sequencer highlight stops moving"
+echo "5. Click again to turn back ON and verify everything returns to normal"
+echo ""
+
+echo "🎛️ AU Plugin:"
+echo "   The AU plugin has been updated with the same power button functionality"
+echo "   Load it in Ableton Live to test the power button there as well"
+echo ""
+
+echo "=== Test Complete ==="

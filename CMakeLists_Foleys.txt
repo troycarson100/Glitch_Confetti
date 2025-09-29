@@ -1,0 +1,70 @@
+cmake_minimum_required(VERSION 3.22)
+
+# Set project info
+set(PROJECT_NAME "Stepper")
+set(PRODUCT_NAME "Stepper")
+project(${PROJECT_NAME} VERSION 1.0.0)
+
+# Set C++ standard
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+# Use existing JUCE from the PampleTest project
+set(JUCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../PampleTest/JUCE")
+add_subdirectory(${JUCE_DIR} ${CMAKE_CURRENT_BINARY_DIR}/JUCE)
+
+# Add foleys_gui_magic
+add_subdirectory(modules/foleys_gui_magic)
+
+# Create binary data for assets
+juce_add_binary_data(Assets SOURCES assets/gui.xml)
+
+# Add the plugin
+juce_add_plugin(${PROJECT_NAME}
+    VERSION 1.0.0
+    COMPANY_NAME "Your Company"
+    PLUGIN_MANUFACTURER_CODE Manu
+    PLUGIN_CODE Stpr
+    FORMATS VST3 Standalone
+    PRODUCT_NAME ${PRODUCT_NAME}
+    IS_SYNTH FALSE
+    NEEDS_MIDI_INPUT FALSE
+    NEEDS_MIDI_OUTPUT FALSE
+    IS_MIDI_EFFECT FALSE
+    EDITOR_WANTS_KEYBOARD_FOCUS FALSE
+    COPY_PLUGIN_AFTER_BUILD TRUE
+    VST3_COPY_DIR ~/Library/Audio/Plug-Ins/VST3
+    AU_COPY_DIR ~/Library/Audio/Plug-Ins/Components
+)
+
+# Source files
+file(GLOB_RECURSE SourceFiles CONFIGURE_DEPENDS 
+    "${CMAKE_CURRENT_SOURCE_DIR}/source/PluginProcessor.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/source/PluginProcessor.h"
+    "${CMAKE_CURRENT_SOURCE_DIR}/source/PluginEditor.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/source/PluginEditor.h"
+)
+
+target_sources(${PROJECT_NAME} PRIVATE ${SourceFiles})
+
+# Set compile definitions
+target_compile_definitions(${PROJECT_NAME}
+    PUBLIC
+        JUCE_WEB_BROWSER=0
+        JUCE_USE_CURL=0
+        JUCE_VST3_CAN_REPLACE_VST2=0
+)
+
+# Link libraries
+target_link_libraries(${PROJECT_NAME}
+    PRIVATE
+        Assets
+        foleys_gui_magic
+        juce::juce_audio_utils
+        juce::juce_audio_processors
+        juce::juce_gui_basics
+    PUBLIC
+        juce::juce_recommended_config_flags
+        juce::juce_recommended_lto_flags
+        juce::juce_recommended_warning_flags
+)

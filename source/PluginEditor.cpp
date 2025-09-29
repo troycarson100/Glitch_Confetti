@@ -30,6 +30,9 @@ PluginEditor::PluginEditor (PluginProcessor& p)
         // Setup effects area
         setupEffectsArea();
         
+        // Setup sequencer area
+        setupSequencerArea();
+        
         // Start timer for UI updates
         startTimer(100); // Update every 100ms for smoother knob interaction
         
@@ -197,6 +200,9 @@ void PluginEditor::timerCallback()
             }
         }
     }
+    
+    // Update sequencer UI
+    updateSequencerUI();
 }
 
     //==============================================================================
@@ -351,6 +357,103 @@ void CustomKnob::setInnerImage(std::unique_ptr<juce::Drawable> inner)
 {
     innerImage = std::move(inner);
     repaint();
+}
+
+//==============================================================================
+// CircularToggleButton Implementation
+//==============================================================================
+
+CircularToggleButton::CircularToggleButton() : juce::Button("circularToggle")
+{
+    setClickingTogglesState(false);
+}
+
+void CircularToggleButton::paintButton(juce::Graphics& g, bool over, bool down)
+{
+    auto bounds = getLocalBounds().toFloat();
+    auto centre = bounds.getCentre();
+    auto radius = juce::jmin(bounds.getWidth(), bounds.getHeight()) * 0.4f;
+    
+    // Draw circle background (white fill, no stroke)
+    g.setColour(juce::Colours::white);
+    g.fillEllipse(centre.x - radius, centre.y - radius, radius * 2, radius * 2);
+    
+    // Draw text (black)
+    g.setColour(juce::Colours::black);
+    g.setFont(juce::Font(14.0f, juce::Font::bold));
+    g.drawText(getButtonText(), bounds, juce::Justification::centred);
+}
+
+//==============================================================================
+// StepButton Implementation
+//==============================================================================
+
+StepButton::StepButton(int stepIndex) : juce::Button("stepButton"), stepIndex(stepIndex)
+{
+    setClickingTogglesState(false);
+}
+
+void StepButton::paintButton(juce::Graphics& g, bool over, bool down)
+{
+    auto bounds = getLocalBounds().toFloat();
+    
+    // Choose which image to draw based on state
+    std::unique_ptr<juce::Drawable>* imageToDraw = nullptr;
+    
+    if (isSelected || isPlaying) {
+        imageToDraw = &activeImage;
+    } else {
+        imageToDraw = &inactiveImage;
+    }
+    
+    if (imageToDraw && *imageToDraw != nullptr) {
+        (*imageToDraw)->drawWithin(g, bounds, juce::RectanglePlacement::centred, 1.0f);
+    } else {
+        // Fallback drawing
+        g.setColour(isSelected || isPlaying ? juce::Colours::white : juce::Colours::grey);
+        g.fillRoundedRectangle(bounds, 5.0f);
+        g.setColour(juce::Colours::black);
+        g.drawRoundedRectangle(bounds, 5.0f, 2.0f);
+        
+        // Draw step number
+        g.setColour(juce::Colours::black);
+        g.setFont(12.0f);
+        g.drawText(juce::String(stepIndex + 1), bounds, juce::Justification::centred);
+    }
+    
+    // Add highlight when hovering
+    if (over) {
+        g.setColour(juce::Colours::white.withAlpha(0.3f));
+        g.fillRoundedRectangle(bounds, 5.0f);
+    }
+}
+
+void StepButton::setActiveImage(std::unique_ptr<juce::Drawable> active)
+{
+    activeImage = std::move(active);
+    repaint();
+}
+
+void StepButton::setInactiveImage(std::unique_ptr<juce::Drawable> inactive)
+{
+    inactiveImage = std::move(inactive);
+    repaint();
+}
+
+void StepButton::setSelected(bool selected)
+{
+    if (isSelected != selected) {
+        isSelected = selected;
+        repaint();
+    }
+}
+
+void StepButton::setPlaying(bool playing)
+{
+    if (isPlaying != playing) {
+        isPlaying = playing;
+        repaint();
+    }
 }
 
 //==============================================================================
@@ -530,6 +633,90 @@ void PluginEditor::setupKnobs()
         DBG("[UI] Effects area setup complete");
     }
 
+//==============================================================================
+// Sequencer Area Setup
+//==============================================================================
+
+void PluginEditor::setupSequencerArea()
+{
+    DBG("[UI] Setting up sequencer area...");
+    
+    // Step area bounds
+    auto stepArea = juce::Rectangle<int>(25, 374, 413, 140);
+    
+    // Create step buttons (2 rows of 8)
+    const int buttonSize = 40;
+    const int buttonSpacing = 8;
+    const int startX = stepArea.getX() + 20;
+    const int startY = stepArea.getY() + 35; // Moved up 5px from +40 to +35
+    
+    for (int i = 0; i < 16; ++i) {
+        stepButtons[i] = std::make_unique<StepButton>(i);
+        addAndMakeVisible(stepButtons[i].get());
+        
+        // Position buttons in 2 rows of 8
+        int x = startX + (i % 8) * (buttonSize + buttonSpacing);
+        int y = startY + (i / 8) * (buttonSize + buttonSpacing);
+        
+        stepButtons[i]->setBounds(x, y, buttonSize, buttonSize);
+        
+        // Set images
+        if (assets.stepActive != nullptr)
+            stepButtons[i]->setActiveImage(assets.stepActive->createCopy());
+        if (assets.stepInactive != nullptr)
+            stepButtons[i]->setInactiveImage(assets.stepInactive->createCopy());
+        
+        // Set up click handler
+        stepButtons[i]->onClick = [this, i]() {
+            onStepButtonClicked(i);
+        };
+    }
+    
+    // Create step amount label with white border (top right)
+    stepAmountLabel = std::make_unique<juce::Label>();
+    stepAmountLabel->setText("16", juce::dontSendNotification);
+    stepAmountLabel->setFont(juce::Font(16.0f, juce::Font::bold));
+    stepAmountLabel->setColour(juce::Label::textColourId, juce::Colours::white);
+    stepAmountLabel->setColour(juce::Label::backgroundColourId, juce::Colours::transparentBlack);
+    stepAmountLabel->setColour(juce::Label::outlineColourId, juce::Colours::white);
+    stepAmountLabel->setJustificationType(juce::Justification::centred);
+    stepAmountLabel->setBorderSize(juce::BorderSize<int>(2));
+    addAndMakeVisible(stepAmountLabel.get());
+    stepAmountLabel->setBounds(stepArea.getX() + 260, stepArea.getY() - 10, 30, 25); // Moved left 40px from +300 to +260
+    
+    // Create rate dropdown (top right)
+    rateDropdown = std::make_unique<juce::ComboBox>();
+    rateDropdown->addItem("1/1", 1);
+    rateDropdown->addItem("1/2", 2);
+    rateDropdown->addItem("1/4", 3);
+    rateDropdown->addItem("1/8", 4);
+    rateDropdown->addItem("1/16", 5);
+    rateDropdown->addItem("1/32", 6);
+    rateDropdown->setSelectedId(4); // Default to 1/8
+    rateDropdown->setColour(juce::ComboBox::backgroundColourId, juce::Colours::black);
+    rateDropdown->setColour(juce::ComboBox::textColourId, juce::Colours::white);
+    rateDropdown->setColour(juce::ComboBox::arrowColourId, juce::Colours::white);
+    addAndMakeVisible(rateDropdown.get());
+    rateDropdown->setBounds(stepArea.getX() + 300, stepArea.getY() - 10, 60, 25); // Moved left 40px from +340 to +300
+    
+    // Create S/T/D circular toggle (top right)
+    stdToggle = std::make_unique<CircularToggleButton>();
+    stdToggle->setButtonText("-");
+    addAndMakeVisible(stdToggle.get());
+    stdToggle->setBounds(stepArea.getX() + 370, stepArea.getY() - 10, 30, 30); // Made circular (30x30)
+    
+    // Set up toggle handler
+    stdToggle->onClick = [this]() {
+        // Cycle through -/t/. states
+        static int stdState = 0; // 0=-, 1=t, 2=.
+        stdState = (stdState + 1) % 3;
+        const char* labels[] = {"-", "t", "."};
+        stdToggle->setButtonText(labels[stdState]);
+    };
+    
+    DBG("[UI] Sequencer area setup complete");
+}
+
 void PluginEditor::randomizeKnobValues()
 {
     DBG("[UI] Randomizing knob values...");
@@ -579,7 +766,77 @@ void PluginEditor::updateParameterFromKnob(int knobIndex)
         // Knob value is already normalized (0-1), so directly set parameter
         param->setValueNotifyingHost(knobValue);
         
-        // Note: Step snapshots can be updated later for sequencer functionality
-        // For now, we only update APVTS for real-time control
+        // Update the current step snapshot with the new value
+        // Convert normalized value back to actual parameter value
+        float actualValue = 0.0f;
+        if (auto* floatParam = dynamic_cast<juce::AudioParameterFloat*>(param))
+        {
+            actualValue = floatParam->convertFrom0to1(knobValue);
+        }
+        
+        // Update the snapshot for the currently selected step
+        processorRef.updateCurrentStepSnapshot(knobIndex, actualValue);
+    }
+}
+
+void PluginEditor::onStepButtonClicked(int stepIndex)
+{
+    DBG("[UI] Step button " << stepIndex << " clicked");
+    
+    // Update selected step in processor
+    processorRef.setSelectedStep(stepIndex);
+    
+    // Update UI to show which step is selected
+    updateSequencerUI();
+    
+    // Load the snapshot for this step into the knobs
+    auto snapshot = processorRef.getSafeSnapshot(stepIndex);
+    
+    // Update knobs with snapshot values (convert from actual values to normalized 0-1)
+    knobs[0]->setValue(processorRef.getAPVTS().getParameter("timeMs")->convertTo0to1(snapshot.delay.timeMs), juce::dontSendNotification);
+    knobs[1]->setValue(processorRef.getAPVTS().getParameter("feedback")->convertTo0to1(snapshot.delay.feedback / 100.0f), juce::dontSendNotification);
+    knobs[2]->setValue(processorRef.getAPVTS().getParameter("wowDepth")->convertTo0to1(snapshot.delay.wowDepth / 100.0f), juce::dontSendNotification);
+    knobs[3]->setValue(processorRef.getAPVTS().getParameter("wowRate")->convertTo0to1(snapshot.delay.wowRate), juce::dontSendNotification);
+    knobs[4]->setValue(processorRef.getAPVTS().getParameter("drive")->convertTo0to1(snapshot.delay.saturation / 100.0f), juce::dontSendNotification);
+    knobs[5]->setValue(processorRef.getAPVTS().getParameter("hiCut")->convertTo0to1(snapshot.delay.highCut), juce::dontSendNotification);
+    knobs[6]->setValue(processorRef.getAPVTS().getParameter("lowCut")->convertTo0to1(snapshot.delay.lowCut), juce::dontSendNotification);
+    knobs[7]->setValue(processorRef.getAPVTS().getParameter("mix")->convertTo0to1(snapshot.delay.mix / 100.0f), juce::dontSendNotification);
+    
+    // Also update the APVTS parameters to match the snapshot
+    processorRef.getAPVTS().getParameter("timeMs")->setValueNotifyingHost(processorRef.getAPVTS().getParameter("timeMs")->convertTo0to1(snapshot.delay.timeMs));
+    processorRef.getAPVTS().getParameter("feedback")->setValueNotifyingHost(processorRef.getAPVTS().getParameter("feedback")->convertTo0to1(snapshot.delay.feedback / 100.0f));
+    processorRef.getAPVTS().getParameter("wowDepth")->setValueNotifyingHost(processorRef.getAPVTS().getParameter("wowDepth")->convertTo0to1(snapshot.delay.wowDepth / 100.0f));
+    processorRef.getAPVTS().getParameter("wowRate")->setValueNotifyingHost(processorRef.getAPVTS().getParameter("wowRate")->convertTo0to1(snapshot.delay.wowRate));
+    processorRef.getAPVTS().getParameter("drive")->setValueNotifyingHost(processorRef.getAPVTS().getParameter("drive")->convertTo0to1(snapshot.delay.saturation / 100.0f));
+    processorRef.getAPVTS().getParameter("hiCut")->setValueNotifyingHost(processorRef.getAPVTS().getParameter("hiCut")->convertTo0to1(snapshot.delay.highCut));
+    processorRef.getAPVTS().getParameter("lowCut")->setValueNotifyingHost(processorRef.getAPVTS().getParameter("lowCut")->convertTo0to1(snapshot.delay.lowCut));
+    processorRef.getAPVTS().getParameter("mix")->setValueNotifyingHost(processorRef.getAPVTS().getParameter("mix")->convertTo0to1(snapshot.delay.mix / 100.0f));
+}
+
+void PluginEditor::updateSequencerUI()
+{
+    // Update step button selection states
+    int selectedStep = processorRef.getSelectedStep();
+    int playingStep = processorRef.getPlayingStep();
+    
+    for (int i = 0; i < 16; ++i) {
+        if (stepButtons[i] != nullptr) {
+            // Only the selected step should show as selected
+            stepButtons[i]->setSelected(i == selectedStep);
+            // Only the playing step should show as playing (if sequencer is enabled)
+            stepButtons[i]->setPlaying(i == playingStep && processorRef.isSequencerEnabled());
+        }
+    }
+    
+    // Update step amount display
+    if (stepAmountLabel != nullptr) {
+        int stepsUsed = processorRef.getSeqState().stepsUsed.load();
+        stepAmountLabel->setText(juce::String(stepsUsed), juce::dontSendNotification);
+    }
+    
+    // Update rate dropdown
+    if (rateDropdown != nullptr) {
+        int divisionIndex = processorRef.getSeqState().divisionIndex.load();
+        rateDropdown->setSelectedId(divisionIndex + 1);
     }
 }
