@@ -176,9 +176,9 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
     static bool prevSequencerEnabled = false;
     if (sequencerEnabled && !prevSequencerEnabled)
     {
-        // Reset origin for standalone mode and prevent immediate playback
+        // Set origin for standalone mode to start playback immediately
         seq.originPPQ.store(0.0);
-        seq.haveOrigin.store(false);
+        seq.haveOrigin.store(true);
         seq.playingStep.store(-1);
     }
     else if (!sequencerEnabled && prevSequencerEnabled)
