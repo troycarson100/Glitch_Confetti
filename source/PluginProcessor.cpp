@@ -197,8 +197,8 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
         updatePlayingStepFromTransport();
     }
 
-    // Apply sequencer step snapshot if enabled, otherwise use APVTS parameters
-    if (sequencerEnabled || hostPlaying) {
+    // Apply sequencer step snapshot only if sequencer is enabled, otherwise use APVTS parameters
+    if (sequencerEnabled) {
         // Use playing step's snapshot for audio processing
         int playingStep = seq.playingStep.load();
         StepSnapshot playingSnapshot = getSafeSnapshot(playingStep);

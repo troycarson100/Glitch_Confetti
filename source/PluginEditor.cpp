@@ -258,23 +258,11 @@ void PluginEditor::timerCallback()
             {
                 float indicatorValue = paramValue;
 
-                // If sequencer is active (or host is playing), show the playing step's snapshot value
-                TransportCache t;
-                processorRef.getTransportSnapshot(t);
-                const bool seqActive = processorRef.isSequencerEnabled() || (t.valid && t.playing);
+                // If sequencer is enabled, show the playing step's snapshot value
+                const bool seqEnabled = processorRef.isSequencerEnabled();
                 const int playingStep = processorRef.getPlayingStep();
                 
-                // Debug output
-                static int debugCounter = 0;
-                if ((++debugCounter & 15) == 0) { // Log every 16 timer calls (more frequent)
-                    DBG("[INDICATOR] seqEnabled=" << processorRef.isSequencerEnabled() 
-                         << " hostPlaying=" << (t.valid && t.playing) 
-                         << " seqActive=" << seqActive 
-                         << " playingStep=" << playingStep
-                         << " indicatorValue=" << indicatorValue);
-                }
-                
-                if (seqActive && playingStep >= 0 && playingStep < 16)
+                if (seqEnabled && playingStep >= 0 && playingStep < 16)
                 {
                     StepSnapshot s = processorRef.getSafeSnapshot(playingStep);
                     auto* p = dynamic_cast<juce::AudioParameterFloat*>(processorRef.getAPVTS().getParameter(i == 0 ? "timeMs"
