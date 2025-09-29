@@ -196,6 +196,8 @@ public:
     std::unique_ptr<CircularToggleButton> stdToggle;
     std::unique_ptr<juce::Label> stepTitle;
     std::unique_ptr<CustomDiceButton> stepDiceButton;
+    std::unique_ptr<juce::DrawableButton> stepPowerButton;
+    bool stepAreaEnabled = true; // Default to enabled
     
     // UI visibility toggle
     std::unique_ptr<juce::ToggleButton> uiToggleButton;
@@ -209,6 +211,8 @@ public:
         void setupEffectsArea();
         void setupAllStepsToggle();
         void setupSequencerArea();
+        void setupStepPowerButton();
+        void updateStepAreaVisibility();
         void randomizeKnobValues();
         void randomizeIndividualKnob(int knobIndex);
         void updateParameterFromKnob(int knobIndex);

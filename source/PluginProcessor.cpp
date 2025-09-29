@@ -176,14 +176,23 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
     static bool prevSequencerEnabled = false;
     if (sequencerEnabled && !prevSequencerEnabled)
     {
-        // Reset origin for standalone mode
+        // Reset origin for standalone mode and prevent immediate playback
+        seq.originPPQ.store(0.0);
         seq.haveOrigin.store(false);
+        seq.playingStep.store(-1);
+    }
+    else if (!sequencerEnabled && prevSequencerEnabled)
+    {
+        // When sequencer is disabled, reset everything
+        seq.originPPQ.store(0.0);
+        seq.haveOrigin.store(false);
+        seq.playingStep.store(-1);
     }
     prevSequencerEnabled = sequencerEnabled;
     prevHostPlaying = hostPlaying;
     
-    // Update playing step if host is playing OR if internal sequencer is enabled
-    if (hostPlaying || sequencerEnabled)
+    // Update playing step if host is playing OR if internal sequencer is enabled AND has origin
+    if (hostPlaying || (sequencerEnabled && seq.haveOrigin.load()))
     {
         updatePlayingStepFromTransport();
     }
@@ -491,6 +500,16 @@ void PluginProcessor::updateCurrentStepSnapshot(int knobIndex, float value)
         default:
             break;
     }
+}
+
+void PluginProcessor::resetSequencerState() noexcept
+{
+    // Reset sequencer state to prevent random playback when re-enabled
+    seq.playingStep.store(-1);
+    seq.originPPQ.store(0.0);
+    seq.haveOrigin.store(false);
+    
+    DBG("[Processor] Sequencer state reset - playingStep: " << seq.playingStep.load() << ", originPPQ: " << seq.originPPQ.load());
 }
 
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()

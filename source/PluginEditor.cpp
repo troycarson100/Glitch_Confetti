@@ -36,6 +36,9 @@ PluginEditor::PluginEditor (PluginProcessor& p)
         // Setup sequencer area
         setupSequencerArea();
         
+        // Setup step power button
+        setupStepPowerButton();
+        
         // Setup UI toggle
         setupUIToggle();
         
@@ -1187,6 +1190,97 @@ void PluginEditor::setupSequencerArea()
     };
     
     DBG("[UI] Sequencer area setup complete");
+}
+
+void PluginEditor::setupStepPowerButton()
+{
+    DBG("[UI] Setting up step power button...");
+    
+    // Step area bounds
+    auto stepArea = juce::Rectangle<int>(25, 374, 413, 140);
+    
+    // Create step power button (top right corner of step area)
+    stepPowerButton = std::make_unique<juce::DrawableButton>("stepPowerButton", juce::DrawableButton::ButtonStyle::ImageFitted);
+    addAndMakeVisible(stepPowerButton.get());
+    
+    // Position at top right corner of step area, 20% smaller than 50px and adjusted position
+    const int buttonSize = 40; // 50 * 0.8 = 40 (20% smaller)
+    stepPowerButton->setBounds(stepArea.getX() + stepArea.getWidth() - buttonSize - 5 + 15 - 5 - 1, stepArea.getY() - 5 - 40 + 25 + 5, buttonSize, buttonSize); // 1px right, 5px up
+    
+    // Remove background colors
+    stepPowerButton->setColour(juce::DrawableButton::backgroundColourId, juce::Colours::transparentBlack);
+    stepPowerButton->setColour(juce::DrawableButton::backgroundOnColourId, juce::Colours::transparentBlack);
+    
+    // Set up image
+    if (assets.stepPowerOn != nullptr)
+    {
+        stepPowerButton->setImages(assets.stepPowerOn->createCopy().get());
+    }
+    
+    // Set up click handler
+    stepPowerButton->setClickingTogglesState(true);
+    stepPowerButton->setToggleState(stepAreaEnabled, juce::dontSendNotification);
+    stepPowerButton->onClick = [this]() {
+        stepAreaEnabled = stepPowerButton->getToggleState();
+        DBG("[UI] Step area power: " << (stepAreaEnabled ? "ON" : "OFF"));
+        
+        // Only force-disable the sequencer when powering OFF the step area.
+        // When powering ON, do not auto-enable playback; rely on host transport or the UI play button.
+        if (!stepAreaEnabled) {
+            processorRef.setSequencerEnabled(false);
+            processorRef.resetSequencerState();
+        }
+        
+        // Update UI visibility and repaint
+        updateStepAreaVisibility();
+        repaint();
+    };
+    
+    DBG("[UI] Step power button setup complete");
+}
+
+void PluginEditor::updateStepAreaVisibility()
+{
+    // Grey out all step area components when disabled
+    float alpha = stepAreaEnabled ? 1.0f : 0.3f;
+    
+    // Update step buttons
+    for (auto& button : stepButtons) {
+        if (button != nullptr) {
+            button->setAlpha(alpha);
+            button->setEnabled(stepAreaEnabled);
+        }
+    }
+    
+    // Update other step area components
+    if (stepAmountLabel != nullptr) {
+        stepAmountLabel->setAlpha(alpha);
+        stepAmountLabel->setEnabled(stepAreaEnabled);
+    }
+    
+    if (rateDropdown != nullptr) {
+        rateDropdown->setAlpha(alpha);
+        rateDropdown->setEnabled(stepAreaEnabled);
+    }
+    
+    if (stdToggle != nullptr) {
+        stdToggle->setAlpha(alpha);
+        stdToggle->setEnabled(stepAreaEnabled);
+    }
+    
+    if (stepTitle != nullptr) {
+        stepTitle->setAlpha(alpha);
+    }
+    
+    if (stepDiceButton != nullptr) {
+        stepDiceButton->setAlpha(alpha);
+        stepDiceButton->setEnabled(stepAreaEnabled);
+    }
+    
+    // Update power button itself - grey out when disabled
+    if (stepPowerButton != nullptr) {
+        stepPowerButton->setAlpha(stepAreaEnabled ? 1.0f : 0.3f);
+    }
 }
 
 void PluginEditor::randomizeKnobValues()
