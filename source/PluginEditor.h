@@ -200,6 +200,11 @@ public:
         std::array<std::unique_ptr<LockButton>, 8> knobLockButtons;
         std::array<bool, 8> knobLocked { false, false, false, false, false, false, false, false };
     
+    // Master knobs
+    std::array<std::unique_ptr<CustomKnob>, 3> masterKnobs;
+    std::array<std::unique_ptr<juce::Label>, 3> masterLabels;
+    std::array<std::unique_ptr<juce::Label>, 3> masterValueLabels;
+    
     // Effects area components
     std::unique_ptr<juce::Label> effectsTitle;
     std::unique_ptr<CustomDiceButton> diceButton;
@@ -233,6 +238,7 @@ public:
     
         // Helper methods
         void setupKnobs();
+        void setupMasterKnobs();
         void setupEffectsArea();
         void setupFxPowerButton();
         void updateFxAreaVisibility();

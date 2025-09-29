@@ -26,6 +26,7 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     
         // Setup knobs
     setupKnobs();
+    setupMasterKnobs();
         
         // Setup effects area
         setupEffectsArea();
@@ -896,6 +897,84 @@ void PluginEditor::setupKnobs()
     }
 
     //==============================================================================
+    // Master Knobs Setup
+    //==============================================================================
+    
+    void PluginEditor::setupMasterKnobs()
+    {
+        DBG("[UI] Setting up master knobs...");
+        
+        // Master knob parameters
+        std::vector<juce::String> masterKnobNames = {
+            "Input", "Dry/Wet", "Output"
+        };
+        
+        // Master knob parameters from APVTS (indices 8, 9, 10)
+        std::vector<juce::String> masterParamNames = {
+            "masterInput", "masterDryWet", "masterOutput"
+        };
+        
+        // Master area bounds (positioned in master area)
+        auto masterArea = juce::Rectangle<int>(453, 54, 413, 296);
+        
+        for (int i = 0; i < 3; ++i) {
+            // Create master knob
+            masterKnobs[i] = std::make_unique<CustomKnob>();
+            addAndMakeVisible(masterKnobs[i].get());
+            
+            // Set master knob images
+            if (assets.knobMasterRing != nullptr && assets.knobMasterInside != nullptr) {
+                masterKnobs[i]->setRingImage(assets.knobMasterRing->createCopy());
+                masterKnobs[i]->setInnerImage(assets.knobMasterInside->createCopy());
+            }
+            
+            // Set knob range and connect to parameter
+            masterKnobs[i]->setRange(0.0, 1.0, 0.001);
+            
+            // Connect to APVTS parameter (indices 8, 9, 10)
+            if (auto* param = dynamic_cast<juce::AudioParameterFloat*>(processorRef.getParameters()[8 + i])) {
+                masterKnobs[i]->setValue(param->get(), juce::dontSendNotification);
+            } else {
+                masterKnobs[i]->setValue(1.0, juce::dontSendNotification); // Default to 1.0
+            }
+            
+            // Set up value change callback
+            masterKnobs[i]->onValueChange = [this, i]() {
+                if (auto* param = dynamic_cast<juce::AudioParameterFloat*>(processorRef.getParameters()[8 + i])) {
+                    param->setValueNotifyingHost(masterKnobs[i]->getValue());
+                }
+            };
+            
+            // Position master knobs horizontally in master area
+            const int knobSize = 60;
+            const int spacing = 120;
+            const int startX = masterArea.getX() + 50;
+            const int y = masterArea.getY() + 100;
+            
+            masterKnobs[i]->setBounds(startX + i * spacing, y, knobSize, knobSize);
+            
+            // Create master label (title above knob)
+            masterLabels[i] = std::make_unique<juce::Label>();
+            masterLabels[i]->setText(masterKnobNames[i], juce::dontSendNotification);
+            masterLabels[i]->setFont(juce::Font(12.0f, juce::Font::bold));
+            masterLabels[i]->setColour(juce::Label::textColourId, juce::Colours::white);
+            masterLabels[i]->setJustificationType(juce::Justification::centred);
+            addAndMakeVisible(masterLabels[i].get());
+            masterLabels[i]->setBounds(startX + i * spacing, y - 25, knobSize, 20);
+            
+            // Create master value label (value below knob)
+            masterValueLabels[i] = std::make_unique<juce::Label>();
+            masterValueLabels[i]->setText("100", juce::dontSendNotification);
+            masterValueLabels[i]->setFont(juce::Font(10.0f, juce::Font::plain));
+            masterValueLabels[i]->setColour(juce::Label::textColourId, juce::Colours::white);
+            masterValueLabels[i]->setJustificationType(juce::Justification::centred);
+            addAndMakeVisible(masterValueLabels[i].get());
+            masterValueLabels[i]->setBounds(startX + i * spacing, y + knobSize - 10, knobSize, 15);
+        }
+        
+        DBG("[UI] Master knobs setup complete");
+    }
+
     // Effects Area Setup
     //==============================================================================
 
