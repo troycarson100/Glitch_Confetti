@@ -298,33 +298,42 @@ void PluginEditor::timerCallback()
         }
     }
     
-    // Update master knobs
-    for (int i = 0; i < 3; ++i)
-    {
-        if (masterKnobs[i] != nullptr && (8 + i) < processorRef.getParameters().size())
+        // Update master knobs
+        for (int i = 0; i < 3; ++i)
         {
-            auto* param = processorRef.getParameters().getUnchecked(8 + i);
-            float paramValue = param->getValue();
-            
-            // Only update knob value if it's not currently being dragged
-            if (!masterKnobs[i]->isMouseButtonDown())
+            if (masterKnobs[i] != nullptr && (8 + i) < processorRef.getParameters().size())
             {
-                masterKnobs[i]->setValue(paramValue, juce::dontSendNotification);
-            }
-            
-            // Update master value label
-            if (masterValueLabels[i] != nullptr)
-            {
-                if (i == 1) { // Dry/Wet knob - show as percentage
-                    int percentage = (int) std::round(paramValue * 100);
-                    masterValueLabels[i]->setText(juce::String(percentage) + "%", juce::dontSendNotification);
-                } else { // Input and Output knobs - show as dB
-                    float dbValue = paramValue; // paramValue is already in dB range
-                    masterValueLabels[i]->setText(juce::String(dbValue, 1) + " dB", juce::dontSendNotification);
+                auto* param = dynamic_cast<juce::AudioParameterFloat*>(processorRef.getParameters().getUnchecked(8 + i));
+                if (param != nullptr)
+                {
+                    float paramValue = param->get();
+                    float knobValue = paramValue;
+                    
+                    // Only update knob value if it's not currently being dragged
+                    if (!masterKnobs[i]->isMouseButtonDown())
+                    {
+                        // For Input and Output knobs, convert normalized parameter to dB range
+                        if (i == 0 || i == 2) {
+                            // Convert normalized 0-1 to dB (-60 to +6)
+                            knobValue = param->convertFrom0to1(paramValue);
+                        }
+                        masterKnobs[i]->setValue(knobValue, juce::dontSendNotification);
+                    }
+                    
+                    // Update master value label
+                    if (masterValueLabels[i] != nullptr)
+                    {
+                        if (i == 1) { // Dry/Wet knob - show as percentage
+                            int percentage = (int) std::round(paramValue * 100);
+                            masterValueLabels[i]->setText(juce::String(percentage) + "%", juce::dontSendNotification);
+                        } else { // Input and Output knobs - show as dB
+                            float dbValue = param->convertFrom0to1(paramValue);
+                            masterValueLabels[i]->setText(juce::String(dbValue, 1) + " dB", juce::dontSendNotification);
+                        }
+                    }
                 }
             }
         }
-    }
     
     // Update sequencer UI
     updateSequencerUI();
@@ -966,7 +975,9 @@ void PluginEditor::setupKnobs()
             
             // Connect to APVTS parameter (indices 8, 9, 10)
             if (auto* param = dynamic_cast<juce::AudioParameterFloat*>(processorRef.getParameters()[8 + i])) {
-                masterKnobs[i]->setValue(param->get(), juce::dontSendNotification);
+                // Get the raw parameter value (already in dB for Input/Output, 0-1 for Dry/Wet)
+                float paramValue = param->get();
+                masterKnobs[i]->setValue(paramValue, juce::dontSendNotification);
             } else {
                 // Set default values: Input and Output at 0.0 dB, Dry/Wet at 100%
                 float defaultValue = (i == 1) ? 1.0f : 0.0f; // Dry/Wet = 100%, Input/Output = 0.0 dB
@@ -976,7 +987,17 @@ void PluginEditor::setupKnobs()
             // Set up value change callback
             masterKnobs[i]->onValueChange = [this, i]() {
                 if (auto* param = dynamic_cast<juce::AudioParameterFloat*>(processorRef.getParameters()[8 + i])) {
-                    param->setValueNotifyingHost(masterKnobs[i]->getValue());
+                    float knobValue = masterKnobs[i]->getValue();
+                    
+                    // For Input and Output knobs (dB range), normalize to 0-1
+                    if (i == 0 || i == 2) {
+                        // Convert dB (-60 to +6) to normalized 0-1
+                        float normalized = (knobValue - (-60.0f)) / (6.0f - (-60.0f));
+                        param->setValueNotifyingHost(normalized);
+                    } else {
+                        // Dry/Wet knob is already 0-1
+                        param->setValueNotifyingHost(knobValue);
+                    }
                 }
             };
             
