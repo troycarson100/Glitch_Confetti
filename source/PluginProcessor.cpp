@@ -55,9 +55,9 @@ juce::AudioProcessorValueTreeState::ParameterLayout PluginProcessor::createParam
     params.push_back(std::make_unique<juce::AudioParameterFloat>("mix", "Mix", 0.0f, 1.0f, 0.5f));
     
     // Master Parameters
-    params.push_back(std::make_unique<juce::AudioParameterFloat>("masterInput", "Master Input", 0.0f, 1.0f, 0.5f)); // 50% = 0.0 dB
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("masterInput", "Master Input", -60.0f, 6.0f, 0.0f)); // -60 to +6 dB, default 0.0 dB
     params.push_back(std::make_unique<juce::AudioParameterFloat>("masterDryWet", "Master Dry/Wet", 0.0f, 1.0f, 1.0f));
-    params.push_back(std::make_unique<juce::AudioParameterFloat>("masterOutput", "Master Output", 0.0f, 1.0f, 0.5f)); // 50% = 0.0 dB
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("masterOutput", "Master Output", -60.0f, 6.0f, 0.0f)); // -60 to +6 dB, default 0.0 dB
     
     return { params.begin(), params.end() };
 }
@@ -237,7 +237,8 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
     // Apply master input gain (pre-effects)
     auto* masterInputParam = dynamic_cast<juce::AudioParameterFloat*>(getParameters()[8]); // masterInput
     if (masterInputParam != nullptr) {
-        float inputGain = masterInputParam->get();
+        float inputGainDb = masterInputParam->get();
+        float inputGain = juce::Decibels::decibelsToGain(inputGainDb);
         buffer.applyGain(inputGain);
     }
     
@@ -250,7 +251,8 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
     // Apply master output gain (post-effects)
     auto* masterOutputParam = dynamic_cast<juce::AudioParameterFloat*>(getParameters()[10]); // masterOutput
     if (masterOutputParam != nullptr) {
-        float outputGain = masterOutputParam->get();
+        float outputGainDb = masterOutputParam->get();
+        float outputGain = juce::Decibels::decibelsToGain(outputGainDb);
         buffer.applyGain(outputGain);
     }
 

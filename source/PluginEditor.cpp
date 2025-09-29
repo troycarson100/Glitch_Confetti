@@ -315,9 +315,13 @@ void PluginEditor::timerCallback()
             // Update master value label
             if (masterValueLabels[i] != nullptr)
             {
-                // Format value as percentage (0-100%)
-                int percentage = (int) std::round(paramValue * 100);
-                masterValueLabels[i]->setText(juce::String(percentage) + "%", juce::dontSendNotification);
+                if (i == 1) { // Dry/Wet knob - show as percentage
+                    int percentage = (int) std::round(paramValue * 100);
+                    masterValueLabels[i]->setText(juce::String(percentage) + "%", juce::dontSendNotification);
+                } else { // Input and Output knobs - show as dB
+                    float dbValue = paramValue; // paramValue is already in dB range
+                    masterValueLabels[i]->setText(juce::String(dbValue, 1) + " dB", juce::dontSendNotification);
+                }
             }
         }
     }
@@ -953,14 +957,18 @@ void PluginEditor::setupKnobs()
             }
             
             // Set knob range and connect to parameter
-            masterKnobs[i]->setRange(0.0, 1.0, 0.001);
+            if (i == 0 || i == 2) { // Input and Output knobs - dB range
+                masterKnobs[i]->setRange(-60.0, 6.0, 0.1);
+            } else { // Dry/Wet knob - percentage range
+                masterKnobs[i]->setRange(0.0, 1.0, 0.001);
+            }
             
             // Connect to APVTS parameter (indices 8, 9, 10)
             if (auto* param = dynamic_cast<juce::AudioParameterFloat*>(processorRef.getParameters()[8 + i])) {
                 masterKnobs[i]->setValue(param->get(), juce::dontSendNotification);
             } else {
-                // Set default values: Input and Output at 50%, Dry/Wet at 100%
-                float defaultValue = (i == 1) ? 1.0f : 0.5f; // Dry/Wet = 100%, Input/Output = 50%
+                // Set default values: Input and Output at 0.0 dB, Dry/Wet at 100%
+                float defaultValue = (i == 1) ? 1.0f : 0.0f; // Dry/Wet = 100%, Input/Output = 0.0 dB
                 masterKnobs[i]->setValue(defaultValue, juce::dontSendNotification);
             }
             
@@ -971,9 +979,9 @@ void PluginEditor::setupKnobs()
                 }
             };
             
-            // Position master knobs horizontally in master area (40% bigger and at bottom)
-            const int knobSize = 84; // 40% bigger: 60 * 1.4 = 84
-            const int spacing = 168; // 40% bigger: 120 * 1.4 = 168
+            // Position master knobs horizontally in master area (30% bigger and at bottom)
+            const int knobSize = 109; // 30% bigger: 84 * 1.3 = 109
+            const int spacing = 149; // knobSize + 40px padding: 109 + 40 = 149
             const int startX = masterArea.getX() + 50;
             const int y = masterArea.getY() + 180; // Move to bottom of master area
             
@@ -990,9 +998,12 @@ void PluginEditor::setupKnobs()
             
             // Create master value label (value below knob)
             masterValueLabels[i] = std::make_unique<juce::Label>();
-            // Set initial value: Input and Output at 50%, Dry/Wet at 100%
-            int initialValue = (i == 1) ? 100 : 50; // Dry/Wet = 100%, Input/Output = 50%
-            masterValueLabels[i]->setText(juce::String(initialValue) + "%", juce::dontSendNotification);
+            // Set initial value: Input and Output at 0.0 dB, Dry/Wet at 100%
+            if (i == 1) { // Dry/Wet knob
+                masterValueLabels[i]->setText("100%", juce::dontSendNotification);
+            } else { // Input and Output knobs
+                masterValueLabels[i]->setText("0.0 dB", juce::dontSendNotification);
+            }
             masterValueLabels[i]->setFont(juce::Font(10.0f, juce::Font::plain));
             masterValueLabels[i]->setColour(juce::Label::textColourId, juce::Colours::white);
             masterValueLabels[i]->setJustificationType(juce::Justification::centred);
