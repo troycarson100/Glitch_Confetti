@@ -22,7 +22,7 @@ struct TransportCache
 struct SeqState {
     std::atomic<bool> enabled { true };     // UI toggle "Sequencer ON"
     std::atomic<int>  stepsUsed { 16 };     // 1..16 from the Steps chip
-    std::atomic<int>  divisionIndex { 4 };  // 0:1/1,1:1/2,2:1/4,3:1/8,4:1/16,5:1/32
+    std::atomic<int>  divisionIndex { 5 };  // 0:4,1:2,2:1,3:1/2,4:1/4,5:1/8,6:1/16,7:1/32
     std::atomic<int>  playingStep { -1 };   // computed in processBlock
     std::atomic<int>  stdMode { 0 };        // 0: straight, 1: triplet, 2: dotted
     std::atomic<double> originPPQ { 0.0 };  // origin for free-run stepping
@@ -79,6 +79,7 @@ public:
     void setStepSnapshot(int step, const StepSnapshot& snapshot) noexcept;
     void setSelectedStep(int step) noexcept { uiSelectedStep.store(step); }
     void setSequencerEnabled(bool enabled) noexcept { seq.enabled.store(enabled); }
+    void setFxEnabled(bool enabled) noexcept { fxEnabled.store(enabled); }
     void setStepsUsed(int steps) noexcept { seq.stepsUsed.store(steps); }
     void setDivisionIndex(int index) noexcept { seq.divisionIndex.store(index); }
     void setStdMode(int mode) noexcept { seq.stdMode.store(juce::jlimit(0, 2, mode)); }
@@ -106,6 +107,7 @@ private:
     void updatePlayingStepFromTransport();
     static inline double stepPeriodBeatsFromDivision(int idx);
     void applySnapshotTargets(const StepSnapshot& s);
+    std::atomic<bool> fxEnabled { true };
     
 public:
     // Public method for UI to update snapshots

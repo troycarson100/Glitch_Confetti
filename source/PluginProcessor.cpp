@@ -214,7 +214,8 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
 
     // Process delay effect
     if (buffer.getNumChannels() > 0 && buffer.getNumSamples() > 0) {
-        spaceDelay.process(buffer, buffer.getNumSamples());
+        if (fxEnabled.load())
+            spaceDelay.process(buffer, buffer.getNumSamples());
     }
 
     // Debug logging
@@ -301,7 +302,7 @@ void PluginProcessor::updatePlayingStepFromTransport()
     }
 
     const int stepsUsed = juce::jlimit(1, 16, seq.stepsUsed.load());
-    const int divisionIndex = juce::jlimit(0, 5, seq.divisionIndex.load());
+    const int divisionIndex = juce::jlimit(0, 7, seq.divisionIndex.load());
     const int stdMode = juce::jlimit(0, 2, seq.stdMode.load()); // 0 straight, 1 triplet, 2 dotted
 
     // Calculate bar-relative PPQ position
@@ -310,12 +311,14 @@ void PluginProcessor::updatePlayingStepFromTransport()
     // Compute beats-per-step from division and STD mode
     double beatsPerStep = 0.0;
     switch (divisionIndex) {
-        case 0: beatsPerStep = 4.0;   break; // 1/1
-        case 1: beatsPerStep = 2.0;   break; // 1/2
-        case 2: beatsPerStep = 1.0;   break; // 1/4
-        case 3: beatsPerStep = 0.5;   break; // 1/8
-        case 4: beatsPerStep = 0.25;  break; // 1/16
-        case 5: beatsPerStep = 0.125; break; // 1/32
+        case 0: beatsPerStep = 16.0;   break; // 4 bars
+        case 1: beatsPerStep = 8.0;    break; // 2 bars
+        case 2: beatsPerStep = 4.0;    break; // 1 bar (renamed from 1/1 -> 1)
+        case 3: beatsPerStep = 2.0;    break; // 1/2
+        case 4: beatsPerStep = 1.0;    break; // 1/4
+        case 5: beatsPerStep = 0.5;    break; // 1/8
+        case 6: beatsPerStep = 0.25;   break; // 1/16
+        case 7: beatsPerStep = 0.125;  break; // 1/32
         default: beatsPerStep = 0.25;  break;
     }
     if (stdMode == 1)      beatsPerStep *= (2.0 / 3.0); // triplet
@@ -433,7 +436,8 @@ void PluginProcessor::applySnapshotTargets(const StepSnapshot& snapshot)
                 t.mix       = mixParam ? mixParam->load() : 0.5f;
             }
             
-            spaceDelay.setTargets(t);
+    if (fxEnabled.load())
+        spaceDelay.setTargets(t);
             break;
         }
         case FxType::Crunch:

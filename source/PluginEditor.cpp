@@ -29,6 +29,7 @@ PluginEditor::PluginEditor (PluginProcessor& p)
         
         // Setup effects area
         setupEffectsArea();
+        setupFxPowerButton();
         
         // Setup All Steps toggle
         setupAllStepsToggle();
@@ -71,11 +72,11 @@ void PluginEditor::paint (juce::Graphics& g)
     
     // Only draw grid overlay and main areas if UI is visible
     if (uiVisible) {
-        // Draw the grid overlay
-        drawGridOverlay(g);
-        
-        // Draw the three main areas
-        drawMainAreas(g);
+    // Draw the grid overlay
+    drawGridOverlay(g);
+    
+    // Draw the three main areas
+    drawMainAreas(g);
     }
 
     // Draw knob lock icons on top of UI
@@ -203,7 +204,7 @@ void PluginEditor::timerCallback()
             {
                 // In sync mode for Time knob, do not overwrite the slider position (we use it to select divisions)
                 if (!(i == 0 && timeSyncEnabled))
-                    knobs[i]->setValue(paramValue, juce::dontSendNotification);
+                knobs[i]->setValue(paramValue, juce::dontSendNotification);
             }
             
             // Update value label
@@ -233,7 +234,7 @@ void PluginEditor::timerCallback()
                         }
                         else
                         {
-                            valueText = juce::String(actualValue, 0) + "ms";
+                        valueText = juce::String(actualValue, 0) + "ms";
                         }
                     }
                     else if (i == 5 || i == 6) // Hi-Cut, Low-Cut - show in Hz
@@ -357,13 +358,66 @@ void AllStepsToggleButton::setImages(std::unique_ptr<juce::Drawable> inactive, s
 }
 
 //==============================================================================
-// CustomDiceButton Implementation
+// LockButton Implementation
 //==============================================================================
 
-CustomDiceButton::CustomDiceButton() : juce::Button("diceButton")
+LockButton::LockButton() : juce::Button("lockButton")
 {
-    setClickingTogglesState(false);
+    setClickingTogglesState(true);
 }
+
+void LockButton::paintButton(juce::Graphics& g, bool over, bool down)
+{
+    juce::ignoreUnused(over, down);
+    
+    auto bounds = getLocalBounds().toFloat();
+    
+    // Choose image based on toggle state
+    juce::Drawable* imageToDraw = nullptr;
+    if (getToggleState() && lockedImage != nullptr)
+    {
+        imageToDraw = lockedImage.get();
+    }
+    else if (unlockedImage != nullptr)
+    {
+        imageToDraw = unlockedImage.get();
+    }
+    
+    if (imageToDraw != nullptr)
+    {
+        // Apply alpha by creating a modified graphics context
+        juce::Graphics::ScopedSaveState savedState(g);
+        g.setOpacity(buttonAlpha);
+        imageToDraw->drawWithin(g, bounds, juce::RectanglePlacement::centred, 1.0f);
+    }
+    else
+    {
+        // Fallback drawing
+        g.setColour(juce::Colours::white.withAlpha(buttonAlpha));
+        g.fillEllipse(bounds);
+    }
+}
+
+void LockButton::setImages(std::unique_ptr<juce::Drawable> unlocked, std::unique_ptr<juce::Drawable> locked)
+{
+    unlockedImage = std::move(unlocked);
+    lockedImage = std::move(locked);
+}
+
+void LockButton::setAlpha(float alpha)
+{
+    buttonAlpha = alpha;
+    repaint();
+}
+
+    //==============================================================================
+    // CustomDiceButton Implementation
+    //==============================================================================
+
+    CustomDiceButton::CustomDiceButton() : juce::Button("diceButton")
+    {
+        setClickingTogglesState(false);
+    }
 
     void CustomDiceButton::paintButton(juce::Graphics& g, bool over, bool down)
     {
@@ -721,7 +775,7 @@ void PluginEditor::setupKnobs()
                 }
                 else
                 {
-                    updateParameterFromKnob(i);
+                updateParameterFromKnob(i);
                 }
                 
                 // If All Steps toggle is active, update all step snapshots
@@ -799,24 +853,16 @@ void PluginEditor::setupKnobs()
             
             // Set the dice image
             // Set up lock button replacing dice
-            knobLockButtons[i] = std::make_unique<juce::DrawableButton>("lockButton", juce::DrawableButton::ButtonStyle::ImageFitted);
+            knobLockButtons[i] = std::make_unique<LockButton>();
             addAndMakeVisible(knobLockButtons[i].get());
             knobLockButtons[i]->setBounds(lockX, lockY, diceSize, diceSize);
             
-            // Remove background and border
-            knobLockButtons[i]->setColour(juce::DrawableButton::backgroundColourId, juce::Colours::transparentBlack);
-            knobLockButtons[i]->setColour(juce::DrawableButton::backgroundOnColourId, juce::Colours::transparentBlack);
-            
             // Configure images for on/off states
-            std::unique_ptr<juce::Drawable> imgOn, imgOff;
-            if (assets.lockedIcon)   imgOn  = assets.lockedIcon->createCopy();
-            if (assets.unlockedIcon) imgOff = assets.unlockedIcon->createCopy();
-            knobLockButtons[i]->setImages(
-                imgOff.get(), imgOff.get(), imgOff.get(), imgOff.get(),
-                imgOn.get(),  imgOn.get(),  imgOn.get(),  imgOn.get());
-            (void) imgOn.release();
-            (void) imgOff.release();
-            knobLockButtons[i]->setClickingTogglesState(true);
+            std::unique_ptr<juce::Drawable> imgUnlocked, imgLocked;
+            if (assets.unlockedIcon) imgUnlocked = assets.unlockedIcon->createCopy();
+            if (assets.lockedIcon)   imgLocked   = assets.lockedIcon->createCopy();
+            
+            knobLockButtons[i]->setImages(std::move(imgUnlocked), std::move(imgLocked));
             knobLockButtons[i]->setToggleState(knobLocked[i], juce::dontSendNotification);
             knobLockButtons[i]->onClick = [this, i]() {
                 knobLocked[i] = knobLockButtons[i]->getToggleState();
@@ -916,10 +962,68 @@ void PluginEditor::setupKnobs()
             updateParameterFromKnob(0);
         }
         repaint();
-    };
+        };
         
         DBG("[UI] Effects area setup complete");
     }
+
+void PluginEditor::setupFxPowerButton()
+{
+    // Effect area bounds
+    auto effectArea = juce::Rectangle<int>(25, 54, 413, 296);
+
+    fxPowerButton = std::make_unique<juce::DrawableButton>("fxPowerButton", juce::DrawableButton::ButtonStyle::ImageFitted);
+    addAndMakeVisible(fxPowerButton.get());
+
+    // Slightly bigger than step power (which is 40). Use 46.
+    const int buttonSize = 46;
+    fxPowerButton->setBounds(effectArea.getX() + effectArea.getWidth() - buttonSize - 8 + 8 + 3, effectArea.getY() + 6 - 20 + 4, buttonSize, buttonSize);
+
+    fxPowerButton->setColour(juce::DrawableButton::backgroundColourId, juce::Colours::transparentBlack);
+    fxPowerButton->setColour(juce::DrawableButton::backgroundOnColourId, juce::Colours::transparentBlack);
+
+    if (assets.fxPowerOn != nullptr)
+    {
+        fxPowerButton->setImages(assets.fxPowerOn->createCopy().get());
+    }
+
+    fxPowerButton->setClickingTogglesState(true);
+    fxPowerButton->setToggleState(fxAreaEnabled, juce::dontSendNotification);
+    fxPowerButton->onClick = [this]() {
+        fxAreaEnabled = fxPowerButton->getToggleState();
+        // Bypass FX when off
+        processorRef.setFxEnabled(fxAreaEnabled);
+        updateFxAreaVisibility();
+        repaint();
+    };
+}
+
+void PluginEditor::updateFxAreaVisibility()
+{
+    float alpha = fxAreaEnabled ? 1.0f : 0.3f;
+
+    // Grey title and dice
+    if (effectsTitle) effectsTitle->setAlpha(alpha);
+    if (diceButton) { diceButton->setAlpha(alpha); diceButton->setEnabled(fxAreaEnabled); }
+
+    // Grey knobs, labels, values, indicators, locks
+    for (int i = 0; i < 8; ++i) {
+        if (knobs[i]) { knobs[i]->setAlpha(alpha); knobs[i]->setEnabled(fxAreaEnabled); }
+        if (knobLabels[i]) knobLabels[i]->setAlpha(alpha);
+        if (valueLabels[i]) valueLabels[i]->setAlpha(alpha);
+        if (indicatorBars[i]) indicatorBars[i]->setAlpha(alpha);
+        if (knobLockButtons[i]) { 
+            knobLockButtons[i]->setEnabled(fxAreaEnabled);
+            knobLockButtons[i]->setAlpha(alpha);
+        }
+    }
+
+    // Grey the time sync button
+    if (timeSyncToggle) { timeSyncToggle->setAlpha(alpha); timeSyncToggle->setEnabled(fxAreaEnabled); }
+
+    // Grey the power button itself when off
+    if (fxPowerButton) fxPowerButton->setAlpha(fxAreaEnabled ? 1.0f : 0.3f);
+}
 
 //==============================================================================
 // All Steps Toggle Setup
@@ -1143,13 +1247,16 @@ void PluginEditor::setupSequencerArea()
     
     // Create rate dropdown (top right)
     rateDropdown = std::make_unique<juce::ComboBox>();
-    rateDropdown->addItem("1/1", 1);
-    rateDropdown->addItem("1/2", 2);
-    rateDropdown->addItem("1/4", 3);
-    rateDropdown->addItem("1/8", 4);
-    rateDropdown->addItem("1/16", 5);
-    rateDropdown->addItem("1/32", 6);
-    rateDropdown->setSelectedId(4); // Default to 1/8
+    // Slower divisions added: 4 and 2 bars; and rename 1/1 to 1
+    rateDropdown->addItem("4", 1);      // 4 bars (16 beats)
+    rateDropdown->addItem("2", 2);      // 2 bars (8 beats)
+    rateDropdown->addItem("1", 3);      // 1 bar  (4 beats)
+    rateDropdown->addItem("1/2", 4);
+    rateDropdown->addItem("1/4", 5);
+    rateDropdown->addItem("1/8", 6);
+    rateDropdown->addItem("1/16", 7);
+    rateDropdown->addItem("1/32", 8);
+    rateDropdown->setSelectedId(6); // Default to 1/8
     // Make dropdown transparent (no background or border)
     rateDropdown->setColour(juce::ComboBox::backgroundColourId, juce::Colours::transparentBlack);
     rateDropdown->setColour(juce::ComboBox::outlineColourId, juce::Colours::transparentBlack);
@@ -1159,12 +1266,12 @@ void PluginEditor::setupSequencerArea()
     addAndMakeVisible(rateDropdown.get());
     // Move rate left by 80px and widen to avoid arrow overlapping long items
     rateDropdown->setBounds(stepArea.getX() + 220, stepArea.getY() - 10, 74, 25);
-    // Wire dropdown -> processor division index (0..5)
+    // Wire dropdown -> processor division index (0..7)
     rateDropdown->onChange = [this]() {
         if (rateDropdown != nullptr)
         {
             const int selected = rateDropdown->getSelectedId(); // 1..6
-            const int newDivisionIndex = juce::jlimit(0, 5, selected - 1);
+            const int newDivisionIndex = juce::jlimit(0, 7, selected - 1);
             processorRef.setDivisionIndex(newDivisionIndex);
             updateSequencerUI();
         }
@@ -1281,7 +1388,7 @@ void PluginEditor::updateStepAreaVisibility()
     if (stepPowerButton != nullptr) {
         stepPowerButton->setAlpha(stepAreaEnabled ? 1.0f : 0.3f);
     }
-}
+    }
 
 void PluginEditor::randomizeKnobValues()
 {

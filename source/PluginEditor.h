@@ -28,24 +28,45 @@ private:
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (IndicatorBar)
 };
 
-//==============================================================================
-// AllStepsToggleButton class
-//==============================================================================
-class AllStepsToggleButton : public juce::Button
-{
-public:
-    AllStepsToggleButton();
-    ~AllStepsToggleButton() override = default;
-    
-    void paintButton(juce::Graphics& g, bool over, bool down) override;
-    void setImages(std::unique_ptr<juce::Drawable> inactive, std::unique_ptr<juce::Drawable> active);
-    
-private:
-    std::unique_ptr<juce::Drawable> inactiveImage;
-    std::unique_ptr<juce::Drawable> activeImage;
-    
-    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (AllStepsToggleButton)
-};
+    //==============================================================================
+    // AllStepsToggleButton class
+    //==============================================================================
+    class AllStepsToggleButton : public juce::Button
+    {
+    public:
+        AllStepsToggleButton();
+        ~AllStepsToggleButton() override = default;
+        
+        void paintButton(juce::Graphics& g, bool over, bool down) override;
+        void setImages(std::unique_ptr<juce::Drawable> inactive, std::unique_ptr<juce::Drawable> active);
+        
+    private:
+        std::unique_ptr<juce::Drawable> inactiveImage;
+        std::unique_ptr<juce::Drawable> activeImage;
+        
+        JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (AllStepsToggleButton)
+    };
+
+    //==============================================================================
+    // LockButton class
+    //==============================================================================
+    class LockButton : public juce::Button
+    {
+    public:
+        LockButton();
+        ~LockButton() override = default;
+        
+        void paintButton(juce::Graphics& g, bool over, bool down) override;
+        void setImages(std::unique_ptr<juce::Drawable> unlocked, std::unique_ptr<juce::Drawable> locked);
+        void setAlpha(float alpha);
+        
+    private:
+        std::unique_ptr<juce::Drawable> unlockedImage;
+        std::unique_ptr<juce::Drawable> lockedImage;
+        float buttonAlpha = 1.0f;
+        
+        JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (LockButton)
+    };
 
 //==============================================================================
 // CustomDiceButton class
@@ -174,7 +195,7 @@ public:
         std::array<std::unique_ptr<juce::Label>, 8> valueLabels;
         std::array<std::unique_ptr<IndicatorBar>, 8> indicatorBars;
         std::array<std::unique_ptr<CustomDiceButton>, 8> knobDiceButtons; // kept but hidden
-        std::array<std::unique_ptr<juce::DrawableButton>, 8> knobLockButtons;
+        std::array<std::unique_ptr<LockButton>, 8> knobLockButtons;
         std::array<bool, 8> knobLocked { false, false, false, false, false, false, false, false };
     
     // Effects area components
@@ -183,6 +204,8 @@ public:
     std::unique_ptr<juce::Button> timeSyncToggle; // S circle toggle
     bool timeSyncEnabled = false;
     int timeSyncStdMode = 0; // 0 straight, 1 triplet, 2 dotted
+    std::unique_ptr<juce::DrawableButton> fxPowerButton;
+    bool fxAreaEnabled = true;
     
     // All Steps toggle
     std::unique_ptr<juce::Button> allStepsToggle;
@@ -209,6 +232,8 @@ public:
         // Helper methods
         void setupKnobs();
         void setupEffectsArea();
+        void setupFxPowerButton();
+        void updateFxAreaVisibility();
         void setupAllStepsToggle();
         void setupSequencerArea();
         void setupStepPowerButton();
