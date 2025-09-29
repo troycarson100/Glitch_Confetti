@@ -231,16 +231,16 @@ void PluginEditor::timerCallback()
                         }
                     }
                     else if (i == 5 || i == 6) // Hi-Cut, Low-Cut - show in Hz
-                        valueText = juce::String(actualValue, 0) + "Hz";
+                        valueText = juce::String((int) std::round(actualValue)) + "Hz";
                     else if (i == 3) // Wow Rate - show in Hz
-                        valueText = juce::String(actualValue, 1) + "Hz";
-                    else // Others - show as percentage
-                        valueText = juce::String(actualValue * 100, 1) + "%";
+                        valueText = juce::String((int) std::round(actualValue)) + "Hz";
+                    else // Others - show as percentage (whole numbers)
+                        valueText = juce::String((int) std::round(actualValue * 100)) + "%";
                 }
                 else
                 {
                     // Fallback for other parameter types
-                    valueText = juce::String(paramValue * 100, 1) + "%";
+                    valueText = juce::String((int) std::round(paramValue * 100)) + "%";
                 }
                 
                 valueLabels[i]->setText(valueText, juce::dontSendNotification);
@@ -657,7 +657,7 @@ void PluginEditor::setupKnobs()
         
         // Create value label
         valueLabels[i] = std::make_unique<juce::Label>();
-        valueLabels[i]->setText("0.50", juce::dontSendNotification);
+        valueLabels[i]->setText("0", juce::dontSendNotification);
         valueLabels[i]->setFont(juce::Font(10.0f, juce::Font::plain));
         valueLabels[i]->setColour(juce::Label::textColourId, juce::Colours::white);
         valueLabels[i]->setJustificationType(juce::Justification::centred);
@@ -903,7 +903,17 @@ void PluginEditor::setupSequencerArea()
                         if (timeSyncStdMode == 1) label << "t"; else if (timeSyncStdMode == 2) label << ".";
                         valueText = label;
                     } else {
-                        valueText = juce::String(knobValue, 2);
+                        if (i == 0) {
+                            // Time, sync OFF: show whole ms
+                            if (auto* p = dynamic_cast<juce::AudioParameterFloat*>(processorRef.getAPVTS().getParameter("timeMs"))) {
+                                float ms = p->convertFrom0to1(knobs[0]->getValue());
+                                valueText = juce::String((int) std::round(ms)) + "ms";
+                            } else {
+                                valueText = juce::String((int) std::round(knobValue * 100));
+                            }
+                        } else {
+                            valueText = juce::String((int) std::round(knobValue * 100));
+                        }
                     }
                     valueLabels[i]->setText(valueText, juce::dontSendNotification);
                 }
@@ -1041,7 +1051,7 @@ void PluginEditor::randomizeKnobValues()
         knobs[i]->setValue(randomValue);
         
         // Update the value label
-        valueLabels[i]->setText(juce::String(randomValue, 2), juce::dontSendNotification);
+        valueLabels[i]->setText(juce::String((int) std::round(randomValue * 100)), juce::dontSendNotification);
         
         // Update the indicator bar
         indicatorBars[i]->setValue(randomValue);
@@ -1061,7 +1071,7 @@ void PluginEditor::randomizeIndividualKnob(int knobIndex)
         knobs[knobIndex]->setValue(randomValue);
         
         // Update the value label
-        valueLabels[knobIndex]->setText(juce::String(randomValue, 2), juce::dontSendNotification);
+        valueLabels[knobIndex]->setText(juce::String((int) std::round(randomValue * 100)), juce::dontSendNotification);
         
         // Update the indicator bar
         indicatorBars[knobIndex]->setValue(randomValue);
