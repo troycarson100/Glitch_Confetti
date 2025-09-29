@@ -644,21 +644,21 @@ void PluginEditor::setupSequencerArea()
     // Step area bounds
     auto stepArea = juce::Rectangle<int>(25, 374, 413, 140);
     
-    // Create STEP title (top left)
+    // Create STEP title (top left, moved down 10px total and 20% smaller)
     stepTitle = std::make_unique<juce::Label>();
     stepTitle->setText("STEP", juce::dontSendNotification);
-    stepTitle->setFont(juce::Font(27.648f, juce::Font::bold)); // Same size as effects title
+    stepTitle->setFont(juce::Font(22.118f, juce::Font::bold)); // 20% smaller: 27.648f * 0.8 = 22.118f
     stepTitle->setColour(juce::Label::textColourId, juce::Colours::white);
     stepTitle->setColour(juce::Label::backgroundColourId, juce::Colours::transparentBlack);
     stepTitle->setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(stepTitle.get());
-    stepTitle->setBounds(stepArea.getX() + 10, stepArea.getY() - 10, 80, 30);
+    stepTitle->setBounds(stepArea.getX() + 10, stepArea.getY(), 80, 30); // Moved down 2px more (total 10px down from original -10)
     
-    // Create step dice button (next to STEP title, 30% smaller than effects dice)
+    // Create step dice button (next to STEP title, moved down 15px total and left 15px total)
     stepDiceButton = std::make_unique<CustomDiceButton>();
     addAndMakeVisible(stepDiceButton.get());
     int stepDiceSize = static_cast<int>(35 * 0.7); // 30% smaller than 35px = ~24px
-    stepDiceButton->setBounds(stepArea.getX() + 90, stepArea.getY() - 10, stepDiceSize, stepDiceSize);
+    stepDiceButton->setBounds(stepArea.getX() + 75, stepArea.getY() + 5, stepDiceSize, stepDiceSize); // Moved down another 10px and left another 10px
     
     // Set up step dice button callback to randomize all step snapshots
     stepDiceButton->onClick = [this]() {
