@@ -1358,6 +1358,10 @@ void PluginEditor::setupStepPowerButton()
         } else {
             // Enable sequencer when turning ON
             processorRef.setSequencerEnabled(true);
+            // If standalone play button is active, start standalone playback
+            if (playButton && playButton->isPlayingState()) {
+                processorRef.startStandalonePlayback();
+            }
         }
         
         // Update UI visibility and repaint

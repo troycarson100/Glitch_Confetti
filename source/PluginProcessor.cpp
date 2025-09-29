@@ -185,8 +185,10 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
             seq.originPPQ.store(transportCache.ppq.load());
             seq.haveOrigin.store(true);
         } else {
-            // Standalone mode - don't set origin yet, wait for play button
-            seq.haveOrigin.store(false);
+            // Standalone mode - set up standalone timing immediately
+            seq.originPPQ.store(0.0);
+            seq.haveOrigin.store(true);
+            standaloneStartTime = std::chrono::high_resolution_clock::now();
         }
         seq.playingStep.store(-1);
     }
