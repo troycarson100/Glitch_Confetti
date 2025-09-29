@@ -78,9 +78,27 @@ public:
     ~CircularToggleButton() override = default;
     
     void paintButton(juce::Graphics& g, bool over, bool down) override;
-    
+
 private:
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (CircularToggleButton)
+};
+
+//==============================================================================
+// PlayButton class
+//==============================================================================
+class PlayButton : public juce::Button
+{
+public:
+    PlayButton();
+    ~PlayButton() override = default;
+    
+    void paintButton(juce::Graphics& g, bool over, bool down) override;
+    void setPlaying(bool playing) { isPlaying = playing; repaint(); }
+    bool isPlayingState() const { return isPlaying; }
+
+private:
+    bool isPlaying = false;
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PlayButton)
 };
 
 //==============================================================================
@@ -97,11 +115,14 @@ public:
     void setInactiveImage(std::unique_ptr<juce::Drawable> inactive);
     void setSelected(bool selected);
     void setPlaying(bool playing);
+    void setEnabledStep(bool enabled) { isEnabledStep = enabled; repaint(); }
+    bool getEnabledStep() const { return isEnabledStep; }
     
 private:
     int stepIndex;
     bool isSelected = false;
     bool isPlaying = false;
+    bool isEnabledStep = true;
     std::unique_ptr<juce::Drawable> activeImage;
     std::unique_ptr<juce::Drawable> inactiveImage;
     
@@ -151,6 +172,9 @@ public:
     std::unique_ptr<juce::ToggleButton> uiToggleButton;
     bool uiVisible = false; // Default to hidden
     
+    // Play button
+    std::unique_ptr<PlayButton> playButton;
+    
         // Helper methods
         void setupKnobs();
         void setupEffectsArea();
@@ -162,6 +186,8 @@ public:
         void updateSequencerUI();
         void setupUIToggle();
         void toggleUIVisibility();
+        void setupPlayButton();
+        void togglePlayback();
     void drawGridOverlay(juce::Graphics& g);
     void drawMainAreas(juce::Graphics& g);
 

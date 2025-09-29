@@ -24,6 +24,9 @@ struct SeqState {
     std::atomic<int>  stepsUsed { 16 };     // 1..16 from the Steps chip
     std::atomic<int>  divisionIndex { 4 };  // 0:1/1,1:1/2,2:1/4,3:1/8,4:1/16,5:1/32
     std::atomic<int>  playingStep { -1 };   // computed in processBlock
+    std::atomic<int>  stdMode { 0 };        // 0: straight, 1: triplet, 2: dotted
+    std::atomic<double> originPPQ { 0.0 };  // origin for free-run stepping
+    std::atomic<bool>   haveOrigin { false };
 };
 
 // StepSnapshot is now defined in PluginEditor.h to avoid circular dependencies
@@ -76,6 +79,7 @@ public:
     void setSequencerEnabled(bool enabled) noexcept { seq.enabled.store(enabled); }
     void setStepsUsed(int steps) noexcept { seq.stepsUsed.store(steps); }
     void setDivisionIndex(int index) noexcept { seq.divisionIndex.store(index); }
+    void setStdMode(int mode) noexcept { seq.stdMode.store(juce::jlimit(0, 2, mode)); }
     void randomizeAllStepSnapshots() noexcept;
 
 private:
@@ -90,6 +94,7 @@ private:
     // Sequencer state
     SeqState seq;
     std::atomic<int> uiSelectedStep { 0 };  // Editor's selected step for editing only
+    bool prevHostPlaying = false;
     
     // Step snapshots storage
     std::array<StepSnapshot, 16> stepSnapshots;

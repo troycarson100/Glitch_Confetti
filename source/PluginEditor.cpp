@@ -36,6 +36,9 @@ PluginEditor::PluginEditor (PluginProcessor& p)
         // Setup UI toggle
         setupUIToggle();
         
+        // Setup play button
+        setupPlayButton();
+        
         // Start timer for UI updates
         startTimer(100); // Update every 100ms for smoother knob interaction
         
@@ -380,6 +383,11 @@ CircularToggleButton::CircularToggleButton() : juce::Button("circularToggle")
     setClickingTogglesState(false);
 }
 
+PlayButton::PlayButton() : juce::Button("playButton")
+{
+    setClickingTogglesState(false); // We handle state manually
+}
+
 void CircularToggleButton::paintButton(juce::Graphics& g, bool over, bool down)
 {
     auto bounds = getLocalBounds().toFloat();
@@ -396,6 +404,25 @@ void CircularToggleButton::paintButton(juce::Graphics& g, bool over, bool down)
     g.drawText(getButtonText(), bounds, juce::Justification::centred);
 }
 
+void PlayButton::paintButton(juce::Graphics& g, bool over, bool down)
+{
+    auto bounds = getLocalBounds().toFloat();
+    auto centre = bounds.getCentre();
+    
+    // Set color based on playing state
+    juce::Colour buttonColor = isPlaying ? juce::Colours::white : juce::Colours::grey;
+    g.setColour(buttonColor);
+    
+    // Draw play symbol (triangle pointing right)
+    juce::Path playPath;
+    float size = juce::jmin(bounds.getWidth(), bounds.getHeight()) * 0.6f;
+    float x = centre.x - size * 0.3f;
+    float y = centre.y - size * 0.5f;
+    
+    playPath.addTriangle(x, y, x, y + size, x + size, centre.y);
+    g.fillPath(playPath);
+}
+
 //==============================================================================
 // StepButton Implementation
 //==============================================================================
@@ -409,26 +436,38 @@ void StepButton::paintButton(juce::Graphics& g, bool over, bool down)
 {
     auto bounds = getLocalBounds().toFloat();
     
+    // Opacity for inactive steps (70% dimmed → 30% visible)
+    const float stepOpacity = isEnabledStep ? 1.0f : 0.3f;
+    g.saveState();
+    g.addTransform(juce::AffineTransform::scale(1.0f, 1.0f));
+
+    // Draw grey highlight background when playing
+    if (isPlaying) {
+        g.setColour(juce::Colours::grey.withAlpha(0.4f));
+        g.fillRoundedRectangle(bounds, 5.0f);
+    }
+    
     // Choose which image to draw based on state
     std::unique_ptr<juce::Drawable>* imageToDraw = nullptr;
     
-    if (isSelected || isPlaying) {
+    if (isSelected) {
         imageToDraw = &activeImage;
     } else {
         imageToDraw = &inactiveImage;
     }
     
     if (imageToDraw && *imageToDraw != nullptr) {
-        (*imageToDraw)->drawWithin(g, bounds, juce::RectanglePlacement::centred, 1.0f);
+        // Draw the SVG with the desired opacity (do not rely on global g opacity)
+        (*imageToDraw)->drawWithin(g, bounds, juce::RectanglePlacement::centred, stepOpacity);
     } else {
         // Fallback drawing
-        g.setColour(isSelected || isPlaying ? juce::Colours::white : juce::Colours::grey);
+        g.setColour(isSelected ? juce::Colours::white.withAlpha(stepOpacity) : juce::Colours::grey.withAlpha(stepOpacity));
         g.fillRoundedRectangle(bounds, 5.0f);
         g.setColour(juce::Colours::black);
         g.drawRoundedRectangle(bounds, 5.0f, 2.0f);
         
         // Draw step number
-        g.setColour(juce::Colours::black);
+        g.setColour(juce::Colours::black.withAlpha(stepOpacity));
         g.setFont(12.0f);
         g.drawText(juce::String(stepIndex + 1), bounds, juce::Justification::centred);
     }
@@ -438,6 +477,7 @@ void StepButton::paintButton(juce::Graphics& g, bool over, bool down)
         g.setColour(juce::Colours::white.withAlpha(0.3f));
         g.fillRoundedRectangle(bounds, 5.0f);
     }
+    g.restoreState();
 }
 
 void StepButton::setActiveImage(std::unique_ptr<juce::Drawable> active)
@@ -765,6 +805,18 @@ void PluginEditor::setupSequencerArea()
     stepAmountLabel->setColour(juce::Label::outlineColourId, juce::Colours::white);
     stepAmountLabel->setJustificationType(juce::Justification::centred);
     stepAmountLabel->setBorderSize(juce::BorderSize<int>(2));
+    // Allow direct editing for step count (1..16)
+    stepAmountLabel->setEditable(true, true, false);
+    stepAmountLabel->onTextChange = [this]() {
+        if (stepAmountLabel != nullptr)
+        {
+            int value = stepAmountLabel->getText().getIntValue();
+            value = juce::jlimit(1, 16, value);
+            processorRef.setStepsUsed(value);
+            stepAmountLabel->setText(juce::String(value), juce::dontSendNotification);
+            updateSequencerUI();
+        }
+    };
     addAndMakeVisible(stepAmountLabel.get());
     stepAmountLabel->setBounds(stepArea.getX() + 260, stepArea.getY() - 10, 30, 25); // Moved left 40px from +300 to +260
     
@@ -782,6 +834,16 @@ void PluginEditor::setupSequencerArea()
     rateDropdown->setColour(juce::ComboBox::arrowColourId, juce::Colours::white);
     addAndMakeVisible(rateDropdown.get());
     rateDropdown->setBounds(stepArea.getX() + 300, stepArea.getY() - 10, 60, 25); // Moved left 40px from +340 to +300
+    // Wire dropdown -> processor division index (0..5)
+    rateDropdown->onChange = [this]() {
+        if (rateDropdown != nullptr)
+        {
+            const int selected = rateDropdown->getSelectedId(); // 1..6
+            const int newDivisionIndex = juce::jlimit(0, 5, selected - 1);
+            processorRef.setDivisionIndex(newDivisionIndex);
+            updateSequencerUI();
+        }
+    };
     
     // Create S/T/D circular toggle (top right)
     stdToggle = std::make_unique<CircularToggleButton>();
@@ -796,6 +858,8 @@ void PluginEditor::setupSequencerArea()
         stdState = (stdState + 1) % 3;
         const char* labels[] = {"-", "t", "."};
         stdToggle->setButtonText(labels[stdState]);
+        // Inform processor of new STD mode for timing
+        processorRef.setStdMode(stdState);
     };
     
     DBG("[UI] Sequencer area setup complete");
@@ -902,18 +966,22 @@ void PluginEditor::updateSequencerUI()
     // Update step button selection states
     int selectedStep = processorRef.getSelectedStep();
     int playingStep = processorRef.getPlayingStep();
+    const int stepsUsed = processorRef.getSeqState().stepsUsed.load();
     
     for (int i = 0; i < 16; ++i) {
         if (stepButtons[i] != nullptr) {
             // Only the selected step should show as selected
             stepButtons[i]->setSelected(i == selectedStep);
-            // Only the playing step should show as playing (if sequencer is enabled)
-            stepButtons[i]->setPlaying(i == playingStep && processorRef.isSequencerEnabled());
+            // Show playing highlight if host is playing (independent of internal enable)
+            stepButtons[i]->setPlaying(i == playingStep);
+            // Grey out inactive steps beyond stepsUsed
+            bool shouldBeEnabled = i < stepsUsed;
+            stepButtons[i]->setEnabledStep(shouldBeEnabled);
         }
     }
     
-    // Update step amount display
-    if (stepAmountLabel != nullptr) {
+    // Update step amount display (don't steal focus if editing)
+    if (stepAmountLabel != nullptr && ! stepAmountLabel->isBeingEdited()) {
         int stepsUsed = processorRef.getSeqState().stepsUsed.load();
         stepAmountLabel->setText(juce::String(stepsUsed), juce::dontSendNotification);
     }
@@ -970,4 +1038,40 @@ void PluginEditor::toggleUIVisibility()
     repaint();
     
     DBG("[UI] Visual elements visibility toggled: " << (uiVisible ? "VISIBLE" : "HIDDEN"));
+}
+
+void PluginEditor::setupPlayButton()
+{
+    DBG("[UI] Setting up play button...");
+    
+    // Create play button (next to UI toggle button)
+    playButton = std::make_unique<PlayButton>();
+    playButton->setSize(30, 20); // Same size as UI toggle
+    playButton->setTopLeftPosition(getWidth() - 70, 5); // Next to UI toggle with 5px spacing
+    
+    // Set initial state (stopped - grey)
+    playButton->setPlaying(false);
+    
+    // Set up callback
+    playButton->onClick = [this]() {
+        togglePlayback();
+    };
+    
+    addAndMakeVisible(playButton.get());
+    
+    DBG("[UI] Play button setup complete");
+}
+
+void PluginEditor::togglePlayback()
+{
+    // Toggle the playing state
+    bool newPlayingState = !playButton->isPlayingState();
+    playButton->setPlaying(newPlayingState);
+    
+    DBG("[UI] Toggling playback: " << (newPlayingState ? "PLAY" : "STOP"));
+    
+    // Enable/disable sequencer in processor
+    processorRef.setSequencerEnabled(newPlayingState);
+    
+    DBG("[UI] Playback toggled: " << (newPlayingState ? "PLAYING" : "STOPPED"));
 }

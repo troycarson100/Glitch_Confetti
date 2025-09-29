@@ -1,6 +1,7 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 #include "dsp/DspFlags.h"
+#include <chrono>
 
 //==============================================================================
 PluginProcessor::PluginProcessor()
@@ -159,6 +160,34 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
     const FxType fx = currentFx;
 #endif
 
+    // Update transport cache and compute playing step when host is playing
+    updateTransportCache(getPlayHead(), buffer.getNumSamples());
+    bool hostPlaying = transportCache.playing.load();
+    bool sequencerEnabled = seq.enabled.load();
+    
+    if (hostPlaying && !prevHostPlaying)
+    {
+        // latch origin at transport start
+        seq.originPPQ.store(transportCache.ppq.load());
+        seq.haveOrigin.store(true);
+    }
+    
+    // For standalone mode, set origin when sequencer is first enabled
+    static bool prevSequencerEnabled = false;
+    if (sequencerEnabled && !prevSequencerEnabled)
+    {
+        // Reset origin for standalone mode
+        seq.haveOrigin.store(false);
+    }
+    prevSequencerEnabled = sequencerEnabled;
+    prevHostPlaying = hostPlaying;
+    
+    // Update playing step if host is playing OR if internal sequencer is enabled
+    if (hostPlaying || sequencerEnabled)
+    {
+        updatePlayingStepFromTransport();
+    }
+
     // Apply current APVTS parameters for real-time control
     applySnapshotTargets(StepSnapshot{});
 
@@ -224,58 +253,73 @@ void PluginProcessor::updateTransportCache(juce::AudioPlayHead* playHead, int nu
 
 void PluginProcessor::updatePlayingStepFromTransport()
 {
-    if (!transportCache.valid.load() || !transportCache.playing.load()) {
+    bool hostPlaying = transportCache.valid.load() && transportCache.playing.load();
+    bool sequencerEnabled = seq.enabled.load();
+    
+    // Only proceed if host is playing OR internal sequencer is enabled
+    if (!hostPlaying && !sequencerEnabled) {
         return;
     }
 
     // Get transport info
-    double ppqPos = transportCache.ppq.load();
-    double barStartPpq = transportCache.barStartPpq.load();
-    double bpm = transportCache.bpm.load();
-    int timeSigNum = transportCache.tsNum.load();
-    int timeSigDen = transportCache.tsDen.load();
-    int stepsUsed = seq.stepsUsed.load();
-    int divisionIndex = seq.divisionIndex.load();
+    double ppqPos, barStartPpq;
+    int timeSigNum;
+    
+    if (hostPlaying) {
+        // Use real transport data
+        ppqPos = transportCache.ppq.load();
+        barStartPpq = transportCache.barStartPpq.load();
+        timeSigNum = transportCache.tsNum.load();
+    } else {
+        // Use simulated transport for standalone mode
+        // Use a simple time-based approach for standalone
+        static auto startTime = std::chrono::high_resolution_clock::now();
+        auto now = std::chrono::high_resolution_clock::now();
+        auto elapsed = std::chrono::duration<double>(now - startTime).count();
+        
+        // Simulate PPQ at 120 BPM (2 beats per second)
+        ppqPos = elapsed * 2.0; // 2 PPQ per second at 120 BPM
+        barStartPpq = 0.0; // Start of bar
+        timeSigNum = 4; // 4/4 time signature
+    }
+
+    const int stepsUsed = juce::jlimit(1, 16, seq.stepsUsed.load());
+    const int divisionIndex = juce::jlimit(0, 5, seq.divisionIndex.load());
+    const int stdMode = juce::jlimit(0, 2, seq.stdMode.load()); // 0 straight, 1 triplet, 2 dotted
 
     // Calculate bar-relative PPQ position
     double barPpq = ppqPos - barStartPpq;
     
-    // Map division index to steps per quarter note
-    int stepsPerQuarter = 0;
+    // Compute beats-per-step from division and STD mode
+    double beatsPerStep = 0.0;
     switch (divisionIndex) {
-        case 0: stepsPerQuarter = 0; break;  // 1/1
-        case 1: stepsPerQuarter = 0; break;  // 1/2  
-        case 2: stepsPerQuarter = 1; break;  // 1/4
-        case 3: stepsPerQuarter = 2; break;  // 1/8
-        case 4: stepsPerQuarter = 4; break;  // 1/16
-        case 5: stepsPerQuarter = 8; break;  // 1/32
-        default: stepsPerQuarter = 4; break;
+        case 0: beatsPerStep = 4.0;   break; // 1/1
+        case 1: beatsPerStep = 2.0;   break; // 1/2
+        case 2: beatsPerStep = 1.0;   break; // 1/4
+        case 3: beatsPerStep = 0.5;   break; // 1/8
+        case 4: beatsPerStep = 0.25;  break; // 1/16
+        case 5: beatsPerStep = 0.125; break; // 1/32
+        default: beatsPerStep = 0.25;  break;
     }
-    
-    // Calculate current step
-    int currentStep = 0;
-    if (stepsPerQuarter > 0) {
-        double beatsPerBar = timeSigNum;
-        double stepsPerBar = beatsPerBar * stepsPerQuarter;
-        if (stepsUsed < stepsPerBar) {
-            stepsPerBar = stepsUsed;
-        }
-        
-        double stepFloat = barPpq * stepsPerQuarter;
-        currentStep = (int)std::floor(stepFloat) % (int)stepsPerBar;
-        
-        if (stepsUsed > 0 && stepsUsed < 16) {
-            currentStep = currentStep % stepsUsed;
-        }
+    if (stdMode == 1)      beatsPerStep *= (2.0 / 3.0); // triplet
+    else if (stdMode == 2) beatsPerStep *= 1.5;         // dotted
+
+    // Use an origin so stepping is free-running and rate-dependent (not bar-locked)
+    double origin;
+    if (hostPlaying) {
+        origin = seq.haveOrigin.load() ? seq.originPPQ.load() : barStartPpq;
     } else {
-        // For 1/1 or 1/2, use simpler calculation
-        double beatsPerBar = timeSigNum;
-        double quartersIntoBar = barPpq;
-        int quarterIndex = (int)std::floor(quartersIntoBar) % (int)beatsPerBar;
-        
-        int activeSteps = stepsUsed > 0 ? stepsUsed : 16;
-        double perQuarter = (double)activeSteps / beatsPerBar;
-        currentStep = (int)std::floor(quarterIndex * perQuarter) % activeSteps;
+        // For standalone mode, use 0 as origin (start from beginning)
+        origin = 0.0;
+    }
+    const double beatsSinceOrigin = juce::jmax(0.0, ppqPos - origin);
+
+    int currentStep = 0;
+    if (beatsPerStep > 0.0 && stepsUsed > 0)
+    {
+        const double stepsElapsed = std::floor(beatsSinceOrigin / beatsPerStep);
+        const double mod = std::fmod(stepsElapsed, (double) stepsUsed);
+        currentStep = (int) (mod < 0.0 ? mod + stepsUsed : mod);
     }
     
     seq.playingStep.store(currentStep);
