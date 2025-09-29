@@ -818,7 +818,8 @@ void PluginEditor::setupSequencerArea()
         }
     };
     addAndMakeVisible(stepAmountLabel.get());
-    stepAmountLabel->setBounds(stepArea.getX() + 260, stepArea.getY() - 10, 30, 25); // Moved left 40px from +300 to +260
+    // Move step amount left by 80px
+    stepAmountLabel->setBounds(stepArea.getX() + 180, stepArea.getY() - 10, 30, 25);
     
     // Create rate dropdown (top right)
     rateDropdown = std::make_unique<juce::ComboBox>();
@@ -829,11 +830,15 @@ void PluginEditor::setupSequencerArea()
     rateDropdown->addItem("1/16", 5);
     rateDropdown->addItem("1/32", 6);
     rateDropdown->setSelectedId(4); // Default to 1/8
-    rateDropdown->setColour(juce::ComboBox::backgroundColourId, juce::Colours::black);
+    // Make dropdown transparent (no background or border)
+    rateDropdown->setColour(juce::ComboBox::backgroundColourId, juce::Colours::transparentBlack);
+    rateDropdown->setColour(juce::ComboBox::outlineColourId, juce::Colours::transparentBlack);
+    rateDropdown->setColour(juce::ComboBox::buttonColourId, juce::Colours::transparentBlack);
     rateDropdown->setColour(juce::ComboBox::textColourId, juce::Colours::white);
     rateDropdown->setColour(juce::ComboBox::arrowColourId, juce::Colours::white);
     addAndMakeVisible(rateDropdown.get());
-    rateDropdown->setBounds(stepArea.getX() + 300, stepArea.getY() - 10, 60, 25); // Moved left 40px from +340 to +300
+    // Move rate left by 80px and widen to avoid arrow overlapping long items
+    rateDropdown->setBounds(stepArea.getX() + 220, stepArea.getY() - 10, 74, 25);
     // Wire dropdown -> processor division index (0..5)
     rateDropdown->onChange = [this]() {
         if (rateDropdown != nullptr)
@@ -849,7 +854,9 @@ void PluginEditor::setupSequencerArea()
     stdToggle = std::make_unique<CircularToggleButton>();
     stdToggle->setButtonText("-");
     addAndMakeVisible(stdToggle.get());
-    stdToggle->setBounds(stepArea.getX() + 370, stepArea.getY() - 10, 30, 30); // Made circular (30x30)
+    // Move toggle up 4px and left 12px, then move all left by 80px (total left 92px)
+    // Adjusted +10px to the right per request
+    stdToggle->setBounds(stepArea.getX() + 288, stepArea.getY() - 14, 30, 30);
     
     // Set up toggle handler
     stdToggle->onClick = [this]() {
