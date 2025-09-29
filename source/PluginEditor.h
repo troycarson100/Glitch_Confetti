@@ -161,6 +161,9 @@ public:
     // Effects area components
     std::unique_ptr<juce::Label> effectsTitle;
     std::unique_ptr<CustomDiceButton> diceButton;
+    std::unique_ptr<juce::Button> timeSyncToggle; // S circle toggle
+    bool timeSyncEnabled = false;
+    int timeSyncStdMode = 0; // 0 straight, 1 triplet, 2 dotted
     
     // Sequencer area components
     std::array<std::unique_ptr<StepButton>, 16> stepButtons;

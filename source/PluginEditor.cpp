@@ -195,7 +195,9 @@ void PluginEditor::timerCallback()
             // Only update knob value if it's not currently being dragged
             if (!knobs[i]->isMouseButtonDown())
             {
-                knobs[i]->setValue(paramValue, juce::dontSendNotification);
+                // In sync mode for Time knob, do not overwrite the slider position (we use it to select divisions)
+                if (!(i == 0 && timeSyncEnabled))
+                    knobs[i]->setValue(paramValue, juce::dontSendNotification);
             }
             
             // Update value label
@@ -206,8 +208,28 @@ void PluginEditor::timerCallback()
                 if (auto* floatParam = dynamic_cast<juce::AudioParameterFloat*>(param))
                 {
                     float actualValue = floatParam->convertFrom0to1(paramValue);
-                    if (i == 0) // Time - show in ms
-                        valueText = juce::String(actualValue, 0) + "ms";
+                    if (i == 0)
+                    {
+                        if (timeSyncEnabled)
+                        {
+                            // Show division text instead of ms
+                            const double bpm = processorRef.getBpmOrDefault(120.0);
+                            std::vector<std::pair<juce::String, double>> divisions = {
+                                {"2", 2.0}, {"1", 1.0}, {"1/2", 0.5}, {"1/4", 0.25}, {"1/8", 0.125}, {"1/16", 0.0625}, {"1/32", 0.03125}, {"1/64", 0.015625}
+                            };
+                            double mult = 1.0;
+                            if (timeSyncStdMode == 1) mult = 2.0/3.0; else if (timeSyncStdMode == 2) mult = 1.5;
+                            // Compute nearest division index from current knob pos (already set above when not dragging)
+                            int idx = juce::jlimit(0, 7, (int) std::round(knobs[i]->getValue() * 7.0f));
+                            auto label = divisions[idx].first;
+                            if (timeSyncStdMode == 1) label << "t"; else if (timeSyncStdMode == 2) label << ".";
+                            valueText = label;
+                        }
+                        else
+                        {
+                            valueText = juce::String(actualValue, 0) + "ms";
+                        }
+                    }
                     else if (i == 5 || i == 6) // Hi-Cut, Low-Cut - show in Hz
                         valueText = juce::String(actualValue, 0) + "Hz";
                     else if (i == 3) // Wow Rate - show in Hz
@@ -578,7 +600,31 @@ void PluginEditor::setupKnobs()
             
             // Add listener to update snapshots when knob changes
             knobs[i]->onValueChange = [this, i]() {
-                updateParameterFromKnob(i);
+                if (i == 0 && timeSyncEnabled)
+                {
+                    // Use full throw to select division; update parameter directly without changing slider value
+                    float pos = knobs[0]->getValue();
+                    int idx = juce::jlimit(0, 7, (int) std::round(pos * 7.0f));
+                    // Ascending divisions: smallest first
+                    static const double baseBeats[8] = { 1.0/64.0, 1.0/32.0, 1.0/16.0, 1.0/8.0, 1.0/4.0, 1.0/2.0, 1.0, 2.0 };
+                    const double bpm = processorRef.getBpmOrDefault(120.0);
+                    double mult = 1.0;
+                    if (timeSyncStdMode == 1) mult = 2.0/3.0; else if (timeSyncStdMode == 2) mult = 1.5;
+                    double beatsSel = baseBeats[idx] * mult;
+                    double ms = beatsSel * (60.0 / juce::jmax(1.0, bpm)) * 1000.0;
+                    // Set parameter (normalized) to reflect ms
+                    if (auto* p = dynamic_cast<juce::AudioParameterFloat*>(processorRef.getAPVTS().getParameter("timeMs")))
+                    {
+                        float norm = p->convertTo0to1((float) ms);
+                        p->setValueNotifyingHost(norm);
+                        // Update snapshot with real value and keep UI labels consistent
+                        processorRef.updateCurrentStepSnapshot(0, (float) ms);
+                    }
+                }
+                else
+                {
+                    updateParameterFromKnob(i);
+                }
             };
         }
         
@@ -717,6 +763,56 @@ void PluginEditor::setupKnobs()
         diceButton->onClick = [this]() {
             randomizeKnobValues();
         };
+
+    // Time Sync small S toggle to the left of Time label
+    struct SSyncButton : public juce::Button {
+        SSyncButton() : juce::Button("SSync") {}
+        void paintButton(juce::Graphics& g, bool over, bool down) override {
+            juce::ignoreUnused(over, down);
+            auto r = getLocalBounds().toFloat();
+            const float radius = juce::jmin(r.getWidth(), r.getHeight()) * 0.5f;
+            auto centre = r.getCentre();
+            g.setColour(juce::Colours::white);
+            if (getToggleState()) {
+                g.fillEllipse(centre.x - radius, centre.y - radius, radius*2, radius*2);
+                g.setColour(juce::Colours::black);
+            } else {
+                g.drawEllipse(centre.x - radius, centre.y - radius, radius*2, radius*2, 2.0f);
+            }
+            g.setFont(juce::Font(10.0f, juce::Font::bold));
+            g.drawText("S", r, juce::Justification::centred);
+        }
+    };
+    timeSyncToggle = std::make_unique<SSyncButton>();
+    addAndMakeVisible(timeSyncToggle.get());
+    if (knobLabels[0] != nullptr) {
+        auto lb = knobLabels[0]->getBounds();
+        timeSyncToggle->setBounds(lb.getX() + 10, lb.getY() + 4, 12, 12); // moved left 4px and up 2px
+    } else {
+        timeSyncToggle->setBounds(effectArea.getX() + 10, effectArea.getY() + 10, 12, 12);
+    }
+    timeSyncToggle->setClickingTogglesState(true);
+    timeSyncToggle->onClick = [this]() {
+        timeSyncEnabled = timeSyncToggle->getToggleState();
+        if (timeSyncEnabled && knobs[0] != nullptr) {
+            const double bpm = processorRef.getBpmOrDefault(120.0);
+            std::vector<double> beats = {2.0,1.0,0.5,0.25,0.125,0.0625,0.03125,0.015625};
+            double mult = 1.0;
+            if (timeSyncStdMode == 1) mult = 2.0/3.0; // triplet
+            else if (timeSyncStdMode == 2) mult = 1.5; // dotted
+            for (auto& b : beats) b *= mult;
+            // Convert to ms
+            for (auto& b : beats) b = b * (60.0 / juce::jmax(1.0, bpm)) * 1000.0;
+            auto* p = processorRef.getAPVTS().getParameter("timeMs");
+            double ms = (double) static_cast<juce::AudioParameterFloat*>(p)->convertFrom0to1(knobs[0]->getValue());
+            ms = juce::jlimit(10.0, 2000.0, ms);
+            double best = beats.front(); double bd = std::abs(best - ms);
+            for (auto v : beats) { double d = std::abs(v - ms); if (d < bd) { best = v; bd = d; } }
+            knobs[0]->setValue(p->convertTo0to1((float) best));
+            updateParameterFromKnob(0);
+        }
+        repaint();
+    };
         
         DBG("[UI] Effects area setup complete");
     }
@@ -798,7 +894,17 @@ void PluginEditor::setupSequencerArea()
             for (int i = 0; i < 8; ++i) {
                 if (valueLabels[i] != nullptr && !knobLocked[i]) {
                     float knobValue = knobs[i]->getValue();
-                    juce::String valueText = juce::String(knobValue, 2);
+                    juce::String valueText;
+                    if (i == 0 && timeSyncEnabled) {
+                        // Show musical division label instead of ms
+                        std::vector<juce::String> labels = {"1/64","1/32","1/16","1/8","1/4","1/2","1","2"};
+                        int idx = juce::jlimit(0, 7, (int) std::round(knobValue * 7.0f));
+                        auto label = labels[idx];
+                        if (timeSyncStdMode == 1) label << "t"; else if (timeSyncStdMode == 2) label << ".";
+                        valueText = label;
+                    } else {
+                        valueText = juce::String(knobValue, 2);
+                    }
                     valueLabels[i]->setText(valueText, juce::dontSendNotification);
                 }
                 if (indicatorBars[i] != nullptr && !knobLocked[i]) {
@@ -1001,7 +1107,24 @@ void PluginEditor::onStepButtonClicked(int stepIndex)
     auto snapshot = processorRef.getSafeSnapshot(stepIndex);
     
     // Update knobs with snapshot values (convert from actual values to normalized 0-1)
-    knobs[0]->setValue(processorRef.getAPVTS().getParameter("timeMs")->convertTo0to1(snapshot.delay.timeMs), juce::dontSendNotification);
+    if (timeSyncEnabled) {
+        // Derive index from snapshot time to position knob at correct division location
+        const double bpm = processorRef.getBpmOrDefault(120.0);
+        std::vector<double> beats = {2.0,1.0,0.5,0.25,0.125,0.0625,0.03125,0.015625};
+        double mult = 1.0;
+        if (timeSyncStdMode == 1) mult = 2.0/3.0; else if (timeSyncStdMode == 2) mult = 1.5;
+        for (auto& b : beats) b *= mult;
+        // Convert beats to ms
+        for (auto& b : beats) b = b * (60.0 / juce::jmax(1.0, bpm)) * 1000.0;
+        double ms = snapshot.delay.timeMs;
+        int bestIdx = 0; double bd = std::abs(beats[0] - ms);
+        for (int i = 1; i < (int)beats.size(); ++i) { double d = std::abs(beats[i] - ms); if (d < bd) { bd = d; bestIdx = i; } }
+        // Map index to 0..1 evenly
+        float pos = (float)bestIdx / 7.0f;
+        knobs[0]->setValue(pos, juce::dontSendNotification);
+    } else {
+        knobs[0]->setValue(processorRef.getAPVTS().getParameter("timeMs")->convertTo0to1(snapshot.delay.timeMs), juce::dontSendNotification);
+    }
     knobs[1]->setValue(processorRef.getAPVTS().getParameter("feedback")->convertTo0to1(snapshot.delay.feedback / 100.0f), juce::dontSendNotification);
     knobs[2]->setValue(processorRef.getAPVTS().getParameter("wowDepth")->convertTo0to1(snapshot.delay.wowDepth / 100.0f), juce::dontSendNotification);
     knobs[3]->setValue(processorRef.getAPVTS().getParameter("wowRate")->convertTo0to1(snapshot.delay.wowRate), juce::dontSendNotification);

@@ -72,6 +72,7 @@ public:
     int getPlayingStep() const noexcept { return seq.playingStep.load(); }
     int getSelectedStep() const noexcept { return uiSelectedStep.load(); }
     bool isSequencerEnabled() const noexcept { return seq.enabled.load(); }
+    double getBpmOrDefault(double fallback = 120.0) const noexcept { auto b = transportCache.bpm.load(); return b > 0.0 ? b : fallback; }
     
     // Step snapshot access
     StepSnapshot getSafeSnapshot(int step) const;
