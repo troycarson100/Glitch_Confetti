@@ -298,6 +298,30 @@ void PluginEditor::timerCallback()
         }
     }
     
+    // Update master knobs
+    for (int i = 0; i < 3; ++i)
+    {
+        if (masterKnobs[i] != nullptr && (8 + i) < processorRef.getParameters().size())
+        {
+            auto* param = processorRef.getParameters().getUnchecked(8 + i);
+            float paramValue = param->getValue();
+            
+            // Only update knob value if it's not currently being dragged
+            if (!masterKnobs[i]->isMouseButtonDown())
+            {
+                masterKnobs[i]->setValue(paramValue, juce::dontSendNotification);
+            }
+            
+            // Update master value label
+            if (masterValueLabels[i] != nullptr)
+            {
+                // Format value as percentage (0-100%)
+                int percentage = (int) std::round(paramValue * 100);
+                masterValueLabels[i]->setText(juce::String(percentage) + "%", juce::dontSendNotification);
+            }
+        }
+    }
+    
     // Update sequencer UI
     updateSequencerUI();
 }
@@ -935,7 +959,9 @@ void PluginEditor::setupKnobs()
             if (auto* param = dynamic_cast<juce::AudioParameterFloat*>(processorRef.getParameters()[8 + i])) {
                 masterKnobs[i]->setValue(param->get(), juce::dontSendNotification);
             } else {
-                masterKnobs[i]->setValue(1.0, juce::dontSendNotification); // Default to 1.0
+                // Set default values: Input and Output at 50%, Dry/Wet at 100%
+                float defaultValue = (i == 1) ? 1.0f : 0.5f; // Dry/Wet = 100%, Input/Output = 50%
+                masterKnobs[i]->setValue(defaultValue, juce::dontSendNotification);
             }
             
             // Set up value change callback
@@ -945,11 +971,11 @@ void PluginEditor::setupKnobs()
                 }
             };
             
-            // Position master knobs horizontally in master area
-            const int knobSize = 60;
-            const int spacing = 120;
+            // Position master knobs horizontally in master area (40% bigger and at bottom)
+            const int knobSize = 84; // 40% bigger: 60 * 1.4 = 84
+            const int spacing = 168; // 40% bigger: 120 * 1.4 = 168
             const int startX = masterArea.getX() + 50;
-            const int y = masterArea.getY() + 100;
+            const int y = masterArea.getY() + 180; // Move to bottom of master area
             
             masterKnobs[i]->setBounds(startX + i * spacing, y, knobSize, knobSize);
             
@@ -964,7 +990,9 @@ void PluginEditor::setupKnobs()
             
             // Create master value label (value below knob)
             masterValueLabels[i] = std::make_unique<juce::Label>();
-            masterValueLabels[i]->setText("100", juce::dontSendNotification);
+            // Set initial value: Input and Output at 50%, Dry/Wet at 100%
+            int initialValue = (i == 1) ? 100 : 50; // Dry/Wet = 100%, Input/Output = 50%
+            masterValueLabels[i]->setText(juce::String(initialValue) + "%", juce::dontSendNotification);
             masterValueLabels[i]->setFont(juce::Font(10.0f, juce::Font::plain));
             masterValueLabels[i]->setColour(juce::Label::textColourId, juce::Colours::white);
             masterValueLabels[i]->setJustificationType(juce::Justification::centred);
