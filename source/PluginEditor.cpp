@@ -644,6 +644,75 @@ void PluginEditor::setupSequencerArea()
     // Step area bounds
     auto stepArea = juce::Rectangle<int>(25, 374, 413, 140);
     
+    // Create STEP title (top left)
+    stepTitle = std::make_unique<juce::Label>();
+    stepTitle->setText("STEP", juce::dontSendNotification);
+    stepTitle->setFont(juce::Font(27.648f, juce::Font::bold)); // Same size as effects title
+    stepTitle->setColour(juce::Label::textColourId, juce::Colours::white);
+    stepTitle->setColour(juce::Label::backgroundColourId, juce::Colours::transparentBlack);
+    stepTitle->setJustificationType(juce::Justification::centredLeft);
+    addAndMakeVisible(stepTitle.get());
+    stepTitle->setBounds(stepArea.getX() + 10, stepArea.getY() - 10, 80, 30);
+    
+    // Create step dice button (next to STEP title, 30% smaller than effects dice)
+    stepDiceButton = std::make_unique<CustomDiceButton>();
+    addAndMakeVisible(stepDiceButton.get());
+    int stepDiceSize = static_cast<int>(35 * 0.7); // 30% smaller than 35px = ~24px
+    stepDiceButton->setBounds(stepArea.getX() + 90, stepArea.getY() - 10, stepDiceSize, stepDiceSize);
+    
+    // Set up step dice button callback to randomize all step snapshots
+    stepDiceButton->onClick = [this]() {
+        DBG("[UI] Step dice button clicked - randomizing all step snapshots");
+        
+        // Randomize all 16 step snapshots
+        processorRef.randomizeAllStepSnapshots();
+        
+        // Update current step if one is selected to show the new values
+        int selectedStep = processorRef.getSelectedStep();
+        if (selectedStep >= 0 && selectedStep < 16) {
+            // Load the randomized snapshot for the selected step
+            auto snapshot = processorRef.getSafeSnapshot(selectedStep);
+            
+            // Update knobs with the new snapshot values using correct parameter ranges
+            // timeMs: 10.0f to 2000.0f
+            knobs[0]->setValue((snapshot.delay.timeMs - 10.0f) / (2000.0f - 10.0f), juce::dontSendNotification);
+            // feedback: 0.0f to 0.95f (already normalized)
+            knobs[1]->setValue(snapshot.delay.feedback, juce::dontSendNotification);
+            // wowDepth: 0.0f to 1.0f (already normalized)
+            knobs[2]->setValue(snapshot.delay.wowDepth, juce::dontSendNotification);
+            // wowRate: 0.1f to 8.0f
+            knobs[3]->setValue((snapshot.delay.wowRate - 0.1f) / (8.0f - 0.1f), juce::dontSendNotification);
+            // drive/saturation: 0.0f to 1.0f (already normalized)
+            knobs[4]->setValue(snapshot.delay.saturation, juce::dontSendNotification);
+            // hiCut: 1000.0f to 20000.0f
+            knobs[5]->setValue((snapshot.delay.highCut - 1000.0f) / (20000.0f - 1000.0f), juce::dontSendNotification);
+            // lowCut: 20.0f to 2000.0f
+            knobs[6]->setValue((snapshot.delay.lowCut - 20.0f) / (2000.0f - 20.0f), juce::dontSendNotification);
+            // mix: 0.0f to 1.0f (already normalized)
+            knobs[7]->setValue(snapshot.delay.mix, juce::dontSendNotification);
+            
+            // Update value labels and indicator bars to reflect the new values
+            for (int i = 0; i < 8; ++i) {
+                if (valueLabels[i] != nullptr) {
+                    float knobValue = knobs[i]->getValue();
+                    juce::String valueText = juce::String(knobValue, 2);
+                    valueLabels[i]->setText(valueText, juce::dontSendNotification);
+                }
+                if (indicatorBars[i] != nullptr) {
+                    indicatorBars[i]->setValue(knobs[i]->getValue());
+                }
+            }
+        }
+        
+        // Update UI
+        updateSequencerUI();
+    };
+    
+    // Set dice image for step dice button
+    if (assets.diceLarge != nullptr) {
+        stepDiceButton->setDiceImage(assets.diceLarge->createCopy());
+    }
+    
     // Create step buttons (2 rows of 8)
     const int buttonSize = 40;
     const int buttonSpacing = 8;

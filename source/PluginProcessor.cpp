@@ -305,6 +305,23 @@ StepSnapshot PluginProcessor::getSafeSnapshot(int step) const
     return stepSnapshots[step];
 }
 
+void PluginProcessor::randomizeAllStepSnapshots() noexcept
+{
+    DBG("[Processor] Randomizing all step snapshots");
+    
+    for (int step = 0; step < 16; ++step) {
+        // Randomize delay parameters for this step using correct parameter ranges
+        stepSnapshots[step].delay.timeMs = 10.0f + juce::Random::getSystemRandom().nextFloat() * (2000.0f - 10.0f); // 10-2000ms
+        stepSnapshots[step].delay.feedback = juce::Random::getSystemRandom().nextFloat() * 0.95f; // 0-0.95 (normalized)
+        stepSnapshots[step].delay.wowDepth = juce::Random::getSystemRandom().nextFloat(); // 0-1.0 (normalized)
+        stepSnapshots[step].delay.wowRate = 0.1f + juce::Random::getSystemRandom().nextFloat() * (8.0f - 0.1f); // 0.1-8.0Hz
+        stepSnapshots[step].delay.saturation = juce::Random::getSystemRandom().nextFloat(); // 0-1.0 (normalized)
+        stepSnapshots[step].delay.highCut = 1000.0f + juce::Random::getSystemRandom().nextFloat() * (20000.0f - 1000.0f); // 1-20kHz
+        stepSnapshots[step].delay.lowCut = 20.0f + juce::Random::getSystemRandom().nextFloat() * (2000.0f - 20.0f); // 20-2000Hz
+        stepSnapshots[step].delay.mix = juce::Random::getSystemRandom().nextFloat(); // 0-1.0 (normalized)
+    }
+}
+
 void PluginProcessor::applySnapshotTargets(const StepSnapshot&)
 {
     switch (currentFx) {

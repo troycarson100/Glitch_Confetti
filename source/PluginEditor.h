@@ -144,6 +144,8 @@ public:
     std::unique_ptr<juce::Label> stepAmountLabel;
     std::unique_ptr<juce::ComboBox> rateDropdown;
     std::unique_ptr<CircularToggleButton> stdToggle;
+    std::unique_ptr<juce::Label> stepTitle;
+    std::unique_ptr<CustomDiceButton> stepDiceButton;
     
         // Helper methods
         void setupKnobs();

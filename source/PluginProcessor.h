@@ -76,6 +76,7 @@ public:
     void setSequencerEnabled(bool enabled) noexcept { seq.enabled.store(enabled); }
     void setStepsUsed(int steps) noexcept { seq.stepsUsed.store(steps); }
     void setDivisionIndex(int index) noexcept { seq.divisionIndex.store(index); }
+    void randomizeAllStepSnapshots() noexcept;
 
 private:
     // Parameters
