@@ -63,6 +63,8 @@ private:
     private:
         std::unique_ptr<juce::Drawable> unlockedImage;
         std::unique_ptr<juce::Drawable> lockedImage;
+        std::unique_ptr<juce::Drawable> originalUnlockedImage;
+        std::unique_ptr<juce::Drawable> originalLockedImage;
         float buttonAlpha = 1.0f;
         
         JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (LockButton)

@@ -385,9 +385,7 @@ void LockButton::paintButton(juce::Graphics& g, bool over, bool down)
     
     if (imageToDraw != nullptr)
     {
-        // Apply alpha by creating a modified graphics context
-        juce::Graphics::ScopedSaveState savedState(g);
-        g.setOpacity(buttonAlpha);
+        // Draw the image (alpha is already applied to the image itself)
         imageToDraw->drawWithin(g, bounds, juce::RectanglePlacement::centred, 1.0f);
     }
     else
@@ -407,6 +405,40 @@ void LockButton::setImages(std::unique_ptr<juce::Drawable> unlocked, std::unique
 void LockButton::setAlpha(float alpha)
 {
     buttonAlpha = alpha;
+    
+    // Create greyed-out versions of the images when alpha < 1.0
+    if (alpha < 1.0f && (unlockedImage != nullptr || lockedImage != nullptr))
+    {
+        // Store original images if not already stored
+        if (originalUnlockedImage == nullptr && unlockedImage != nullptr)
+            originalUnlockedImage = unlockedImage->createCopy();
+        if (originalLockedImage == nullptr && lockedImage != nullptr)
+            originalLockedImage = lockedImage->createCopy();
+        
+        // Create greyed versions
+        if (unlockedImage != nullptr)
+        {
+            auto greyUnlocked = originalUnlockedImage->createCopy();
+            greyUnlocked->setAlpha(alpha);
+            unlockedImage = std::move(greyUnlocked);
+        }
+        
+        if (lockedImage != nullptr)
+        {
+            auto greyLocked = originalLockedImage->createCopy();
+            greyLocked->setAlpha(alpha);
+            lockedImage = std::move(greyLocked);
+        }
+    }
+    else if (alpha >= 1.0f && (originalUnlockedImage != nullptr || originalLockedImage != nullptr))
+    {
+        // Restore original images when alpha is full
+        if (originalUnlockedImage != nullptr)
+            unlockedImage = originalUnlockedImage->createCopy();
+        if (originalLockedImage != nullptr)
+            lockedImage = originalLockedImage->createCopy();
+    }
+    
     repaint();
 }
 
