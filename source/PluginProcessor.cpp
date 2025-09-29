@@ -188,8 +188,16 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
         updatePlayingStepFromTransport();
     }
 
-    // Apply current APVTS parameters for real-time control
-    applySnapshotTargets(StepSnapshot{});
+    // Apply sequencer step snapshot if enabled, otherwise use APVTS parameters
+    if (sequencerEnabled || hostPlaying) {
+        // Use playing step's snapshot for audio processing
+        int playingStep = seq.playingStep.load();
+        StepSnapshot playingSnapshot = getSafeSnapshot(playingStep);
+        applySnapshotTargets(playingSnapshot);
+    } else {
+        // Use empty snapshot to read from APVTS parameters (manual control)
+        applySnapshotTargets(StepSnapshot{});
+    }
 
     // Clear any unused output channels
     for (auto i = getTotalNumInputChannels(); i < getTotalNumOutputChannels(); ++i)
@@ -373,30 +381,46 @@ void PluginProcessor::randomizeAllStepSnapshots() noexcept
     }
 }
 
-void PluginProcessor::applySnapshotTargets(const StepSnapshot&)
+void PluginProcessor::applySnapshotTargets(const StepSnapshot& snapshot)
 {
     switch (currentFx) {
         case FxType::Delay:
         {
             FxDelay::Targets t;
-            // Read directly from APVTS parameters with null checks
-            auto* timeMsParam = valueTreeState.getRawParameterValue("timeMs");
-            auto* feedbackParam = valueTreeState.getRawParameterValue("feedback");
-            auto* wowDepthParam = valueTreeState.getRawParameterValue("wowDepth");
-            auto* wowRateParam = valueTreeState.getRawParameterValue("wowRate");
-            auto* driveParam = valueTreeState.getRawParameterValue("drive");
-            auto* hiCutParam = valueTreeState.getRawParameterValue("hiCut");
-            auto* lowCutParam = valueTreeState.getRawParameterValue("lowCut");
-            auto* mixParam = valueTreeState.getRawParameterValue("mix");
             
-            t.timeMs    = timeMsParam ? timeMsParam->load() : 250.0f;
-            t.feedback  = feedbackParam ? juce::jlimit(0.0f, 0.85f, feedbackParam->load()) : 0.2f;
-            t.wowDepth  = wowDepthParam ? wowDepthParam->load() : 0.0f;
-            t.wowRate   = wowRateParam ? wowRateParam->load() : 1.0f;
-            t.drive     = driveParam ? driveParam->load() : 0.0f;
-            t.hiCutHz   = hiCutParam ? hiCutParam->load() : 20000.0f;
-            t.lowCutHz  = lowCutParam ? lowCutParam->load() : 20.0f;
-            t.mix       = mixParam ? mixParam->load() : 0.5f;
+            // Check if we have a valid snapshot (sequencer mode) or should use APVTS (manual mode)
+            bool useSnapshot = (snapshot.delay.timeMs > 0.0f); // Simple check for valid snapshot
+            
+            if (useSnapshot) {
+                // Use sequencer step snapshot values
+                t.timeMs    = snapshot.delay.timeMs;
+                t.feedback  = juce::jlimit(0.0f, 0.85f, snapshot.delay.feedback / 100.0f); // Convert from percentage
+                t.wowDepth  = snapshot.delay.wowDepth / 100.0f; // Convert from percentage
+                t.wowRate   = snapshot.delay.wowRate;
+                t.drive     = snapshot.delay.saturation / 100.0f; // Convert from percentage
+                t.hiCutHz   = snapshot.delay.highCut;
+                t.lowCutHz  = snapshot.delay.lowCut;
+                t.mix       = snapshot.delay.mix;
+            } else {
+                // Read directly from APVTS parameters with null checks (manual mode)
+                auto* timeMsParam = valueTreeState.getRawParameterValue("timeMs");
+                auto* feedbackParam = valueTreeState.getRawParameterValue("feedback");
+                auto* wowDepthParam = valueTreeState.getRawParameterValue("wowDepth");
+                auto* wowRateParam = valueTreeState.getRawParameterValue("wowRate");
+                auto* driveParam = valueTreeState.getRawParameterValue("drive");
+                auto* hiCutParam = valueTreeState.getRawParameterValue("hiCut");
+                auto* lowCutParam = valueTreeState.getRawParameterValue("lowCut");
+                auto* mixParam = valueTreeState.getRawParameterValue("mix");
+                
+                t.timeMs    = timeMsParam ? timeMsParam->load() : 250.0f;
+                t.feedback  = feedbackParam ? juce::jlimit(0.0f, 0.85f, feedbackParam->load()) : 0.2f;
+                t.wowDepth  = wowDepthParam ? wowDepthParam->load() : 0.0f;
+                t.wowRate   = wowRateParam ? wowRateParam->load() : 1.0f;
+                t.drive     = driveParam ? driveParam->load() : 0.0f;
+                t.hiCutHz   = hiCutParam ? hiCutParam->load() : 20000.0f;
+                t.lowCutHz  = lowCutParam ? lowCutParam->load() : 20.0f;
+                t.mix       = mixParam ? mixParam->load() : 0.5f;
+            }
             
             spaceDelay.setTargets(t);
             break;
