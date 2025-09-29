@@ -71,6 +71,22 @@ void PluginEditor::paint (juce::Graphics& g)
         // Draw the three main areas
         drawMainAreas(g);
     }
+
+    // Draw knob lock icons on top of UI
+    for (int i = 0; i < 8; ++i)
+    {
+        if (knobLockButtons[i] != nullptr)
+        {
+            auto b = knobLockButtons[i]->getBounds().toFloat();
+            if (knobLocked[i]) {
+                if (assets.lockedIcon != nullptr)
+                    assets.lockedIcon->drawWithin(g, b, juce::RectanglePlacement::centred, 1.0f);
+            } else {
+                if (assets.unlockedIcon != nullptr)
+                    assets.unlockedIcon->drawWithin(g, b, juce::RectanglePlacement::centred, 1.0f);
+            }
+        }
+    }
 }
 
 void PluginEditor::resized()
@@ -608,9 +624,10 @@ void PluginEditor::setupKnobs()
             indicatorBars[i]->setBounds(x + 10, y + knobSize + 8, knobSize - 20, 13); // Made 5px taller: 8 + 5 = 13
             indicatorBars[i]->setValue(0.5f); // Set initial value
             
-            // Create individual dice button for this knob
+            // Create individual dice button for this knob (kept in code but hidden)
             knobDiceButtons[i] = std::make_unique<CustomDiceButton>();
-            addAndMakeVisible(knobDiceButtons[i].get());
+            // Explicitly keep hidden
+            knobDiceButtons[i]->setVisible(false);
             
             // Calculate text width and position dice button accordingly
             const int diceSize = 10; // 20% bigger: 8 * 1.2 = 9.6, rounded to 10
@@ -626,18 +643,37 @@ void PluginEditor::setupKnobs()
             int diceX = x + (knobSize / 2) + (textWidth / 2) + diceSpacing;
             int diceY = y - 10; // Moved up 3px from -7 to -10
             
-            knobDiceButtons[i]->setBounds(diceX, diceY, diceSize, diceSize);
+            // Remember dice button bounds to reuse for lock button sizing/placement
+            const int lockX = diceX;
+            const int lockY = diceY;
             
             // Set the dice image
-            if (assets.knobDice != nullptr)
-            {
-                knobDiceButtons[i]->setDiceImage(assets.knobDice->createCopy());
-            }
+            // Set up lock button replacing dice
+            knobLockButtons[i] = std::make_unique<juce::DrawableButton>("lockButton", juce::DrawableButton::ButtonStyle::ImageFitted);
+            addAndMakeVisible(knobLockButtons[i].get());
+            knobLockButtons[i]->setBounds(lockX, lockY, diceSize, diceSize);
             
-            // Set up click handler for individual knob randomization
-            knobDiceButtons[i]->onClick = [this, i]() {
-                randomizeIndividualKnob(i);
+            // Remove background and border
+            knobLockButtons[i]->setColour(juce::DrawableButton::backgroundColourId, juce::Colours::transparentBlack);
+            knobLockButtons[i]->setColour(juce::DrawableButton::backgroundOnColourId, juce::Colours::transparentBlack);
+            
+            // Configure images for on/off states
+            std::unique_ptr<juce::Drawable> imgOn, imgOff;
+            if (assets.lockedIcon)   imgOn  = assets.lockedIcon->createCopy();
+            if (assets.unlockedIcon) imgOff = assets.unlockedIcon->createCopy();
+            knobLockButtons[i]->setImages(
+                imgOff.get(), imgOff.get(), imgOff.get(), imgOff.get(),
+                imgOn.get(),  imgOn.get(),  imgOn.get(),  imgOn.get());
+            (void) imgOn.release();
+            (void) imgOff.release();
+            knobLockButtons[i]->setClickingTogglesState(true);
+            knobLockButtons[i]->setToggleState(knobLocked[i], juce::dontSendNotification);
+            knobLockButtons[i]->onClick = [this, i]() {
+                knobLocked[i] = knobLockButtons[i]->getToggleState();
+                repaint();
             };
+            
+            // No dice click; replaced by lock
     }
     
         DBG("[UI] Created " << 8 << " knobs with labels and indicator bars");
@@ -716,8 +752,23 @@ void PluginEditor::setupSequencerArea()
     stepDiceButton->onClick = [this]() {
         DBG("[UI] Step dice button clicked - randomizing all step snapshots");
         
-        // Randomize all 16 step snapshots
-        processorRef.randomizeAllStepSnapshots();
+        // Randomize all 16 step snapshots, but only for unlocked parameters
+        for (int step = 0; step < 16; ++step) {
+            auto snapshot = processorRef.getSafeSnapshot(step);
+            
+            // Only randomize unlocked parameters
+            if (!knobLocked[0]) snapshot.delay.timeMs = 10.0f + juce::Random::getSystemRandom().nextFloat() * (2000.0f - 10.0f);
+            if (!knobLocked[1]) snapshot.delay.feedback = juce::Random::getSystemRandom().nextFloat() * 0.95f;
+            if (!knobLocked[2]) snapshot.delay.wowDepth = juce::Random::getSystemRandom().nextFloat();
+            if (!knobLocked[3]) snapshot.delay.wowRate = 0.1f + juce::Random::getSystemRandom().nextFloat() * (8.0f - 0.1f);
+            if (!knobLocked[4]) snapshot.delay.saturation = juce::Random::getSystemRandom().nextFloat();
+            if (!knobLocked[5]) snapshot.delay.highCut = 1000.0f + juce::Random::getSystemRandom().nextFloat() * (20000.0f - 1000.0f);
+            if (!knobLocked[6]) snapshot.delay.lowCut = 20.0f + juce::Random::getSystemRandom().nextFloat() * (2000.0f - 20.0f);
+            if (!knobLocked[7]) snapshot.delay.mix = juce::Random::getSystemRandom().nextFloat();
+            
+            // Update the snapshot in the processor
+            processorRef.setStepSnapshot(step, snapshot);
+        }
         
         // Update current step if one is selected to show the new values
         int selectedStep = processorRef.getSelectedStep();
@@ -725,37 +776,37 @@ void PluginEditor::setupSequencerArea()
             // Load the randomized snapshot for the selected step
             auto snapshot = processorRef.getSafeSnapshot(selectedStep);
             
-            // Update knobs with the new snapshot values using correct parameter ranges
+            // Update knobs with the new snapshot values using correct parameter ranges, respecting locks
             // timeMs: 10.0f to 2000.0f
-            knobs[0]->setValue((snapshot.delay.timeMs - 10.0f) / (2000.0f - 10.0f), juce::dontSendNotification);
+            if (!knobLocked[0]) knobs[0]->setValue((snapshot.delay.timeMs - 10.0f) / (2000.0f - 10.0f), juce::dontSendNotification);
             // feedback: 0.0f to 0.95f (already normalized)
-            knobs[1]->setValue(snapshot.delay.feedback, juce::dontSendNotification);
+            if (!knobLocked[1]) knobs[1]->setValue(snapshot.delay.feedback, juce::dontSendNotification);
             // wowDepth: 0.0f to 1.0f (already normalized)
-            knobs[2]->setValue(snapshot.delay.wowDepth, juce::dontSendNotification);
+            if (!knobLocked[2]) knobs[2]->setValue(snapshot.delay.wowDepth, juce::dontSendNotification);
             // wowRate: 0.1f to 8.0f
-            knobs[3]->setValue((snapshot.delay.wowRate - 0.1f) / (8.0f - 0.1f), juce::dontSendNotification);
+            if (!knobLocked[3]) knobs[3]->setValue((snapshot.delay.wowRate - 0.1f) / (8.0f - 0.1f), juce::dontSendNotification);
             // drive/saturation: 0.0f to 1.0f (already normalized)
-            knobs[4]->setValue(snapshot.delay.saturation, juce::dontSendNotification);
+            if (!knobLocked[4]) knobs[4]->setValue(snapshot.delay.saturation, juce::dontSendNotification);
             // hiCut: 1000.0f to 20000.0f
-            knobs[5]->setValue((snapshot.delay.highCut - 1000.0f) / (20000.0f - 1000.0f), juce::dontSendNotification);
+            if (!knobLocked[5]) knobs[5]->setValue((snapshot.delay.highCut - 1000.0f) / (20000.0f - 1000.0f), juce::dontSendNotification);
             // lowCut: 20.0f to 2000.0f
-            knobs[6]->setValue((snapshot.delay.lowCut - 20.0f) / (2000.0f - 20.0f), juce::dontSendNotification);
+            if (!knobLocked[6]) knobs[6]->setValue((snapshot.delay.lowCut - 20.0f) / (2000.0f - 20.0f), juce::dontSendNotification);
             // mix: 0.0f to 1.0f (already normalized)
-            knobs[7]->setValue(snapshot.delay.mix, juce::dontSendNotification);
+            if (!knobLocked[7]) knobs[7]->setValue(snapshot.delay.mix, juce::dontSendNotification);
             
             // Update value labels and indicator bars to reflect the new values
             for (int i = 0; i < 8; ++i) {
-                if (valueLabels[i] != nullptr) {
+                if (valueLabels[i] != nullptr && !knobLocked[i]) {
                     float knobValue = knobs[i]->getValue();
                     juce::String valueText = juce::String(knobValue, 2);
                     valueLabels[i]->setText(valueText, juce::dontSendNotification);
                 }
-                if (indicatorBars[i] != nullptr) {
+                if (indicatorBars[i] != nullptr && !knobLocked[i]) {
                     indicatorBars[i]->setValue(knobs[i]->getValue());
                 }
                 
                 // Update the step snapshot in the processor to match the knob values
-                updateParameterFromKnob(i);
+                if (!knobLocked[i]) updateParameterFromKnob(i);
             }
         }
         
@@ -879,6 +930,7 @@ void PluginEditor::randomizeKnobValues()
     // Randomize each knob to a random value between 0.0 and 1.0
     for (int i = 0; i < 8; ++i)
     {
+        if (knobLocked[i]) continue; // respect lock
         float randomValue = juce::Random::getSystemRandom().nextFloat();
         knobs[i]->setValue(randomValue);
         
@@ -898,6 +950,7 @@ void PluginEditor::randomizeIndividualKnob(int knobIndex)
     
     if (knobIndex >= 0 && knobIndex < 8)
     {
+        if (knobLocked[knobIndex]) return; // respect lock
         float randomValue = juce::Random::getSystemRandom().nextFloat();
         knobs[knobIndex]->setValue(randomValue);
         

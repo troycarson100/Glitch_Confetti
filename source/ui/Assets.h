@@ -9,6 +9,7 @@ struct UiAssets {
     std::unique_ptr<juce::Drawable> knobRing, knobInside, knobMasterRing, knobMasterInside;
     std::unique_ptr<juce::Drawable> tabTitleSpaceDelay;
     std::unique_ptr<juce::Drawable> fxPowerOn, stepPowerOn, knobDice, diceLarge, macroAssign;
+    std::unique_ptr<juce::Drawable> lockedIcon, unlockedIcon;
     // … add only what Delay page & Sequencer need
 
     bool loadAll();

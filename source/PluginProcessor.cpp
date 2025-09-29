@@ -349,6 +349,13 @@ StepSnapshot PluginProcessor::getSafeSnapshot(int step) const
     return stepSnapshots[step];
 }
 
+void PluginProcessor::setStepSnapshot(int step, const StepSnapshot& snapshot) noexcept
+{
+    if (step >= 0 && step < 16) {
+        stepSnapshots[step] = snapshot;
+    }
+}
+
 void PluginProcessor::randomizeAllStepSnapshots() noexcept
 {
     DBG("[Processor] Randomizing all step snapshots");

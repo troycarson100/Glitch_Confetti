@@ -154,7 +154,9 @@ public:
         std::array<std::unique_ptr<juce::Label>, 8> knobLabels;
         std::array<std::unique_ptr<juce::Label>, 8> valueLabels;
         std::array<std::unique_ptr<IndicatorBar>, 8> indicatorBars;
-        std::array<std::unique_ptr<CustomDiceButton>, 8> knobDiceButtons;
+        std::array<std::unique_ptr<CustomDiceButton>, 8> knobDiceButtons; // kept but hidden
+        std::array<std::unique_ptr<juce::DrawableButton>, 8> knobLockButtons;
+        std::array<bool, 8> knobLocked { false, false, false, false, false, false, false, false };
     
     // Effects area components
     std::unique_ptr<juce::Label> effectsTitle;

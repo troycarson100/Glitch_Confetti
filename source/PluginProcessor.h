@@ -75,6 +75,7 @@ public:
     
     // Step snapshot access
     StepSnapshot getSafeSnapshot(int step) const;
+    void setStepSnapshot(int step, const StepSnapshot& snapshot) noexcept;
     void setSelectedStep(int step) noexcept { uiSelectedStep.store(step); }
     void setSequencerEnabled(bool enabled) noexcept { seq.enabled.store(enabled); }
     void setStepsUsed(int steps) noexcept { seq.stepsUsed.store(steps); }
