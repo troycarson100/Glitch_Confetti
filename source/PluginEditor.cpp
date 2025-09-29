@@ -701,6 +701,9 @@ void PluginEditor::setupSequencerArea()
                 if (indicatorBars[i] != nullptr) {
                     indicatorBars[i]->setValue(knobs[i]->getValue());
                 }
+                
+                // Update the step snapshot in the processor to match the knob values
+                updateParameterFromKnob(i);
             }
         }
         
