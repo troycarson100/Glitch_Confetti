@@ -576,9 +576,10 @@ void CustomKnob::paint(juce::Graphics& g)
     if (innerImage != nullptr)
     {
         g.saveState();
-        // Calculate rotation: 0.5 at value 0.5 should be straight up (0 degrees)
+        // Calculate rotation: normalize value to 0-1 range for rotation calculation
         // Map 0.0-1.0 to -150 to +150 degrees, then convert to radians
-        float rotationAngle = (getValue() - 0.5f) * 300.0f * juce::MathConstants<float>::pi / 180.0f;
+        float normalizedValue = (getValue() - getMinimum()) / (getMaximum() - getMinimum());
+        float rotationAngle = (normalizedValue - 0.5f) * 300.0f * juce::MathConstants<float>::pi / 180.0f;
         g.addTransform(juce::AffineTransform::rotation(rotationAngle, centre.x, centre.y));
         // Make inner image 15% smaller from current size and bottom align
         auto innerBounds = bounds.reduced(bounds.getWidth() * 0.15f, bounds.getHeight() * 0.15f);
