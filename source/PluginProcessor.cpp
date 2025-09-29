@@ -369,15 +369,17 @@ void PluginProcessor::randomizeAllStepSnapshots() noexcept
     DBG("[Processor] Randomizing all step snapshots");
     
     for (int step = 0; step < 16; ++step) {
-        // Randomize delay parameters for this step using correct parameter ranges
-        stepSnapshots[step].delay.timeMs = 10.0f + juce::Random::getSystemRandom().nextFloat() * (2000.0f - 10.0f); // 10-2000ms
-        stepSnapshots[step].delay.feedback = juce::Random::getSystemRandom().nextFloat() * 0.95f; // 0-0.95 (normalized)
-        stepSnapshots[step].delay.wowDepth = juce::Random::getSystemRandom().nextFloat(); // 0-1.0 (normalized)
-        stepSnapshots[step].delay.wowRate = 0.1f + juce::Random::getSystemRandom().nextFloat() * (8.0f - 0.1f); // 0.1-8.0Hz
-        stepSnapshots[step].delay.saturation = juce::Random::getSystemRandom().nextFloat(); // 0-1.0 (normalized)
-        stepSnapshots[step].delay.highCut = 1000.0f + juce::Random::getSystemRandom().nextFloat() * (20000.0f - 1000.0f); // 1-20kHz
-        stepSnapshots[step].delay.lowCut = 20.0f + juce::Random::getSystemRandom().nextFloat() * (2000.0f - 20.0f); // 20-2000Hz
-        stepSnapshots[step].delay.mix = juce::Random::getSystemRandom().nextFloat(); // 0-1.0 (normalized)
+        // Create more obvious differences for testing indicator bars
+        float stepFactor = (float)step / 15.0f; // 0.0 to 1.0 across steps
+        
+        stepSnapshots[step].delay.timeMs = 100.0f + stepFactor * 1800.0f; // 100-1900ms across steps
+        stepSnapshots[step].delay.feedback = stepFactor * 0.9f; // 0-0.9 across steps
+        stepSnapshots[step].delay.wowDepth = stepFactor; // 0-1.0 across steps
+        stepSnapshots[step].delay.wowRate = 0.5f + stepFactor * 7.5f; // 0.5-8.0Hz across steps
+        stepSnapshots[step].delay.saturation = stepFactor; // 0-1.0 across steps
+        stepSnapshots[step].delay.highCut = 2000.0f + stepFactor * 18000.0f; // 2k-20kHz across steps
+        stepSnapshots[step].delay.lowCut = 50.0f + stepFactor * 1950.0f; // 50-2000Hz across steps
+        stepSnapshots[step].delay.mix = stepFactor; // 0-1.0 across steps
     }
 }
 

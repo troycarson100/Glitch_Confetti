@@ -249,7 +249,55 @@ void PluginEditor::timerCallback()
             // Update indicator bar
             if (indicatorBars[i] != nullptr)
             {
-                indicatorBars[i]->setValue(paramValue);
+                float indicatorValue = paramValue;
+
+                // If sequencer is active (or host is playing), show the playing step's snapshot value
+                TransportCache t;
+                processorRef.getTransportSnapshot(t);
+                const bool seqActive = processorRef.isSequencerEnabled() || (t.valid && t.playing);
+                const int playingStep = processorRef.getPlayingStep();
+                
+                // Debug output
+                static int debugCounter = 0;
+                if ((++debugCounter & 15) == 0) { // Log every 16 timer calls (more frequent)
+                    DBG("[INDICATOR] seqEnabled=" << processorRef.isSequencerEnabled() 
+                         << " hostPlaying=" << (t.valid && t.playing) 
+                         << " seqActive=" << seqActive 
+                         << " playingStep=" << playingStep
+                         << " indicatorValue=" << indicatorValue);
+                }
+                
+                if (seqActive && playingStep >= 0 && playingStep < 16)
+                {
+                    StepSnapshot s = processorRef.getSafeSnapshot(playingStep);
+                    auto* p = dynamic_cast<juce::AudioParameterFloat*>(processorRef.getAPVTS().getParameter(i == 0 ? "timeMs"
+                                                                                                                    : i == 1 ? "feedback"
+                                                                                                                    : i == 2 ? "wowDepth"
+                                                                                                                    : i == 3 ? "wowRate"
+                                                                                                                    : i == 4 ? "drive"
+                                                                                                                    : i == 5 ? "hiCut"
+                                                                                                                    : i == 6 ? "lowCut"
+                                                                                                                    : "mix"));
+                    if (p != nullptr)
+                    {
+                        float actual = 0.0f;
+                        switch (i)
+                        {
+                            case 0: actual = s.delay.timeMs; break;                                  // ms
+                            case 1: actual = (s.delay.feedback / 100.0f) * 0.95f; break;             // % -> 0..0.95
+                            case 2: actual = (s.delay.wowDepth / 100.0f); break;                     // % -> 0..1
+                            case 3: actual = s.delay.wowRate; break;                                 // Hz 0.1..8
+                            case 4: actual = (s.delay.saturation / 100.0f); break;                   // % -> 0..1
+                            case 5: actual = s.delay.highCut; break;                                 // Hz 1k..20k
+                            case 6: actual = s.delay.lowCut; break;                                  // Hz 20..2000
+                            case 7: actual = s.delay.mix; break;                                     // 0..1
+                            default: break;
+                        }
+                        indicatorValue = p->convertTo0to1(actual);
+                    }
+                }
+
+                indicatorBars[i]->setValue(indicatorValue);
             }
         }
     }
