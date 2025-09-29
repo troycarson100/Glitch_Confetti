@@ -174,6 +174,13 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
         seq.originPPQ.store(transportCache.ppq.load());
         seq.haveOrigin.store(true);
     }
+    else if (!hostPlaying && prevHostPlaying)
+    {
+        // DAW stopped playing - reset sequencer state
+        seq.originPPQ.store(0.0);
+        seq.haveOrigin.store(false);
+        seq.playingStep.store(-1);
+    }
     
     // Handle sequencer enable/disable transitions
     static bool prevSequencerEnabled = false;
