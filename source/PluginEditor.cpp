@@ -1595,8 +1595,9 @@ void PluginEditor::updateSequencerUI()
         if (stepButtons[i] != nullptr) {
             // Only the selected step should show as selected
             stepButtons[i]->setSelected(i == selectedStep);
-            // Show playing highlight if host is playing (independent of internal enable)
-            stepButtons[i]->setPlaying(i == playingStep);
+            // Show playing highlight only if sequencer is enabled
+            bool sequencerEnabled = processorRef.isSequencerEnabled();
+            stepButtons[i]->setPlaying(sequencerEnabled && (i == playingStep));
             // Grey out inactive steps beyond stepsUsed
             bool shouldBeEnabled = i < stepsUsed;
             stepButtons[i]->setEnabledStep(shouldBeEnabled);
