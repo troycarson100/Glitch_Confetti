@@ -311,8 +311,16 @@ void PluginEditor::timerCallback()
                     // Only update knob value if it's not currently being dragged
                     if (!masterKnobs[i]->isMouseButtonDown())
                     {
-                        // All knobs now use 0-1 range internally
-                        masterKnobs[i]->setValue(paramValue, juce::dontSendNotification);
+                        // For Input and Output knobs, convert dB value back to 0-1 range
+                        if (i == 0 || i == 2) {
+                            // Convert dB to 0-1: -60dB -> 0.0, 0dB -> 0.5, +6dB -> 1.0
+                            float dbValue = param->convertFrom0to1(paramValue);
+                            float knobValue = (dbValue + 60.0f) / 66.0f; // Scale -60 to +6 to 0-1
+                            masterKnobs[i]->setValue(knobValue, juce::dontSendNotification);
+                        } else {
+                            // Dry/Wet knob is already 0-1
+                            masterKnobs[i]->setValue(paramValue, juce::dontSendNotification);
+                        }
                     }
                     
                     // Update master value label
@@ -979,8 +987,18 @@ void PluginEditor::setupKnobs()
             masterKnobs[i]->onValueChange = [this, i]() {
                 if (auto* param = dynamic_cast<juce::AudioParameterFloat*>(processorRef.getParameters()[8 + i])) {
                     float knobValue = masterKnobs[i]->getValue();
-                    // All knobs now use 0-1 range internally
-                    param->setValueNotifyingHost(knobValue);
+                    
+                    // For Input and Output knobs, convert 0-1 to dB range (-60 to +6)
+                    if (i == 0 || i == 2) {
+                        // Convert 0-1 to dB: 0.0 -> -60dB, 0.5 -> 0dB, 1.0 -> +6dB
+                        float dbValue = (knobValue * 66.0f) - 60.0f; // Scale 0-1 to -60 to +6
+                        // Convert dB value to normalized parameter value
+                        float normalizedValue = (dbValue - (-60.0f)) / (6.0f - (-60.0f));
+                        param->setValueNotifyingHost(normalizedValue);
+                    } else {
+                        // Dry/Wet knob is already 0-1
+                        param->setValueNotifyingHost(knobValue);
+                    }
                 }
             };
             
