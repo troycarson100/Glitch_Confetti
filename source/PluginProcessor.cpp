@@ -172,13 +172,19 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
         seq.haveOrigin.store(true);
     }
     
-    // For standalone mode, set origin when sequencer is first enabled
+    // Handle sequencer enable/disable transitions
     static bool prevSequencerEnabled = false;
     if (sequencerEnabled && !prevSequencerEnabled)
     {
-        // Set origin for standalone mode to start playback immediately
-        seq.originPPQ.store(0.0);
-        seq.haveOrigin.store(true);
+        // Sequencer just enabled - set origin based on current state
+        if (hostPlaying) {
+            // Use DAW transport origin
+            seq.originPPQ.store(transportCache.ppq.load());
+            seq.haveOrigin.store(true);
+        } else {
+            // Standalone mode - don't set origin yet, wait for play button
+            seq.haveOrigin.store(false);
+        }
         seq.playingStep.store(-1);
     }
     else if (!sequencerEnabled && prevSequencerEnabled)
@@ -514,6 +520,16 @@ void PluginProcessor::resetSequencerState() noexcept
     seq.haveOrigin.store(false);
     
     DBG("[Processor] Sequencer state reset - playingStep: " << seq.playingStep.load() << ", originPPQ: " << seq.originPPQ.load());
+}
+
+void PluginProcessor::startStandalonePlayback() noexcept
+{
+    // Set origin for standalone playback using current time
+    seq.originPPQ.store(0.0);
+    seq.haveOrigin.store(true);
+    seq.playingStep.store(-1);
+    
+    DBG("[Processor] Standalone playback started - originPPQ: " << seq.originPPQ.load() << ", haveOrigin: " << seq.haveOrigin.load());
 }
 
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()

@@ -1696,8 +1696,14 @@ void PluginEditor::togglePlayback()
     
     DBG("[UI] Toggling playback: " << (newPlayingState ? "PLAY" : "STOP"));
     
-    // Enable/disable sequencer in processor
-    processorRef.setSequencerEnabled(newPlayingState);
+    if (newPlayingState) {
+        // Starting playback - enable sequencer and set origin for standalone mode
+        processorRef.setSequencerEnabled(true);
+        processorRef.startStandalonePlayback();
+    } else {
+        // Stopping playback - disable sequencer
+        processorRef.setSequencerEnabled(false);
+    }
     
     DBG("[UI] Playback toggled: " << (newPlayingState ? "PLAYING" : "STOPPED"));
 }

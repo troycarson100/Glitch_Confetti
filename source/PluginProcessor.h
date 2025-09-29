@@ -84,6 +84,7 @@ public:
     void setDivisionIndex(int index) noexcept { seq.divisionIndex.store(index); }
     void setStdMode(int mode) noexcept { seq.stdMode.store(juce::jlimit(0, 2, mode)); }
     void resetSequencerState() noexcept;
+    void startStandalonePlayback() noexcept;
     void randomizeAllStepSnapshots() noexcept;
 
 private:
