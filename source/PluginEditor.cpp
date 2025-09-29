@@ -311,14 +311,11 @@ void PluginEditor::timerCallback()
                     // Only update knob value if it's not currently being dragged
                     if (!masterKnobs[i]->isMouseButtonDown())
                     {
-                        // For Input and Output knobs, convert dB value back to 0-1 range
-                        if (i == 0 || i == 2) {
-                            // Convert dB to 0-1: -60dB -> 0.0, 0dB -> 0.5, +6dB -> 1.0
-                            float dbValue = param->convertFrom0to1(paramValue);
-                            float knobValue = (dbValue + 60.0f) / 66.0f; // Scale -60 to +6 to 0-1
+                        // Convert normalized parameter to raw knob value
+                        if (i == 0 || i == 2) { // Input and Output knobs - convert normalized to dB
+                            float knobValue = param->convertFrom0to1(paramValue);
                             masterKnobs[i]->setValue(knobValue, juce::dontSendNotification);
-                        } else {
-                            // Dry/Wet knob is already 0-1
+                        } else { // Dry/Wet knob - already 0-1
                             masterKnobs[i]->setValue(paramValue, juce::dontSendNotification);
                         }
                     }
@@ -969,17 +966,21 @@ void PluginEditor::setupKnobs()
                 masterKnobs[i]->setInnerImage(assets.knobMasterInside->createCopy());
             }
             
-            // Set knob range - all knobs use 0-1 range internally
-            masterKnobs[i]->setRange(0.0, 1.0, 0.001);
+            // Set knob range to match parameter range
+            if (i == 0 || i == 2) { // Input and Output knobs - dB range
+                masterKnobs[i]->setRange(-60.0, 6.0, 0.1);
+            } else { // Dry/Wet knob - percentage range
+                masterKnobs[i]->setRange(0.0, 1.0, 0.001);
+            }
             
             // Connect to APVTS parameter (indices 8, 9, 10)
             if (auto* param = dynamic_cast<juce::AudioParameterFloat*>(processorRef.getParameters()[8 + i])) {
-                // Get the normalized parameter value (0-1)
-                float paramValue = param->get();
+                // Get the raw parameter value (dB for Input/Output, 0-1 for Dry/Wet)
+                float paramValue = param->convertFrom0to1(param->get());
                 masterKnobs[i]->setValue(paramValue, juce::dontSendNotification);
             } else {
-                // Set default values: Input and Output at 0.0 dB (0.5 normalized), Dry/Wet at 100% (1.0)
-                float defaultValue = (i == 1) ? 1.0f : 0.5f; // Dry/Wet = 100% (1.0), Input/Output = 0.0 dB (0.5)
+                // Set default values: Input and Output at 0.0 dB, Dry/Wet at 100% (1.0)
+                float defaultValue = (i == 1) ? 1.0f : 0.0f; // Dry/Wet = 100% (1.0), Input/Output = 0.0 dB
                 masterKnobs[i]->setValue(defaultValue, juce::dontSendNotification);
             }
             
@@ -988,15 +989,11 @@ void PluginEditor::setupKnobs()
                 if (auto* param = dynamic_cast<juce::AudioParameterFloat*>(processorRef.getParameters()[8 + i])) {
                     float knobValue = masterKnobs[i]->getValue();
                     
-                    // For Input and Output knobs, convert 0-1 to dB range (-60 to +6)
-                    if (i == 0 || i == 2) {
-                        // Convert 0-1 to dB: 0.0 -> -60dB, 0.5 -> 0dB, 1.0 -> +6dB
-                        float dbValue = (knobValue * 66.0f) - 60.0f; // Scale 0-1 to -60 to +6
-                        // Convert dB value to normalized parameter value
-                        float normalizedValue = (dbValue - (-60.0f)) / (6.0f - (-60.0f));
+                    // Convert knob value to normalized 0-1 for parameter
+                    if (i == 0 || i == 2) { // Input and Output knobs - convert dB to normalized
+                        float normalizedValue = (knobValue - (-60.0f)) / (6.0f - (-60.0f));
                         param->setValueNotifyingHost(normalizedValue);
-                    } else {
-                        // Dry/Wet knob is already 0-1
+                    } else { // Dry/Wet knob - already 0-1
                         param->setValueNotifyingHost(knobValue);
                     }
                 }
