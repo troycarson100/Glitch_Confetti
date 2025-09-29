@@ -32,6 +32,9 @@ PluginProcessor::PluginProcessor()
     // Initialize DSP variables (prepare will be called in prepareToPlay)
     dspSampleRate = 44100.0;
     
+    // Initialize standalone start time
+    standaloneStartTime = std::chrono::high_resolution_clock::now();
+    
     // Verification log
     DBG("[Stepper] Built formats: VST3/AU/Standalone. BundleID=com.glitchcorp.stepper, Code=Stp1");
 }
@@ -297,9 +300,8 @@ void PluginProcessor::updatePlayingStepFromTransport()
     } else {
         // Use simulated transport for standalone mode
         // Use a simple time-based approach for standalone
-        static auto startTime = std::chrono::high_resolution_clock::now();
         auto now = std::chrono::high_resolution_clock::now();
-        auto elapsed = std::chrono::duration<double>(now - startTime).count();
+        auto elapsed = std::chrono::duration<double>(now - standaloneStartTime).count();
         
         // Simulate PPQ at 120 BPM (2 beats per second)
         ppqPos = elapsed * 2.0; // 2 PPQ per second at 120 BPM
@@ -335,8 +337,8 @@ void PluginProcessor::updatePlayingStepFromTransport()
     if (hostPlaying) {
         origin = seq.haveOrigin.load() ? seq.originPPQ.load() : barStartPpq;
     } else {
-        // For standalone mode, use 0 as origin (start from beginning)
-        origin = 0.0;
+        // For standalone mode, use sequencer origin if available, otherwise use 0
+        origin = seq.haveOrigin.load() ? seq.originPPQ.load() : 0.0;
     }
     const double beatsSinceOrigin = juce::jmax(0.0, ppqPos - origin);
 
@@ -528,6 +530,9 @@ void PluginProcessor::startStandalonePlayback() noexcept
     seq.originPPQ.store(0.0);
     seq.haveOrigin.store(true);
     seq.playingStep.store(-1);
+    
+    // Reset standalone start time
+    standaloneStartTime = std::chrono::high_resolution_clock::now();
     
     DBG("[Processor] Standalone playback started - originPPQ: " << seq.originPPQ.load() << ", haveOrigin: " << seq.haveOrigin.load());
 }

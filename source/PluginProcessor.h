@@ -100,6 +100,7 @@ private:
     SeqState seq;
     std::atomic<int> uiSelectedStep { 0 };  // Editor's selected step for editing only
     bool prevHostPlaying = false;
+    std::chrono::high_resolution_clock::time_point standaloneStartTime;
     
     // Step snapshots storage
     std::array<StepSnapshot, 16> stepSnapshots;
