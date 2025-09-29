@@ -33,6 +33,9 @@ PluginEditor::PluginEditor (PluginProcessor& p)
         // Setup sequencer area
         setupSequencerArea();
         
+        // Setup UI toggle
+        setupUIToggle();
+        
         // Start timer for UI updates
         startTimer(100); // Update every 100ms for smoother knob interaction
         
@@ -57,11 +60,14 @@ void PluginEditor::paint (juce::Graphics& g)
         g.fillAll (juce::Colour(0xff2a2a2a));
     }
     
-    // Draw the grid overlay
-    drawGridOverlay(g);
-    
-    // Draw the three main areas
-    drawMainAreas(g);
+    // Only draw grid overlay and main areas if UI is visible
+    if (uiVisible) {
+        // Draw the grid overlay
+        drawGridOverlay(g);
+        
+        // Draw the three main areas
+        drawMainAreas(g);
+    }
 }
 
 void PluginEditor::resized()
@@ -72,6 +78,9 @@ void PluginEditor::resized()
 
 void PluginEditor::drawGridOverlay(juce::Graphics& g)
 {
+    // Only draw the grid overlay if UI is visible
+    if (!uiVisible) return;
+    
     auto bounds = getLocalBounds();
     const int gridSize = 50; // 50 pixel grid
     const int fontSize = 10;
@@ -121,6 +130,9 @@ void PluginEditor::drawGridOverlay(juce::Graphics& g)
 
 void PluginEditor::drawMainAreas(juce::Graphics& g)
 {
+    // Only draw the colored area boxes if UI is visible
+    if (!uiVisible) return;
+    
     // Define the three main areas based on your grid coordinates
     auto effectArea = juce::Rectangle<int>(25, 54, 413, 296);    // 88px wider, 90px shorter
     auto stepArea = juce::Rectangle<int>(25, 374, 413, 140);     // 10px shorter, moved down 4px
@@ -911,4 +923,51 @@ void PluginEditor::updateSequencerUI()
         int divisionIndex = processorRef.getSeqState().divisionIndex.load();
         rateDropdown->setSelectedId(divisionIndex + 1);
     }
+}
+
+void PluginEditor::setupUIToggle()
+{
+    DBG("[UI] Setting up UI toggle button...");
+    
+    // Create UI toggle button (tiny button in top right corner)
+    uiToggleButton = std::make_unique<juce::ToggleButton>();
+    uiToggleButton->setButtonText("UI");
+    uiToggleButton->setSize(30, 20); // Tiny button
+    uiToggleButton->setTopLeftPosition(getWidth() - 35, 5); // Top right corner with 5px margin
+    
+    // Style the button
+    uiToggleButton->setColour(juce::ToggleButton::textColourId, juce::Colours::white);
+    uiToggleButton->setColour(juce::ToggleButton::tickColourId, juce::Colours::white);
+    uiToggleButton->setColour(juce::ToggleButton::tickDisabledColourId, juce::Colours::grey);
+    
+    // Set initial state (hidden by default)
+    uiToggleButton->setToggleState(false, juce::dontSendNotification);
+    uiVisible = false;
+    
+    // Set up callback
+    uiToggleButton->onClick = [this]() {
+        toggleUIVisibility();
+    };
+    
+    addAndMakeVisible(uiToggleButton.get());
+    
+    // Initially hide all UI areas
+    toggleUIVisibility();
+    
+    DBG("[UI] UI toggle button setup complete");
+}
+
+void PluginEditor::toggleUIVisibility()
+{
+    uiVisible = uiToggleButton->getToggleState();
+    
+    DBG("[UI] Toggling visual elements visibility: " << (uiVisible ? "SHOW" : "HIDE"));
+    
+    // Only toggle the visual elements (grid overlay and colored area boxes)
+    // All functional UI elements (knobs, buttons, etc.) remain visible
+    
+    // Trigger repaint to update grid overlay and area box visibility
+    repaint();
+    
+    DBG("[UI] Visual elements visibility toggled: " << (uiVisible ? "VISIBLE" : "HIDDEN"));
 }

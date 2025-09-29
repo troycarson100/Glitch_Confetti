@@ -147,6 +147,10 @@ public:
     std::unique_ptr<juce::Label> stepTitle;
     std::unique_ptr<CustomDiceButton> stepDiceButton;
     
+    // UI visibility toggle
+    std::unique_ptr<juce::ToggleButton> uiToggleButton;
+    bool uiVisible = false; // Default to hidden
+    
         // Helper methods
         void setupKnobs();
         void setupEffectsArea();
@@ -156,6 +160,8 @@ public:
         void updateParameterFromKnob(int knobIndex);
         void onStepButtonClicked(int stepIndex);
         void updateSequencerUI();
+        void setupUIToggle();
+        void toggleUIVisibility();
     void drawGridOverlay(juce::Graphics& g);
     void drawMainAreas(juce::Graphics& g);
 
