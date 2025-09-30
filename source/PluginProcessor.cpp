@@ -55,9 +55,11 @@ juce::AudioProcessorValueTreeState::ParameterLayout PluginProcessor::createParam
     params.push_back(std::make_unique<juce::AudioParameterFloat>("mix", "Mix", 0.0f, 1.0f, 0.5f));
     
     // Master Parameters
-    params.push_back(std::make_unique<juce::AudioParameterFloat>("masterInput", "Master Input", -60.0f, 6.0f, 0.0f)); // -60 to +6 dB, default 0.0 dB
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("masterInput", "Master Input", 
+        juce::NormalisableRange<float>(-60.0f, 6.0f, 0.01f, 1.0f), 0.0f)); // -60 to +6 dB, default 0.0 dB, logarithmic skew
     params.push_back(std::make_unique<juce::AudioParameterFloat>("masterDryWet", "Master Dry/Wet", 0.0f, 1.0f, 1.0f));
-    params.push_back(std::make_unique<juce::AudioParameterFloat>("masterOutput", "Master Output", -60.0f, 6.0f, 0.0f)); // -60 to +6 dB, default 0.0 dB
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("masterOutput", "Master Output", 
+        juce::NormalisableRange<float>(-60.0f, 6.0f, 0.01f, 1.0f), 0.0f)); // -60 to +6 dB, default 0.0 dB, logarithmic skew
     
     return { params.begin(), params.end() };
 }

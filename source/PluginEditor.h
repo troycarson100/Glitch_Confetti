@@ -204,6 +204,7 @@ public:
     std::array<std::unique_ptr<CustomKnob>, 3> masterKnobs;
     std::array<std::unique_ptr<juce::Label>, 3> masterLabels;
     std::array<std::unique_ptr<juce::Label>, 3> masterValueLabels;
+    std::array<std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>, 3> masterAttachments;
     
     // Effects area components
     std::unique_ptr<juce::Label> effectsTitle;
