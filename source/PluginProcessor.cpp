@@ -310,16 +310,11 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
         m.peakDbL.store(std::max(pkDbL, prevPkL - 0.03f));
         m.peakDbR.store(std::max(pkDbR, prevPkR - 0.03f));
 
-        // Clip flag if peak > 0 dBFS this block
-        if (pkL >= 1.0f) m.clippedL.store(true);
-        if (pkR >= 1.0f) m.clippedR.store(true);
+        // Clip detection removed - red bar color indicates clipping
         
         // Legacy single-value tracking for compatibility
         inputLevel.store(juce::jmax(rmsDbL, rmsDbR));
     };
-    
-    // Call BEFORE processing = input meter
-    updateMeters(buffer, inputMeter);
     
     // Apply master input gain (pre-effects)
     auto* masterInputParam = dynamic_cast<juce::AudioParameterFloat*>(getParameters()[8]); // masterInput
@@ -328,6 +323,9 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
         float inputGain = juce::Decibels::decibelsToGain(inputGainDb);
         buffer.applyGain(inputGain);
     }
+    
+    // Update input meters AFTER input gain is applied
+    updateMeters(buffer, inputMeter);
     
     // Store dry signal for master dry/wet mix
     juce::AudioBuffer<float> dryBuffer;
@@ -342,15 +340,18 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
     // Apply master dry/wet mix (post-effects, pre-output)
     auto* masterDryWetParam = dynamic_cast<juce::AudioParameterFloat*>(getParameters()[9]); // masterDryWet
     if (masterDryWetParam != nullptr) {
-        float dryWet = masterDryWetParam->get(); // 0.0 = dry, 1.0 = wet
-        float wetGain = dryWet;
-        float dryGain = 1.0f - dryWet;
+        float dryWet = masterDryWetParam->get(); // 0.0 = 100% dry, 1.0 = 100% wet
+        float dryGain = 1.0f - dryWet;  // Dry signal gain
+        float wetGain = dryWet;         // Wet signal gain
         
-        // Mix dry and wet signals
+        // Mix dry and wet signals properly
         for (int channel = 0; channel < buffer.getNumChannels(); ++channel) {
+            // Scale the wet signal (current buffer) by wet gain
+            buffer.applyGainRamp(0, buffer.getNumSamples(), wetGain, wetGain);
+            
+            // Add the dry signal scaled by dry gain
             buffer.addFromWithRamp(channel, 0, dryBuffer.getReadPointer(channel), 
                                  buffer.getNumSamples(), dryGain, dryGain);
-            buffer.applyGainRamp(0, buffer.getNumSamples(), wetGain, wetGain);
         }
     }
     

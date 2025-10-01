@@ -11,9 +11,6 @@ public:
         std::function<float()> getRmsDbR;
         std::function<float()> getPeakDbL;
         std::function<float()> getPeakDbR;
-        std::function<bool()>  getClipL;
-        std::function<bool()>  getClipR;
-        std::function<void()>  clearClip; // optional
     };
 
     explicit DualBarMeter(Source s): src(std::move(s)) { startTimerHz(30); }
@@ -35,8 +32,8 @@ public:
 
         // No central divider - just use the background
 
-        paintBar(g, left,  src.getRmsDbL(),  src.getPeakDbL(),  src.getClipL());
-        paintBar(g, right, src.getRmsDbR(),  src.getPeakDbR(),  src.getClipR());
+        paintBar(g, left,  src.getRmsDbL(),  src.getPeakDbL());
+        paintBar(g, right, src.getRmsDbR(),  src.getPeakDbR());
     }
 
 private:
@@ -56,7 +53,7 @@ private:
     }
 
     void paintBar(juce::Graphics& g, juce::Rectangle<float> bounds,
-                  float rmsDb, float peakDb, bool clipped) {
+                  float rmsDb, float peakDb) {
         // Track background (subtle inner track)
         auto track = bounds;
         g.setColour(juce::Colours::white.withAlpha(0.08f));
@@ -84,11 +81,7 @@ private:
             }
         }
 
-        // Clip dot in the top-right of this bar (latched red)
-        if (clipped) {
-            g.setColour(MeterTheme::red());
-            g.fillEllipse(track.getRight() - 8.0f, track.getY() + 4.0f, 6.0f, 6.0f);
-        }
+        // Clip indication is now handled by the red bar color when peaking
     }
 
     void timerCallback() override { repaint(); }

@@ -1011,19 +1011,13 @@ void PluginEditor::setupKnobs()
             [&]{ return p.getInputMeter().rmsDbL.load(); },
             [&]{ return p.getInputMeter().rmsDbR.load(); },
             [&]{ return p.getInputMeter().peakDbL.load(); },
-            [&]{ return p.getInputMeter().peakDbR.load(); },
-            [&]{ return p.getInputMeter().clippedL.load(); },
-            [&]{ return p.getInputMeter().clippedR.load(); },
-            []{} // no clear from UI for now
+            [&]{ return p.getInputMeter().peakDbR.load(); }
         };
         DualBarMeter::Source outSrc {
             [&]{ return p.getOutputMeter().rmsDbL.load(); },
             [&]{ return p.getOutputMeter().rmsDbR.load(); },
             [&]{ return p.getOutputMeter().peakDbL.load(); },
-            [&]{ return p.getOutputMeter().peakDbR.load(); },
-            [&]{ return p.getOutputMeter().clippedL.load(); },
-            [&]{ return p.getOutputMeter().clippedR.load(); },
-            []{}
+            [&]{ return p.getOutputMeter().peakDbR.load(); }
         };
 
         inMeter  = std::make_unique<DualBarMeter>(inSrc);
