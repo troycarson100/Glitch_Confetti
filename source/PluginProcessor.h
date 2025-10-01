@@ -81,7 +81,10 @@ struct SeqState {
     }
 
     // Sequencer API methods
-    void resetPhase() noexcept { currentStep.store(0); }
+    void resetPhase() noexcept { 
+        currentStep.store(0); 
+        playingStep.store(0);  // Also reset playing step for UI consistency
+    }
     void setActive(bool on) { active.store(on); } // keep existing, but don't tie to UI only
     void prepare(double sampleRate) { sr = sampleRate; }
 };

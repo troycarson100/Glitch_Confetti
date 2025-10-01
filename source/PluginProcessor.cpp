@@ -347,7 +347,7 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
         // Mix dry and wet signals properly
         for (int channel = 0; channel < buffer.getNumChannels(); ++channel) {
             // Scale the wet signal (current buffer) by wet gain
-            buffer.applyGainRamp(0, buffer.getNumSamples(), wetGain, wetGain);
+            buffer.applyGainRamp(channel, 0, buffer.getNumSamples(), wetGain, wetGain);
             
             // Add the dry signal scaled by dry gain
             buffer.addFromWithRamp(channel, 0, dryBuffer.getReadPointer(channel), 
