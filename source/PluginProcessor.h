@@ -21,12 +21,61 @@ struct TransportCache
 // Sequencer state for DSP control
 struct SeqState {
     std::atomic<bool> enabled { true };     // UI toggle "Sequencer ON"
+    std::atomic<bool> active { true };      // internal sequencer state (independent of UI)
     std::atomic<int>  stepsUsed { 16 };     // 1..16 from the Steps chip
     std::atomic<int>  divisionIndex { 5 };  // 0:4,1:2,2:1,3:1/2,4:1/4,5:1/8,6:1/16,7:1/32
     std::atomic<int>  playingStep { -1 };   // computed in processBlock
+    std::atomic<int>  currentStep { 0 };    // current step index (0-based)
     std::atomic<int>  stdMode { 0 };        // 0: straight, 1: triplet, 2: dotted
     std::atomic<double> originPPQ { 0.0 };  // origin for free-run stepping
     std::atomic<bool>   haveOrigin { false };
+    
+    // Sequencer timing state
+    double samplesIntoStep = 0.0;
+    double samplesPerStep = 0.0;
+    double sr = 44100.0;
+    
+    // Stateless PPQ→step mapping
+    // Return beats-per-step from the rate label string
+    static inline double beatsPerStepFromLabel(const juce::String& label) {
+        if (label == "1/32") return 0.125; // 8 steps per beat (4x faster than current)
+        if (label == "1/16") return 0.25;  // 4 steps per beat (2x faster than current)
+        if (label == "1/8") return 0.5;    // 2 steps per beat
+        if (label == "1/4") return 1.0;    // 1 step per beat
+        if (label == "1/2") return 2.0;    // 1 step per 2 beats
+        if (label == "1")   return 4.0;    // 1 step per 4 beats
+        if (label == "2")   return 8.0;    // 1 step per 8 beats
+        if (label == "4")   return 16.0;   // 1 step per 16 beats
+        return 1.0; // sane default = quarter-note
+    }
+    
+    static inline double beatsPerStepFromDivision(int divIdx) {
+        // Map your UI indices to musical divisions (matches dropdown order)
+        // 4, 2, 1, 1/2, 1/4, 1/8, 1/16, 1/32
+        static const juce::String labels[] = { "4", "2", "1", "1/2", "1/4", "1/8", "1/16", "1/32" };
+        const int i = juce::jlimit(0, (int)std::size(labels)-1, divIdx);
+        const double result = beatsPerStepFromLabel(labels[i]);
+        DBG("[SEQ] Division " << divIdx << " -> \"" << labels[i] << "\" -> " << result << " beats per step");
+        return result;
+    }
+    
+    int computeStepFromPPQ(double ppq) const noexcept {
+        const int N = juce::jmax(1, stepsUsed.load());
+        const double bps = beatsPerStepFromDivision(divisionIndex.load());
+        if (bps <= 0.0 || N <= 0 || !std::isfinite(ppq))
+            return currentStep.load(); // fallback: keep current
+
+        // Which step index are we on in the bar-agnostic sense:
+        // step = floor(ppq / beatsPerStep) % N
+        const double stepsExact = ppq / bps;
+        const int k = (int) std::floor(stepsExact);
+        return ((k % N) + N) % N; // Manual modulo for negative numbers
+    }
+
+    // Sequencer API methods
+    void resetPhase() noexcept { currentStep.store(0); }
+    void setActive(bool on) { active.store(on); } // keep existing, but don't tie to UI only
+    void prepare(double sampleRate) { sr = sampleRate; }
 };
 
 // StepSnapshot is now defined in PluginEditor.h to avoid circular dependencies
@@ -70,6 +119,8 @@ public:
     
     // Sequencer state access for editor
     int getPlayingStep() const noexcept { return seq.playingStep.load(); }
+    int getCurrentSeqStepAudioThread() const noexcept { return seq.currentStep.load(); } // Read from audio thread
+    bool getSeqActive() const noexcept { return seq.active.load(); }
     int getSelectedStep() const noexcept { return uiSelectedStep.load(); }
     bool isSequencerEnabled() const noexcept { return seq.enabled.load(); }
     double getBpmOrDefault(double fallback = 120.0) const noexcept { auto b = transportCache.bpm.load(); return b > 0.0 ? b : fallback; }
@@ -78,7 +129,16 @@ public:
     StepSnapshot getSafeSnapshot(int step) const;
     void setStepSnapshot(int step, const StepSnapshot& snapshot) noexcept;
     void setSelectedStep(int step) noexcept { uiSelectedStep.store(step); }
-    void setSequencerEnabled(bool enabled) noexcept { seq.enabled.store(enabled); }
+    void setSequencerEnabled(bool enabled) noexcept { 
+        seq.enabled.store(enabled); 
+        // Only set active if enabled, otherwise leave active state for transport watcher
+        if (enabled) {
+            seq.active.store(true);
+        }
+    }
+    void setSequencerActive(bool active) noexcept { 
+        seq.active.store(active); 
+    }
     void setFxEnabled(bool enabled) noexcept { fxEnabled.store(enabled); }
     void setStepsUsed(int steps) noexcept { seq.stepsUsed.store(steps); }
     void setDivisionIndex(int index) noexcept { seq.divisionIndex.store(index); }
@@ -86,6 +146,10 @@ public:
     void resetSequencerState() noexcept;
     void startStandalonePlayback() noexcept;
     void randomizeAllStepSnapshots() noexcept;
+    
+    // Level tracking for meters
+    float getInputLevel() const noexcept { return inputLevel.load(); }
+    float getOutputLevel() const noexcept { return outputLevel.load(); }
 
 private:
     // Parameters
@@ -96,6 +160,18 @@ private:
     mutable TransportCache transportCache;
     void updateTransportCache (juce::AudioPlayHead* playHead, int numSamples) noexcept;
     
+    // Transport snapshot (audio-thread owned, atomics for UI reads if needed)
+    std::atomic<bool> wasPlaying{false};
+    std::atomic<bool> haveValidPos{false};
+    std::atomic<bool> armPending{false};     // true when play just started but PPQ not valid yet
+    std::atomic<double> lastPPQ{-1.0};
+    std::atomic<int64_t> lastSamples{-1};
+    std::atomic<bool> followHost{true};     // follow host transport
+
+    
+    // Helper function for sequencer (legacy - now handled by SeqState::beatsPerStepFromDivision)
+    static double divisionToBeats(int divIdx);
+    
     // Sequencer state
     SeqState seq;
     std::atomic<int> uiSelectedStep { 0 };  // Editor's selected step for editing only
@@ -104,6 +180,10 @@ private:
     
     // Step snapshots storage
     std::array<StepSnapshot, 16> stepSnapshots;
+    
+    // Level tracking for meters
+    std::atomic<float> inputLevel { -60.0f };
+    std::atomic<float> outputLevel { -60.0f };
     
     // Sequencer methods
     void updatePlayingStepFromTransport();

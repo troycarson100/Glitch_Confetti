@@ -259,11 +259,13 @@ void PluginEditor::timerCallback()
             {
                 float indicatorValue = paramValue;
 
-                // If sequencer is enabled, show the playing step's snapshot value
+                // If sequencer is enabled and running, show the playing step's snapshot value
                 const bool seqEnabled = processorRef.isSequencerEnabled();
-                const int playingStep = processorRef.getPlayingStep();
+                const bool seqActive = processorRef.getSeqActive();
+                const int playingStep = processorRef.getCurrentSeqStepAudioThread(); // Read from audio thread
                 
-                if (seqEnabled && playingStep >= 0 && playingStep < 16)
+                // Only show sequencer snapshot if sequencer is actively playing
+                if (seqEnabled && seqActive && playingStep >= 0 && playingStep < 16)
                 {
                     StepSnapshot s = processorRef.getSafeSnapshot(playingStep);
                     auto* p = dynamic_cast<juce::AudioParameterFloat*>(processorRef.getAPVTS().getParameter(i == 0 ? "timeMs"
@@ -292,6 +294,7 @@ void PluginEditor::timerCallback()
                         indicatorValue = p->convertTo0to1(actual);
                     }
                 }
+                // If sequencer is not running or not active, indicator bars show current parameter values (paramValue)
 
                 indicatorBars[i]->setValue(indicatorValue);
             }
@@ -312,6 +315,19 @@ void PluginEditor::timerCallback()
                     masterValueLabels[i]->setText(juce::String(knobValue, 1) + " dB", juce::dontSendNotification);
                 }
             }
+        }
+        
+        // Update stereo meters
+        if (masterStereoMeters[0] != nullptr) {
+            // Pre-fx meter (left) - shows input level
+            float inputLevel = processorRef.getInputLevel();
+            masterStereoMeters[0]->setValue(inputLevel, juce::dontSendNotification);
+        }
+        
+        if (masterStereoMeters[1] != nullptr) {
+            // Post-fx meter (right) - shows output level
+            float outputLevel = processorRef.getOutputLevel();
+            masterStereoMeters[1]->setValue(outputLevel, juce::dontSendNotification);
         }
     
     // Update sequencer UI
@@ -934,6 +950,13 @@ void PluginEditor::setupKnobs()
         // Master area bounds (positioned in master area)
         auto masterArea = juce::Rectangle<int>(453, 54, 413, 296);
         
+        // Position master knobs horizontally in master area (centered and moved down 20px more)
+        const int knobSize = 109; // 30% bigger: 84 * 1.3 = 109
+        const int spacing = 129; // knobSize + 20px padding: 109 + 20 = 129
+        const int totalKnobWidth = 3 * knobSize + 2 * 20; // 3 knobs + 2 gaps of 20px each
+        const int startX = masterArea.getX() + (masterArea.getWidth() - totalKnobWidth) / 2; // Center the group
+        const int y = masterArea.getY() + 330; // Moved down 20px more: 310 + 20 = 330
+        
         for (int i = 0; i < 3; ++i) {
             // Create master knob
             masterKnobs[i] = std::make_unique<CustomKnob>();
@@ -961,12 +984,6 @@ void PluginEditor::setupKnobs()
             masterAttachments[i] = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
                 processorRef.getAPVTS(), paramIds[i], *masterKnobs[i]);
             
-            // Position master knobs horizontally in master area (30% bigger and at bottom)
-            const int knobSize = 109; // 30% bigger: 84 * 1.3 = 109
-            const int spacing = 149; // knobSize + 40px padding: 109 + 40 = 149
-            const int startX = masterArea.getX() + 50;
-            const int y = masterArea.getY() + 180; // Move to bottom of master area
-            
             masterKnobs[i]->setBounds(startX + i * spacing, y, knobSize, knobSize);
             
             // Create master label (title above knob)
@@ -993,7 +1010,32 @@ void PluginEditor::setupKnobs()
             masterValueLabels[i]->setBounds(startX + i * spacing, y + knobSize - 10, knobSize, 15);
         }
         
-        DBG("[UI] Master knobs setup complete");
+        // Setup stereo meters (pre-fx and post-fx)
+        const int meterWidth = 20;
+        const int meterHeight = 150;
+        const int meterSpacing = 30; // Space between meter and knob group
+        
+        // Pre-fx meter (left of Input knob)
+        masterStereoMeters[0] = std::make_unique<juce::Slider>();
+        masterStereoMeters[0]->setSliderStyle(juce::Slider::LinearVertical);
+        masterStereoMeters[0]->setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
+        masterStereoMeters[0]->setRange(-60.0, 6.0, 0.1);
+        masterStereoMeters[0]->setValue(-60.0);
+        masterStereoMeters[0]->setEnabled(false); // Read-only
+        addAndMakeVisible(masterStereoMeters[0].get());
+        masterStereoMeters[0]->setBounds(startX - meterSpacing - meterWidth, y + (knobSize - meterHeight) / 2, meterWidth, meterHeight);
+        
+        // Post-fx meter (right of Output knob)
+        masterStereoMeters[1] = std::make_unique<juce::Slider>();
+        masterStereoMeters[1]->setSliderStyle(juce::Slider::LinearVertical);
+        masterStereoMeters[1]->setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
+        masterStereoMeters[1]->setRange(-60.0, 6.0, 0.1);
+        masterStereoMeters[1]->setValue(-60.0);
+        masterStereoMeters[1]->setEnabled(false); // Read-only
+        addAndMakeVisible(masterStereoMeters[1].get());
+        masterStereoMeters[1]->setBounds(startX + totalKnobWidth + meterSpacing, y + (knobSize - meterHeight) / 2, meterWidth, meterHeight);
+        
+        DBG("[UI] Master knobs and stereo meters setup complete");
     }
 
     // Effects Area Setup
@@ -1390,8 +1432,9 @@ void PluginEditor::setupSequencerArea()
     rateDropdown->onChange = [this]() {
         if (rateDropdown != nullptr)
         {
-            const int selected = rateDropdown->getSelectedId(); // 1..6
+            const int selected = rateDropdown->getSelectedId(); // 1..8
             const int newDivisionIndex = juce::jlimit(0, 7, selected - 1);
+            DBG("[UI] Rate dropdown changed: ID=" << selected << " -> divisionIndex=" << newDivisionIndex);
             processorRef.setDivisionIndex(newDivisionIndex);
             updateSequencerUI();
         }
@@ -1414,6 +1457,7 @@ void PluginEditor::setupSequencerArea()
         stdToggle->setButtonText(labels[stdState]);
         // Inform processor of new STD mode for timing
         processorRef.setStdMode(stdState);
+        DBG("[UI] STD toggle clicked: state=" << stdState << " label=" << labels[stdState]);
     };
     
     DBG("[UI] Sequencer area setup complete");
@@ -1452,12 +1496,20 @@ void PluginEditor::setupStepPowerButton()
         DBG("[UI] Step area power: " << (stepAreaEnabled ? "ON" : "OFF"));
         
         if (!stepAreaEnabled) {
-            // Disable sequencer and reset state when turning OFF
+            // Disable sequencer and stop it immediately when turning OFF
             processorRef.setSequencerEnabled(false);
+            processorRef.setSequencerActive(false); // Force stop the sequencer
             processorRef.resetSequencerState();
         } else {
             // Enable sequencer when turning ON
             processorRef.setSequencerEnabled(true);
+            // If followHost is enabled and DAW is playing, realign immediately
+            if (auto* ph = processorRef.getPlayHead()) {
+                auto pos = ph->getPosition();
+                if (pos.hasValue() && pos->getIsPlaying()) {
+                    // Sequencer will be armed by the transport watcher
+                }
+            }
         }
         
         // Update UI visibility and repaint
@@ -1690,7 +1742,7 @@ void PluginEditor::updateSequencerUI()
 {
     // Update step button selection states
     int selectedStep = processorRef.getSelectedStep();
-    int playingStep = processorRef.getPlayingStep();
+    int playingStep = processorRef.getCurrentSeqStepAudioThread(); // Read from audio thread
     const int stepsUsed = processorRef.getSeqState().stepsUsed.load();
     
     for (int i = 0; i < 16; ++i) {

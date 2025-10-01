@@ -130,6 +130,7 @@ void PluginProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 {
     dspSampleRate = sampleRate;
     spaceDelay.prepare(sampleRate, samplesPerBlock);
+    seq.prepare(sampleRate); // Initialize sequencer with sample rate
 }
 
 void PluginProcessor::releaseResources()
@@ -170,63 +171,96 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
     const FxType fx = currentFx;
 #endif
 
-    // Update transport cache and compute playing step when host is playing
+    // Update transport cache
     updateTransportCache(getPlayHead(), buffer.getNumSamples());
-    bool hostPlaying = transportCache.playing.load();
-    bool sequencerEnabled = seq.enabled.load();
     
-    if (hostPlaying && !prevHostPlaying)
+    // Stateless PPQ-driven sequencer logic
+    if (auto* ph = getPlayHead())
     {
-        // latch origin at transport start
-        seq.originPPQ.store(transportCache.ppq.load());
-        seq.haveOrigin.store(true);
-    }
-    else if (!hostPlaying && prevHostPlaying)
-    {
-        // DAW stopped playing - reset sequencer state
-        seq.originPPQ.store(0.0);
-        seq.haveOrigin.store(false);
-        seq.playingStep.store(-1);
-    }
-    
-    // Handle sequencer enable/disable transitions
-    static bool prevSequencerEnabled = false;
-    if (sequencerEnabled && !prevSequencerEnabled)
-    {
-        // Sequencer just enabled - set origin based on current state
-        if (hostPlaying) {
-            // Use DAW transport origin
-            seq.originPPQ.store(transportCache.ppq.load());
-            seq.haveOrigin.store(true);
-        } else {
-            // Standalone mode - don't set origin yet, wait for play button
-            seq.originPPQ.store(0.0);
-            seq.haveOrigin.store(false);
+        auto pos = ph->getPosition();
+        if (pos.hasValue())
+        {
+            const bool isPlaying = pos->getIsPlaying();
+            const bool ppqValid  = pos->getPpqPosition().hasValue();
+            const double ppq     = pos->getPpqPosition().hasValue() ? *pos->getPpqPosition() : -1.0;
+            const int64_t sPos   = pos->getTimeInSamples().hasValue() ? *pos->getTimeInSamples() : -1;
+
+            // Detect play edge
+            const bool playEdge = (isPlaying && !wasPlaying.load());
+
+            // Handle hosts that set play before PPQ is valid:
+            if (playEdge) {
+                armPending.store(true);
+                seq.resetPhase();          // visuals/phase reset
+                // Auto-enable sequencer on DAW play (user can still disable with power button)
+                if (followHost.load()) {
+                    seq.enabled.store(true);  // Enable sequencer
+                    seq.active.store(true);   // Activate sequencer
+                }
+                DBG("[SEQ] Play edge detected, enabled: " << seq.enabled.load() << " active: " << seq.active.load());
+            }
+
+            // If arming and PPQ now valid, lock-in
+            if (armPending.load() && isPlaying && ppqValid) {
+                const int step = seq.computeStepFromPPQ(ppq);
+                seq.currentStep.store(step);
+                seq.playingStep.store(step);
+                armPending.store(false);
+            }
+
+            // While playing with valid PPQ: compute step every block (stateless)
+            if (isPlaying && ppqValid && seq.active.load()) {
+                const int step = seq.computeStepFromPPQ(ppq);
+                if (step != seq.currentStep.load()) {
+                    seq.currentStep.store(step);
+                    seq.playingStep.store(step);
+                    DBG("[SEQ] Step changed to: " << step << " PPQ: " << ppq);
+                }
+            }
+
+            // Stop edge: freeze
+            if (!isPlaying && wasPlaying.load()) {
+                // Transport stopped: don't advance; keep last lit step
+                // Optionally: seq.resetPhase();
+            }
+
+            // Persist transport snapshot
+            wasPlaying.store(isPlaying);
+            haveValidPos.store(true);
+            lastPPQ.store(ppq);
+            lastSamples.store(sPos);
         }
-        seq.playingStep.store(-1);
     }
-    else if (!sequencerEnabled && prevSequencerEnabled)
+    else
     {
-        // When sequencer is disabled, reset everything
-        seq.originPPQ.store(0.0);
-        seq.haveOrigin.store(false);
-        seq.playingStep.store(-1);
-    }
-    prevSequencerEnabled = sequencerEnabled;
-    prevHostPlaying = hostPlaying;
-    
-    // Update playing step if host is playing OR if internal sequencer is enabled AND has origin
-    if (hostPlaying || (sequencerEnabled && seq.haveOrigin.load()))
-    {
-        updatePlayingStepFromTransport();
+        // Standalone mode - no DAW transport, use internal timing
+        if (seq.active.load() && seq.enabled.load()) {
+            // Use standalone timing to advance sequencer
+            auto now = std::chrono::high_resolution_clock::now();
+            auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - standaloneStartTime).count();
+            
+            // Calculate current step based on elapsed time and BPM
+            const double bpm = transportCache.bpm.load() > 0.0 ? transportCache.bpm.load() : 120.0; // Use transport BPM or default
+            const double beatsPerStep = seq.beatsPerStepFromDivision(seq.divisionIndex.load());
+            const double msPerStep = (60.0 / bpm) * beatsPerStep * 1000.0; // Convert beats to milliseconds
+            
+            if (msPerStep > 0.0) {
+                const int step = ((int)(elapsed / msPerStep)) % seq.stepsUsed.load();
+                if (step != seq.currentStep.load()) {
+                    seq.currentStep.store(step);
+                    seq.playingStep.store(step);
+                    DBG("[SEQ] Standalone step: " << step << " elapsed: " << elapsed << "ms");
+                }
+            }
+        }
     }
 
-    // Apply sequencer step snapshot only if sequencer is enabled, otherwise use APVTS parameters
-    if (sequencerEnabled) {
-        // Use playing step's snapshot for audio processing
-        int playingStep = seq.playingStep.load();
-        StepSnapshot playingSnapshot = getSafeSnapshot(playingStep);
-        applySnapshotTargets(playingSnapshot);
+    // Apply sequencer step snapshot only if sequencer is active, otherwise use APVTS parameters
+    if (seq.active.load()) {
+        // Use current step's snapshot for audio processing
+        int currentStep = seq.currentStep.load();
+        StepSnapshot currentSnapshot = getSafeSnapshot(currentStep);
+        applySnapshotTargets(currentSnapshot);
     } else {
         // Use empty snapshot to read from APVTS parameters (manual control)
         applySnapshotTargets(StepSnapshot{});
@@ -236,6 +270,16 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
     for (auto i = getTotalNumInputChannels(); i < getTotalNumOutputChannels(); ++i)
         buffer.clear (i, 0, buffer.getNumSamples());
 
+    // Track input level (pre-effects)
+    if (buffer.getNumChannels() > 0 && buffer.getNumSamples() > 0) {
+        float maxInputLevel = 0.0f;
+        for (int channel = 0; channel < buffer.getNumChannels(); ++channel) {
+            float channelMax = buffer.getMagnitude(channel, 0, buffer.getNumSamples());
+            maxInputLevel = juce::jmax(maxInputLevel, channelMax);
+        }
+        inputLevel.store(juce::Decibels::gainToDecibels(maxInputLevel));
+    }
+    
     // Apply master input gain (pre-effects)
     auto* masterInputParam = dynamic_cast<juce::AudioParameterFloat*>(getParameters()[8]); // masterInput
     if (masterInputParam != nullptr) {
@@ -256,6 +300,16 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
         float outputGainDb = masterOutputParam->get();
         float outputGain = juce::Decibels::decibelsToGain(outputGainDb);
         buffer.applyGain(outputGain);
+    }
+    
+    // Track output level (post-effects)
+    if (buffer.getNumChannels() > 0 && buffer.getNumSamples() > 0) {
+        float maxOutputLevel = 0.0f;
+        for (int channel = 0; channel < buffer.getNumChannels(); ++channel) {
+            float channelMax = buffer.getMagnitude(channel, 0, buffer.getNumSamples());
+            maxOutputLevel = juce::jmax(maxOutputLevel, channelMax);
+        }
+        outputLevel.store(juce::Decibels::gainToDecibels(maxOutputLevel));
     }
 
     // Debug logging
@@ -549,24 +603,46 @@ void PluginProcessor::resetSequencerState() noexcept
 {
     // Reset sequencer state to prevent random playback when re-enabled
     seq.playingStep.store(-1);
+    seq.currentStep.store(0);
     seq.originPPQ.store(0.0);
     seq.haveOrigin.store(false);
+    seq.samplesIntoStep = 0.0;
     
-    DBG("[Processor] Sequencer state reset - playingStep: " << seq.playingStep.load() << ", originPPQ: " << seq.originPPQ.load());
+    DBG("[Processor] Sequencer state reset - playingStep: " << seq.playingStep.load() << ", currentStep: " << seq.currentStep.load() << ", originPPQ: " << seq.originPPQ.load());
 }
 
 void PluginProcessor::startStandalonePlayback() noexcept
 {
-    // Set origin for standalone playback using current time
-    seq.originPPQ.store(0.0);
-    seq.haveOrigin.store(true);
-    seq.playingStep.store(-1);
+    // For standalone mode, simulate DAW transport by setting up the transport state
+    wasPlaying.store(false);  // Will be set to true by the sequencer logic
+    haveValidPos.store(true);
+    armPending.store(false);
+    lastPPQ.store(0.0);
+    lastSamples.store(0);
     
     // Reset standalone start time
     standaloneStartTime = std::chrono::high_resolution_clock::now();
     
-    DBG("[Processor] Standalone playback started - originPPQ: " << seq.originPPQ.load() << ", haveOrigin: " << seq.haveOrigin.load());
+    // Enable the sequencer
+    seq.active.store(true);
+    seq.resetPhase();
+    
+    DBG("[Processor] Standalone playback started - sequencer active: " << seq.active.load());
 }
+
+// Helper function for sequencer
+double PluginProcessor::divisionToBeats(int divIdx)
+{
+    // Map division indices to beats per step
+    // 0:1/4 → 0.25 beats, 1:1/8 → 0.125, 2:1/16 → 0.0625, 3:1/32 → 0.03125
+    // 4:1/2 → 0.5, 5:1 → 1.0, 6:2 → 2.0, 7:4 → 4.0
+    static const double beatsPerStepLUT[] = { 0.25, 0.125, 0.0625, 0.03125, 0.5, 1.0, 2.0, 4.0 };
+    const int i = juce::jlimit(0, (int)std::size(beatsPerStepLUT)-1, divIdx);
+    return beatsPerStepLUT[i];
+}
+
+
+
 
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
 {

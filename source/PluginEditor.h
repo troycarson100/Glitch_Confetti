@@ -206,6 +206,9 @@ public:
     std::array<std::unique_ptr<juce::Label>, 3> masterValueLabels;
     std::array<std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>, 3> masterAttachments;
     
+    // Master stereo meters (pre-fx and post-fx)
+    std::array<std::unique_ptr<juce::Slider>, 2> masterStereoMeters; // 0 = pre-fx (left), 1 = post-fx (right)
+    
     // Effects area components
     std::unique_ptr<juce::Label> effectsTitle;
     std::unique_ptr<CustomDiceButton> diceButton;
