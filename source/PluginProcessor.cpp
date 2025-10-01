@@ -288,10 +288,29 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
         buffer.applyGain(inputGain);
     }
     
+    // Store dry signal for master dry/wet mix
+    juce::AudioBuffer<float> dryBuffer;
+    dryBuffer.makeCopyOf(buffer);
+    
     // Process delay effect
     if (buffer.getNumChannels() > 0 && buffer.getNumSamples() > 0) {
         if (fxEnabled.load())
             spaceDelay.process(buffer, buffer.getNumSamples());
+    }
+    
+    // Apply master dry/wet mix (post-effects, pre-output)
+    auto* masterDryWetParam = dynamic_cast<juce::AudioParameterFloat*>(getParameters()[9]); // masterDryWet
+    if (masterDryWetParam != nullptr) {
+        float dryWet = masterDryWetParam->get(); // 0.0 = dry, 1.0 = wet
+        float wetGain = dryWet;
+        float dryGain = 1.0f - dryWet;
+        
+        // Mix dry and wet signals
+        for (int channel = 0; channel < buffer.getNumChannels(); ++channel) {
+            buffer.addFromWithRamp(channel, 0, dryBuffer.getReadPointer(channel), 
+                                 buffer.getNumSamples(), dryGain, dryGain);
+            buffer.applyGainRamp(0, buffer.getNumSamples(), wetGain, wetGain);
+        }
     }
     
     // Apply master output gain (post-effects)

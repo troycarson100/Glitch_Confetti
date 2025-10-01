@@ -954,7 +954,7 @@ void PluginEditor::setupKnobs()
         const int knobSize = 109; // 30% bigger: 84 * 1.3 = 109
         const int spacing = 129; // knobSize + 20px padding: 109 + 20 = 129
         const int totalKnobWidth = 3 * knobSize + 2 * 20; // 3 knobs + 2 gaps of 20px each
-        const int startX = masterArea.getX() + (masterArea.getWidth() - totalKnobWidth) / 2; // Center the group
+        const int startX = masterArea.getX() + (masterArea.getWidth() - totalKnobWidth) / 2 + 48; // Center the group + 48px right
         const int y = masterArea.getY() + 330; // Moved down 20px more: 310 + 20 = 330
         
         for (int i = 0; i < 3; ++i) {
