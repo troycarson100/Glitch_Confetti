@@ -270,15 +270,56 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
     for (auto i = getTotalNumInputChannels(); i < getTotalNumOutputChannels(); ++i)
         buffer.clear (i, 0, buffer.getNumSamples());
 
-    // Track input level (pre-effects)
-    if (buffer.getNumChannels() > 0 && buffer.getNumSamples() > 0) {
-        float maxInputLevel = 0.0f;
-        for (int channel = 0; channel < buffer.getNumChannels(); ++channel) {
-            float channelMax = buffer.getMagnitude(channel, 0, buffer.getNumSamples());
-            maxInputLevel = juce::jmax(maxInputLevel, channelMax);
+    // Update input meters (pre-effects)
+    auto updateMeters = [&](const juce::AudioBuffer<float>& buf, MeterState& m) {
+        const int N = buf.getNumSamples();
+        if (N <= 0) return;
+        
+        const float* L = buf.getReadPointer(0);
+        const float* R = buf.getNumChannels() > 1 ? buf.getReadPointer(1) : L;
+
+        // Block RMS (cheap) + peak
+        float sumL=0, sumR=0, pkL=0, pkR=0;
+        for (int n=0; n<N; ++n) {
+            const float a = std::abs(L[n]), b = std::abs(R[n]);
+            sumL += L[n]*L[n]; sumR += R[n]*R[n];
+            pkL = std::max(pkL, a); pkR = std::max(pkR, b);
         }
-        inputLevel.store(juce::Decibels::gainToDecibels(maxInputLevel));
-    }
+        const float rmsL = std::sqrt(sumL / std::max(1, N));
+        const float rmsR = std::sqrt(sumR / std::max(1, N));
+
+        // Convert to dB
+        const float rmsDbL = linearToDb(rmsL);
+        const float rmsDbR = linearToDb(rmsR);
+        const float pkDbL  = linearToDb(pkL);
+        const float pkDbR  = linearToDb(pkR);
+
+        // Ballistics (slow rise/fast decay for RMS; sticky peak)
+        auto smooth = [](float prev, float target, float rise, float fall) {
+            return (target > prev) ? (prev + rise*(target - prev))
+                                   : (prev + fall*(target - prev));
+        };
+
+        // Pull previous atomics, smooth, write back
+        float prevRmsL = m.rmsDbL.load(), prevRmsR = m.rmsDbR.load();
+        m.rmsDbL.store(smooth(prevRmsL, rmsDbL, 0.25f, 0.08f));
+        m.rmsDbR.store(smooth(prevRmsR, rmsDbR, 0.25f, 0.08f));
+
+        // Peak hold with decay ~1.5 dB/s (host-rate agnostic)
+        float prevPkL = m.peakDbL.load(), prevPkR = m.peakDbR.load();
+        m.peakDbL.store(std::max(pkDbL, prevPkL - 0.03f));
+        m.peakDbR.store(std::max(pkDbR, prevPkR - 0.03f));
+
+        // Clip flag if peak > 0 dBFS this block
+        if (pkL >= 1.0f) m.clippedL.store(true);
+        if (pkR >= 1.0f) m.clippedR.store(true);
+        
+        // Legacy single-value tracking for compatibility
+        inputLevel.store(juce::jmax(rmsDbL, rmsDbR));
+    };
+    
+    // Call BEFORE processing = input meter
+    updateMeters(buffer, inputMeter);
     
     // Apply master input gain (pre-effects)
     auto* masterInputParam = dynamic_cast<juce::AudioParameterFloat*>(getParameters()[8]); // masterInput
@@ -321,15 +362,11 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
         buffer.applyGain(outputGain);
     }
     
-    // Track output level (post-effects)
-    if (buffer.getNumChannels() > 0 && buffer.getNumSamples() > 0) {
-        float maxOutputLevel = 0.0f;
-        for (int channel = 0; channel < buffer.getNumChannels(); ++channel) {
-            float channelMax = buffer.getMagnitude(channel, 0, buffer.getNumSamples());
-            maxOutputLevel = juce::jmax(maxOutputLevel, channelMax);
-        }
-        outputLevel.store(juce::Decibels::gainToDecibels(maxOutputLevel));
-    }
+    // Call AFTER processing = output meter
+    updateMeters(buffer, outputMeter);
+    
+    // Legacy single-value tracking for compatibility
+    outputLevel.store(juce::jmax(outputMeter.rmsDbL.load(), outputMeter.rmsDbR.load()));
 
     // Debug logging
     static int c = 0;

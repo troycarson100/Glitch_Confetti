@@ -6,6 +6,7 @@
 #include <memory>
 #include "StepSnapshot.h"
 #include "ui/Assets.h"
+#include "DualBarMeter.h"
 
 // Forward declaration
 class PluginProcessor;
@@ -206,8 +207,8 @@ public:
     std::array<std::unique_ptr<juce::Label>, 3> masterValueLabels;
     std::array<std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>, 3> masterAttachments;
     
-    // Master stereo meters (pre-fx and post-fx)
-    std::array<std::unique_ptr<juce::Slider>, 2> masterStereoMeters; // 0 = pre-fx (left), 1 = post-fx (right)
+    // Modern dual-bar meters (pre-fx and post-fx)
+    std::unique_ptr<DualBarMeter> inMeter, outMeter;
     
     // Effects area components
     std::unique_ptr<juce::Label> effectsTitle;

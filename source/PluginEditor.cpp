@@ -317,18 +317,7 @@ void PluginEditor::timerCallback()
             }
         }
         
-        // Update stereo meters
-        if (masterStereoMeters[0] != nullptr) {
-            // Pre-fx meter (left) - shows input level
-            float inputLevel = processorRef.getInputLevel();
-            masterStereoMeters[0]->setValue(inputLevel, juce::dontSendNotification);
-        }
-        
-        if (masterStereoMeters[1] != nullptr) {
-            // Post-fx meter (right) - shows output level
-            float outputLevel = processorRef.getOutputLevel();
-            masterStereoMeters[1]->setValue(outputLevel, juce::dontSendNotification);
-        }
+        // Modern dual-bar meters update automatically via their timer
     
     // Update sequencer UI
     updateSequencerUI();
@@ -1012,28 +1001,39 @@ void PluginEditor::setupKnobs()
         
         // Setup stereo meters (pre-fx and post-fx)
         const int meterWidth = 20;
-        const int meterHeight = 150;
+        const int meterHeight = 120; // 20% shorter: 150 * 0.8 = 120
         const int meterSpacing = 30; // Space between meter and knob group
         
-        // Pre-fx meter (left of Input knob)
-        masterStereoMeters[0] = std::make_unique<juce::Slider>();
-        masterStereoMeters[0]->setSliderStyle(juce::Slider::LinearVertical);
-        masterStereoMeters[0]->setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
-        masterStereoMeters[0]->setRange(-60.0, 6.0, 0.1);
-        masterStereoMeters[0]->setValue(-60.0);
-        masterStereoMeters[0]->setEnabled(false); // Read-only
-        addAndMakeVisible(masterStereoMeters[0].get());
-        masterStereoMeters[0]->setBounds(startX - meterSpacing - meterWidth, y + (knobSize - meterHeight) / 2, meterWidth, meterHeight);
+        // Create modern dual-bar meters
+        auto& p = processorRef;
+        DualBarMeter::Source inSrc {
+            // lambdas read atomics; capture &p by reference OK
+            [&]{ return p.getInputMeter().rmsDbL.load(); },
+            [&]{ return p.getInputMeter().rmsDbR.load(); },
+            [&]{ return p.getInputMeter().peakDbL.load(); },
+            [&]{ return p.getInputMeter().peakDbR.load(); },
+            [&]{ return p.getInputMeter().clippedL.load(); },
+            [&]{ return p.getInputMeter().clippedR.load(); },
+            []{} // no clear from UI for now
+        };
+        DualBarMeter::Source outSrc {
+            [&]{ return p.getOutputMeter().rmsDbL.load(); },
+            [&]{ return p.getOutputMeter().rmsDbR.load(); },
+            [&]{ return p.getOutputMeter().peakDbL.load(); },
+            [&]{ return p.getOutputMeter().peakDbR.load(); },
+            [&]{ return p.getOutputMeter().clippedL.load(); },
+            [&]{ return p.getOutputMeter().clippedR.load(); },
+            []{}
+        };
+
+        inMeter  = std::make_unique<DualBarMeter>(inSrc);
+        outMeter = std::make_unique<DualBarMeter>(outSrc);
+        addAndMakeVisible(*inMeter);
+        addAndMakeVisible(*outMeter);
         
-        // Post-fx meter (right of Output knob)
-        masterStereoMeters[1] = std::make_unique<juce::Slider>();
-        masterStereoMeters[1]->setSliderStyle(juce::Slider::LinearVertical);
-        masterStereoMeters[1]->setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
-        masterStereoMeters[1]->setRange(-60.0, 6.0, 0.1);
-        masterStereoMeters[1]->setValue(-60.0);
-        masterStereoMeters[1]->setEnabled(false); // Read-only
-        addAndMakeVisible(masterStereoMeters[1].get());
-        masterStereoMeters[1]->setBounds(startX + totalKnobWidth + meterSpacing, y + (knobSize - meterHeight) / 2, meterWidth, meterHeight);
+        // Position meters
+        inMeter->setBounds(startX - meterSpacing - meterWidth + 10, y + (knobSize - meterHeight) / 2, meterWidth, meterHeight);  // Move right 10px
+        outMeter->setBounds(startX + totalKnobWidth + meterSpacing - 10, y + (knobSize - meterHeight) / 2, meterWidth, meterHeight);  // Move left 10px
         
         DBG("[UI] Master knobs and stereo meters setup complete");
     }

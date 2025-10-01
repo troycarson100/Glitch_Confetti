@@ -5,6 +5,14 @@
 #include "dsp/FxDelay.h"
 #include "dsp/DspFlags.h"
 #include "StepSnapshot.h"
+#include "MeterTheme.h"
+
+// Real-time safe level tracking for meters
+struct MeterState {
+    std::atomic<float> rmsDbL { -100.0f }, rmsDbR { -100.0f };
+    std::atomic<float> peakDbL{ -100.0f }, peakDbR{ -100.0f };
+    std::atomic<bool>  clippedL{ false }, clippedR{ false };
+};
 
 // Transport cache for reliable DAW sync
 struct TransportCache
@@ -150,6 +158,10 @@ public:
     // Level tracking for meters
     float getInputLevel() const noexcept { return inputLevel.load(); }
     float getOutputLevel() const noexcept { return outputLevel.load(); }
+    
+    // Modern dual-bar meter access
+    const MeterState& getInputMeter() const noexcept { return inputMeter; }
+    const MeterState& getOutputMeter() const noexcept { return outputMeter; }
 
 private:
     // Parameters
@@ -184,6 +196,14 @@ private:
     // Level tracking for meters
     std::atomic<float> inputLevel { -60.0f };
     std::atomic<float> outputLevel { -60.0f };
+    
+    // Modern dual-bar meter state
+    MeterState inputMeter, outputMeter;
+    
+    // Helper functions for meter processing
+    static inline float linearToDb(float x) {
+        return x > 1e-9f ? 20.0f * std::log10(x) : -100.0f;
+    }
     
     // Sequencer methods
     void updatePlayingStepFromTransport();
