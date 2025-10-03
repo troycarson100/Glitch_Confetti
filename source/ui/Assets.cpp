@@ -38,6 +38,8 @@ bool UiAssets::loadAll()
     macro2AssignButton = loadSVG (Macro2_Assign_Button_svg, Macro2_Assign_Button_svgSize);
     lockedIcon        = loadSVG (Locked_svg, Locked_svgSize);
     unlockedIcon      = loadSVG (Unlocked_svg, Unlocked_svgSize);
+    fxTypeCarrotInactive = loadSVG (FX_Type_Carrot_Inactive_svg, FX_Type_Carrot_Inactive_svgSize);
+    fxTypeCarrotActive   = loadSVG (FX_Type_Carrot_Active_svg, FX_Type_Carrot_Active_svgSize);
 #else
     auto assetsDir = juce::File::getSpecialLocation(juce::File::currentApplicationFile)
                         .getSiblingFile ("assets"); // adjust if different

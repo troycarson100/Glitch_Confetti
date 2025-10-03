@@ -3,6 +3,41 @@
 #include "BinaryData.h"
 
 //==============================================================================
+// CustomEffectDropdown Implementation
+//==============================================================================
+
+CustomEffectDropdown::CustomEffectDropdown()
+{
+    setColour(juce::ComboBox::backgroundColourId, juce::Colours::transparentBlack);
+    setColour(juce::ComboBox::textColourId, juce::Colours::white);
+    setColour(juce::ComboBox::arrowColourId, juce::Colours::transparentBlack);
+    setColour(juce::ComboBox::buttonColourId, juce::Colours::transparentBlack);
+    setColour(juce::ComboBox::outlineColourId, juce::Colours::transparentBlack);
+    
+    // Set a custom look and feel to control popup list size
+    setLookAndFeel(&customLookAndFeel);
+}
+
+void CustomEffectDropdown::paint(juce::Graphics& g)
+{
+    auto bounds = getLocalBounds().toFloat();
+    
+    // Draw carrot only (no text) - centered in the smaller dropdown
+    auto carrotArea = bounds.reduced(2.0f);
+    if (isPopupActive() && activeCarrot != nullptr) {
+        activeCarrot->drawWithin(g, carrotArea, juce::RectanglePlacement::centred, 1.0f);
+    } else if (inactiveCarrot != nullptr) {
+        inactiveCarrot->drawWithin(g, carrotArea, juce::RectanglePlacement::centred, 1.0f);
+    }
+}
+
+void CustomEffectDropdown::setCarrotImages(std::unique_ptr<juce::Drawable> inactive, std::unique_ptr<juce::Drawable> active)
+{
+    inactiveCarrot = std::move(inactive);
+    activeCarrot = std::move(active);
+}
+
+//==============================================================================
 // PluginEditor Implementation
 //==============================================================================
 
@@ -31,6 +66,7 @@ PluginEditor::PluginEditor (PluginProcessor& p)
         
         // Setup effects area
         setupEffectsArea();
+        setupSpaceDelayUI();
         setupFxPowerButton();
         
         // Setup All Steps toggle
@@ -1194,6 +1230,62 @@ void PluginEditor::setupKnobs()
         DBG("[UI] Effects area setup complete");
     }
 
+void PluginEditor::setupSpaceDelayUI()
+{
+    DBG("[UI] Setting up space delay UI...");
+    
+    // Effect area bounds
+    auto effectArea = juce::Rectangle<int>(25, 54, 413, 296);
+    
+    // Create "Space Delay" title using SVG
+    spaceDelayTitle = std::make_unique<juce::DrawableButton>("spaceDelayTitle", juce::DrawableButton::ButtonStyle::ImageFitted);
+    addAndMakeVisible(spaceDelayTitle.get());
+    spaceDelayTitle->setBounds(effectArea.getX() - 40, effectArea.getY() - 45, 138, 29); // Moved up 5px more and made 15% larger (120*1.15=138, 25*1.15=29)
+    
+    // Load the Space Delay SVG
+    if (assets.tabTitleSpaceDelay != nullptr) {
+        spaceDelayTitle->setImages(assets.tabTitleSpaceDelay->createCopy().get());
+    }
+    
+    // Make it non-interactive but enabled for display
+    spaceDelayTitle->setClickingTogglesState(false);
+    spaceDelayTitle->setEnabled(true); // Enable it so it's not greyed out
+    
+    // Create effect type dropdown
+    effectTypeDropdown = std::make_unique<CustomEffectDropdown>();
+    addAndMakeVisible(effectTypeDropdown.get());
+    
+    // Add effect types
+    effectTypeDropdown->addItem("Space Delay", 1);
+    effectTypeDropdown->addItem("Chorus", 2);
+    effectTypeDropdown->addItem("Flanger", 3);
+    effectTypeDropdown->addItem("Phaser", 4);
+    effectTypeDropdown->setSelectedId(1, juce::dontSendNotification);
+    
+    // Set font size for bigger popup
+    effectTypeDropdown->setLookAndFeel(&customLookAndFeel);
+    
+    // Position dropdown closer to the title
+    effectTypeDropdown->setBounds(effectArea.getX() + 80, effectArea.getY() - 37, 15, 12); // Moved up 60px, left 50px, carrot 10px right, down 3px, and made carrot 50% smaller
+    
+    // Load carrot SVGs
+    if (assets.fxTypeCarrotInactive != nullptr && assets.fxTypeCarrotActive != nullptr) {
+        effectTypeDropdown->setCarrotImages(
+            assets.fxTypeCarrotInactive->createCopy(),
+            assets.fxTypeCarrotActive->createCopy()
+        );
+    }
+    
+    // Set up dropdown change handler
+    effectTypeDropdown->onChange = [this]() {
+        int selectedId = effectTypeDropdown->getSelectedId();
+        DBG("[UI] Effect type changed to: " << selectedId);
+        // TODO: Implement effect type switching logic
+    };
+    
+    DBG("[UI] Space delay UI setup complete");
+}
+
 void PluginEditor::setupFxPowerButton()
 {
     // Effect area bounds
@@ -1229,8 +1321,10 @@ void PluginEditor::updateFxAreaVisibility()
 {
     float alpha = fxAreaEnabled ? 1.0f : 0.3f;
 
-    // Grey title and dice
+    // Grey title, space delay title, effect dropdown and dice
     if (effectsTitle) effectsTitle->setAlpha(alpha);
+    if (spaceDelayTitle) spaceDelayTitle->setAlpha(alpha); // Don't disable, just change alpha
+    if (effectTypeDropdown) { effectTypeDropdown->setAlpha(alpha); effectTypeDropdown->setEnabled(fxAreaEnabled); }
     if (diceButton) { diceButton->setAlpha(alpha); diceButton->setEnabled(fxAreaEnabled); }
 
     // Grey knobs, labels, values, indicators, locks

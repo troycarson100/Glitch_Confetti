@@ -12,6 +12,7 @@ struct UiAssets {
     std::unique_ptr<juce::Drawable> fxPowerOn, stepPowerOn, knobDice, diceLarge, macroAssign;
     std::unique_ptr<juce::Drawable> macro1AssignButton, macro2AssignButton;
     std::unique_ptr<juce::Drawable> lockedIcon, unlockedIcon;
+    std::unique_ptr<juce::Drawable> fxTypeCarrotInactive, fxTypeCarrotActive;
     // … add only what Delay page & Sequencer need
 
     bool loadAll();
