@@ -1068,8 +1068,9 @@ void PluginEditor::setupKnobs()
             macroKnobs[i]->setRange(0.0, 1.0, 0.001);
             macroKnobs[i]->setValue(0.0, juce::dontSendNotification);
             
-            // Position the knob
-            macroKnobs[i]->setBounds(startX, startY + i * spacing, knobSize, knobSize);
+            // Position the knob (move Macro 2 down 5px)
+            int yOffset = (i == 1) ? 5 : 0; // Macro 2 (index 1) gets 5px down offset
+            macroKnobs[i]->setBounds(startX, startY + i * spacing + yOffset, knobSize, knobSize);
             
             // Create macro label (title above knob)
             macroLabels[i] = std::make_unique<juce::Label>();
@@ -1078,7 +1079,7 @@ void PluginEditor::setupKnobs()
             macroLabels[i]->setColour(juce::Label::textColourId, juce::Colours::white);
             macroLabels[i]->setJustificationType(juce::Justification::centred);
             addAndMakeVisible(macroLabels[i].get());
-            macroLabels[i]->setBounds(startX, startY + i * spacing - 25, knobSize, 20);
+            macroLabels[i]->setBounds(startX, startY + i * spacing - 25 + yOffset, knobSize, 20);
             
             // Create macro assign button (15px wide, centered to the right of title)
             macroAssignButtons[i] = std::make_unique<juce::DrawableButton>("MacroAssign" + juce::String(i + 1), juce::DrawableButton::ButtonStyle::ImageStretched);
@@ -1095,7 +1096,7 @@ void PluginEditor::setupKnobs()
             const int buttonWidth = 15;
             const int buttonHeight = 15;
             const int buttonX = startX + knobSize - buttonWidth - 5; // 5px from right edge of knob
-            const int buttonY = startY + i * spacing - 25 + (20 - buttonHeight) / 2; // Centered vertically with title
+            const int buttonY = startY + i * spacing - 25 + (20 - buttonHeight) / 2 + yOffset; // Centered vertically with title + yOffset
             macroAssignButtons[i]->setBounds(buttonX, buttonY, buttonWidth, buttonHeight);
         }
         
