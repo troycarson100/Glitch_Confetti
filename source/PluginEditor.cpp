@@ -68,10 +68,10 @@ PluginEditor::~PluginEditor()
 
 void PluginEditor::paint (juce::Graphics& g)
 {
-    // Draw the mustard background SVG
-    if (assets.backgroundMustard != nullptr)
+    // Draw the SpaceDelay background SVG
+    if (assets.spaceDelayBackgroundTab1 != nullptr)
     {
-        assets.backgroundMustard->drawWithin(g, getLocalBounds().toFloat(), juce::RectanglePlacement::centred, 1.0f);
+        assets.spaceDelayBackgroundTab1->drawWithin(g, getLocalBounds().toFloat(), juce::RectanglePlacement::centred, 1.0f);
     }
     else
     {

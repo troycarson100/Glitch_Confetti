@@ -19,6 +19,7 @@ bool UiAssets::loadAll()
 #if UI_USE_EMBEDDED_SVGS
     using namespace BinaryData; // ensure svgs added to Projucer/CMake resources
     backgroundMustard = loadSVG (Background_Mustard_svg, Background_Mustard_svgSize);
+    spaceDelayBackgroundTab1 = loadSVG (SpaceDelay_Background_Tab1_svg, SpaceDelay_Background_Tab1_svgSize);
     effectPlate       = loadSVG (Effect_Background_Plate_svg, Effect_Background_Plate_svgSize);
     stepActive        = loadSVG (Step_Active_svg, Step_Active_svgSize);
     stepInactive      = loadSVG (Step_Inactive_svg, Step_Inactive_svgSize);
@@ -44,6 +45,7 @@ bool UiAssets::loadAll()
     auto assetsDir = juce::File::getSpecialLocation(juce::File::currentApplicationFile)
                         .getSiblingFile ("assets"); // adjust if different
     backgroundMustard = loadSVGFromFile (assetsDir.getChildFile ("Background_Mustard.svg"));
+    spaceDelayBackgroundTab1 = loadSVGFromFile (assetsDir.getChildFile ("SpaceDelay_Background_Tab1.svg"));
     effectPlate       = loadSVGFromFile (assetsDir.getChildFile ("Effect_Background_Plate.svg"));
     // … repeat
 #endif

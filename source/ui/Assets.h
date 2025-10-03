@@ -4,6 +4,7 @@
 struct UiAssets {
     // one instance owned by PluginEditor
     std::unique_ptr<juce::Drawable> backgroundMustard;
+    std::unique_ptr<juce::Drawable> spaceDelayBackgroundTab1;
     std::unique_ptr<juce::Drawable> effectPlate;
     std::unique_ptr<juce::Drawable> stepActive, stepInactive, stepTopActive, stepTopInactive;
     std::unique_ptr<juce::Drawable> buttonStepTopActive, buttonStepTopInactive;
