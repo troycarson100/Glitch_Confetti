@@ -34,6 +34,8 @@ bool UiAssets::loadAll()
     knobDice          = loadSVG (Knob_Basic_Dice_svg, Knob_Basic_Dice_svgSize);
     diceLarge         = loadSVG (Dice_Large_svg, Dice_Large_svgSize);
     macroAssign       = loadSVG (Macro_Assign_Button_svg, Macro_Assign_Button_svgSize);
+    macro1AssignButton = loadSVG (Macro1_Assign_Button_svg, Macro1_Assign_Button_svgSize);
+    macro2AssignButton = loadSVG (Macro2_Assign_Button_svg, Macro2_Assign_Button_svgSize);
     lockedIcon        = loadSVG (Locked_svg, Locked_svgSize);
     unlockedIcon      = loadSVG (Unlocked_svg, Unlocked_svgSize);
 #else

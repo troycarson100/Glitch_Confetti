@@ -207,6 +207,11 @@ public:
     std::array<std::unique_ptr<juce::Label>, 3> masterValueLabels;
     std::array<std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>, 3> masterAttachments;
     
+    // Macro knobs
+    std::array<std::unique_ptr<CustomKnob>, 2> macroKnobs;
+    std::array<std::unique_ptr<juce::Label>, 2> macroLabels;
+    std::array<std::unique_ptr<juce::DrawableButton>, 2> macroAssignButtons;
+    
     // Modern dual-bar meters (pre-fx and post-fx)
     std::unique_ptr<DualBarMeter> inMeter, outMeter;
     
@@ -244,6 +249,7 @@ public:
         // Helper methods
         void setupKnobs();
         void setupMasterKnobs();
+        void setupMacroKnobs();
         void setupEffectsArea();
         void setupFxPowerButton();
         void updateFxAreaVisibility();

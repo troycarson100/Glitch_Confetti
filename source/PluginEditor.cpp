@@ -27,6 +27,7 @@ PluginEditor::PluginEditor (PluginProcessor& p)
         // Setup knobs
     setupKnobs();
     setupMasterKnobs();
+    setupMacroKnobs();
         
         // Setup effects area
         setupEffectsArea();
@@ -1030,6 +1031,75 @@ void PluginEditor::setupKnobs()
         outMeter->setBounds(startX + totalKnobWidth + meterSpacing - 10, y + (knobSize - meterHeight) / 2, meterWidth, meterHeight);  // Move left 10px
         
         DBG("[UI] Master knobs and stereo meters setup complete");
+    }
+
+    // Macro Knobs Setup
+    //==============================================================================
+    void PluginEditor::setupMacroKnobs()
+    {
+        DBG("[UI] Setting up macro knobs...");
+        
+        // Macro knob parameters
+        std::vector<juce::String> macroKnobNames = {
+            "Macro 1", "Macro 2"
+        };
+        
+        // Master area bounds (positioned in master area)
+        auto masterArea = juce::Rectangle<int>(453, 54, 413, 296);
+        
+        // Position macro knobs vertically on the right side of master area
+        const int knobSize = 92; // 15% bigger than regular knobs: 80 * 1.15 = 92
+        const int spacing = 120; // knobSize + 28px padding for vertical stacking
+        const int startX = masterArea.getX() + masterArea.getWidth() - knobSize - 20 + 85; // Right side with 20px margin + 85px right
+        const int startY = masterArea.getY() + 50 + 20; // Start 50px from top of master area + 20px down
+        
+        for (int i = 0; i < 2; ++i) {
+            // Create macro knob
+            macroKnobs[i] = std::make_unique<CustomKnob>();
+            addAndMakeVisible(macroKnobs[i].get());
+            
+            // Set macro knob images (same as effect knobs)
+            if (assets.knobRing != nullptr && assets.knobInside != nullptr) {
+                macroKnobs[i]->setRingImage(assets.knobRing->createCopy());
+                macroKnobs[i]->setInnerImage(assets.knobInside->createCopy());
+            }
+            
+            // Set knob range (0-1 for macro control)
+            macroKnobs[i]->setRange(0.0, 1.0, 0.001);
+            macroKnobs[i]->setValue(0.0, juce::dontSendNotification);
+            
+            // Position the knob
+            macroKnobs[i]->setBounds(startX, startY + i * spacing, knobSize, knobSize);
+            
+            // Create macro label (title above knob)
+            macroLabels[i] = std::make_unique<juce::Label>();
+            macroLabels[i]->setText(macroKnobNames[i], juce::dontSendNotification);
+            macroLabels[i]->setFont(juce::Font(12.0f, juce::Font::bold));
+            macroLabels[i]->setColour(juce::Label::textColourId, juce::Colours::white);
+            macroLabels[i]->setJustificationType(juce::Justification::centred);
+            addAndMakeVisible(macroLabels[i].get());
+            macroLabels[i]->setBounds(startX, startY + i * spacing - 25, knobSize, 20);
+            
+            // Create macro assign button (15px wide, centered to the right of title)
+            macroAssignButtons[i] = std::make_unique<juce::DrawableButton>("MacroAssign" + juce::String(i + 1), juce::DrawableButton::ButtonStyle::ImageStretched);
+            addAndMakeVisible(macroAssignButtons[i].get());
+            
+            // Load the appropriate SVG for the assign button
+            if (i == 0 && assets.macro1AssignButton != nullptr) {
+                macroAssignButtons[i]->setImages(assets.macro1AssignButton.get());
+            } else if (i == 1 && assets.macro2AssignButton != nullptr) {
+                macroAssignButtons[i]->setImages(assets.macro2AssignButton.get());
+            }
+            
+            // Position the assign button (15px wide, centered to the right of title)
+            const int buttonWidth = 15;
+            const int buttonHeight = 15;
+            const int buttonX = startX + knobSize - buttonWidth - 5; // 5px from right edge of knob
+            const int buttonY = startY + i * spacing - 25 + (20 - buttonHeight) / 2; // Centered vertically with title
+            macroAssignButtons[i]->setBounds(buttonX, buttonY, buttonWidth, buttonHeight);
+        }
+        
+        DBG("[UI] Macro knobs setup complete");
     }
 
     // Effects Area Setup
