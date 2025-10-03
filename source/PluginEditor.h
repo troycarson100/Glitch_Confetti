@@ -6,6 +6,7 @@
 #include <memory>
 #include "StepSnapshot.h"
 #include "ui/Assets.h"
+#include "ui/BigComboWithSvgLNF.h"
 #include "DualBarMeter.h"
 
 // Forward declaration
@@ -144,69 +145,8 @@ private:
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PlayButton)
 };
 
-//==============================================================================
-// CustomLookAndFeel class for dropdown popup sizing
-//==============================================================================
-class CustomLookAndFeel : public juce::LookAndFeel_V4
-{
-public:
-    // Override ComboBox font
-    juce::Font getComboBoxFont(juce::ComboBox&) override
-    {
-        return juce::Font(48.0f); // 2x bigger font
-    }
-    
-    // Override popup menu font
-    juce::Font getPopupMenuFont() override
-    {
-        return juce::Font(48.0f); // 2x bigger font
-    }
-    
-    // Override popup menu item height
-    int getPopupMenuItemHeight()
-    {
-        return 48; // 2x bigger item height
-    }
-    
-    // Override popup menu border size for more padding
-    int getPopupMenuBorderSize() override
-    {
-        return 10; // More padding around the popup
-    }
-    
-    // Don't draw the ComboBox button
-    void drawComboBox(juce::Graphics&, int, int, bool,
-                      int, int, int, int, juce::ComboBox&) override
-    {
-        // Don't draw anything
-    }
-    
-    // Don't draw text in the ComboBox button
-    void drawComboBoxText(juce::Graphics&, juce::ComboBox&, juce::Label&)
-    {
-        // Don't draw anything
-    }
-};
 
-//==============================================================================
-// CustomEffectDropdown class
-//==============================================================================
-class CustomEffectDropdown : public juce::ComboBox
-{
-public:
-    CustomEffectDropdown();
-    ~CustomEffectDropdown() override = default;
-    
-    void paint(juce::Graphics& g) override;
-    void setCarrotImages(std::unique_ptr<juce::Drawable> inactive, std::unique_ptr<juce::Drawable> active);
-    
-private:
-    std::unique_ptr<juce::Drawable> inactiveCarrot;
-    std::unique_ptr<juce::Drawable> activeCarrot;
-    CustomLookAndFeel customLookAndFeel;
-    
-    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (CustomEffectDropdown)
-};
+
 
 //==============================================================================
 // StepButton class for sequencer
@@ -282,8 +222,8 @@ public:
     // Effects area components
     std::unique_ptr<juce::Label> effectsTitle;
     std::unique_ptr<juce::DrawableButton> spaceDelayTitle;
-    std::unique_ptr<CustomEffectDropdown> effectTypeDropdown;
-    CustomLookAndFeel customLookAndFeel;
+    std::unique_ptr<juce::ComboBox> effectTypeDropdown;
+    std::unique_ptr<BigComboWithSvgLNF> fxComboLNF;
     std::unique_ptr<CustomDiceButton> diceButton;
     std::unique_ptr<juce::Button> timeSyncToggle; // S circle toggle
     bool timeSyncEnabled = false;

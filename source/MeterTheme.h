@@ -18,3 +18,4 @@ namespace MeterTheme {
     static constexpr float kRedStartDb    =  -3.0f; // above = red
     static constexpr float kFloorDb       = -60.0f; // meter bottom
 }
+

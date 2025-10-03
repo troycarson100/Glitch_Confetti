@@ -6,36 +6,7 @@
 // CustomEffectDropdown Implementation
 //==============================================================================
 
-CustomEffectDropdown::CustomEffectDropdown()
-{
-    setColour(juce::ComboBox::backgroundColourId, juce::Colours::transparentBlack);
-    setColour(juce::ComboBox::textColourId, juce::Colours::white);
-    setColour(juce::ComboBox::arrowColourId, juce::Colours::transparentBlack);
-    setColour(juce::ComboBox::buttonColourId, juce::Colours::transparentBlack);
-    setColour(juce::ComboBox::outlineColourId, juce::Colours::transparentBlack);
-    
-    // Set a custom look and feel to control popup list size
-    setLookAndFeel(&customLookAndFeel);
-}
 
-void CustomEffectDropdown::paint(juce::Graphics& g)
-{
-    auto bounds = getLocalBounds().toFloat();
-    
-    // Draw carrot only (no text) - centered in the smaller dropdown
-    auto carrotArea = bounds.reduced(2.0f);
-    if (isPopupActive() && activeCarrot != nullptr) {
-        activeCarrot->drawWithin(g, carrotArea, juce::RectanglePlacement::centred, 1.0f);
-    } else if (inactiveCarrot != nullptr) {
-        inactiveCarrot->drawWithin(g, carrotArea, juce::RectanglePlacement::centred, 1.0f);
-    }
-}
-
-void CustomEffectDropdown::setCarrotImages(std::unique_ptr<juce::Drawable> inactive, std::unique_ptr<juce::Drawable> active)
-{
-    inactiveCarrot = std::move(inactive);
-    activeCarrot = std::move(active);
-}
 
 //==============================================================================
 // PluginEditor Implementation
@@ -1252,8 +1223,28 @@ void PluginEditor::setupSpaceDelayUI()
     spaceDelayTitle->setEnabled(true); // Enable it so it's not greyed out
     
     // Create effect type dropdown
-    effectTypeDropdown = std::make_unique<CustomEffectDropdown>();
+    effectTypeDropdown = std::make_unique<juce::ComboBox>();
     addAndMakeVisible(effectTypeDropdown.get());
+    
+    // Create and configure BigComboWithSvgLNF for larger popup menus with SVG caret
+    fxComboLNF = std::make_unique<BigComboWithSvgLNF>();
+    fxComboLNF->popupFontPx   = 18.0f;  // Larger font
+    fxComboLNF->rowHeightPx   = 32;     // Taller rows
+    fxComboLNF->minPopupWidth = 300;    // Wider minimum width
+    fxComboLNF->closedHeight  = 36;     // Closed control height
+    
+    // Load carrot SVGs into the LookAndFeel
+    if (assets.fxTypeCarrotInactive != nullptr) {
+        fxComboLNF->setCaretSVG(assets.fxTypeCarrotInactive->createCopy());
+    }
+    
+    // Apply the custom LookAndFeel to the FX ComboBox only
+    effectTypeDropdown->setLookAndFeel(fxComboLNF.get());
+    
+    // Configure ComboBox colors for dark theme
+    effectTypeDropdown->setColour(juce::ComboBox::backgroundColourId, juce::Colour(0xFF2B2D31));
+    effectTypeDropdown->setColour(juce::ComboBox::outlineColourId,    juce::Colour(0xFF101113));
+    effectTypeDropdown->setColour(juce::ComboBox::textColourId,       juce::Colours::white);
     
     // Add effect types
     effectTypeDropdown->addItem("Space Delay", 1);
@@ -1262,19 +1253,9 @@ void PluginEditor::setupSpaceDelayUI()
     effectTypeDropdown->addItem("Phaser", 4);
     effectTypeDropdown->setSelectedId(1, juce::dontSendNotification);
     
-    // Set font size for bigger popup
-    effectTypeDropdown->setLookAndFeel(&customLookAndFeel);
-    
-    // Position dropdown closer to the title
-    effectTypeDropdown->setBounds(effectArea.getX() + 80, effectArea.getY() - 37, 15, 12); // Moved up 60px, left 50px, carrot 10px right, down 3px, and made carrot 50% smaller
-    
-    // Load carrot SVGs
-    if (assets.fxTypeCarrotInactive != nullptr && assets.fxTypeCarrotActive != nullptr) {
-        effectTypeDropdown->setCarrotImages(
-            assets.fxTypeCarrotInactive->createCopy(),
-            assets.fxTypeCarrotActive->createCopy()
-        );
-    }
+    // Position dropdown with proper height for closed control
+    effectTypeDropdown->setBounds(effectArea.getX() + 80 - 85 - 10, effectArea.getY() - 37 - 5 - 5, 120, fxComboLNF->closedHeight);
+    effectTypeDropdown->setJustificationType(juce::Justification::centredLeft);
     
     // Set up dropdown change handler
     effectTypeDropdown->onChange = [this]() {
