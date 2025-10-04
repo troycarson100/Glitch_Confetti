@@ -10,6 +10,7 @@ struct UiAssets {
     std::unique_ptr<juce::Drawable> buttonStepTopActive, buttonStepTopInactive;
     std::unique_ptr<juce::Drawable> knobRing, knobInside, knobMasterRing, knobMasterInside;
     std::unique_ptr<juce::Drawable> tabTitleSpaceDelay;
+    std::unique_ptr<juce::Drawable> tabTitleAutoPan;
     std::unique_ptr<juce::Drawable> fxPowerOn, stepPowerOn, knobDice, diceLarge, macroAssign;
     std::unique_ptr<juce::Drawable> macro1AssignButton, macro2AssignButton;
     std::unique_ptr<juce::Drawable> lockedIcon, unlockedIcon;

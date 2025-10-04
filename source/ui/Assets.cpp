@@ -30,6 +30,7 @@ bool UiAssets::loadAll()
     knobMasterRing    = loadSVG (Knob_Master_Ring_svg, Knob_Master_Ring_svgSize);
     knobMasterInside  = loadSVG (Knob_Master_Inside_svg, Knob_Master_Inside_svgSize);
     tabTitleSpaceDelay= loadSVG (Tab_Title_Space_Delay_svg, Tab_Title_Space_Delay_svgSize);
+    tabTitleAutoPan   = loadSVG (Tab_Title_AutoPan_svg, Tab_Title_AutoPan_svgSize);
     fxPowerOn         = loadSVG (FX_Power_On_svg, FX_Power_On_svgSize);
     stepPowerOn       = loadSVG (Step_Power_On_svg, Step_Power_On_svgSize);
     knobDice          = loadSVG (Knob_Basic_Dice_svg, Knob_Basic_Dice_svgSize);

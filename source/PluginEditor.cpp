@@ -55,6 +55,9 @@ PluginEditor::PluginEditor (PluginProcessor& p)
         // Setup play button
         setupPlayButton();
         
+        // Setup tab system
+        setupTabSystem();
+        
         // Start timer for UI updates
         startTimer(100); // Update every 100ms for smoother knob interaction
         
@@ -107,7 +110,13 @@ void PluginEditor::paint (juce::Graphics& g)
 
 void PluginEditor::resized()
 {
-    // Empty for now
+    // Place the tabs along the top strip - smaller and moved up 10px
+    const int tabH = 34; // visual tab height (smaller)
+    const int tabW = 120; // width (smaller)
+
+    // Positions moved up 10px and closer together
+    if (tabSpaceDelay) tabSpaceDelay->setBounds(24, 0, tabW, tabH);   // orange left tab
+    if (tabPanner) tabPanner->setBounds(170, 0, tabW, tabH);      // green tab closer to left tab
 }
 
 
@@ -1998,4 +2007,156 @@ void PluginEditor::togglePlayback()
     }
     
     DBG("[UI] Playback toggled: " << (newPlayingState ? "PLAYING" : "STOPPED"));
+}
+
+void PluginEditor::setupTabSystem()
+{
+    DBG("[UI] Setting up tab system...");
+    
+    // Create tab buttons
+    tabSpaceDelay = std::make_unique<juce::DrawableButton>("SpaceDelayTab", juce::DrawableButton::ButtonStyle::ImageFitted);
+    tabPanner = std::make_unique<juce::DrawableButton>("PannerTab", juce::DrawableButton::ButtonStyle::ImageFitted);
+    
+    DBG("[UI] Tab buttons created successfully");
+    DBG("[UI] tabSpaceDelay pointer: " << tabSpaceDelay.get());
+    DBG("[UI] tabPanner pointer: " << tabPanner.get());
+    
+    // Set tab images (using existing assets)
+    if (assets.tabTitleSpaceDelay) {
+        tabSpaceDelay->setImages(assets.tabTitleSpaceDelay.get());
+    }
+    if (assets.tabTitleSpaceDelay) { // Using same asset for now
+        tabPanner->setImages(assets.tabTitleSpaceDelay.get());
+    }
+    
+    // --- Tabs (SVGs you mentioned are already loaded in your Assets) ---
+    tabSpaceDelay = std::make_unique<juce::DrawableButton>("tabSpace", juce::DrawableButton::ImageOnButtonBackground);
+    tabPanner = std::make_unique<juce::DrawableButton>("tabPanner", juce::DrawableButton::ImageOnButtonBackground);
+    
+    // Use the tab SVGs you provided:
+    if (assets.tabTitleSpaceDelay) {
+        tabSpaceDelay->setImages(assets.tabTitleSpaceDelay->createCopy().release(),
+                                 nullptr, nullptr, nullptr, nullptr, nullptr);
+    }
+    if (assets.tabTitleAutoPan) { // Using AutoPan SVG for the second tab
+        tabPanner->setImages(assets.tabTitleAutoPan->createCopy().release(),
+                             nullptr, nullptr, nullptr, nullptr, nullptr);
+    }
+    
+    // Add bright background colors to make tabs visible for testing
+    tabSpaceDelay->setColour(juce::DrawableButton::backgroundColourId, juce::Colour(0xFFFF6600)); // Bright orange
+    tabPanner->setColour(juce::DrawableButton::backgroundColourId, juce::Colour(0xFF00FF00)); // Bright green
+    
+    tabSpaceDelay->setTriggeredOnMouseDown(true);
+    tabPanner->setTriggeredOnMouseDown(true);
+    
+    // Click handlers
+    tabSpaceDelay->onClick = [this]{ 
+        DBG("[UI] SpaceDelay tab clicked!");
+        showPage(FxPageID::SpaceDelay); 
+    };
+    tabPanner->onClick = [this]{ 
+        DBG("[UI] Panner tab clicked!");
+        showPage(FxPageID::Panner); 
+    };
+    
+    // Ensure tabs never obstruct the master area clicks; they only sit over the header strip
+    tabSpaceDelay->setAlwaysOnTop(true);
+    tabPanner->setAlwaysOnTop(true);
+    
+    addAndMakeVisible(*tabSpaceDelay);
+    addAndMakeVisible(*tabPanner);
+    
+    // Position tabs immediately after creation - smaller and moved up 10px
+    tabSpaceDelay->setBounds(24, 0, 120, 34);
+    tabPanner->setBounds(170, 0, 120, 34);
+    
+    DBG("[UI] Tab buttons created and added to editor");
+    DBG("[UI] tabSpaceDelay bounds: " << tabSpaceDelay->getBounds().toString());
+    DBG("[UI] tabPanner bounds: " << tabPanner->getBounds().toString());
+    
+    // Collect pointers to existing SpaceDelay UI components
+    spaceDelayGroup.clear();
+    
+    // Add all knobs and related components
+    for (int i = 0; i < 8; ++i) {
+        if (knobs[i]) spaceDelayGroup.push_back(knobs[i].get());
+        if (knobLabels[i]) spaceDelayGroup.push_back(knobLabels[i].get());
+        if (valueLabels[i]) spaceDelayGroup.push_back(valueLabels[i].get());
+        if (indicatorBars[i]) spaceDelayGroup.push_back(indicatorBars[i].get());
+        if (knobDiceButtons[i]) spaceDelayGroup.push_back(knobDiceButtons[i].get());
+        if (knobLockButtons[i]) spaceDelayGroup.push_back(knobLockButtons[i].get());
+    }
+    
+    // Add master knobs
+    for (int i = 0; i < 3; ++i) {
+        if (masterKnobs[i]) spaceDelayGroup.push_back(masterKnobs[i].get());
+        if (masterLabels[i]) spaceDelayGroup.push_back(masterLabels[i].get());
+        if (masterValueLabels[i]) spaceDelayGroup.push_back(masterValueLabels[i].get());
+    }
+    
+    // Add macro knobs
+    for (int i = 0; i < 2; ++i) {
+        if (macroKnobs[i]) spaceDelayGroup.push_back(macroKnobs[i].get());
+        if (macroLabels[i]) spaceDelayGroup.push_back(macroLabels[i].get());
+        if (macroAssignButtons[i]) spaceDelayGroup.push_back(macroAssignButtons[i].get());
+    }
+    
+    // Add meters
+    if (inMeter) spaceDelayGroup.push_back(inMeter.get());
+    if (outMeter) spaceDelayGroup.push_back(outMeter.get());
+    
+    // Add effects area components
+    if (effectsTitle) spaceDelayGroup.push_back(effectsTitle.get());
+    if (spaceDelayTitle) spaceDelayGroup.push_back(spaceDelayTitle.get());
+    if (effectTypeDropdown) spaceDelayGroup.push_back(effectTypeDropdown.get());
+    if (diceButton) spaceDelayGroup.push_back(diceButton.get());
+    if (timeSyncToggle) spaceDelayGroup.push_back(timeSyncToggle.get());
+    if (fxPowerButton) spaceDelayGroup.push_back(fxPowerButton.get());
+    
+    // Add sequencer components
+    if (allStepsToggle) spaceDelayGroup.push_back(allStepsToggle.get());
+    if (allStepsLabel) spaceDelayGroup.push_back(allStepsLabel.get());
+    for (int i = 0; i < 16; ++i) {
+        if (stepButtons[i]) spaceDelayGroup.push_back(stepButtons[i].get());
+    }
+    if (stepAmountLabel) spaceDelayGroup.push_back(stepAmountLabel.get());
+    if (rateDropdown) spaceDelayGroup.push_back(rateDropdown.get());
+    if (stdToggle) spaceDelayGroup.push_back(stdToggle.get());
+    if (stepTitle) spaceDelayGroup.push_back(stepTitle.get());
+    if (stepDiceButton) spaceDelayGroup.push_back(stepDiceButton.get());
+    if (stepPowerButton) spaceDelayGroup.push_back(stepPowerButton.get());
+    if (uiToggleButton) spaceDelayGroup.push_back(uiToggleButton.get());
+    if (playButton) spaceDelayGroup.push_back(playButton.get());
+    
+    // Initialize with SpaceDelay page visible
+    showPage(FxPageID::SpaceDelay);
+    
+    DBG("[UI] Tab system setup complete. SpaceDelay components: " << spaceDelayGroup.size());
+}
+
+void PluginEditor::showPage(FxPageID id)
+{
+    if (currentPage == id) return;
+    currentPage = id;
+
+    const bool wantSpace = (id == FxPageID::SpaceDelay);
+
+    // Show/Hide without touching parents or bounds
+    auto setVisibleVec = [](const std::vector<juce::Component*>& v, bool vis)
+    {
+        for (auto* c : v) if (c) c->setVisible(vis);
+    };
+
+    setVisibleVec(spaceDelayGroup, wantSpace);
+    setVisibleVec(pannerGroup, !wantSpace);
+
+    // Optional: a simple visual hint — raise the active tab
+    if (wantSpace) { 
+        if (tabSpaceDelay) tabSpaceDelay->toFront(false); 
+    } else { 
+        if (tabPanner) tabPanner->toFront(false); 
+    }
+
+    repaint();
 }

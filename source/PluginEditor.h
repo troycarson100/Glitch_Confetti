@@ -9,6 +9,9 @@
 #include "ui/BigComboWithSvgLNF.h"
 #include "DualBarMeter.h"
 
+// Tab system enum
+enum class FxPageID { SpaceDelay, Panner };
+
 // Forward declaration
 class PluginProcessor;
 
@@ -195,6 +198,18 @@ public:
         
         // UI Assets
         UiAssets assets;
+        
+        // Tab system
+        FxPageID currentPage = FxPageID::SpaceDelay;
+        
+    // Tab buttons (SVG)
+    std::unique_ptr<juce::DrawableButton> tabSpaceDelay;
+    std::unique_ptr<juce::DrawableButton> tabPanner;
+        
+        // Groups: we will only toggle visibility; we DO NOT reparent anything.
+        juce::OwnedArray<juce::Component> dummyKeepAlive; // (unused, but handy if Claude tries to delete)
+        std::vector<juce::Component*> spaceDelayGroup;    // pointers to existing delay UI components
+        std::vector<juce::Component*> pannerGroup;        // pointers to panner UI components (later)
     
         // UI Components
         std::array<std::unique_ptr<CustomKnob>, 8> knobs;
@@ -275,6 +290,10 @@ public:
         void toggleUIVisibility();
         void setupPlayButton();
         void togglePlayback();
+        
+        // Tab system helpers
+        void setupTabSystem();
+        void showPage(FxPageID id);
     void drawGridOverlay(juce::Graphics& g);
     void drawMainAreas(juce::Graphics& g);
 
