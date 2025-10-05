@@ -20,6 +20,7 @@ bool UiAssets::loadAll()
     using namespace BinaryData; // ensure svgs added to Projucer/CMake resources
     backgroundMustard = loadSVG (Background_Mustard_svg, Background_Mustard_svgSize);
     spaceDelayBackgroundTab1 = loadSVG (SpaceDelay_Background_Tab1_svg, SpaceDelay_Background_Tab1_svgSize);
+    pannerBackgroundTab2 = loadSVG (Panner_Background_Tab2_svg, Panner_Background_Tab2_svgSize);
     effectPlate       = loadSVG (Effect_Background_Plate_svg, Effect_Background_Plate_svgSize);
     stepActive        = loadSVG (Step_Active_svg, Step_Active_svgSize);
     stepInactive      = loadSVG (Step_Inactive_svg, Step_Inactive_svgSize);

@@ -268,6 +268,41 @@ public:
     // Play button
     std::unique_ptr<PlayButton> playButton;
     
+    // AutoPan page components
+    std::array<std::unique_ptr<CustomKnob>, 6> autopanKnobs; // 6 knobs instead of 8
+    std::array<std::unique_ptr<juce::Label>, 6> autopanKnobLabels;
+    std::array<std::unique_ptr<juce::Label>, 6> autopanValueLabels;
+    std::array<std::unique_ptr<IndicatorBar>, 6> autopanIndicatorBars;
+    std::array<std::unique_ptr<CustomDiceButton>, 6> autopanDiceButtons;
+    std::array<std::unique_ptr<LockButton>, 6> autopanLockButtons;
+    std::array<bool, 6> autopanKnobLocked { false, false, false, false, false, false };
+    
+    // AutoPan effects area components
+    std::unique_ptr<juce::Label> autopanEffectsTitle;
+    std::unique_ptr<juce::ComboBox> autopanEffectTypeDropdown;
+    std::unique_ptr<BigComboWithSvgLNF> autopanFxComboLNF;
+    std::unique_ptr<CustomDiceButton> autopanDiceButton;
+    std::unique_ptr<CircularToggleButton> autopanTimeSyncToggle; // S circle toggle for Rate knob
+    bool autopanTimeSyncEnabled = false;
+    int autopanTimeSyncStdMode = 0; // 0 straight, 1 triplet, 2 dotted
+    std::unique_ptr<juce::DrawableButton> autopanFxPowerButton;
+    bool autopanFxAreaEnabled = true;
+    
+    // AutoPan sequencer components (independent from delay page)
+    std::array<std::unique_ptr<StepButton>, 16> autopanStepButtons;
+    std::unique_ptr<juce::Label> autopanStepAmountLabel;
+    std::unique_ptr<juce::ComboBox> autopanRateDropdown;
+    std::unique_ptr<CircularToggleButton> autopanStdToggle;
+    std::unique_ptr<juce::Label> autopanStepTitle;
+    std::unique_ptr<CustomDiceButton> autopanStepDiceButton;
+    std::unique_ptr<juce::DrawableButton> autopanStepPowerButton;
+    bool autopanStepAreaEnabled = true;
+    
+    // AutoPan All Steps toggle
+    std::unique_ptr<CircularToggleButton> autopanAllStepsToggle;
+    std::unique_ptr<juce::Label> autopanAllStepsLabel;
+    bool autopanAllStepsEnabled = false;
+    
         // Helper methods
         void setupKnobs();
         void setupMasterKnobs();
@@ -289,6 +324,20 @@ public:
         void setupUIToggle();
         void toggleUIVisibility();
         void setupPlayButton();
+        
+        // AutoPan page helper methods
+        void setupAutoPanKnobs();
+        void setupAutoPanEffectsArea();
+        void setupAutoPanSequencerArea();
+        void setupAutoPanAllStepsToggle();
+        void setupAutoPanStepPowerButton();
+        void updateAutoPanFxAreaVisibility();
+        void updateAutoPanStepAreaVisibility();
+        void randomizeAutoPanKnobValues();
+        void randomizeIndividualAutoPanKnob(int knobIndex);
+        void updateAutoPanParameterFromKnob(int knobIndex);
+        void onAutoPanStepButtonClicked(int stepIndex);
+        void updateAutoPanSequencerUI();
         void togglePlayback();
         
         // Tab system helpers

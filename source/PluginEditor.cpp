@@ -55,6 +55,13 @@ PluginEditor::PluginEditor (PluginProcessor& p)
         // Setup play button
         setupPlayButton();
         
+        // Setup AutoPan page components
+        setupAutoPanKnobs();
+        setupAutoPanEffectsArea();
+        setupAutoPanSequencerArea();
+        setupAutoPanAllStepsToggle();
+        setupAutoPanStepPowerButton();
+        
         // Setup tab system
         setupTabSystem();
         
@@ -71,15 +78,29 @@ PluginEditor::~PluginEditor()
 
 void PluginEditor::paint (juce::Graphics& g)
 {
-    // Draw the SpaceDelay background SVG
-    if (assets.spaceDelayBackgroundTab1 != nullptr)
-    {
-        assets.spaceDelayBackgroundTab1->drawWithin(g, getLocalBounds().toFloat(), juce::RectanglePlacement::centred, 1.0f);
-    }
-    else
-    {
-        // Fallback background
-        g.fillAll (juce::Colour(0xff2a2a2a));
+    // Draw the appropriate background based on current page
+    if (currentPage == FxPageID::SpaceDelay) {
+        // Draw the SpaceDelay background SVG
+        if (assets.spaceDelayBackgroundTab1 != nullptr)
+        {
+            assets.spaceDelayBackgroundTab1->drawWithin(g, getLocalBounds().toFloat(), juce::RectanglePlacement::centred, 1.0f);
+        }
+        else
+        {
+            // Fallback background
+            g.fillAll (juce::Colour(0xff2a2a2a));
+        }
+    } else if (currentPage == FxPageID::Panner) {
+        // Draw the Panner background SVG
+        if (assets.pannerBackgroundTab2 != nullptr)
+        {
+            assets.pannerBackgroundTab2->drawWithin(g, getLocalBounds().toFloat(), juce::RectanglePlacement::centred, 1.0f);
+        }
+        else
+        {
+            // Fallback background
+            g.fillAll (juce::Colour(0xff2a2a2a));
+        }
     }
     
     // Only draw grid overlay and main areas if UI is visible
@@ -2129,10 +2150,44 @@ void PluginEditor::setupTabSystem()
     if (uiToggleButton) spaceDelayGroup.push_back(uiToggleButton.get());
     if (playButton) spaceDelayGroup.push_back(playButton.get());
     
+    // Collect pointers to AutoPan UI components
+    pannerGroup.clear();
+    
+    // Add AutoPan knobs and related components
+    for (int i = 0; i < 6; ++i) {
+        if (autopanKnobs[i]) pannerGroup.push_back(autopanKnobs[i].get());
+        if (autopanKnobLabels[i]) pannerGroup.push_back(autopanKnobLabels[i].get());
+        if (autopanValueLabels[i]) pannerGroup.push_back(autopanValueLabels[i].get());
+        if (autopanIndicatorBars[i]) pannerGroup.push_back(autopanIndicatorBars[i].get());
+        if (autopanDiceButtons[i]) pannerGroup.push_back(autopanDiceButtons[i].get());
+        if (autopanLockButtons[i]) pannerGroup.push_back(autopanLockButtons[i].get());
+    }
+    
+    // Add AutoPan effects area components
+    if (autopanEffectsTitle) pannerGroup.push_back(autopanEffectsTitle.get());
+    if (autopanEffectTypeDropdown) pannerGroup.push_back(autopanEffectTypeDropdown.get());
+    if (autopanDiceButton) pannerGroup.push_back(autopanDiceButton.get());
+    if (autopanTimeSyncToggle) pannerGroup.push_back(autopanTimeSyncToggle.get());
+    if (autopanFxPowerButton) pannerGroup.push_back(autopanFxPowerButton.get());
+    
+    // Add AutoPan sequencer components
+    if (autopanAllStepsToggle) pannerGroup.push_back(autopanAllStepsToggle.get());
+    if (autopanAllStepsLabel) pannerGroup.push_back(autopanAllStepsLabel.get());
+    for (int i = 0; i < 16; ++i) {
+        if (autopanStepButtons[i]) pannerGroup.push_back(autopanStepButtons[i].get());
+    }
+    if (autopanStepAmountLabel) pannerGroup.push_back(autopanStepAmountLabel.get());
+    if (autopanRateDropdown) pannerGroup.push_back(autopanRateDropdown.get());
+    if (autopanStdToggle) pannerGroup.push_back(autopanStdToggle.get());
+    if (autopanStepTitle) pannerGroup.push_back(autopanStepTitle.get());
+    if (autopanStepDiceButton) pannerGroup.push_back(autopanStepDiceButton.get());
+    if (autopanStepPowerButton) pannerGroup.push_back(autopanStepPowerButton.get());
+    
     // Initialize with SpaceDelay page visible
     showPage(FxPageID::SpaceDelay);
     
     DBG("[UI] Tab system setup complete. SpaceDelay components: " << spaceDelayGroup.size());
+    DBG("[UI] AutoPan components: " << pannerGroup.size());
 }
 
 void PluginEditor::showPage(FxPageID id)
@@ -2160,3 +2215,368 @@ void PluginEditor::showPage(FxPageID id)
 
     repaint();
 }
+
+//==============================================================================
+// AutoPan Page Setup Methods
+//==============================================================================
+
+void PluginEditor::setupAutoPanKnobs()
+{
+    DBG("[UI] Setting up AutoPan knobs...");
+
+    // AutoPan knob names (6 knobs instead of 8)
+    std::vector<juce::String> autopanKnobNames = {
+        "Rate", "Phase", "Wave Type", "Wave Shape", "Normal/Inverted", "Amount"
+    };
+
+    // Effect area bounds (EXACT same as delay page)
+    auto effectArea = juce::Rectangle<int>(25, 54, 413, 296);
+    const int knobSize = 80; // EXACT same as delay page
+    const int knobSpacing = 20; // EXACT same as delay page
+    const int startX = effectArea.getX() + 15; // EXACT same as delay page
+    const int startY = effectArea.getY() + effectArea.getHeight() - 210; // EXACT same as delay page
+    
+    for (int i = 0; i < 6; ++i) {
+        // Create knob
+        autopanKnobs[i] = std::make_unique<CustomKnob>();
+        addAndMakeVisible(autopanKnobs[i].get());
+        autopanKnobs[i]->setVisible(false); // Initially hidden until AutoPan page is selected
+        
+        // Set knob properties
+        autopanKnobs[i]->setRange(0.0, 1.0, 0.001);
+        autopanKnobs[i]->setValue(0.5, juce::dontSendNotification);
+        autopanKnobs[i]->setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
+        autopanKnobs[i]->setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
+        // autopanKnobs[i]->setLookAndFeel(&customLookAndFeel); // TODO: Add custom look and feel
+        
+        // Set knob images
+        if (assets.knobRing) {
+            autopanKnobs[i]->setRingImage(assets.knobRing->createCopy());
+        }
+        if (assets.knobInside) {
+            autopanKnobs[i]->setInnerImage(assets.knobInside->createCopy());
+        }
+        
+        // Position knob (EXACT same logic as delay page)
+        int x = startX + (i % 4) * (knobSize + knobSpacing);
+        int y = startY + (i / 4) * (knobSize + 20);
+        
+        // Move all knob groups up 6px from current position, then top 4 down 8px (EXACT same as delay page)
+        if (i < 4)
+            y -= 23; // Moved up 6px from -25 to -31, then down 8px to -23
+        else
+            y -= 1; // Moved up 6px from +5 to -1
+            
+        autopanKnobs[i]->setBounds(x, y, knobSize, knobSize);
+        
+        // Create knob label (EXACT same positioning as delay page)
+        autopanKnobLabels[i] = std::make_unique<juce::Label>();
+        autopanKnobLabels[i]->setText(autopanKnobNames[i], juce::dontSendNotification);
+        autopanKnobLabels[i]->setFont(juce::Font(12.0f, juce::Font::bold));
+        autopanKnobLabels[i]->setColour(juce::Label::textColourId, juce::Colours::white);
+        autopanKnobLabels[i]->setJustificationType(juce::Justification::centred);
+        addAndMakeVisible(autopanKnobLabels[i].get());
+        autopanKnobLabels[i]->setVisible(false); // Initially hidden until AutoPan page is selected
+        autopanKnobLabels[i]->setBounds(x, y - 15, knobSize, 20); // EXACT same as delay page
+        
+        // Create value label (EXACT same positioning as delay page)
+        autopanValueLabels[i] = std::make_unique<juce::Label>();
+        autopanValueLabels[i]->setText("0", juce::dontSendNotification);
+        autopanValueLabels[i]->setFont(juce::Font(10.0f, juce::Font::plain));
+        autopanValueLabels[i]->setColour(juce::Label::textColourId, juce::Colours::white);
+        autopanValueLabels[i]->setJustificationType(juce::Justification::centred);
+        addAndMakeVisible(autopanValueLabels[i].get());
+        autopanValueLabels[i]->setVisible(false); // Initially hidden until AutoPan page is selected
+        autopanValueLabels[i]->setBounds(x, y + knobSize - 10, knobSize, 15); // EXACT same as delay page
+        
+        // Create indicator bar (EXACT same positioning as delay page)
+        autopanIndicatorBars[i] = std::make_unique<IndicatorBar>();
+        addAndMakeVisible(autopanIndicatorBars[i].get());
+        autopanIndicatorBars[i]->setVisible(false); // Initially hidden until AutoPan page is selected
+        autopanIndicatorBars[i]->setBounds(x + 10, y + knobSize + 8, knobSize - 20, 13); // EXACT same as delay page
+        autopanIndicatorBars[i]->setValue(0.5f); // Set initial value
+        
+        // Create dice button (hidden like delay page - NOT added to component tree)
+        autopanDiceButtons[i] = std::make_unique<CustomDiceButton>();
+        // Do NOT call addAndMakeVisible - keep it hidden like delay page
+        autopanDiceButtons[i]->onClick = [this, i]() { randomizeIndividualAutoPanKnob(i); };
+
+        // Create lock button (EXACT same positioning logic as delay page)
+        autopanLockButtons[i] = std::make_unique<LockButton>();
+        addAndMakeVisible(autopanLockButtons[i].get());
+        autopanLockButtons[i]->setVisible(false); // Initially hidden until AutoPan page is selected
+        
+        // Calculate text width and position lock button accordingly (EXACT same logic as delay page)
+        const int diceSize = 10; // 20% bigger: 8 * 1.2 = 9.6, rounded to 10
+        const int diceSpacing = 5; // Fixed distance from end of title text
+        
+        // Get the font used for knob labels
+        juce::Font labelFont(12.0f, juce::Font::bold);
+        
+        // Calculate the width of the knob title text
+        int textWidth = labelFont.getStringWidth(autopanKnobNames[i]);
+        
+        // Position lock button at the end of the title text + fixed spacing
+        int lockX = x + (knobSize / 2) + (textWidth / 2) + diceSpacing;
+        int lockY = y - 10; // Moved up 3px from -7 to -10
+        
+        autopanLockButtons[i]->setBounds(lockX, lockY, diceSize, diceSize);
+        
+        // Configure images for on/off states (EXACT same as delay page)
+        std::unique_ptr<juce::Drawable> imgUnlocked, imgLocked;
+        if (assets.unlockedIcon) imgUnlocked = assets.unlockedIcon->createCopy();
+        if (assets.lockedIcon)   imgLocked   = assets.lockedIcon->createCopy();
+        
+        autopanLockButtons[i]->setImages(std::move(imgUnlocked), std::move(imgLocked));
+        autopanLockButtons[i]->setToggleState(autopanKnobLocked[i], juce::dontSendNotification);
+        autopanLockButtons[i]->onClick = [this, i]() {
+            autopanKnobLocked[i] = autopanLockButtons[i]->getToggleState();
+            repaint();
+        };
+    }
+    
+    DBG("[UI] AutoPan knobs setup complete");
+}
+
+void PluginEditor::setupAutoPanEffectsArea()
+{
+    DBG("[UI] Setting up AutoPan effects area...");
+    
+    // Effect area bounds (EXACT same as delay page)
+    auto effectArea = juce::Rectangle<int>(25, 54, 413, 296);
+    
+    // Create "EFFECT" title (EXACT same as delay page)
+    autopanEffectsTitle = std::make_unique<juce::Label>();
+    autopanEffectsTitle->setText("EFFECT", juce::dontSendNotification);
+    autopanEffectsTitle->setFont(juce::Font(27.648f, juce::Font::bold)); // EXACT same as delay page
+    autopanEffectsTitle->setColour(juce::Label::textColourId, juce::Colours::white);
+    autopanEffectsTitle->setJustificationType(juce::Justification::centredLeft);
+    addAndMakeVisible(autopanEffectsTitle.get());
+    autopanEffectsTitle->setVisible(false); // Initially hidden until AutoPan page is selected
+    autopanEffectsTitle->setBounds(effectArea.getX() + 10, effectArea.getY() + 5, 100, 30); // EXACT same as delay page
+    
+    // Create effect type dropdown (for Wave Type knob)
+    autopanEffectTypeDropdown = std::make_unique<juce::ComboBox>();
+    addAndMakeVisible(autopanEffectTypeDropdown.get());
+    autopanEffectTypeDropdown->setVisible(false); // Initially hidden until AutoPan page is selected
+    autopanEffectTypeDropdown->addItem("Sine", 1);
+    autopanEffectTypeDropdown->addItem("Triangle", 2);
+    autopanEffectTypeDropdown->addItem("Ramp Down", 3);
+    autopanEffectTypeDropdown->addItem("Ramp Up", 4);
+    autopanEffectTypeDropdown->addItem("Random", 5);
+    autopanEffectTypeDropdown->setSelectedId(1, juce::dontSendNotification);
+    autopanEffectTypeDropdown->setBounds(effectArea.getX() + effectArea.getWidth() - 200, effectArea.getY() + 10, 180, 30);
+    
+    // Create dice button (EXACT same positioning as delay page)
+    autopanDiceButton = std::make_unique<CustomDiceButton>();
+    addAndMakeVisible(autopanDiceButton.get());
+    autopanDiceButton->setVisible(false); // Initially hidden until AutoPan page is selected
+    
+    // Position dice button to the right of the title (EXACT same as delay page)
+    const int diceSize = 32; // 20% smaller: 40 * 0.8 = 32
+    autopanDiceButton->setBounds(effectArea.getX() + 130, effectArea.getY() + 5, diceSize, diceSize); // EXACT same as delay page
+    
+    // Set the dice image (EXACT same as delay page)
+    if (assets.diceLarge != nullptr)
+    {
+        autopanDiceButton->setDiceImage(assets.diceLarge->createCopy());
+    }
+    
+    autopanDiceButton->onClick = [this]() { randomizeAutoPanKnobValues(); };
+    
+    // Create time sync toggle (for Rate knob) - using CircularToggleButton instead of abstract Button
+    autopanTimeSyncToggle = std::make_unique<CircularToggleButton>();
+    autopanTimeSyncToggle->setBounds(effectArea.getX() + 100, effectArea.getY() + 10, 20, 20);
+    addAndMakeVisible(autopanTimeSyncToggle.get());
+    autopanTimeSyncToggle->setVisible(false); // Initially hidden until AutoPan page is selected
+    
+    // Create FX power button (EXACT same positioning as delay page)
+    autopanFxPowerButton = std::make_unique<juce::DrawableButton>("autopanFxPower", juce::DrawableButton::ButtonStyle::ImageFitted);
+    addAndMakeVisible(autopanFxPowerButton.get());
+    autopanFxPowerButton->setVisible(false); // Initially hidden until AutoPan page is selected
+
+    // Slightly bigger than step power (which is 40). Use 46. (EXACT same as delay page)
+    const int buttonSize = 46;
+    autopanFxPowerButton->setBounds(effectArea.getX() + effectArea.getWidth() - buttonSize - 8 + 8 + 3, effectArea.getY() + 6 - 20 + 4, buttonSize, buttonSize);
+
+    autopanFxPowerButton->setColour(juce::DrawableButton::backgroundColourId, juce::Colours::transparentBlack);
+    autopanFxPowerButton->setColour(juce::DrawableButton::backgroundOnColourId, juce::Colours::transparentBlack);
+
+    if (assets.fxPowerOn != nullptr)
+    {
+        autopanFxPowerButton->setImages(assets.fxPowerOn->createCopy().get());
+    }
+    
+    autopanFxPowerButton->onClick = [this]() { 
+        autopanFxAreaEnabled = !autopanFxAreaEnabled;
+        updateAutoPanFxAreaVisibility();
+    };
+    
+    DBG("[UI] AutoPan effects area setup complete");
+}
+
+void PluginEditor::setupAutoPanSequencerArea()
+{
+    DBG("[UI] Setting up AutoPan sequencer area...");
+    
+    // Sequencer area bounds (EXACT same as delay page)
+    auto sequencerArea = juce::Rectangle<int>(25, 374, 413, 140);
+    
+    // Create step title
+    autopanStepTitle = std::make_unique<juce::Label>();
+    autopanStepTitle->setText("STEP", juce::dontSendNotification);
+    autopanStepTitle->setFont(juce::Font(22.118f, juce::Font::bold)); // 20% smaller: 27.648f * 0.8 = 22.118f
+    autopanStepTitle->setColour(juce::Label::textColourId, juce::Colours::white);
+    autopanStepTitle->setJustificationType(juce::Justification::centredLeft);
+    addAndMakeVisible(autopanStepTitle.get());
+    autopanStepTitle->setVisible(false); // Initially hidden until AutoPan page is selected
+    autopanStepTitle->setBounds(sequencerArea.getX() + 10, sequencerArea.getY() + 10, 100, 30);
+    
+    // Create step buttons (2 rows of 8, EXACT same layout as delay page)
+    const int buttonSize = 40;
+    const int buttonSpacing = 8;
+    const int startX = sequencerArea.getX() + 20;
+    const int startY = sequencerArea.getY() + 35; // Same as delay page
+    
+    for (int i = 0; i < 16; ++i) {
+        autopanStepButtons[i] = std::make_unique<StepButton>(i);
+        addAndMakeVisible(autopanStepButtons[i].get());
+        autopanStepButtons[i]->setVisible(false); // Initially hidden until AutoPan page is selected
+        
+        // Position buttons in 2 rows of 8 (EXACT same as delay page)
+        int x = startX + (i % 8) * (buttonSize + buttonSpacing);
+        int y = startY + (i / 8) * (buttonSize + buttonSpacing);
+        
+        autopanStepButtons[i]->setBounds(x, y, buttonSize, buttonSize);
+        
+        // Set step button images
+        if (assets.stepActive) {
+            autopanStepButtons[i]->setActiveImage(assets.stepActive->createCopy());
+        }
+        if (assets.stepInactive) {
+            autopanStepButtons[i]->setInactiveImage(assets.stepInactive->createCopy());
+        }
+        
+        // Set click handler
+        autopanStepButtons[i]->onClick = [this, i]() { onAutoPanStepButtonClicked(i); };
+    }
+    
+    // Create step amount label (EXACT same positioning as delay page)
+    autopanStepAmountLabel = std::make_unique<juce::Label>();
+    autopanStepAmountLabel->setText("16", juce::dontSendNotification);
+    autopanStepAmountLabel->setFont(juce::Font(16.0f, juce::Font::bold));
+    autopanStepAmountLabel->setColour(juce::Label::textColourId, juce::Colours::white);
+    autopanStepAmountLabel->setColour(juce::Label::backgroundColourId, juce::Colours::transparentBlack);
+    autopanStepAmountLabel->setColour(juce::Label::outlineColourId, juce::Colours::white);
+    autopanStepAmountLabel->setJustificationType(juce::Justification::centred);
+    autopanStepAmountLabel->setBorderSize(juce::BorderSize<int>(2));
+    autopanStepAmountLabel->setEditable(true, true, false);
+    addAndMakeVisible(autopanStepAmountLabel.get());
+    autopanStepAmountLabel->setVisible(false); // Initially hidden until AutoPan page is selected
+    autopanStepAmountLabel->setBounds(sequencerArea.getX() + 180, sequencerArea.getY() - 10, 30, 25);
+    
+    // Create rate dropdown (EXACT same positioning as delay page)
+    autopanRateDropdown = std::make_unique<juce::ComboBox>();
+    autopanRateDropdown->addItem("4", 1);      // 4 bars (16 beats)
+    autopanRateDropdown->addItem("2", 2);      // 2 bars (8 beats)
+    autopanRateDropdown->addItem("1", 3);      // 1 bar  (4 beats)
+    autopanRateDropdown->addItem("1/2", 4);
+    autopanRateDropdown->addItem("1/4", 5);
+    autopanRateDropdown->addItem("1/8", 6);
+    autopanRateDropdown->addItem("1/16", 7);
+    autopanRateDropdown->addItem("1/32", 8);
+    autopanRateDropdown->setSelectedId(6); // Default to 1/8
+    autopanRateDropdown->setColour(juce::ComboBox::backgroundColourId, juce::Colours::transparentBlack);
+    autopanRateDropdown->setColour(juce::ComboBox::outlineColourId, juce::Colours::transparentBlack);
+    autopanRateDropdown->setColour(juce::ComboBox::buttonColourId, juce::Colours::transparentBlack);
+    autopanRateDropdown->setColour(juce::ComboBox::textColourId, juce::Colours::white);
+    autopanRateDropdown->setColour(juce::ComboBox::arrowColourId, juce::Colours::white);
+    addAndMakeVisible(autopanRateDropdown.get());
+    autopanRateDropdown->setVisible(false); // Initially hidden until AutoPan page is selected
+    autopanRateDropdown->setBounds(sequencerArea.getX() + 220, sequencerArea.getY() - 10, 74, 25);
+    
+    // Create STD toggle (EXACT same positioning as delay page)
+    autopanStdToggle = std::make_unique<CircularToggleButton>();
+    autopanStdToggle->setButtonText("-");
+    addAndMakeVisible(autopanStdToggle.get());
+    autopanStdToggle->setVisible(false); // Initially hidden until AutoPan page is selected
+    autopanStdToggle->setBounds(sequencerArea.getX() + 288, sequencerArea.getY() - 14, 30, 30);
+    
+    // Create step dice button (EXACT same positioning as delay page)
+    autopanStepDiceButton = std::make_unique<CustomDiceButton>();
+    addAndMakeVisible(autopanStepDiceButton.get());
+    autopanStepDiceButton->setVisible(false); // Initially hidden until AutoPan page is selected
+    int autopanStepDiceSize = static_cast<int>(35 * 0.7); // 30% smaller than 35px = ~24px
+    autopanStepDiceButton->setBounds(sequencerArea.getX() + 75, sequencerArea.getY() + 5, autopanStepDiceSize, autopanStepDiceSize);
+    
+    // Create step power button (EXACT same positioning as delay page)
+    autopanStepPowerButton = std::make_unique<juce::DrawableButton>("autopanStepPower", juce::DrawableButton::ButtonStyle::ImageFitted);
+    addAndMakeVisible(autopanStepPowerButton.get());
+    autopanStepPowerButton->setVisible(false); // Initially hidden until AutoPan page is selected
+    
+    // Position at top right corner of step area, 20% smaller than 50px and adjusted position (EXACT same as delay page)
+    const int powerButtonSize = 40; // 50 * 0.8 = 40 (20% smaller)
+    autopanStepPowerButton->setBounds(sequencerArea.getX() + sequencerArea.getWidth() - powerButtonSize - 5 + 15 - 5 - 1, sequencerArea.getY() - 5 - 40 + 25 + 5, powerButtonSize, powerButtonSize); // 1px right, 5px up
+    
+    // Remove background colors (EXACT same as delay page)
+    autopanStepPowerButton->setColour(juce::DrawableButton::backgroundColourId, juce::Colours::transparentBlack);
+    autopanStepPowerButton->setColour(juce::DrawableButton::backgroundOnColourId, juce::Colours::transparentBlack);
+    
+    if (assets.stepPowerOn != nullptr)
+    {
+        autopanStepPowerButton->setImages(assets.stepPowerOn->createCopy().get());
+    }
+    
+    autopanStepPowerButton->onClick = [this]() { 
+        autopanStepAreaEnabled = !autopanStepAreaEnabled;
+        updateAutoPanStepAreaVisibility();
+    };
+    
+    DBG("[UI] AutoPan sequencer area setup complete");
+}
+
+void PluginEditor::setupAutoPanAllStepsToggle()
+{
+    DBG("[UI] Setting up AutoPan All Steps toggle...");
+    
+    // Effect area bounds (EXACT same as delay page)
+    auto effectArea = juce::Rectangle<int>(25, 54, 413, 296);
+    
+    // Create "All Steps" toggle button - using CircularToggleButton instead of abstract Button
+    autopanAllStepsToggle = std::make_unique<CircularToggleButton>();
+    addAndMakeVisible(autopanAllStepsToggle.get());
+    autopanAllStepsToggle->setVisible(false); // Initially hidden until AutoPan page is selected
+    
+    // Position button in same location as delay page
+    const int buttonSize = 24;
+    autopanAllStepsToggle->setBounds(effectArea.getX() + effectArea.getWidth()/2 - buttonSize/2, effectArea.getY() + 1, buttonSize, buttonSize);
+    
+    // Create "All Steps" label
+    autopanAllStepsLabel = std::make_unique<juce::Label>();
+    autopanAllStepsLabel->setText("All Steps", juce::dontSendNotification);
+    autopanAllStepsLabel->setFont(juce::Font(14.4f, juce::Font::bold)); // 12.0f * 1.2 = 14.4f (20% bigger)
+    autopanAllStepsLabel->setColour(juce::Label::textColourId, juce::Colours::white);
+    autopanAllStepsLabel->setJustificationType(juce::Justification::centredLeft);
+    addAndMakeVisible(autopanAllStepsLabel.get());
+    autopanAllStepsLabel->setVisible(false); // Initially hidden until AutoPan page is selected
+    
+    // Position label to the right of the button, moved 30px right, moved up 4px
+    autopanAllStepsLabel->setBounds(effectArea.getX() + effectArea.getWidth()/2 + buttonSize/2 + 5 + 30, effectArea.getY() + 1, 80, 24); // Moved up 4px from 5 to 1
+    
+    DBG("[UI] AutoPan All Steps toggle setup complete");
+}
+
+void PluginEditor::setupAutoPanStepPowerButton()
+{
+    DBG("[UI] AutoPan step power button already created in setupAutoPanSequencerArea");
+}
+
+
+// AutoPan helper methods (stubs for now - will implement functionality later)
+void PluginEditor::updateAutoPanFxAreaVisibility() { /* TODO: Implement */ }
+void PluginEditor::updateAutoPanStepAreaVisibility() { /* TODO: Implement */ }
+void PluginEditor::randomizeAutoPanKnobValues() { /* TODO: Implement */ }
+void PluginEditor::randomizeIndividualAutoPanKnob(int knobIndex) { /* TODO: Implement */ }
+void PluginEditor::updateAutoPanParameterFromKnob(int knobIndex) { /* TODO: Implement */ }
+void PluginEditor::onAutoPanStepButtonClicked(int stepIndex) { /* TODO: Implement */ }
+void PluginEditor::updateAutoPanSequencerUI() { /* TODO: Implement */ }
