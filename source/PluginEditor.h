@@ -279,10 +279,9 @@ public:
     
     // AutoPan effects area components
     std::unique_ptr<juce::Label> autopanEffectsTitle;
-    std::unique_ptr<juce::ComboBox> autopanEffectTypeDropdown;
     std::unique_ptr<BigComboWithSvgLNF> autopanFxComboLNF;
     std::unique_ptr<CustomDiceButton> autopanDiceButton;
-    std::unique_ptr<CircularToggleButton> autopanTimeSyncToggle; // S circle toggle for Rate knob
+    std::unique_ptr<juce::Button> autopanTimeSyncToggle; // S circle toggle for Rate knob
     bool autopanTimeSyncEnabled = false;
     int autopanTimeSyncStdMode = 0; // 0 straight, 1 triplet, 2 dotted
     std::unique_ptr<juce::DrawableButton> autopanFxPowerButton;
@@ -299,7 +298,7 @@ public:
     bool autopanStepAreaEnabled = true;
     
     // AutoPan All Steps toggle
-    std::unique_ptr<CircularToggleButton> autopanAllStepsToggle;
+    std::unique_ptr<AllStepsToggleButton> autopanAllStepsToggle;
     std::unique_ptr<juce::Label> autopanAllStepsLabel;
     bool autopanAllStepsEnabled = false;
     
