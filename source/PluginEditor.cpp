@@ -112,18 +112,21 @@ void PluginEditor::paint (juce::Graphics& g)
     drawMainAreas(g);
     }
 
-    // Draw knob lock icons on top of UI
-    for (int i = 0; i < 8; ++i)
+    // Draw knob lock icons on top of UI (only on SpaceDelay page)
+    if (currentPage == FxPageID::SpaceDelay)
     {
-        if (knobLockButtons[i] != nullptr)
+        for (int i = 0; i < 8; ++i)
         {
-            auto b = knobLockButtons[i]->getBounds().toFloat();
-            if (knobLocked[i]) {
-                if (assets.lockedIcon != nullptr)
-                    assets.lockedIcon->drawWithin(g, b, juce::RectanglePlacement::centred, 1.0f);
-            } else {
-                if (assets.unlockedIcon != nullptr)
-                    assets.unlockedIcon->drawWithin(g, b, juce::RectanglePlacement::centred, 1.0f);
+            if (knobLockButtons[i] != nullptr)
+            {
+                auto b = knobLockButtons[i]->getBounds().toFloat();
+                if (knobLocked[i]) {
+                    if (assets.lockedIcon != nullptr)
+                        assets.lockedIcon->drawWithin(g, b, juce::RectanglePlacement::centred, 1.0f);
+                } else {
+                    if (assets.unlockedIcon != nullptr)
+                        assets.unlockedIcon->drawWithin(g, b, juce::RectanglePlacement::centred, 1.0f);
+                }
             }
         }
     }
