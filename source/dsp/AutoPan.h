@@ -18,13 +18,25 @@ struct AutoPan
 
         // Keep phase continuous - don't reset it
         phase = juce::jlimit(0.0, juce::MathConstants<double>::twoPi, phase);
+        
+        // Store previous rate to detect changes
+        previousRate = 1.0f;
     }
 
     // set targets each block (0..1 except rate)
     void set(float rateHzTarget, float depth01, float width01, float mix01, 
              int waveType = 0, float waveShape = 0.5f, float phaseOffset = 0.0f, bool inverted = false)
     {
-        rateSmooth.setTargetValue(juce::jmax(0.0f, rateHzTarget)); // Hz
+        // Detect rate changes to prevent clicks
+        float newRate = juce::jmax(0.0f, rateHzTarget);
+        if (std::abs(newRate - previousRate) > 0.1f) {
+            // Rate changed significantly - use longer smoothing to prevent clicks
+            rateSmooth.reset(sampleRate, 0.1); // 100ms smoothing for rate changes
+        }
+        
+        rateSmooth.setTargetValue(newRate);
+        previousRate = newRate;
+        
         depthSmooth.setTargetValue(juce::jlimit(0.0f, 1.0f, depth01));
         widthSmooth.setTargetValue(juce::jlimit(0.0f, 1.0f, width01));
         mixSmooth.setTargetValue(juce::jlimit(0.0f, 1.0f, mix01));
@@ -224,4 +236,5 @@ struct AutoPan
     
     int waveTypeParam { 0 }; // 0=Sine, 1=Triangle, 2=RampDown, 3=RampUp, 4=Random
     bool invertedParam { false }; // wave inversion
+    float previousRate { 1.0f }; // track previous rate for smooth transitions
 };
