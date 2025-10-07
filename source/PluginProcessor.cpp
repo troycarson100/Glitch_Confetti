@@ -392,7 +392,7 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
             // Use a multiplier to make it more reasonable for panning
             const double bpm = getBpmOrDefault(120.0);
             const double baseRate = (bpm / 60.0) / division; // This gives musical timing
-            const double multiplier = 0.01; // Make it 100x slower for reasonable panning
+            const double multiplier = 0.002; // Make it 500x slower for very reasonable panning
             rate = (float)(baseRate * multiplier);
         }
         

@@ -4,7 +4,7 @@
 
 struct AutoPan
 {
-    void prepare(double sr, double smoothingMs = 50.0)
+    void prepare(double sr, double smoothingMs = 100.0)
     {
         sampleRate = (sr > 0.0 ? sr : 44100.0);
         const double secs = juce::jmax(0.0, smoothingMs) / 1000.0;
@@ -29,9 +29,9 @@ struct AutoPan
     {
         // Detect rate changes to prevent clicks
         float newRate = juce::jmax(0.0f, rateHzTarget);
-        if (std::abs(newRate - previousRate) > 0.01f) { // Much more sensitive detection
+        if (std::abs(newRate - previousRate) > 0.001f) { // Ultra sensitive detection
             // Rate changed significantly - use longer smoothing to prevent clicks
-            rateSmooth.reset(sampleRate, 0.2); // 200ms smoothing for rate changes
+            rateSmooth.reset(sampleRate, 0.5); // 500ms smoothing for rate changes
         }
         
         rateSmooth.setTargetValue(newRate);
