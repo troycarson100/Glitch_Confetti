@@ -369,9 +369,19 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
         
         // Convert sync mode to Hz if sync is enabled
         if (syncParam && syncParam->load() > 0.5f) {
+            // When sync mode is enabled, the UI knob range is 0.0-1.0 for divisions
+            // But the parameter might still be in Hz range, so we need to handle both cases
+            float knobValue = rate;
+            
+            // If the rate is > 1.0, it's likely still in Hz range, so normalize it
+            if (rate > 1.0f) {
+                // Assume it's in the old Hz range (0.1-5.0) and map to 0-1
+                knobValue = (rate - 0.1f) / (5.0f - 0.1f);
+            }
+            
             // Convert knob value (0-1) to sync division index (0-7)
             // 0 = 2 (slowest), 1 = 1/64 (fastest)
-            int divIndex = juce::jlimit(0, 7, (int)(rate * 7.0f));
+            int divIndex = juce::jlimit(0, 7, (int)(knobValue * 7.0f));
             
             // Sync divisions: 2, 1, 1/2, 1/4, 1/8, 1/16, 1/32, 1/64 (slowest to fastest)
             std::vector<double> divisions = {2.0, 1.0, 0.5, 0.25, 0.125, 0.0625, 0.03125, 0.015625};
