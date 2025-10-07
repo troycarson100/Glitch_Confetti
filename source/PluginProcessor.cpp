@@ -380,8 +380,8 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
             }
             
             // Convert knob value (0-1) to sync division index (0-7)
-            // 0 = 1/64 (fastest), 1 = 2 (slowest) - inverted mapping
-            int divIndex = juce::jlimit(0, 7, (int)((1.0f - knobValue) * 7.0f));
+            // 0 = 2 (slowest), 1 = 1/64 (fastest) - correct mapping
+            int divIndex = juce::jlimit(0, 7, (int)(knobValue * 7.0f));
             
             // Sync divisions: 2, 1, 1/2, 1/4, 1/8, 1/16, 1/32, 1/64 (slowest to fastest)
             std::vector<double> divisions = {2.0, 1.0, 0.5, 0.25, 0.125, 0.0625, 0.03125, 0.015625};
@@ -392,7 +392,7 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
             // Use a multiplier to make it more reasonable for panning
             const double bpm = getBpmOrDefault(120.0);
             const double baseRate = (bpm / 60.0) / division; // This gives musical timing
-            const double multiplier = 0.025; // Make it 40x slower for reasonable panning
+            const double multiplier = 0.01; // Make it 100x slower for reasonable panning
             rate = (float)(baseRate * multiplier);
         }
         

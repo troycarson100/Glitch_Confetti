@@ -380,8 +380,8 @@ void PluginEditor::timerCallback()
                                 {"2", 2.0}, {"1", 1.0}, {"1/2", 0.5}, {"1/4", 0.25}, 
                                 {"1/8", 0.125}, {"1/16", 0.0625}, {"1/32", 0.03125}, {"1/64", 0.015625}
                             };
-                            // 0 = 1/64 (fastest), 1 = 2 (slowest) - inverted mapping
-                            int divIndex = juce::jlimit(0, 7, (int)((1.0f - knobValue) * 7.0f));
+                            // 0 = 2 (slowest), 1 = 1/64 (fastest) - correct mapping
+                            int divIndex = juce::jlimit(0, 7, (int)(knobValue * 7.0f));
                             valueText = divisions[divIndex].first;
                         } else {
                             valueText = juce::String(knobValue, 2) + "Hz";
