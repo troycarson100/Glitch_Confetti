@@ -13,18 +13,99 @@ struct AutoPan
         depthSmooth.reset(sampleRate, secs);
         widthSmooth.reset(sampleRate, secs);
         mixSmooth.reset(sampleRate, secs);
+        waveShapeSmooth.reset(sampleRate, secs);
+        phaseOffsetSmooth.reset(sampleRate, secs);
 
         // Keep phase continuous - don't reset it
         phase = juce::jlimit(0.0, juce::MathConstants<double>::twoPi, phase);
     }
 
     // set targets each block (0..1 except rate)
-    void set(float rateHzTarget, float depth01, float width01, float mix01)
+    void set(float rateHzTarget, float depth01, float width01, float mix01, 
+             int waveType = 0, float waveShape = 0.5f, float phaseOffset = 0.0f, bool inverted = false)
     {
         rateSmooth.setTargetValue(juce::jmax(0.0f, rateHzTarget)); // Hz
         depthSmooth.setTargetValue(juce::jlimit(0.0f, 1.0f, depth01));
         widthSmooth.setTargetValue(juce::jlimit(0.0f, 1.0f, width01));
         mixSmooth.setTargetValue(juce::jlimit(0.0f, 1.0f, mix01));
+        
+        // Wave parameters
+        waveTypeParam = juce::jlimit(0, 4, waveType); // 0-4 for wave types
+        waveShapeSmooth.setTargetValue(juce::jlimit(0.0f, 1.0f, waveShape));
+        phaseOffsetSmooth.setTargetValue(juce::jlimit(0.0f, 360.0f, phaseOffset));
+        invertedParam = inverted;
+    }
+
+    // Generate different wave types with shape morphing
+    float generateWave(float phase, int waveType, float waveShape, bool inverted) const
+    {
+        // Normalize phase to 0-2π
+        phase = std::fmod(phase, juce::MathConstants<float>::twoPi);
+        if (phase < 0) phase += juce::MathConstants<float>::twoPi;
+        
+        float wave = 0.0f;
+        
+        switch (waveType) {
+            case 0: // Sine
+                wave = std::sin(phase);
+                break;
+                
+            case 1: // Triangle
+                if (phase < juce::MathConstants<float>::pi) {
+                    wave = 2.0f * phase / juce::MathConstants<float>::pi - 1.0f;
+                } else {
+                    wave = 3.0f - 2.0f * phase / juce::MathConstants<float>::pi;
+                }
+                break;
+                
+            case 2: // Ramp Down (Sawtooth)
+                wave = 1.0f - 2.0f * phase / juce::MathConstants<float>::twoPi;
+                break;
+                
+            case 3: // Ramp Up (Reverse Sawtooth)
+                wave = 2.0f * phase / juce::MathConstants<float>::twoPi - 1.0f;
+                break;
+                
+            case 4: // Random (Sample & Hold)
+                // For random, we'll use a pseudo-random approach based on phase
+                // This creates a stepped random pattern
+                {
+                    int step = (int)(phase * 8.0f / juce::MathConstants<float>::twoPi); // 8 steps per cycle
+                    float rand = std::sin(step * 1.234f) * 0.5f + std::cos(step * 2.345f) * 0.3f + std::sin(step * 3.456f) * 0.2f;
+                    wave = juce::jlimit(-1.0f, 1.0f, rand);
+                }
+                break;
+        }
+        
+        // Apply wave shape morphing (interpolate between wave types)
+        if (waveShape != 0.5f) {
+            float morphedWave = 0.0f;
+            
+            if (waveShape < 0.5f) {
+                // Morph towards sine (0.0 = pure sine, 0.5 = original wave)
+                float sineWave = std::sin(phase);
+                float t = waveShape * 2.0f; // 0 to 1
+                morphedWave = sineWave + t * (wave - sineWave);
+            } else {
+                // Morph towards triangle (0.5 = original wave, 1.0 = pure triangle)
+                float triangleWave = 0.0f;
+                if (phase < juce::MathConstants<float>::pi) {
+                    triangleWave = 2.0f * phase / juce::MathConstants<float>::pi - 1.0f;
+                } else {
+                    triangleWave = 3.0f - 2.0f * phase / juce::MathConstants<float>::pi;
+                }
+                float t = (waveShape - 0.5f) * 2.0f; // 0 to 1
+                morphedWave = wave + t * (triangleWave - wave);
+            }
+            wave = morphedWave;
+        }
+        
+        // Apply inversion
+        if (inverted) {
+            wave = -wave;
+        }
+        
+        return juce::jlimit(-1.0f, 1.0f, wave);
     }
 
     void process(juce::AudioBuffer<float>& buffer, bool isPlaying = true, bool syncToTransport = false, double bpm = 120.0, double ppqPosition = 0.0)
@@ -62,8 +143,10 @@ struct AutoPan
             }
             // If not playing, keep current phase (no change)
 
-            // Generate LFO value (-1 to +1)
-            const float lfo = std::sin((float)currentPhase);
+            // Generate LFO value (-1 to +1) based on wave type
+            const float waveShape = waveShapeSmooth.getNextValue();
+            const float phaseOffset = phaseOffsetSmooth.getNextValue() * juce::MathConstants<double>::pi / 180.0; // Convert to radians
+            const float lfo = generateWave((float)currentPhase + phaseOffset, waveTypeParam, waveShape, invertedParam);
 
             // Convert LFO to pan position (-1 = full left, +1 = full right)
             const float panPosition = lfo * depth;
@@ -136,4 +219,9 @@ struct AutoPan
     juce::SmoothedValue<float> depthSmooth; // 0..1 travel
     juce::SmoothedValue<float> widthSmooth; // 0..1 stereo->mono(panned)
     juce::SmoothedValue<float> mixSmooth;   // 0..1 dry/wet
+    juce::SmoothedValue<float> waveShapeSmooth; // 0..1 wave shape morphing
+    juce::SmoothedValue<float> phaseOffsetSmooth; // 0..360 degrees phase offset
+    
+    int waveTypeParam { 0 }; // 0=Sine, 1=Triangle, 2=RampDown, 3=RampUp, 4=Random
+    bool invertedParam { false }; // wave inversion
 };

@@ -401,7 +401,18 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
         const float width = 1.0f;  // Full width for classic autopan behavior
         const float mix = 1.0f;    // Full wet mix
         
-        autoPan.set(rate, depth, width, mix);
+        // Get wave parameters
+        auto* waveTypeParam = valueTreeState.getRawParameterValue("autopanWaveType");
+        auto* waveShapeParam = valueTreeState.getRawParameterValue("autopanWaveShape");
+        auto* phaseParam = valueTreeState.getRawParameterValue("autopanPhase");
+        auto* invertedParam = valueTreeState.getRawParameterValue("autopanInverted");
+        
+        const int waveType = waveTypeParam ? (int)waveTypeParam->load() : 0;
+        const float waveShape = waveShapeParam ? waveShapeParam->load() : 0.5f;
+        const float phase = phaseParam ? phaseParam->load() : 180.0f;
+        const bool inverted = invertedParam ? (invertedParam->load() > 0.5f) : false;
+        
+        autoPan.set(rate, depth, width, mix, waveType, waveShape, phase, inverted);
         
         // Process AutoPan effect AFTER delay
         if (buffer.getNumChannels() >= 2 && buffer.getNumSamples() > 0) {
@@ -698,7 +709,18 @@ void PluginProcessor::applySnapshotTargets(const StepSnapshot& snapshot)
             const float width = 1.0f;  // Full width for classic autopan behavior
             const float mix = 1.0f;    // Full wet mix
             
-            autoPan.set(rate, depth, width, mix);
+            // Get wave parameters
+            auto* waveTypeParam = valueTreeState.getRawParameterValue("autopanWaveType");
+            auto* waveShapeParam = valueTreeState.getRawParameterValue("autopanWaveShape");
+            auto* phaseParam = valueTreeState.getRawParameterValue("autopanPhase");
+            auto* invertedParam = valueTreeState.getRawParameterValue("autopanInverted");
+            
+            const int waveType = waveTypeParam ? (int)waveTypeParam->load() : 0;
+            const float waveShape = waveShapeParam ? waveShapeParam->load() : 0.5f;
+            const float phase = phaseParam ? phaseParam->load() : 180.0f;
+            const bool inverted = invertedParam ? (invertedParam->load() > 0.5f) : false;
+            
+            autoPan.set(rate, depth, width, mix, waveType, waveShape, phase, inverted);
             break;
         }
         default:
