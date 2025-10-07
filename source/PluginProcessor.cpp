@@ -387,12 +387,11 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
             std::vector<double> divisions = {2.0, 1.0, 0.5, 0.25, 0.125, 0.0625, 0.03125, 0.015625};
             double division = divisions[divIndex];
             
-            // Convert to Hz: Use much slower rates for AutoPan
-            // For example: 1/4 note at 120 BPM should be much slower than 8 Hz
-            // Use a multiplier to make it more reasonable for panning
+            // Convert to Hz: For panning, we want cycles per beat, not beats per cycle
+            // division = 0.25 means we want 1/0.25 = 4 cycles per beat (1/4 note panning)
             const double bpm = getBpmOrDefault(120.0);
-            const double baseRate = (bpm / 60.0) / division; // This gives musical timing
-            const double multiplier = 0.002; // Make it 500x slower for very reasonable panning
+            const double baseRate = (bpm / 60.0) * (1.0 / division); // Cycles per second
+            const double multiplier = 1.0; // No additional scaling needed
             rate = (float)(baseRate * multiplier);
         }
         
