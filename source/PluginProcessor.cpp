@@ -408,7 +408,16 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
             // Check if sync mode is enabled - if so, sync to transport
             bool syncToTransport = (syncParam && syncParam->load() > 0.5f);
             bool isPlaying = syncToTransport ? wasPlaying.load() : true;
-            autoPan.process(buffer, isPlaying);
+            
+            if (syncToTransport) {
+                // Pass transport information for sync mode
+                double bpm = getBpmOrDefault(120.0);
+                double ppqPosition = transportCache.ppq.load();
+                autoPan.process(buffer, isPlaying, syncToTransport, bpm, ppqPosition);
+            } else {
+                // Free-running mode
+                autoPan.process(buffer, isPlaying, syncToTransport);
+            }
         }
     }
     

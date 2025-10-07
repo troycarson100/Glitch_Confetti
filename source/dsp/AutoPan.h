@@ -27,7 +27,7 @@ struct AutoPan
         mixSmooth.setTargetValue(juce::jlimit(0.0f, 1.0f, mix01));
     }
 
-    void process(juce::AudioBuffer<float>& buffer, bool isPlaying = true)
+    void process(juce::AudioBuffer<float>& buffer, bool isPlaying = true, bool syncToTransport = false, double bpm = 120.0, double ppqPosition = 0.0)
     {
         const int N = buffer.getNumSamples();
         const int C = buffer.getNumChannels();
@@ -48,8 +48,22 @@ struct AutoPan
             const float width = widthSmooth.getNextValue();   // 0..1
             const float mix = mixSmooth.getNextValue();       // 0..1
 
+            // Calculate current phase based on sync mode
+            double currentPhase = phase;
+            if (syncToTransport && isPlaying) {
+                // In sync mode, calculate phase from DAW position
+                // rateHz is actually the musical division (e.g., 0.25 for 1/4 note)
+                const double beatsPerCycle = rateHz; // rateHz contains the division value
+                const double currentBeat = ppqPosition + (double)n * bpm / (60.0 * sampleRate);
+                currentPhase = juce::MathConstants<double>::twoPi * std::fmod(currentBeat / beatsPerCycle, 1.0);
+            } else if (isPlaying) {
+                // Free-running mode
+                currentPhase = phase;
+            }
+            // If not playing, keep current phase (no change)
+
             // Generate LFO value (-1 to +1)
-            const float lfo = std::sin((float)phase);
+            const float lfo = std::sin((float)currentPhase);
 
             // Convert LFO to pan position (-1 = full left, +1 = full right)
             const float panPosition = lfo * depth;
@@ -75,8 +89,8 @@ struct AutoPan
             L[n] = inL + mix * (wetL - inL);
             if (R) R[n] = inR + mix * (wetR - inR);
 
-            // Advance continuous phase with smoothed rate ONLY when playing
-            if (isPlaying) {
+            // Advance continuous phase with smoothed rate ONLY when playing and NOT in sync mode
+            if (isPlaying && !syncToTransport) {
                 phase += juce::MathConstants<double>::twoPi * (double)rateHz / sampleRate;
                 if (phase >= juce::MathConstants<double>::twoPi) phase -= juce::MathConstants<double>::twoPi;
             }
@@ -87,6 +101,22 @@ struct AutoPan
     float getCurrentPanPosition() const noexcept
     {
         const float lfo = std::sin((float)phase);
+        const float depth = depthSmooth.getCurrentValue();
+        return lfo * depth;
+    }
+    
+    // Get current pan position for visualizer with sync mode support
+    float getCurrentPanPosition(bool syncToTransport = false, bool isPlaying = false, double bpm = 120.0, double ppqPosition = 0.0) const noexcept
+    {
+        double currentPhase = phase;
+        if (syncToTransport && isPlaying) {
+            const float rateHz = rateSmooth.getCurrentValue();
+            const double beatsPerCycle = rateHz;
+            const double currentBeat = ppqPosition;
+            currentPhase = juce::MathConstants<double>::twoPi * std::fmod(currentBeat / beatsPerCycle, 1.0);
+        }
+        
+        const float lfo = std::sin((float)currentPhase);
         const float depth = depthSmooth.getCurrentValue();
         return lfo * depth;
     }

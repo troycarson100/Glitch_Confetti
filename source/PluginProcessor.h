@@ -226,7 +226,20 @@ public:
     AutoPan autoPan;
     
     // Get current pan position for visualizer
-    float getCurrentPanPosition() const { return autoPan.getCurrentPanPosition(); }
+    float getCurrentPanPosition() const { 
+        // Check if sync mode is enabled
+        auto* syncParam = valueTreeState.getRawParameterValue("autopanTimeSync");
+        bool syncToTransport = syncParam && syncParam->load() > 0.5f;
+        bool isPlaying = wasPlaying.load();
+        
+        if (syncToTransport) {
+            double bpm = getBpmOrDefault(120.0);
+            double ppqPosition = transportCache.ppq.load();
+            return autoPan.getCurrentPanPosition(syncToTransport, isPlaying, bpm, ppqPosition);
+        } else {
+            return autoPan.getCurrentPanPosition(syncToTransport, isPlaying);
+        }
+    }
            
            double dspSampleRate = 44100.0;
            
