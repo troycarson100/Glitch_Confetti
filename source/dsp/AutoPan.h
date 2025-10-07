@@ -27,7 +27,7 @@ struct AutoPan
         mixSmooth.setTargetValue(juce::jlimit(0.0f, 1.0f, mix01));
     }
 
-    void process(juce::AudioBuffer<float>& buffer)
+    void process(juce::AudioBuffer<float>& buffer, bool isPlaying = true)
     {
         const int N = buffer.getNumSamples();
         const int C = buffer.getNumChannels();
@@ -75,9 +75,11 @@ struct AutoPan
             L[n] = inL + mix * (wetL - inL);
             if (R) R[n] = inR + mix * (wetR - inR);
 
-            // Advance continuous phase with smoothed rate
-            phase += juce::MathConstants<double>::twoPi * (double)rateHz / sampleRate;
-            if (phase >= juce::MathConstants<double>::twoPi) phase -= juce::MathConstants<double>::twoPi;
+            // Advance continuous phase with smoothed rate ONLY when playing
+            if (isPlaying) {
+                phase += juce::MathConstants<double>::twoPi * (double)rateHz / sampleRate;
+                if (phase >= juce::MathConstants<double>::twoPi) phase -= juce::MathConstants<double>::twoPi;
+            }
         }
     }
 

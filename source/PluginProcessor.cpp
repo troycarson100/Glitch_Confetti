@@ -395,7 +395,10 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
         
         // Process AutoPan effect AFTER delay
         if (buffer.getNumChannels() >= 2 && buffer.getNumSamples() > 0) {
-            autoPan.process(buffer);
+            // Check if sync mode is enabled - if so, sync to transport
+            bool syncToTransport = (syncParam && syncParam->load() > 0.5f);
+            bool isPlaying = syncToTransport ? wasPlaying.load() : true;
+            autoPan.process(buffer, isPlaying);
         }
     }
     
