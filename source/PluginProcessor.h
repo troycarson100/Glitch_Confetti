@@ -237,7 +237,7 @@ public:
             double ppqPosition = transportCache.ppq.load();
             return autoPan.getCurrentPanPosition(syncToTransport, isPlaying, bpm, ppqPosition);
         } else {
-            return autoPan.getCurrentPanPosition(syncToTransport, isPlaying);
+            return autoPan.getCurrentPanPosition();
         }
     }
            

@@ -2,124 +2,98 @@
 #pragma once
 #include <juce_dsp/juce_dsp.h>
 
+// Sync division types
+struct SyncDiv { 
+    enum Type { Whole = 0, Half, Quarter, Eighth, Sixteenth, ThirtySecond, SixtyFourth } type; 
+    bool dotted = false, triplet = false; 
+};
+
+// Calculate beats per cycle for a sync division
+static inline float beatsPerCycle(const SyncDiv& d)
+{
+    float N = 1.0f; // in quarter-notes
+    switch (d.type)
+    {
+        case SyncDiv::Whole:         N = 4.0f;  break; // 4 QN
+        case SyncDiv::Half:          N = 2.0f;  break; // 2 QN
+        case SyncDiv::Quarter:       N = 1.0f;  break; // 1 QN
+        case SyncDiv::Eighth:        N = 0.5f;  break; // 1/2 QN
+        case SyncDiv::Sixteenth:     N = 0.25f; break; // 1/4 QN
+        case SyncDiv::ThirtySecond:  N = 0.125f;break; // 1/8 QN
+        case SyncDiv::SixtyFourth:   N = 0.0625f;break; // 1/16 QN
+    }
+    if (d.dotted)  N *= 1.5f;     // longer duration
+    if (d.triplet) N *= 2.0f/3.0f;// shorter duration
+    return N;
+}
+
+// Calculate synced Hz from BPM and sync division
+static inline float syncedHz(float bpm, const SyncDiv& d)
+{
+    const float qnHz = bpm / 60.0f;          // 1 cycle per quarter note = BPM/60 Hz
+    return qnHz / beatsPerCycle(d);          // divide by number of QN per cycle
+}
+
+// Get host BPM robustly
+static inline float getHostBpm(juce::AudioPlayHead* ph, float fallback = 120.0f)
+{
+    if (ph == nullptr) return fallback;
+    juce::AudioPlayHead::CurrentPositionInfo pos; 
+    if (!ph->getCurrentPosition(pos) || pos.bpm <= 0.0) return fallback;
+    return (float)pos.bpm;
+}
+
+// Shaped LFO function (sin ⇄ triangle ⇄ square) without nasty edges
+static inline float shapedLFO(float phase01, float shape01)
+{
+    const float ph = phase01;                   // 0..1
+    const float s  = juce::jlimit(0.0f, 1.0f, shape01);
+    const float sinv = std::sin(juce::MathConstants<float>::twoPi * ph);
+
+    // triangle via asin(sin) normalized to [-1,1]
+    const float tri = (2.0f / juce::MathConstants<float>::pi) * std::asin(sinv);
+
+    // soft square via tanh(k * sin); k from 0..~3 as shape increases
+    const float k   = juce::jmap(s, 0.0f, 1.0f, 0.0f, 3.0f);
+    const float sq  = std::tanh(k * sinv);
+
+    // crossfade sin → tri → sq: first half sin→tri, second half tri→sq
+    if (s < 0.5f)
+        return juce::jmap(s * 2.0f, sinv, tri);
+    else
+        return juce::jmap((s - 0.5f) * 2.0f, tri, sq);
+}
+
 struct AutoPan
 {
-    void prepare(double sr, double smoothingMs = 100.0)
+    void prepare(double sr, double smoothingMs = 30.0)
     {
         sampleRate = (sr > 0.0 ? sr : 44100.0);
         const double secs = juce::jmax(0.0, smoothingMs) / 1000.0;
 
-        rateSmooth.reset(sampleRate, secs);
+        freqSmooth.reset(sampleRate, secs);
         depthSmooth.reset(sampleRate, secs);
         widthSmooth.reset(sampleRate, secs);
         mixSmooth.reset(sampleRate, secs);
-        waveShapeSmooth.reset(sampleRate, secs);
-        phaseOffsetSmooth.reset(sampleRate, secs);
+        shapeSmooth.reset(sampleRate, secs);
+        phaseOffSmooth.reset(sampleRate, secs);
 
         // Keep phase continuous - don't reset it
         phase = juce::jlimit(0.0, juce::MathConstants<double>::twoPi, phase);
-        
-        // Store previous rate to detect changes
-        previousRate = 1.0f;
     }
 
-    // set targets each block (0..1 except rate)
-    void set(float rateHzTarget, float depth01, float width01, float mix01, 
-             int waveType = 0, float waveShape = 0.5f, float phaseOffset = 0.0f, bool inverted = false)
+    // Set targets each block (0..1 except freqHz)
+    void setTargets(float freqHz, float depth01, float width01, float mix01, float shape01, float phaseOffset01)
     {
-        // Detect rate changes to prevent clicks
-        float newRate = juce::jmax(0.0f, rateHzTarget);
-        if (std::abs(newRate - previousRate) > 0.001f) { // Ultra sensitive detection
-            // Rate changed significantly - use longer smoothing to prevent clicks
-            rateSmooth.reset(sampleRate, 0.5); // 500ms smoothing for rate changes
-        }
-        
-        rateSmooth.setTargetValue(newRate);
-        previousRate = newRate;
-        
+        freqSmooth.setTargetValue(juce::jmax(0.0f, freqHz));
         depthSmooth.setTargetValue(juce::jlimit(0.0f, 1.0f, depth01));
         widthSmooth.setTargetValue(juce::jlimit(0.0f, 1.0f, width01));
         mixSmooth.setTargetValue(juce::jlimit(0.0f, 1.0f, mix01));
-        
-        // Wave parameters
-        waveTypeParam = juce::jlimit(0, 4, waveType); // 0-4 for wave types
-        waveShapeSmooth.setTargetValue(juce::jlimit(0.0f, 1.0f, waveShape));
-        phaseOffsetSmooth.setTargetValue(juce::jlimit(0.0f, 360.0f, phaseOffset));
-        invertedParam = inverted;
+        shapeSmooth.setTargetValue(juce::jlimit(0.0f, 1.0f, shape01));
+        phaseOffSmooth.setTargetValue(juce::jlimit(0.0f, 1.0f, phaseOffset01)); // 0..1 maps to 0..2π
     }
 
-    // Generate different wave types with shape morphing
-    float generateWave(float phase, int waveType, float waveShape, bool inverted) const
-    {
-        // Normalize phase to 0-2π
-        phase = std::fmod(phase, juce::MathConstants<float>::twoPi);
-        if (phase < 0) phase += juce::MathConstants<float>::twoPi;
-        
-        float wave = 0.0f;
-        
-        switch (waveType) {
-            case 0: // Sine
-                wave = std::sin(phase);
-                break;
-                
-            case 1: // Triangle
-                if (phase < juce::MathConstants<float>::pi) {
-                    wave = 2.0f * phase / juce::MathConstants<float>::pi - 1.0f;
-                } else {
-                    wave = 3.0f - 2.0f * phase / juce::MathConstants<float>::pi;
-                }
-                break;
-                
-            case 2: // Ramp Down (Sawtooth)
-                wave = 1.0f - 2.0f * phase / juce::MathConstants<float>::twoPi;
-                break;
-                
-            case 3: // Ramp Up (Reverse Sawtooth)
-                wave = 2.0f * phase / juce::MathConstants<float>::twoPi - 1.0f;
-                break;
-                
-            case 4: // Random (Sample & Hold)
-                // For random, we'll use a pseudo-random approach based on phase
-                // This creates a stepped random pattern
-                {
-                    int step = (int)(phase * 8.0f / juce::MathConstants<float>::twoPi); // 8 steps per cycle
-                    float rand = std::sin(step * 1.234f) * 0.5f + std::cos(step * 2.345f) * 0.3f + std::sin(step * 3.456f) * 0.2f;
-                    wave = juce::jlimit(-1.0f, 1.0f, rand);
-                }
-                break;
-        }
-        
-        // Apply wave shape morphing (interpolate between wave types)
-        if (waveShape != 0.5f) {
-            float morphedWave = 0.0f;
-            
-            if (waveShape < 0.5f) {
-                // Morph towards sine (0.0 = pure sine, 0.5 = original wave)
-                float sineWave = std::sin(phase);
-                float t = waveShape * 2.0f; // 0 to 1
-                morphedWave = sineWave + t * (wave - sineWave);
-            } else {
-                // Morph towards triangle (0.5 = original wave, 1.0 = pure triangle)
-                float triangleWave = 0.0f;
-                if (phase < juce::MathConstants<float>::pi) {
-                    triangleWave = 2.0f * phase / juce::MathConstants<float>::pi - 1.0f;
-                } else {
-                    triangleWave = 3.0f - 2.0f * phase / juce::MathConstants<float>::pi;
-                }
-                float t = (waveShape - 0.5f) * 2.0f; // 0 to 1
-                morphedWave = wave + t * (triangleWave - wave);
-            }
-            wave = morphedWave;
-        }
-        
-        // Apply inversion
-        if (inverted) {
-            wave = -wave;
-        }
-        
-        return juce::jlimit(-1.0f, 1.0f, wave);
-    }
-
+    // Process with click-free mid/side rotation
     void process(juce::AudioBuffer<float>& buffer, bool isPlaying = true, bool syncToTransport = false, double bpm = 120.0, double ppqPosition = 0.0)
     {
         const int N = buffer.getNumSamples();
@@ -129,91 +103,105 @@ struct AutoPan
         auto* L = buffer.getWritePointer(0);
         auto* R = (C > 1 ? buffer.getWritePointer(1) : nullptr);
 
+        constexpr float invSqrt2 = 0.7071067811865475f;
+        constexpr double twoPi = juce::MathConstants<double>::twoPi;
+
         for (int n = 0; n < N; ++n)
         {
             // Read inputs first (avoid in-place hazards)
             const float inL = L[n];
             const float inR = (R ? R[n] : inL);
 
-            // Smooth parameters per-sample
-            const float rateHz = rateSmooth.getNextValue();
-            const float depth = depthSmooth.getNextValue();   // 0..1
-            const float width = widthSmooth.getNextValue();   // 0..1
-            const float mix = mixSmooth.getNextValue();       // 0..1
+            // Get smoothed parameters per sample
+            const float fHz  = freqSmooth.getNextValue();              // smoothed frequency
+            const float dep  = depthSmooth.getNextValue();             // 0..1
+            const float shp  = shapeSmooth.getNextValue();             // 0..1 morph
+            const float phOf = phaseOffSmooth.getNextValue();          // 0..1
+            const float width = widthSmooth.getNextValue();            // 0..1
+            const float mix = mixSmooth.getNextValue();                // 0..1
 
-            // Calculate current phase based on sync mode
-            double currentPhase = phase;
-            if (syncToTransport && isPlaying) {
-                // In sync mode, calculate phase from DAW position
-                // rateHz is actually the musical division (e.g., 0.25 for 1/4 note)
-                const double beatsPerCycle = rateHz; // rateHz contains the division value
-                const double currentBeat = ppqPosition + (double)n * bpm / (60.0 * sampleRate);
-                currentPhase = juce::MathConstants<double>::twoPi * std::fmod(currentBeat / beatsPerCycle, 1.0);
-            } else if (isPlaying) {
-                // Free-running mode
-                currentPhase = phase;
-            }
-            // If not playing, keep current phase (no change)
+            // Advance continuous phase
+            phase += twoPi * (double)fHz / sampleRate;
+            if (phase >= twoPi) phase -= twoPi;
 
-            // Generate LFO value (-1 to +1) based on wave type
-            const float waveShape = waveShapeSmooth.getNextValue();
-            const float phaseOffset = phaseOffsetSmooth.getNextValue() * juce::MathConstants<double>::pi / 180.0; // Convert to radians
-            const float lfo = generateWave((float)currentPhase + phaseOffset, waveTypeParam, waveShape, invertedParam);
+            // Compute phase 0..1 with offset
+            float phase01 = (float)(phase / twoPi);
+            phase01 = std::fmod(phase01 + phOf, 1.0f);
 
-            // Convert LFO to pan position (-1 = full left, +1 = full right)
-            const float panPosition = lfo * depth;
+            // Shaped LFO in [-1,1]
+            const float lfo = shapedLFO(phase01, shp);
 
-            // Equal-power panning: convert pan position to gains
-            // panPosition: -1 (full left) to +1 (full right)
-            const float panNormalized = (panPosition + 1.0f) * 0.5f; // 0 to 1
-            const float leftGain = std::cos(panNormalized * juce::MathConstants<float>::halfPi);
-            const float rightGain = std::sin(panNormalized * juce::MathConstants<float>::halfPi);
+            // Pan amount: x ∈ [-depth, depth]
+            const float x = dep * lfo;
 
-            // Create mono source to avoid stereo peak doubling
-            const float mono = 0.5f * (inL + inR);
+            // Convert to mid/side rotation angle φ in [-π/4, +π/4] scaled by x
+            const float phi = (juce::MathConstants<float>::pi * 0.25f) * x;
 
-            // Apply panning to mono source
-            const float pannedL = mono * leftGain;
-            const float pannedR = mono * rightGain;
+            // Mid/Side conversion
+            float M = (inL + inR) * invSqrt2;
+            float S = (inL - inR) * invSqrt2;
 
-            // Width control: blend between original stereo and panned mono
-            const float wetL = inL + width * (pannedL - inL);
-            const float wetR = inR + width * (pannedR - inR);
+            // Rotate the (M,S) vector by φ
+            const float c = std::cos(phi), s = std::sin(phi);
+            float M2 = c * M - s * S;
+            float S2 = s * M + c * S;
+
+            // Width control
+            S2 *= width;
+
+            // Back to L/R
+            float wetL = (M2 + S2) * invSqrt2;
+            float wetR = (M2 - S2) * invSqrt2;
 
             // True dry/wet crossfade
-            L[n] = inL + mix * (wetL - inL);
-            if (R) R[n] = inR + mix * (wetR - inR);
-
-            // Advance continuous phase with smoothed rate ONLY when playing and NOT in sync mode
-            if (isPlaying && !syncToTransport) {
-                phase += juce::MathConstants<double>::twoPi * (double)rateHz / sampleRate;
-                if (phase >= juce::MathConstants<double>::twoPi) phase -= juce::MathConstants<double>::twoPi;
-            }
+            L[n] = juce::jmap(mix, inL, wetL);
+            if (R) R[n] = juce::jmap(mix, inR, wetR);
         }
     }
+
 
     // Get current pan position for visualizer (-1 to +1)
     float getCurrentPanPosition() const noexcept
     {
-        const float lfo = std::sin((float)phase);
-        const float depth = depthSmooth.getCurrentValue();
-        return lfo * depth;
+        const float dep = depthSmooth.getCurrentValue();
+        const float shp = shapeSmooth.getCurrentValue();
+        
+        // Compute current phase 0..1 with offset
+        float phase01 = (float)(phase / juce::MathConstants<double>::twoPi);
+        const float phOf = phaseOffSmooth.getCurrentValue();
+        phase01 = std::fmod(phase01 + phOf, 1.0f);
+        
+        // Shaped LFO in [-1,1]
+        const float lfo = shapedLFO(phase01, shp);
+        
+        // Pan amount: x ∈ [-depth, depth]
+        return dep * lfo;
     }
-    
+
     // Get current pan position for visualizer with sync mode support
-    float getCurrentPanPosition(bool syncToTransport = false, bool isPlaying = false, double bpm = 120.0, double ppqPosition = 0.0) const noexcept
+    float getCurrentPanPosition(bool syncToTransport, bool isPlaying, double bpm, double ppqPosition) const noexcept
     {
+        const float dep = depthSmooth.getCurrentValue();
+        const float shp = shapeSmooth.getCurrentValue();
+        
         double currentPhase = phase;
         if (syncToTransport && isPlaying) {
-            const float rateHz = rateSmooth.getCurrentValue();
-            const double beatsPerCycle = rateHz;
+            const float fHz = freqSmooth.getCurrentValue();
             const double currentBeat = ppqPosition;
+            const double beatsPerCycle = 60.0 / bpm * fHz; // Convert Hz back to beats per cycle
             currentPhase = juce::MathConstants<double>::twoPi * std::fmod(currentBeat / beatsPerCycle, 1.0);
         }
         
-        const float lfo = std::sin((float)currentPhase);
-        const float depth = depthSmooth.getCurrentValue();
-        return lfo * depth;
+        // Compute current phase 0..1 with offset
+        float phase01 = (float)(currentPhase / juce::MathConstants<double>::twoPi);
+        const float phOf = phaseOffSmooth.getCurrentValue();
+        phase01 = std::fmod(phase01 + phOf, 1.0f);
+        
+        // Shaped LFO in [-1,1]
+        const float lfo = shapedLFO(phase01, shp);
+        
+        // Pan amount: x ∈ [-depth, depth]
+        return dep * lfo;
     }
 
     // Optional: call between blocks to keep phase a sane magnitude
@@ -227,14 +215,10 @@ struct AutoPan
     double sampleRate { 44100.0 };
     double phase { 0.0 };
 
-    juce::SmoothedValue<float> rateSmooth;  // Hz
-    juce::SmoothedValue<float> depthSmooth; // 0..1 travel
-    juce::SmoothedValue<float> widthSmooth; // 0..1 stereo->mono(panned)
-    juce::SmoothedValue<float> mixSmooth;   // 0..1 dry/wet
-    juce::SmoothedValue<float> waveShapeSmooth; // 0..1 wave shape morphing
-    juce::SmoothedValue<float> phaseOffsetSmooth; // 0..360 degrees phase offset
-    
-    int waveTypeParam { 0 }; // 0=Sine, 1=Triangle, 2=RampDown, 3=RampUp, 4=Random
-    bool invertedParam { false }; // wave inversion
-    float previousRate { 1.0f }; // track previous rate for smooth transitions
+    juce::SmoothedValue<float> freqSmooth;     // Hz
+    juce::SmoothedValue<float> depthSmooth;    // 0..1 travel
+    juce::SmoothedValue<float> widthSmooth;    // 0..1 stereo->mono(panned)
+    juce::SmoothedValue<float> mixSmooth;      // 0..1 dry/wet
+    juce::SmoothedValue<float> shapeSmooth;    // 0..1 wave shape morphing (sin⇄tri⇄square)
+    juce::SmoothedValue<float> phaseOffSmooth; // 0..1 phase offset (maps to 0..2π)
 };

@@ -372,46 +372,48 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
             // When sync mode is enabled, the UI knob range is 0.0-1.0 for divisions
             // But the parameter might still be in Hz range, so we need to handle both cases
             float knobValue = rate;
-            
+
             // If the rate is > 1.0, it's likely still in Hz range, so normalize it
             if (rate > 1.0f) {
                 // Assume it's in the old Hz range (0.1-5.0) and map to 0-1
                 knobValue = (rate - 0.1f) / (5.0f - 0.1f);
             }
-            
+
             // Convert knob value (0-1) to sync division index (0-7)
             // 0 = 2 (slowest), 1 = 1/64 (fastest) - correct mapping
             int divIndex = juce::jlimit(0, 7, (int)(knobValue * 7.0f));
             
-            // Sync divisions: 2, 1, 1/2, 1/4, 1/8, 1/16, 1/32, 1/64 (slowest to fastest)
-            std::vector<double> divisions = {2.0, 1.0, 0.5, 0.25, 0.125, 0.0625, 0.03125, 0.015625};
-            double division = divisions[divIndex];
+            // Map to sync division types
+            SyncDiv div;
+            switch (divIndex) {
+                case 0: div.type = SyncDiv::Half; break;           // 2 beats
+                case 1: div.type = SyncDiv::Quarter; break;        // 1 beat  
+                case 2: div.type = SyncDiv::Eighth; break;         // 1/2 beat
+                case 3: div.type = SyncDiv::Sixteenth; break;      // 1/4 beat
+                case 4: div.type = SyncDiv::ThirtySecond; break;   // 1/8 beat
+                case 5: div.type = SyncDiv::SixtyFourth; break;    // 1/16 beat
+                case 6: div.type = SyncDiv::SixtyFourth; div.triplet = true; break; // 1/16 triplet
+                case 7: div.type = SyncDiv::SixtyFourth; div.dotted = true; break;  // 1/16 dotted
+            }
             
-            // Convert to Hz: For panning, we want cycles per beat, not beats per cycle
-            // division = 0.25 means we want 1/0.25 = 4 cycles per beat (1/4 note panning)
+            // Calculate correct Hz using proper sync formula
             const double bpm = getBpmOrDefault(120.0);
-            const double baseRate = (bpm / 60.0) * (1.0 / division); // Cycles per second
-            const double multiplier = 1.0; // No additional scaling needed
-            rate = (float)(baseRate * multiplier);
+            rate = syncedHz((float)bpm, div);
         }
         
-        // Set AutoPan parameters using new energy-stable API
-        const float depth = amountParam ? amountParam->load() : 0.5f;  // 0..1 - no scaling needed with mid/side
+        // Set AutoPan parameters using new click-free API
+        const float depth = amountParam ? amountParam->load() : 0.5f;  // 0..1
         const float width = 1.0f;  // Full width for classic autopan behavior
         const float mix = 1.0f;    // Full wet mix
-        
+
         // Get wave parameters
-        auto* waveTypeParam = valueTreeState.getRawParameterValue("autopanWaveType");
         auto* waveShapeParam = valueTreeState.getRawParameterValue("autopanWaveShape");
         auto* phaseParam = valueTreeState.getRawParameterValue("autopanPhase");
-        auto* invertedParam = valueTreeState.getRawParameterValue("autopanInverted");
-        
-        const int waveType = waveTypeParam ? (int)waveTypeParam->load() : 0;
+
         const float waveShape = waveShapeParam ? waveShapeParam->load() : 0.5f;
-        const float phase = phaseParam ? phaseParam->load() : 180.0f;
-        const bool inverted = invertedParam ? (invertedParam->load() > 0.5f) : false;
-        
-        autoPan.set(rate, depth, width, mix, waveType, waveShape, phase, inverted);
+        const float phaseOffset = phaseParam ? phaseParam->load() / 360.0f : 0.5f; // Convert 0-360° to 0-1
+
+        autoPan.setTargets(rate, depth, width, mix, waveShape, phaseOffset);
         
         // Process AutoPan effect AFTER delay
         if (buffer.getNumChannels() >= 2 && buffer.getNumSamples() > 0) {
@@ -709,17 +711,13 @@ void PluginProcessor::applySnapshotTargets(const StepSnapshot& snapshot)
             const float mix = 1.0f;    // Full wet mix
             
             // Get wave parameters
-            auto* waveTypeParam = valueTreeState.getRawParameterValue("autopanWaveType");
             auto* waveShapeParam = valueTreeState.getRawParameterValue("autopanWaveShape");
             auto* phaseParam = valueTreeState.getRawParameterValue("autopanPhase");
-            auto* invertedParam = valueTreeState.getRawParameterValue("autopanInverted");
             
-            const int waveType = waveTypeParam ? (int)waveTypeParam->load() : 0;
             const float waveShape = waveShapeParam ? waveShapeParam->load() : 0.5f;
-            const float phase = phaseParam ? phaseParam->load() : 180.0f;
-            const bool inverted = invertedParam ? (invertedParam->load() > 0.5f) : false;
+            const float phaseOffset = phaseParam ? phaseParam->load() / 360.0f : 0.5f; // Convert 0-360° to 0-1
             
-            autoPan.set(rate, depth, width, mix, waveType, waveShape, phase, inverted);
+            autoPan.setTargets(rate, depth, width, mix, waveShape, phaseOffset);
             break;
         }
         default:
