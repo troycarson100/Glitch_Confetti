@@ -1,6 +1,7 @@
 #include "PluginEditor.h"
 #include "PluginProcessor.h"
 #include "BinaryData.h"
+#include "ui/PanIndicator.h"
 
 //==============================================================================
 // CustomEffectDropdown Implementation
@@ -359,6 +360,71 @@ void PluginEditor::timerCallback()
         }
         
         // Modern dual-bar meters update automatically via their timer
+    
+    // Update AutoPan knob values and UI
+    for (int i = 0; i < 6; ++i)
+    {
+        if (autopanKnobs[i] != nullptr)
+        {
+            // Update value labels for AutoPan knobs
+            if (autopanValueLabels[i] != nullptr)
+            {
+                float knobValue = autopanKnobs[i]->getValue();
+                juce::String valueText;
+                
+                switch (i) {
+                    case 0: // Rate
+                        if (autopanTimeSyncEnabled) {
+                            // Show division text - correct order: 2 (slowest) to 1/64 (fastest)
+                            std::vector<std::pair<juce::String, double>> divisions = {
+                                {"2", 2.0}, {"1", 1.0}, {"1/2", 0.5}, {"1/4", 0.25}, 
+                                {"1/8", 0.125}, {"1/16", 0.0625}, {"1/32", 0.03125}, {"1/64", 0.015625}
+                            };
+                            // 0 = 2 (slowest), 1 = 1/64 (fastest)
+                            int divIndex = juce::jlimit(0, 7, (int)(knobValue * 7.0f));
+                            valueText = divisions[divIndex].first;
+                        } else {
+                            valueText = juce::String(knobValue, 2) + "Hz";
+                        }
+                        break;
+                    case 1: // Phase
+                        valueText = juce::String(knobValue, 0) + "°";
+                        break;
+                    case 2: // Wave Type
+                        {
+                            std::vector<juce::String> waveTypes = {"Sine", "Triangle", "Ramp Dn", "Ramp Up", "Random"};
+                            int typeIndex = juce::jlimit(0, 4, (int)knobValue);
+                            valueText = waveTypes[typeIndex];
+                        }
+                        break;
+                    case 3: // Wave Shape
+                        valueText = juce::String(knobValue, 2);
+                        break;
+                    case 4: // Normal/Inverted
+                        valueText = knobValue > 0.5 ? "Inverted" : "Normal";
+                        break;
+                    case 5: // Amount
+                        valueText = juce::String((int)(knobValue * 100)) + "%";
+                        break;
+                }
+                autopanValueLabels[i]->setText(valueText, juce::dontSendNotification);
+            }
+            
+            // Update indicator bars
+            if (autopanIndicatorBars[i] != nullptr)
+            {
+                autopanIndicatorBars[i]->setValue(autopanKnobs[i]->getValue());
+            }
+        }
+    }
+    
+    // Update pan indicator - use actual AutoPan position for perfect sync
+    if (panIndicator != nullptr)
+    {
+        // Get current pan position directly from AutoPan processor
+        float panPosition = processorRef.getCurrentPanPosition();
+        panIndicator->setPanPosition(panPosition);
+    }
     
     // Update sequencer UI
     updateSequencerUI();
@@ -1066,9 +1132,16 @@ void PluginEditor::setupKnobs()
         addAndMakeVisible(*inMeter);
         addAndMakeVisible(*outMeter);
         
+        // Create pan indicator
+        panIndicator = std::make_unique<PanIndicator>();
+        addAndMakeVisible(*panIndicator);
+        
         // Position meters
         inMeter->setBounds(startX - meterSpacing - meterWidth + 10, y + (knobSize - meterHeight) / 2, meterWidth, meterHeight);  // Move right 10px
         outMeter->setBounds(startX + totalKnobWidth + meterSpacing - 10, y + (knobSize - meterHeight) / 2, meterWidth, meterHeight);  // Move left 10px
+        
+        // Position pan indicator above the master knobs (90px smaller width, moved up 250px)
+        panIndicator->setBounds(startX - meterSpacing - meterWidth + 10, y - 285, (meterWidth * 2 + meterSpacing + totalKnobWidth - 20) - 90, 25);
         
         DBG("[UI] Master knobs and stereo meters setup complete");
     }
@@ -2190,6 +2263,22 @@ void PluginEditor::showPage(FxPageID id)
 
     const bool wantSpace = (id == FxPageID::SpaceDelay);
 
+    // Update processor parameters
+    auto* currentPageParam = processorRef.getAPVTS().getParameter("currentPage");
+    if (currentPageParam) {
+        currentPageParam->setValueNotifyingHost(wantSpace ? 0.0f : 1.0f);
+    }
+    
+    // Enable AutoPan effect when switching to AutoPan page
+    if (!wantSpace) {
+        autopanFxAreaEnabled = true;
+        auto* autopanEnabledParam = processorRef.getAPVTS().getParameter("autopanEnabled");
+        if (autopanEnabledParam) {
+            autopanEnabledParam->setValueNotifyingHost(1.0f);
+        }
+        updateAutoPanFxAreaVisibility();
+    }
+
     // Show/Hide without touching parents or bounds
     auto setVisibleVec = [](const std::vector<juce::Component*>& v, bool vis)
     {
@@ -2235,11 +2324,46 @@ void PluginEditor::setupAutoPanKnobs()
         addAndMakeVisible(autopanKnobs[i].get());
         autopanKnobs[i]->setVisible(false); // Initially hidden until AutoPan page is selected
         
-        // Set knob properties
-        autopanKnobs[i]->setRange(0.0, 1.0, 0.001);
-        autopanKnobs[i]->setValue(0.5, juce::dontSendNotification);
+        // Set knob properties with specific ranges for each knob
         autopanKnobs[i]->setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
         autopanKnobs[i]->setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
+        
+        // Set specific ranges and values for each AutoPan knob
+        switch (i) {
+            case 0: // Rate (0.05-90 Hz, default 1.0 Hz)
+                autopanKnobs[i]->setRange(0.05, 90.0, 0.01);
+                autopanKnobs[i]->setValue(1.0, juce::dontSendNotification);
+                break;
+            case 1: // Phase (0-360 degrees, default 180 degrees)
+                autopanKnobs[i]->setRange(0.0, 360.0, 1.0);
+                autopanKnobs[i]->setValue(180.0, juce::dontSendNotification);
+                break;
+            case 2: // Wave Type (0-4, default 0 = Sine)
+                autopanKnobs[i]->setRange(0, 4, 1);
+                autopanKnobs[i]->setValue(0, juce::dontSendNotification);
+                break;
+            case 3: // Wave Shape (0-1, default 0.5)
+                autopanKnobs[i]->setRange(0.0, 1.0, 0.01);
+                autopanKnobs[i]->setValue(0.5, juce::dontSendNotification);
+                break;
+            case 4: // Normal/Inverted (0-1, default 0 = Normal)
+                autopanKnobs[i]->setRange(0, 1, 1);
+                autopanKnobs[i]->setValue(0, juce::dontSendNotification);
+                break;
+            case 5: // Amount (0-1, default 0.5)
+                autopanKnobs[i]->setRange(0.0, 1.0, 0.01);
+                autopanKnobs[i]->setValue(0.5, juce::dontSendNotification);
+                break;
+        }
+        
+        // Connect to parameters
+        std::vector<juce::String> paramIds = {
+            "autopanRate", "autopanPhase", "autopanWaveType", "autopanWaveShape", "autopanInverted", "autopanAmount"
+        };
+        
+        autopanAttachments[i] = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+            processorRef.getAPVTS(), paramIds[i], *autopanKnobs[i]);
+        
         // autopanKnobs[i]->setLookAndFeel(&customLookAndFeel); // TODO: Add custom look and feel
         
         // Set knob images
@@ -2401,7 +2525,29 @@ void PluginEditor::setupAutoPanEffectsArea()
     autopanTimeSyncToggle->setClickingTogglesState(true);
     autopanTimeSyncToggle->onClick = [this]() {
         autopanTimeSyncEnabled = autopanTimeSyncToggle->getToggleState();
-        // TODO: Implement AutoPan time sync functionality
+        
+        // Update the parameter
+        auto* syncParam = processorRef.getAPVTS().getParameter("autopanTimeSync");
+        if (syncParam) {
+            syncParam->setValueNotifyingHost(autopanTimeSyncEnabled ? 1.0f : 0.0f);
+        }
+        
+            if (autopanTimeSyncEnabled) {
+                // Switch to time sync mode - show divisions instead of Hz
+                // Update knob range to divisions (0.0-1.0 for smooth control)
+                autopanKnobs[0]->setRange(0.0, 1.0, 0.001);
+            
+            // Set current division based on current rate (default to middle position)
+            autopanKnobs[0]->setValue(0.5, juce::dontSendNotification); // Start at middle (1/8)
+        } else {
+            // Switch to free rate mode - show Hz
+            autopanKnobs[0]->setRange(0.05, 90.0, 0.01);
+            
+            // Convert current division back to Hz
+            float currentDiv = autopanKnobs[0]->getValue();
+            float rateHz = 0.05f + (currentDiv / 7.0f) * (90.0f - 0.05f);
+            autopanKnobs[0]->setValue(rateHz, juce::dontSendNotification);
+        }
     };
     
     // Create FX power button (EXACT same positioning as delay page)
@@ -2424,6 +2570,12 @@ void PluginEditor::setupAutoPanEffectsArea()
     autopanFxPowerButton->onClick = [this]() { 
         autopanFxAreaEnabled = !autopanFxAreaEnabled;
         updateAutoPanFxAreaVisibility();
+        
+        // Update processor parameter
+        auto* autopanEnabledParam = processorRef.getAPVTS().getParameter("autopanEnabled");
+        if (autopanEnabledParam) {
+            autopanEnabledParam->setValueNotifyingHost(autopanFxAreaEnabled ? 1.0f : 0.0f);
+        }
     };
     
     DBG("[UI] AutoPan effects area setup complete");
@@ -2614,11 +2766,75 @@ void PluginEditor::setupAutoPanStepPowerButton()
 }
 
 
-// AutoPan helper methods (stubs for now - will implement functionality later)
-void PluginEditor::updateAutoPanFxAreaVisibility() { /* TODO: Implement */ }
-void PluginEditor::updateAutoPanStepAreaVisibility() { /* TODO: Implement */ }
+// AutoPan helper methods
 void PluginEditor::randomizeAutoPanKnobValues() { /* TODO: Implement */ }
 void PluginEditor::randomizeIndividualAutoPanKnob(int knobIndex) { /* TODO: Implement */ }
 void PluginEditor::updateAutoPanParameterFromKnob(int knobIndex) { /* TODO: Implement */ }
-void PluginEditor::onAutoPanStepButtonClicked(int stepIndex) { /* TODO: Implement */ }
-void PluginEditor::updateAutoPanSequencerUI() { /* TODO: Implement */ }
+
+void PluginEditor::onAutoPanStepButtonClicked(int stepIndex)
+{
+    // Toggle the step state
+    if (stepIndex >= 0 && stepIndex < 16)
+    {
+        autopanStepStates[stepIndex] = !autopanStepStates[stepIndex];
+        
+        // Update the button appearance
+        if (autopanStepButtons[stepIndex] != nullptr)
+        {
+            autopanStepButtons[stepIndex]->setSelected(autopanStepStates[stepIndex]);
+        }
+        
+        // Update sequencer UI
+        updateAutoPanSequencerUI();
+    }
+}
+
+void PluginEditor::updateAutoPanSequencerUI()
+{
+    // Update step buttons based on current states
+    for (int i = 0; i < 16; ++i)
+    {
+        if (autopanStepButtons[i] != nullptr)
+        {
+            autopanStepButtons[i]->setSelected(autopanStepStates[i]);
+        }
+    }
+}
+
+void PluginEditor::updateAutoPanFxAreaVisibility()
+{
+    // Toggle visibility of AutoPan effect area components
+    bool visible = autopanFxAreaEnabled;
+    
+    for (int i = 0; i < 6; ++i)
+    {
+        if (autopanKnobs[i]) autopanKnobs[i]->setVisible(visible);
+        if (autopanKnobLabels[i]) autopanKnobLabels[i]->setVisible(visible);
+        if (autopanValueLabels[i]) autopanValueLabels[i]->setVisible(visible);
+        if (autopanIndicatorBars[i]) autopanIndicatorBars[i]->setVisible(visible);
+        if (autopanLockButtons[i]) autopanLockButtons[i]->setVisible(visible);
+    }
+    
+    if (autopanEffectsTitle) autopanEffectsTitle->setVisible(visible);
+    if (autopanDiceButton) autopanDiceButton->setVisible(visible);
+    if (autopanTimeSyncToggle) autopanTimeSyncToggle->setVisible(visible);
+}
+
+void PluginEditor::updateAutoPanStepAreaVisibility()
+{
+    // Toggle visibility of AutoPan step area components
+    bool visible = autopanStepAreaEnabled;
+    
+    for (int i = 0; i < 16; ++i)
+    {
+        if (autopanStepButtons[i]) autopanStepButtons[i]->setVisible(visible);
+    }
+    
+    if (autopanStepTitle) autopanStepTitle->setVisible(visible);
+    if (autopanStepAmountLabel) autopanStepAmountLabel->setVisible(visible);
+    if (autopanRateDropdown) autopanRateDropdown->setVisible(visible);
+    if (autopanStdToggle) autopanStdToggle->setVisible(visible);
+    if (autopanStepDiceButton) autopanStepDiceButton->setVisible(visible);
+    if (autopanAllStepsToggle) autopanAllStepsToggle->setVisible(visible);
+    if (autopanAllStepsLabel) autopanAllStepsLabel->setVisible(visible);
+}

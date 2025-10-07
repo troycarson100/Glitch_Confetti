@@ -234,6 +234,9 @@ public:
     // Modern dual-bar meters (pre-fx and post-fx)
     std::unique_ptr<DualBarMeter> inMeter, outMeter;
     
+    // L/C/R pan indicator
+    std::unique_ptr<class PanIndicator> panIndicator;
+    
     // Effects area components
     std::unique_ptr<juce::Label> effectsTitle;
     std::unique_ptr<juce::DrawableButton> spaceDelayTitle;
@@ -270,6 +273,7 @@ public:
     
     // AutoPan page components
     std::array<std::unique_ptr<CustomKnob>, 6> autopanKnobs; // 6 knobs instead of 8
+    std::array<std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>, 6> autopanAttachments;
     std::array<std::unique_ptr<juce::Label>, 6> autopanKnobLabels;
     std::array<std::unique_ptr<juce::Label>, 6> autopanValueLabels;
     std::array<std::unique_ptr<IndicatorBar>, 6> autopanIndicatorBars;
@@ -289,6 +293,8 @@ public:
     
     // AutoPan sequencer components (independent from delay page)
     std::array<std::unique_ptr<StepButton>, 16> autopanStepButtons;
+    std::array<bool, 16> autopanStepStates { false, false, false, false, false, false, false, false,
+                                            false, false, false, false, false, false, false, false };
     std::unique_ptr<juce::Label> autopanStepAmountLabel;
     std::unique_ptr<juce::ComboBox> autopanRateDropdown;
     std::unique_ptr<CircularToggleButton> autopanStdToggle;

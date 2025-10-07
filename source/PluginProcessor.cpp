@@ -54,6 +54,21 @@ juce::AudioProcessorValueTreeState::ParameterLayout PluginProcessor::createParam
     params.push_back(std::make_unique<juce::AudioParameterFloat>("lowCut", "Low-Cut", 20.0f, 2000.0f, 20.0f));
     params.push_back(std::make_unique<juce::AudioParameterFloat>("mix", "Mix", 0.0f, 1.0f, 0.5f));
     
+    // AutoPan Parameters - 6 knobs
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("autopanRate", "AutoPan Rate", 0.1f, 5.0f, 1.0f)); // Hz - much more reasonable range
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("autopanPhase", "AutoPan Phase", 0.0f, 360.0f, 180.0f)); // degrees
+    params.push_back(std::make_unique<juce::AudioParameterChoice>("autopanWaveType", "AutoPan Wave Type", 
+        juce::StringArray {"Sine", "Triangle", "Ramp Down", "Ramp Up", "Random"}, 0)); // 0 = Sine default
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("autopanWaveShape", "AutoPan Wave Shape", 0.0f, 1.0f, 0.5f)); // wave shape control
+    params.push_back(std::make_unique<juce::AudioParameterBool>("autopanInverted", "AutoPan Inverted", false)); // false = normal, true = inverted
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("autopanAmount", "AutoPan Amount", 0.0f, 1.0f, 0.5f)); // pan amount
+    
+    // Page and effect enable parameters
+    params.push_back(std::make_unique<juce::AudioParameterChoice>("currentPage", "Current Page", 
+        juce::StringArray {"SpaceDelay", "AutoPan"}, 0)); // 0 = SpaceDelay, 1 = AutoPan
+    params.push_back(std::make_unique<juce::AudioParameterBool>("autopanEnabled", "AutoPan Enabled", false)); // AutoPan effect enabled
+    params.push_back(std::make_unique<juce::AudioParameterBool>("autopanTimeSync", "AutoPan Time Sync", false)); // AutoPan sync mode enabled
+    
     // Master Parameters
     params.push_back(std::make_unique<juce::AudioParameterFloat>("masterInput", "Master Input", 
         juce::NormalisableRange<float>(-60.0f, 6.0f, 0.01f, 1.0f), 0.0f)); // -60 to +6 dB, default 0.0 dB, logarithmic skew
@@ -130,6 +145,7 @@ void PluginProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 {
     dspSampleRate = sampleRate;
     spaceDelay.prepare(sampleRate, samplesPerBlock);
+    autoPan.prepare(sampleRate, 30.0); // 30ms smoothing
     seq.prepare(sampleRate); // Initialize sequencer with sample rate
 }
 
@@ -316,12 +332,13 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
         inputLevel.store(juce::jmax(rmsDbL, rmsDbR));
     };
     
-    // Apply master input gain (pre-effects)
-    auto* masterInputParam = dynamic_cast<juce::AudioParameterFloat*>(getParameters()[8]); // masterInput
+    // Apply master input gain (pre-effects) with limiting
+    auto* masterInputParam = valueTreeState.getRawParameterValue("masterInput");
     if (masterInputParam != nullptr) {
-        float inputGainDb = masterInputParam->get();
+        float inputGainDb = masterInputParam->load();
         float inputGain = juce::Decibels::decibelsToGain(inputGainDb);
         buffer.applyGain(inputGain);
+        
     }
     
     // Update input meters AFTER input gain is applied
@@ -337,30 +354,81 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
             spaceDelay.process(buffer, buffer.getNumSamples());
     }
     
-    // Apply master dry/wet mix (post-effects, pre-output)
-    auto* masterDryWetParam = dynamic_cast<juce::AudioParameterFloat*>(getParameters()[9]); // masterDryWet
-    if (masterDryWetParam != nullptr) {
-        float dryWet = masterDryWetParam->get(); // 0.0 = 100% dry, 1.0 = 100% wet
-        float dryGain = 1.0f - dryWet;  // Dry signal gain
-        float wetGain = dryWet;         // Wet signal gain
+    // Process AutoPan AFTER delay but BEFORE dry/wet mix
+    auto* autopanEnabledParam = valueTreeState.getRawParameterValue("autopanEnabled");
+    
+    bool isAutoPanEnabled = autopanEnabledParam ? (autopanEnabledParam->load() > 0.5f) : false;
+    
+    if (isAutoPanEnabled) {
+        // Apply AutoPan parameters
+        auto* rateParam = valueTreeState.getRawParameterValue("autopanRate");
+        auto* amountParam = valueTreeState.getRawParameterValue("autopanAmount");
+        auto* syncParam = valueTreeState.getRawParameterValue("autopanTimeSync");
         
-        // Mix dry and wet signals properly
-        for (int channel = 0; channel < buffer.getNumChannels(); ++channel) {
-            // Scale the wet signal (current buffer) by wet gain
-            buffer.applyGainRamp(channel, 0, buffer.getNumSamples(), wetGain, wetGain);
+        float rate = rateParam ? rateParam->load() : 1.0f;  // Hz or sync division
+        
+        // Convert sync mode to Hz if sync is enabled
+        if (syncParam && syncParam->load() > 0.5f) {
+            // Convert knob value (0-1) to sync division index (0-7)
+            // 0 = 2 (slowest), 1 = 1/64 (fastest)
+            int divIndex = juce::jlimit(0, 7, (int)(rate * 7.0f));
             
-            // Add the dry signal scaled by dry gain
-            buffer.addFromWithRamp(channel, 0, dryBuffer.getReadPointer(channel), 
-                                 buffer.getNumSamples(), dryGain, dryGain);
+            // Sync divisions: 2, 1, 1/2, 1/4, 1/8, 1/16, 1/32, 1/64 (slowest to fastest)
+            std::vector<double> divisions = {2.0, 1.0, 0.5, 0.25, 0.125, 0.0625, 0.03125, 0.015625};
+            double division = divisions[divIndex];
+            
+            // Convert to Hz: Use much slower rates for AutoPan
+            // For example: 1/4 note at 120 BPM should be much slower than 8 Hz
+            // Use a multiplier to make it more reasonable for panning
+            const double bpm = getBpmOrDefault(120.0);
+            const double baseRate = (bpm / 60.0) / division; // This gives musical timing
+            const double multiplier = 0.1; // Make it 10x slower for reasonable panning
+            rate = (float)(baseRate * multiplier);
+        }
+        
+        // Set AutoPan parameters using new energy-stable API
+        const float depth = amountParam ? amountParam->load() : 0.5f;  // 0..1 - no scaling needed with mid/side
+        const float width = 1.0f;  // Full width for classic autopan behavior
+        const float mix = 1.0f;    // Full wet mix
+        
+        autoPan.set(rate, depth, width, mix);
+        
+        // Process AutoPan effect AFTER delay
+        if (buffer.getNumChannels() >= 2 && buffer.getNumSamples() > 0) {
+            autoPan.process(buffer);
         }
     }
     
-    // Apply master output gain (post-effects)
-    auto* masterOutputParam = dynamic_cast<juce::AudioParameterFloat*>(getParameters()[10]); // masterOutput
+    // Apply master dry/wet mix (post-effects, pre-output)
+    auto* masterDryWetParam = valueTreeState.getRawParameterValue("masterDryWet");
+    if (masterDryWetParam != nullptr) {
+        float dryWet = masterDryWetParam->load(); // 0.0 = 100% dry, 1.0 = 100% wet
+        
+        // Only apply dry/wet mixing if it's not 100% wet (to avoid unnecessary processing)
+        if (dryWet < 1.0f) {
+            float dryGain = 1.0f - dryWet;  // Dry signal gain
+            float wetGain = dryWet;         // Wet signal gain
+            
+            // Mix dry and wet signals properly
+            for (int channel = 0; channel < buffer.getNumChannels(); ++channel) {
+                // Scale the wet signal (current buffer) by wet gain
+                buffer.applyGainRamp(channel, 0, buffer.getNumSamples(), wetGain, wetGain);
+                
+                // Add the dry signal scaled by dry gain
+                buffer.addFromWithRamp(channel, 0, dryBuffer.getReadPointer(channel), 
+                                     buffer.getNumSamples(), dryGain, dryGain);
+            }
+        }
+        // If dryWet == 1.0f (100% wet), the current buffer is already the wet signal, no mixing needed
+    }
+    
+    // Apply master output gain (post-effects) with limiting
+    auto* masterOutputParam = valueTreeState.getRawParameterValue("masterOutput");
     if (masterOutputParam != nullptr) {
-        float outputGainDb = masterOutputParam->get();
+        float outputGainDb = masterOutputParam->load();
         float outputGain = juce::Decibels::decibelsToGain(outputGainDb);
         buffer.applyGain(outputGain);
+        
     }
     
     // Call AFTER processing = output meter
@@ -597,8 +665,20 @@ void PluginProcessor::applySnapshotTargets(const StepSnapshot& snapshot)
             // Placeholder for pitch FX
             break;
         case FxType::AutoPan:
-            // Placeholder for autopan FX
+        {
+            // Always read AutoPan parameters from APVTS (no sequencer snapshots for AutoPan yet)
+            auto* rateParam = valueTreeState.getRawParameterValue("autopanRate");
+            auto* amountParam = valueTreeState.getRawParameterValue("autopanAmount");
+            
+            // Set AutoPan parameters using new energy-stable API
+            const float rate = rateParam ? rateParam->load() : 1.0f;  // Hz
+            const float depth = amountParam ? amountParam->load() : 0.5f;  // 0..1 - no scaling needed with mid/side
+            const float width = 1.0f;  // Full width for classic autopan behavior
+            const float mix = 1.0f;    // Full wet mix
+            
+            autoPan.set(rate, depth, width, mix);
             break;
+        }
         default:
             break;
     }

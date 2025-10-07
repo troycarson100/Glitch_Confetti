@@ -3,6 +3,7 @@
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <atomic>
 #include "dsp/FxDelay.h"
+#include "dsp/AutoPan.h"
 #include "dsp/DspFlags.h"
 #include "StepSnapshot.h"
 #include "MeterTheme.h"
@@ -220,6 +221,13 @@ public:
     
            // RE-201 Space Delay DSP - High Quality Implementation
            FxDelay spaceDelay;
+           
+    // AutoPan DSP Implementation
+    AutoPan autoPan;
+    
+    // Get current pan position for visualizer
+    float getCurrentPanPosition() const { return autoPan.getCurrentPanPosition(); }
+           
            double dspSampleRate = 44100.0;
            
            // FX routing

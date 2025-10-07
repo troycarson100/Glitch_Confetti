@@ -40,12 +40,16 @@ set(SourceFiles
     ${CMAKE_CURRENT_SOURCE_DIR}/source/FontManager.h
     ${CMAKE_CURRENT_SOURCE_DIR}/source/dsp/FxDelay.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/source/dsp/FxDelay.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/source/dsp/FxAutoPan.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/source/dsp/FxAutoPan.h
     ${CMAKE_CURRENT_SOURCE_DIR}/source/dsp/DspFlags.h
     ${CMAKE_CURRENT_SOURCE_DIR}/source/ui/UiFlags.h
     ${CMAKE_CURRENT_SOURCE_DIR}/source/ui/Assets.h
     ${CMAKE_CURRENT_SOURCE_DIR}/source/ui/Assets.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/source/ui/DelayPage.h
     ${CMAKE_CURRENT_SOURCE_DIR}/source/ui/DelayPage.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/source/ui/PanIndicator.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/source/ui/PanIndicator.cpp
 )
 
 target_sources(Stepper PRIVATE ${SourceFiles})
