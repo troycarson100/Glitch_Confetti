@@ -145,6 +145,8 @@ public:
             autopanSeq.active.store(true);
         }
     }
+    void setAutoPanStepsUsed(int steps) noexcept { autopanSeq.stepsUsed.store(juce::jlimit(1, 16, steps)); }
+    void setAutoPanDivisionIndex(int idx) noexcept { autopanSeq.divisionIndex.store(juce::jlimit(0, 7, idx)); }
     bool getSeqActive() const noexcept { return seq.active.load(); }
     int getSelectedStep() const noexcept { return uiSelectedStep.load(); }
     bool isSequencerEnabled() const noexcept { return seq.enabled.load(); }

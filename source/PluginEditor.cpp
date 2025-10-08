@@ -421,8 +421,11 @@ void PluginEditor::timerCallback()
     }
     
     
-    // Update sequencer UI
+    // Update sequencer UI (Delay)
     updateSequencerUI();
+    
+    // Update AutoPan sequencer UI
+    updateAutoPanSequencerUI();
 }
 
 //==============================================================================
@@ -2401,6 +2404,13 @@ void PluginEditor::setupAutoPanKnobs()
         autopanAttachments[i] = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
             processorRef.getAPVTS(), paramIds[i], *autopanKnobs[i]);
         
+        // Add listener to save snapshots when knob changes
+        autopanKnobs[i]->onValueChange = [this, i]() {
+            // Update current step snapshot with new value
+            float value = autopanKnobs[i]->getValue();
+            processorRef.updateAutoPanCurrentStepSnapshot(i, value);
+        };
+        
         // autopanKnobs[i]->setLookAndFeel(&customLookAndFeel); // TODO: Add custom look and feel
         
         // Set knob images
@@ -2686,6 +2696,15 @@ void PluginEditor::setupAutoPanSequencerArea()
     autopanStepAmountLabel->setJustificationType(juce::Justification::centred);
     autopanStepAmountLabel->setBorderSize(juce::BorderSize<int>(2));
     autopanStepAmountLabel->setEditable(true, true, false);
+    autopanStepAmountLabel->onTextChange = [this]() {
+        int value = autopanStepAmountLabel->getText().getIntValue();
+        if (value >= 1 && value <= 16) {
+            value = juce::jlimit(1, 16, value);
+            processorRef.setAutoPanStepsUsed(value);
+            autopanStepAmountLabel->setText(juce::String(value), juce::dontSendNotification);
+            updateAutoPanSequencerUI();
+        }
+    };
     addAndMakeVisible(autopanStepAmountLabel.get());
     autopanStepAmountLabel->setVisible(false); // Initially hidden until AutoPan page is selected
     autopanStepAmountLabel->setBounds(sequencerArea.getX() + 180, sequencerArea.getY() - 10, 30, 25);
@@ -2706,6 +2725,17 @@ void PluginEditor::setupAutoPanSequencerArea()
     autopanRateDropdown->setColour(juce::ComboBox::buttonColourId, juce::Colours::transparentBlack);
     autopanRateDropdown->setColour(juce::ComboBox::textColourId, juce::Colours::white);
     autopanRateDropdown->setColour(juce::ComboBox::arrowColourId, juce::Colours::white);
+    autopanRateDropdown->onChange = [this]() {
+        if (autopanRateDropdown != nullptr) {
+            const int selected = autopanRateDropdown->getSelectedId();
+            if (selected >= 1 && selected <= 8) {
+                const int newDivisionIndex = juce::jlimit(0, 7, selected - 1);
+                DBG("[UI] AutoPan rate dropdown changed: ID=" << selected << " -> divisionIndex=" << newDivisionIndex);
+                processorRef.setAutoPanDivisionIndex(newDivisionIndex);
+                updateAutoPanSequencerUI();
+            }
+        }
+    };
     addAndMakeVisible(autopanRateDropdown.get());
     autopanRateDropdown->setVisible(false); // Initially hidden until AutoPan page is selected
     autopanRateDropdown->setBounds(sequencerArea.getX() + 220, sequencerArea.getY() - 10, 74, 25);
@@ -2743,6 +2773,37 @@ void PluginEditor::setupAutoPanSequencerArea()
         autopanStepDiceButton->setDiceImage(assets.diceLarge->createCopy());
     }
     
+    // Set up step dice button callback to randomize all AutoPan step snapshots
+    autopanStepDiceButton->onClick = [this]() {
+        DBG("[UI] AutoPan step dice button clicked - randomizing all step snapshots");
+        
+        for (int step = 0; step < 16; ++step) {
+            auto snapshot = processorRef.getAutoPanSafeSnapshot(step);
+            
+            // Randomize all AutoPan parameters for this step
+            snapshot.autopan.rate = juce::Random::getSystemRandom().nextFloat(); // 0-1
+            snapshot.autopan.phase = juce::Random::getSystemRandom().nextFloat() * 360.0f; // 0-360
+            snapshot.autopan.waveType = juce::Random::getSystemRandom().nextInt(5); // 0-4
+            snapshot.autopan.waveShape = juce::Random::getSystemRandom().nextFloat(); // 0-1
+            snapshot.autopan.inverted = juce::Random::getSystemRandom().nextBool();
+            snapshot.autopan.amount = juce::Random::getSystemRandom().nextFloat(); // 0-1
+            
+            processorRef.setAutoPanStepSnapshot(step, snapshot);
+        }
+        
+        // Reload current step's values into knobs
+        int currentStep = processorRef.getAutoPanCurrentStep();
+        StepSnapshot currentSnapshot = processorRef.getAutoPanSafeSnapshot(currentStep);
+        if (autopanKnobs[0]) autopanKnobs[0]->setValue(currentSnapshot.autopan.rate, juce::sendNotification);
+        if (autopanKnobs[1]) autopanKnobs[1]->setValue(currentSnapshot.autopan.phase, juce::sendNotification);
+        if (autopanKnobs[2]) autopanKnobs[2]->setValue((float)currentSnapshot.autopan.waveType, juce::sendNotification);
+        if (autopanKnobs[3]) autopanKnobs[3]->setValue(currentSnapshot.autopan.waveShape, juce::sendNotification);
+        if (autopanKnobs[4]) autopanKnobs[4]->setValue(currentSnapshot.autopan.inverted ? 1.0f : 0.0f, juce::sendNotification);
+        if (autopanKnobs[5]) autopanKnobs[5]->setValue(currentSnapshot.autopan.amount, juce::sendNotification);
+        
+        DBG("[UI] All AutoPan step snapshots randomized");
+    };
+    
     // Create step power button (EXACT same positioning as delay page)
     autopanStepPowerButton = std::make_unique<juce::DrawableButton>("autopanStepPower", juce::DrawableButton::ButtonStyle::ImageFitted);
     addAndMakeVisible(autopanStepPowerButton.get());
@@ -2763,7 +2824,10 @@ void PluginEditor::setupAutoPanSequencerArea()
     
     autopanStepPowerButton->onClick = [this]() { 
         autopanStepAreaEnabled = !autopanStepAreaEnabled;
+        // Enable/disable the AutoPan sequencer in processor
+        processorRef.setAutoPanSequencerEnabled(autopanStepAreaEnabled);
         updateAutoPanStepAreaVisibility();
+        DBG("[UI] AutoPan sequencer " << (autopanStepAreaEnabled ? "enabled" : "disabled"));
     };
     
     DBG("[UI] AutoPan sequencer area setup complete");
@@ -2886,31 +2950,75 @@ void PluginEditor::updateAutoPanParameterFromKnob(int knobIndex)
 
 void PluginEditor::onAutoPanStepButtonClicked(int stepIndex)
 {
-    // Toggle the step state
-    if (stepIndex >= 0 && stepIndex < 16)
-    {
-        autopanStepStates[stepIndex] = !autopanStepStates[stepIndex];
+    DBG("[UI] AutoPan step button " << stepIndex << " clicked");
+    
+    // Save current step's snapshot before switching
+    int currentStep = processorRef.getAutoPanCurrentStep();
+    if (currentStep >= 0 && currentStep < 16) {
+        StepSnapshot currentSnapshot;
+        // Read current AutoPan knob values and save to snapshot
+        if (autopanKnobs[0]) currentSnapshot.autopan.rate = autopanKnobs[0]->getValue();
+        if (autopanKnobs[1]) currentSnapshot.autopan.phase = autopanKnobs[1]->getValue();
+        if (autopanKnobs[2]) currentSnapshot.autopan.waveType = (int)autopanKnobs[2]->getValue();
+        if (autopanKnobs[3]) currentSnapshot.autopan.waveShape = autopanKnobs[3]->getValue();
+        if (autopanKnobs[4]) currentSnapshot.autopan.inverted = autopanKnobs[4]->getValue() > 0.5f;
+        if (autopanKnobs[5]) currentSnapshot.autopan.amount = autopanKnobs[5]->getValue();
         
-        // Update the button appearance
-        if (autopanStepButtons[stepIndex] != nullptr)
-        {
-            autopanStepButtons[stepIndex]->setSelected(autopanStepStates[stepIndex]);
-        }
-        
-        // Update sequencer UI
-        updateAutoPanSequencerUI();
+        processorRef.setAutoPanStepSnapshot(currentStep, currentSnapshot);
+        DBG("[UI] Saved AutoPan snapshot for step " << currentStep);
     }
+    
+    // Switch to new step
+    processorRef.setAutoPanSelectedStep(stepIndex);
+    
+    // Load new step's snapshot into knobs
+    StepSnapshot newSnapshot = processorRef.getAutoPanSafeSnapshot(stepIndex);
+    if (autopanKnobs[0]) autopanKnobs[0]->setValue(newSnapshot.autopan.rate, juce::sendNotification);
+    if (autopanKnobs[1]) autopanKnobs[1]->setValue(newSnapshot.autopan.phase, juce::sendNotification);
+    if (autopanKnobs[2]) autopanKnobs[2]->setValue((float)newSnapshot.autopan.waveType, juce::sendNotification);
+    if (autopanKnobs[3]) autopanKnobs[3]->setValue(newSnapshot.autopan.waveShape, juce::sendNotification);
+    if (autopanKnobs[4]) autopanKnobs[4]->setValue(newSnapshot.autopan.inverted ? 1.0f : 0.0f, juce::sendNotification);
+    if (autopanKnobs[5]) autopanKnobs[5]->setValue(newSnapshot.autopan.amount, juce::sendNotification);
+    
+    // Update all step buttons to show only the selected one as active
+    for (int i = 0; i < 16; ++i) {
+        if (autopanStepButtons[i]) {
+            autopanStepButtons[i]->setSelected(i == stepIndex);
+        }
+    }
+    
+    DBG("[UI] Switched to AutoPan step " << stepIndex);
 }
 
 void PluginEditor::updateAutoPanSequencerUI()
 {
-    // Update step buttons based on current states
-    for (int i = 0; i < 16; ++i)
-    {
-        if (autopanStepButtons[i] != nullptr)
-        {
-            autopanStepButtons[i]->setSelected(autopanStepStates[i]);
+    // Update AutoPan step button selection and playing states
+    int selectedStep = processorRef.getAutoPanCurrentStep();
+    int playingStep = processorRef.getAutoPanPlayingStep();
+    const int stepsUsed = processorRef.getAutoPanSeqState().stepsUsed.load();
+    
+    for (int i = 0; i < 16; ++i) {
+        if (autopanStepButtons[i] != nullptr) {
+            // Only the selected step should show as selected
+            autopanStepButtons[i]->setSelected(i == selectedStep);
+            // Show playing highlight if AutoPan sequencer is enabled
+            bool sequencerEnabled = processorRef.getAutoPanSeqState().enabled.load();
+            autopanStepButtons[i]->setPlaying(sequencerEnabled && (i == playingStep));
+            // Grey out inactive steps beyond stepsUsed
+            bool shouldBeEnabled = i < stepsUsed;
+            autopanStepButtons[i]->setEnabledStep(shouldBeEnabled);
         }
+    }
+    
+    // Update step amount display
+    if (autopanStepAmountLabel != nullptr) {
+        autopanStepAmountLabel->setText(juce::String(stepsUsed), juce::dontSendNotification);
+    }
+    
+    // Update rate dropdown
+    if (autopanRateDropdown != nullptr) {
+        int divisionIndex = processorRef.getAutoPanSeqState().divisionIndex.load();
+        autopanRateDropdown->setSelectedId(divisionIndex + 1);
     }
 }
 
