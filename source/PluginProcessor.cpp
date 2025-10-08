@@ -55,7 +55,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout PluginProcessor::createParam
     params.push_back(std::make_unique<juce::AudioParameterFloat>("mix", "Mix", 0.0f, 1.0f, 0.5f));
     
     // AutoPan Parameters - 6 knobs
-    params.push_back(std::make_unique<juce::AudioParameterFloat>("autopanRate", "AutoPan Rate", 0.1f, 5.0f, 1.0f)); // Hz - much more reasonable range
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("autopanRate", "AutoPan Rate", 0.0f, 1.0f, 0.43f)); // 0-1 for sync divisions (default ~1/4 = 0.43)
     params.push_back(std::make_unique<juce::AudioParameterFloat>("autopanPhase", "AutoPan Phase", 0.0f, 360.0f, 180.0f)); // degrees
     params.push_back(std::make_unique<juce::AudioParameterChoice>("autopanWaveType", "AutoPan Wave Type", 
         juce::StringArray {"Sine", "Triangle", "Ramp Down", "Ramp Up", "Random"}, 0)); // 0 = Sine default
@@ -366,22 +366,14 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
         auto* amountParam = valueTreeState.getRawParameterValue("autopanAmount");
         auto* syncParam = valueTreeState.getRawParameterValue("autopanTimeSync");
         
-        float rate = rateParam ? rateParam->load() : 1.0f;  // Hz or sync division
+        float rate = rateParam ? rateParam->load() : 0.43f;  // 0-1 range (default ~1/4)
         
         // Convert sync mode to Hz if sync is enabled
         if (syncParam && syncParam->load() > 0.5f) {
-            // When sync mode is enabled, the UI knob range is 0.0-1.0 for divisions
-            // But the parameter might still be in Hz range, so we need to handle both cases
-            float knobValue = rate;
+            // Parameter is in 0.0-1.0 range for divisions
+            float knobValue = juce::jlimit(0.0f, 1.0f, rate);
 
-            // If the rate is > 1.0, it's likely still in Hz range, so normalize it
-            if (rate > 1.0f) {
-                // Assume it's in the old Hz range (0.1-5.0) and map to 0-1
-                knobValue = (rate - 0.1f) / (5.0f - 0.1f);
-            }
-
-            // Convert knob value (0-1) to sync division index (0-14)
-            // Map to the full range of divisions
+            // Convert knob value (0-1) to sync division index (0-15 for 16 divisions)
             int divIndex = juce::jlimit(0, numDivisions - 1, (int)(knobValue * (numDivisions - 1)));
             
             // Get the division from our array
@@ -390,6 +382,9 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
             // Calculate correct Hz using proper sync formula
             const double bpm = getBpmOrDefault(120.0);
             rate = syncedHz((float)bpm, div) * 0.5f; // 2x slower for panning
+        } else {
+            // Free mode: map 0-1 parameter to 0.05-90 Hz range
+            rate = 0.05f + rate * (90.0f - 0.05f);
         }
         
         // Set AutoPan parameters using new click-free API
