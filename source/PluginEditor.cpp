@@ -2823,22 +2823,23 @@ void PluginEditor::setupAutoPanSequencerArea()
             auto snapshot = processorRef.getAutoPanSafeSnapshot(step);
             
             // Randomize all AutoPan parameters for this step (respecting lock states)
-            if (!autopanLockButtons[0] || !autopanLockButtons[0]->getToggleState()) {
+            // Only randomize if lock button is NOT toggled (locked)
+            if (!autopanKnobLocked[0]) {
                 snapshot.autopan.rate = juce::Random::getSystemRandom().nextFloat(); // 0-1
             }
-            if (!autopanLockButtons[1] || !autopanLockButtons[1]->getToggleState()) {
+            if (!autopanKnobLocked[1]) {
                 snapshot.autopan.phase = juce::Random::getSystemRandom().nextFloat() * 360.0f; // 0-360
             }
-            if (!autopanLockButtons[2] || !autopanLockButtons[2]->getToggleState()) {
+            if (!autopanKnobLocked[2]) {
                 snapshot.autopan.waveType = juce::Random::getSystemRandom().nextInt(5); // 0-4
             }
-            if (!autopanLockButtons[3] || !autopanLockButtons[3]->getToggleState()) {
+            if (!autopanKnobLocked[3]) {
                 snapshot.autopan.waveShape = juce::Random::getSystemRandom().nextFloat(); // 0-1
             }
-            if (!autopanLockButtons[4] || !autopanLockButtons[4]->getToggleState()) {
+            if (!autopanKnobLocked[4]) {
                 snapshot.autopan.inverted = juce::Random::getSystemRandom().nextBool();
             }
-            if (!autopanLockButtons[5] || !autopanLockButtons[5]->getToggleState()) {
+            if (!autopanKnobLocked[5]) {
                 snapshot.autopan.amount = juce::Random::getSystemRandom().nextFloat(); // 0-1
             }
             
@@ -2959,7 +2960,7 @@ void PluginEditor::randomizeAutoPanKnobValues()
     
     for (int i = 0; i < 6; ++i)
     {
-        if (autopanLockButtons[i] && autopanLockButtons[i]->getToggleState()) {
+        if (autopanKnobLocked[i]) {
             continue; // Skip locked knobs
         }
         
