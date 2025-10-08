@@ -2822,13 +2822,25 @@ void PluginEditor::setupAutoPanSequencerArea()
         for (int step = 0; step < 16; ++step) {
             auto snapshot = processorRef.getAutoPanSafeSnapshot(step);
             
-            // Randomize all AutoPan parameters for this step
-            snapshot.autopan.rate = juce::Random::getSystemRandom().nextFloat(); // 0-1
-            snapshot.autopan.phase = juce::Random::getSystemRandom().nextFloat() * 360.0f; // 0-360
-            snapshot.autopan.waveType = juce::Random::getSystemRandom().nextInt(5); // 0-4
-            snapshot.autopan.waveShape = juce::Random::getSystemRandom().nextFloat(); // 0-1
-            snapshot.autopan.inverted = juce::Random::getSystemRandom().nextBool();
-            snapshot.autopan.amount = juce::Random::getSystemRandom().nextFloat(); // 0-1
+            // Randomize all AutoPan parameters for this step (respecting lock states)
+            if (!autopanLockButtons[0] || !autopanLockButtons[0]->getToggleState()) {
+                snapshot.autopan.rate = juce::Random::getSystemRandom().nextFloat(); // 0-1
+            }
+            if (!autopanLockButtons[1] || !autopanLockButtons[1]->getToggleState()) {
+                snapshot.autopan.phase = juce::Random::getSystemRandom().nextFloat() * 360.0f; // 0-360
+            }
+            if (!autopanLockButtons[2] || !autopanLockButtons[2]->getToggleState()) {
+                snapshot.autopan.waveType = juce::Random::getSystemRandom().nextInt(5); // 0-4
+            }
+            if (!autopanLockButtons[3] || !autopanLockButtons[3]->getToggleState()) {
+                snapshot.autopan.waveShape = juce::Random::getSystemRandom().nextFloat(); // 0-1
+            }
+            if (!autopanLockButtons[4] || !autopanLockButtons[4]->getToggleState()) {
+                snapshot.autopan.inverted = juce::Random::getSystemRandom().nextBool();
+            }
+            if (!autopanLockButtons[5] || !autopanLockButtons[5]->getToggleState()) {
+                snapshot.autopan.amount = juce::Random::getSystemRandom().nextFloat(); // 0-1
+            }
             
             processorRef.setAutoPanStepSnapshot(step, snapshot);
         }
