@@ -2534,6 +2534,14 @@ void PluginEditor::setupAutoPanEffectsArea()
     }
     
     autopanTimeSyncToggle->setClickingTogglesState(true);
+    
+    // Initialize toggle state from parameter
+    auto* syncParam = processorRef.getAPVTS().getRawParameterValue("autopanTimeSync");
+    if (syncParam) {
+        autopanTimeSyncEnabled = syncParam->load() > 0.5f;
+        autopanTimeSyncToggle->setToggleState(autopanTimeSyncEnabled, juce::dontSendNotification);
+    }
+    
     autopanTimeSyncToggle->onClick = [this]() {
         autopanTimeSyncEnabled = autopanTimeSyncToggle->getToggleState();
         
@@ -2543,21 +2551,25 @@ void PluginEditor::setupAutoPanEffectsArea()
             syncParam->setValueNotifyingHost(autopanTimeSyncEnabled ? 1.0f : 0.0f);
         }
         
-            if (autopanTimeSyncEnabled) {
-                // Switch to time sync mode - show divisions instead of Hz
-                // Update knob range to divisions (0.0-1.0 for smooth control)
-                autopanKnobs[0]->setRange(0.0, 1.0, 0.001);
+        if (autopanTimeSyncEnabled) {
+            // Switch to time sync mode - show divisions instead of Hz
+            // Update knob range to divisions (0.0-1.0 for smooth control)
+            autopanKnobs[0]->setRange(0.0, 1.0, 0.001);
             
-            // Set current division based on current rate (default to middle position)
-            autopanKnobs[0]->setValue(0.5, juce::dontSendNotification); // Start at middle (1/8)
+            // Keep the current parameter value - don't reset it
+            auto* rateParam = processorRef.getAPVTS().getRawParameterValue("autopanRate");
+            if (rateParam) {
+                autopanKnobs[0]->setValue(rateParam->load(), juce::dontSendNotification);
+            }
         } else {
             // Switch to free rate mode - show Hz
             autopanKnobs[0]->setRange(0.05, 90.0, 0.01);
             
-            // Convert current division back to Hz
-            float currentDiv = autopanKnobs[0]->getValue();
-            float rateHz = 0.05f + (currentDiv / 7.0f) * (90.0f - 0.05f);
-            autopanKnobs[0]->setValue(rateHz, juce::dontSendNotification);
+            // Keep the current parameter value - don't reset it
+            auto* rateParam = processorRef.getAPVTS().getRawParameterValue("autopanRate");
+            if (rateParam) {
+                autopanKnobs[0]->setValue(rateParam->load(), juce::dontSendNotification);
+            }
         }
     };
     
