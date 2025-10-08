@@ -18,7 +18,7 @@ public:
     PanManBar(Reader r, int bins = 64)
         : reader(std::move(r)), numBins(juce::jlimit(16, 256, bins))
     {
-        startTimeMs = juce::Time::getMillisecondCounterHiRes();
+        lastUpdateMs = juce::Time::getMillisecondCounterHiRes();
         startTimerHz(60); // smooth UI
     }
 
@@ -76,7 +76,8 @@ private:
     {
         // Interpolate phase from the audio-published clock
         const double nowMs = juce::Time::getMillisecondCounterHiRes();
-        const double dtSec = (nowMs - startTimeMs) * 0.001;
+        const double dtSec = (nowMs - lastUpdateMs) * 0.001;
+        lastUpdateMs = nowMs;
 
         const double sr   = reader.getSampleRate();
         const double ph0  = reader.getPhase01();
@@ -109,6 +110,6 @@ private:
     juce::Colour trackColour = juce::Colour(0xFF2F3237); // dark grey track
     juce::Colour binColour   = juce::Colours::white;     // WHITE boxes (your request)
 
-    double startTimeMs = 0.0;
+    double lastUpdateMs = 0.0;
     float currentX = 0.5f;
 };
