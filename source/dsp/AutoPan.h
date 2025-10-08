@@ -121,10 +121,11 @@ struct AutoPan
         shapeSmooth.reset(sampleRate, shortSecs);
         phaseOffSmooth.reset(sampleRate, shortSecs);
         
-        // Initialize motion detection
+        // Initialize motion detection and LFO output poles
         lastRateTarget = 0.0;
         motionHoldSamples = 0;
         lfoOutZ = 0.0f;
+        lfoOutZRight = 0.0f;
         
         panSampleCounter = 0;
     }
@@ -206,40 +207,38 @@ struct AutoPan
                 shp = juce::jmap(0.65f, shp, 0.0f); // Bias toward sine during motion
             }
 
-            // Compute phase with offset
-            double phaseWithOffset = phase + phOf;
-            phaseWithOffset -= std::floor(phaseWithOffset); // wrap to 0..1
-
-            // Shaped LFO in [-1,1] with wave type and inversion support
-            float lfo = shapedLFO((float)phaseWithOffset, shp, waveType, inverted);
+            // DUAL LFO APPROACH (like Ableton AutoPan):
+            // Left channel uses base phase, right channel has phase offset
+            
+            // Left LFO (master phase)
+            float leftLfo = shapedLFO((float)phase, shp, waveType, inverted);
+            
+            // Right LFO (master phase + offset)
+            // phOf is 0-1, convert to phase offset
+            double rightPhase = phase + phOf;
+            rightPhase -= std::floor(rightPhase); // wrap to 0..1
+            float rightLfo = shapedLFO((float)rightPhase, shp, waveType, inverted);
             
             // Tiny output pole (2ms) to erase micro-zipper on hard shapes
             const double lfoOutTauMs = 2.0;
             const float poleA = (float)std::exp(-1.0 / ((lfoOutTauMs * 0.001) * sampleRate));
-            lfoOutZ = poleA * lfoOutZ + (1.0f - poleA) * lfo;
-            lfo = lfoOutZ;
+            lfoOutZ = poleA * lfoOutZ + (1.0f - poleA) * leftLfo;
+            leftLfo = lfoOutZ;
+            
+            // Apply same pole to right LFO
+            lfoOutZRight = poleA * lfoOutZRight + (1.0f - poleA) * rightLfo;
+            rightLfo = lfoOutZRight;
 
-            // Pan amount: x ∈ [-depth, depth]
-            const float x = dep * lfo;
+            // Amplitude modulation (Ableton-style):
+            // LFO in [-1,1], convert to gain 0..1
+            // At phase=0°: both channels modulate together (tremolo)
+            // At phase=180°: opposite modulation (stereo panning)
+            const float leftGain  = 1.0f - (dep * 0.5f * (leftLfo  + 1.0f)); // depth scales modulation
+            const float rightGain = 1.0f - (dep * 0.5f * (rightLfo + 1.0f));
 
-            // Convert to mid/side rotation angle φ in [-π/2, +π/2] scaled by x for full L/R panning
-            const float phi = (juce::MathConstants<float>::pi * 0.5f) * x;
-
-            // Mid/Side conversion
-            float M = (inL + inR) * invSqrt2;
-            float S = (inL - inR) * invSqrt2;
-
-            // Rotate the (M,S) vector by φ
-            const float c = std::cos(phi), s = std::sin(phi);
-            float M2 = c * M - s * S;
-            float S2 = s * M + c * S;
-
-            // Width control
-            S2 *= width;
-
-            // Back to L/R
-            float wetL = (M2 + S2) * invSqrt2;
-            float wetR = (M2 - S2) * invSqrt2;
+            // Apply amplitude modulation
+            float wetL = inL * leftGain;
+            float wetR = inR * rightGain;
 
             // True dry/wet crossfade
             L[n] = juce::jmap(mix, inL, wetL);
@@ -338,7 +337,8 @@ struct AutoPan
     // Motion detection for shape softening during knob movement
     double lastRateTarget { 0.0 };
     int motionHoldSamples { 0 };
-    float lfoOutZ { 0.0f };                    // Tiny output pole for micro-zipper removal
+    float lfoOutZ { 0.0f };                    // Tiny output pole for left LFO micro-zipper removal
+    float lfoOutZRight { 0.0f };               // Tiny output pole for right LFO micro-zipper removal
     
     WaveType waveType { WaveType::Sine };      // Wave type (Sine, Triangle, Ramp, etc.)
     bool inverted { false };                   // LFO inversion
