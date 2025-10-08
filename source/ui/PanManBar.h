@@ -13,6 +13,8 @@ public:
         std::function<float()>  getDepth01;        // read APVTS depth (0..1)
         std::function<float()>  getPhaseOffset01;  // read APVTS phase offset (0..1)
         std::function<float()>  getShape01;        // read APVTS wave shape (0..1)
+        std::function<int()>    getWaveType;       // read APVTS wave type (0-4)
+        std::function<bool()>   getInverted;       // read APVTS inverted flag
     };
 
     PanManBar(Reader r, int bins = 64)
@@ -86,14 +88,18 @@ private:
         double ph = ph0 + incS * dtSec * (sr > 0.0 ? sr : 44100.0); // cycles
         ph -= std::floor(ph); // wrap 0..1
 
-        // Depth, phase offset, and shape from APVTS (safe to read on UI)
+        // Depth, phase offset, shape, wave type, and inverted from APVTS (safe to read on UI)
         const float depth = reader.getDepth01 ? reader.getDepth01() : 1.0f;
         const float phOff = reader.getPhaseOffset01 ? reader.getPhaseOffset01() : 0.5f;  // Default 180° = 0.5
         const float shape = reader.getShape01 ? reader.getShape01() : 0.0f;
+        const int waveTypeIdx = reader.getWaveType ? reader.getWaveType() : 0;
+        const bool inv = reader.getInverted ? reader.getInverted() : false;
+        
+        const WaveType wType = static_cast<WaveType>(juce::jlimit(0, 4, waveTypeIdx));
 
         // Use the same shapedLFO function as the audio processing
         const float phaseWithOffset = std::fmod(ph + phOff, 1.0f);
-        const float lfo = shapedLFO(phaseWithOffset, shape);
+        const float lfo = shapedLFO(phaseWithOffset, shape, wType, inv);
         // Invert LFO to match mid/side conversion (positive LFO = left in M/S)
         const float x = 0.5f - 0.5f * (depth * lfo); // map [-1,1] -> [1,0] (inverted)
 

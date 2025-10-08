@@ -1142,6 +1142,14 @@ void PluginEditor::setupKnobs()
             auto* param = processorRef.getAPVTS().getRawParameterValue("autopanWaveShape");
             return param ? param->load() : 0.0f;
         };
+        r.getWaveType = [this] { 
+            auto* param = processorRef.getAPVTS().getRawParameterValue("autopanWaveType");
+            return param ? (int)param->load() : 0;
+        };
+        r.getInverted = [this] { 
+            auto* param = processorRef.getAPVTS().getRawParameterValue("autopanInverted");
+            return param ? param->load() > 0.5f : false;
+        };
         
         panBar = std::make_unique<PanManBar>(r, 72); // 72 bins looks nice
         panBar->setColours(juce::Colour(0xFF2A2C30), juce::Colours::white); // dark track, white bins

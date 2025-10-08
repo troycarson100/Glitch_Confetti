@@ -12,25 +12,87 @@ static inline float getHostBpm(juce::AudioPlayHead* ph, float fallback = 120.0f)
     return (float)pos.bpm;
 }
 
-// Shaped LFO function (sin ⇄ triangle ⇄ square) without nasty edges
-static inline float shapedLFO(float phase01, float shape01)
+// Wave Type enum matching the parameter choice
+enum class WaveType {
+    Sine = 0,
+    Triangle = 1,
+    RampDown = 2,
+    RampUp = 3,
+    Random = 4
+};
+
+// Full LFO function with wave type and shape support
+static inline float shapedLFO(float phase01, float shape01, WaveType waveType = WaveType::Sine, bool inverted = false)
 {
-    const float ph = phase01;                   // 0..1
-    const float s  = juce::jlimit(0.0f, 1.0f, shape01);
-    const float sinv = std::sin(juce::MathConstants<float>::twoPi * ph);
-
-    // triangle via asin(sin) normalized to [-1,1]
-    const float tri = (2.0f / juce::MathConstants<float>::pi) * std::asin(sinv);
-
-    // soft square via tanh(k * sin); k from 0..~3 as shape increases
-    const float k   = juce::jmap(s, 0.0f, 1.0f, 0.0f, 3.0f);
-    const float sq  = std::tanh(k * sinv);
-
-    // crossfade sin → tri → sq: first half sin→tri, second half tri→sq
-    if (s < 0.5f)
-        return juce::jmap(s * 2.0f, sinv, tri);
-    else
-        return juce::jmap((s - 0.5f) * 2.0f, tri, sq);
+    const float ph = phase01;  // 0..1
+    float lfo = 0.0f;
+    
+    switch (waveType) {
+        case WaveType::Sine: {
+            // Sine with optional shape morphing to triangle/square
+            const float s = juce::jlimit(0.0f, 1.0f, shape01);
+            const float sinv = std::sin(juce::MathConstants<float>::twoPi * ph);
+            const float tri = (2.0f / juce::MathConstants<float>::pi) * std::asin(sinv);
+            const float k = juce::jmap(s, 0.0f, 1.0f, 0.0f, 3.0f);
+            const float sq = std::tanh(k * sinv);
+            
+            if (s < 0.5f)
+                lfo = juce::jmap(s * 2.0f, sinv, tri);
+            else
+                lfo = juce::jmap((s - 0.5f) * 2.0f, tri, sq);
+            break;
+        }
+        
+        case WaveType::Triangle: {
+            // Pure triangle wave (shape morphs to pulse width)
+            const float s = juce::jlimit(0.0f, 1.0f, shape01);
+            const float pw = juce::jmap(s, 0.25f, 0.75f); // pulse width 25%-75%
+            
+            if (ph < pw)
+                lfo = juce::jmap(ph, 0.0f, pw, -1.0f, 1.0f);
+            else
+                lfo = juce::jmap(ph, pw, 1.0f, 1.0f, -1.0f);
+            break;
+        }
+        
+        case WaveType::RampDown: {
+            // Sawtooth ramp down (shape adjusts slope curve)
+            const float s = juce::jlimit(0.0f, 1.0f, shape01);
+            const float linear = 1.0f - 2.0f * ph;  // 1 to -1
+            const float curved = std::pow(1.0f - ph, 1.0f + s * 2.0f) * 2.0f - 1.0f;
+            lfo = juce::jmap(s, linear, curved);
+            break;
+        }
+        
+        case WaveType::RampUp: {
+            // Sawtooth ramp up (shape adjusts slope curve)
+            const float s = juce::jlimit(0.0f, 1.0f, shape01);
+            const float linear = -1.0f + 2.0f * ph;  // -1 to 1
+            const float curved = std::pow(ph, 1.0f + s * 2.0f) * 2.0f - 1.0f;
+            lfo = juce::jmap(s, linear, curved);
+            break;
+        }
+        
+        case WaveType::Random: {
+            // Sample & hold random (shape controls smoothness)
+            static float lastRandom = 0.0f;
+            static float lastPhase = 0.0f;
+            
+            // Trigger new random value at phase wrap
+            if (ph < lastPhase) {
+                lastRandom = (std::rand() / (float)RAND_MAX) * 2.0f - 1.0f;
+            }
+            lastPhase = ph;
+            
+            const float s = juce::jlimit(0.0f, 1.0f, shape01);
+            // Shape controls how smooth the random is (0=stepped, 1=smoothed)
+            lfo = lastRandom;
+            break;
+        }
+    }
+    
+    // Apply inversion if requested
+    return inverted ? -lfo : lfo;
 }
 
 // Visual state for UI synchronization
@@ -63,7 +125,7 @@ struct AutoPan
     }
 
     // Set targets each block (0..1 except freqHz)
-    void setTargets(float freqHz, float depth01, float width01, float mix01, float shape01, float phaseOffset01)
+    void setTargets(float freqHz, float depth01, float width01, float mix01, float shape01, float phaseOffset01, WaveType wType = WaveType::Sine, bool inv = false)
     {
         freqSmooth.setTargetValue(juce::jmax(0.0f, freqHz));
         depthSmooth.setTargetValue(juce::jlimit(0.0f, 1.0f, depth01));
@@ -71,6 +133,8 @@ struct AutoPan
         mixSmooth.setTargetValue(juce::jlimit(0.0f, 1.0f, mix01));
         shapeSmooth.setTargetValue(juce::jlimit(0.0f, 1.0f, shape01));
         phaseOffSmooth.setTargetValue(juce::jlimit(0.0f, 1.0f, phaseOffset01)); // 0..1 maps to 0..2π
+        waveType = wType;
+        inverted = inv;
     }
 
     // Process with click-free mid/side rotation and visual state publishing
@@ -123,8 +187,8 @@ struct AutoPan
             double phaseWithOffset = phase + phOf;
             phaseWithOffset -= std::floor(phaseWithOffset); // wrap to 0..1
 
-            // Shaped LFO in [-1,1]
-            const float lfo = shapedLFO((float)phaseWithOffset, shp);
+            // Shaped LFO in [-1,1] with wave type and inversion support
+            const float lfo = shapedLFO((float)phaseWithOffset, shp, waveType, inverted);
 
             // Pan amount: x ∈ [-depth, depth]
             const float x = dep * lfo;
@@ -238,6 +302,9 @@ struct AutoPan
     juce::SmoothedValue<float> mixSmooth;      // 0..1 dry/wet
     juce::SmoothedValue<float> shapeSmooth;    // 0..1 wave shape morphing (sin⇄tri⇄square)
     juce::SmoothedValue<float> phaseOffSmooth; // 0..1 phase offset
+
+    WaveType waveType { WaveType::Sine };      // Wave type (Sine, Triangle, Ramp, etc.)
+    bool inverted { false };                   // LFO inversion
 
     PanVisualState* visualState { nullptr };   // pointer to visual state for UI
 };

@@ -67,7 +67,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout PluginProcessor::createParam
     params.push_back(std::make_unique<juce::AudioParameterChoice>("currentPage", "Current Page", 
         juce::StringArray {"SpaceDelay", "AutoPan"}, 0)); // 0 = SpaceDelay, 1 = AutoPan
     params.push_back(std::make_unique<juce::AudioParameterBool>("autopanEnabled", "AutoPan Enabled", false)); // AutoPan effect enabled
-    params.push_back(std::make_unique<juce::AudioParameterBool>("autopanTimeSync", "AutoPan Time Sync", false)); // AutoPan sync mode enabled
+    params.push_back(std::make_unique<juce::AudioParameterBool>("autopanTimeSync", "AutoPan Time Sync", true)); // AutoPan sync mode enabled - ON by default
     
     // Master Parameters
     params.push_back(std::make_unique<juce::AudioParameterFloat>("masterInput", "Master Input", 
@@ -400,11 +400,17 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
         // Get wave parameters
         auto* waveShapeParam = valueTreeState.getRawParameterValue("autopanWaveShape");
         auto* phaseParam = valueTreeState.getRawParameterValue("autopanPhase");
+        auto* waveTypeParam = valueTreeState.getRawParameterValue("autopanWaveType");
+        auto* invertedParam = valueTreeState.getRawParameterValue("autopanInverted");
 
         const float waveShape = waveShapeParam ? waveShapeParam->load() : 0.5f;
         const float phaseOffset = phaseParam ? phaseParam->load() / 360.0f : 0.5f; // Convert 0-360° to 0-1
+        const int waveTypeIndex = waveTypeParam ? (int)waveTypeParam->load() : 0;
+        const bool isInverted = invertedParam ? invertedParam->load() > 0.5f : false;
+        
+        const WaveType wType = static_cast<WaveType>(juce::jlimit(0, 4, waveTypeIndex));
 
-        autoPan.setTargets(rate, depth, width, mix, waveShape, phaseOffset);
+        autoPan.setTargets(rate, depth, width, mix, waveShape, phaseOffset, wType, isInverted);
         
         // Process AutoPan effect AFTER delay
         if (buffer.getNumChannels() >= 2 && buffer.getNumSamples() > 0) {
@@ -709,11 +715,17 @@ void PluginProcessor::applySnapshotTargets(const StepSnapshot& snapshot)
             // Get wave parameters
             auto* waveShapeParam = valueTreeState.getRawParameterValue("autopanWaveShape");
             auto* phaseParam = valueTreeState.getRawParameterValue("autopanPhase");
+            auto* waveTypeParam = valueTreeState.getRawParameterValue("autopanWaveType");
+            auto* invertedParam = valueTreeState.getRawParameterValue("autopanInverted");
             
             const float waveShape = waveShapeParam ? waveShapeParam->load() : 0.5f;
             const float phaseOffset = phaseParam ? phaseParam->load() / 360.0f : 0.5f; // Convert 0-360° to 0-1
+            const int waveTypeIndex = waveTypeParam ? (int)waveTypeParam->load() : 0;
+            const bool isInverted = invertedParam ? invertedParam->load() > 0.5f : false;
             
-            autoPan.setTargets(rate, depth, width, mix, waveShape, phaseOffset);
+            const WaveType wType = static_cast<WaveType>(juce::jlimit(0, 4, waveTypeIndex));
+            
+            autoPan.setTargets(rate, depth, width, mix, waveShape, phaseOffset, wType, isInverted);
             break;
         }
         default:
