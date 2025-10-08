@@ -3035,11 +3035,26 @@ void PluginEditor::updateAutoPanSequencerUI()
 {
     // Update AutoPan step button selection and playing states
     int selectedStep = autopanUiSelectedStep;  // UI selected step for editing
-    int playingStep = processorRef.getAutoPanPlayingStep();  // Audio thread playing step
     const int stepsUsed = processorRef.getAutoPanSeqState().stepsUsed.load();
     const bool enabled = processorRef.getAutoPanSeqState().enabled.load();
     const bool active = processorRef.getAutoPanSeqState().active.load();
     const int divIdx = processorRef.getAutoPanSeqState().divisionIndex.load();
+    
+    // Read from the independent AutoPan sequencer visual clock
+    const double ppqNow = processorRef.autopanSeqClock.ppqAtBlockStart.load(std::memory_order_acquire);
+    const bool isPlaying = processorRef.autopanSeqClock.isPlaying.load(std::memory_order_acquire);
+    
+    // Compute current playing step from PPQ (independent calculation, not shared with Delay)
+    int playingStep = -1;
+    if (isPlaying && enabled && active) {
+        // Use the AutoPan sequencer's own division and step count
+        const double beatsPerStep = processorRef.getAutoPanSeqState().beatsPerStepFromDivision(divIdx);
+        if (beatsPerStep > 0.0 && std::isfinite(ppqNow)) {
+            const double stepsExact = ppqNow / beatsPerStep;
+            const int k = (int)std::floor(stepsExact);
+            playingStep = ((k % stepsUsed) + stepsUsed) % stepsUsed;
+        }
+    }
     
     static int lastPlayingStep = -1;
     static int debugTimer = 0;
@@ -3049,7 +3064,8 @@ void PluginEditor::updateAutoPanSequencerUI()
         DBG("[UI] AutoPan: enabled=" << enabled << " active=" << active 
             << " divIdx=" << divIdx << " steps=" << stepsUsed 
             << " playing=" << playingStep << " selected=" << selectedStep
-            << " (should show playing highlight: " << (enabled && active) << ")");
+            << " PPQ=" << ppqNow << " isPlaying=" << isPlaying
+            << " (should show playing highlight: " << (enabled && active && isPlaying) << ")");
     }
     
     if (playingStep != lastPlayingStep) {

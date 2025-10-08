@@ -259,6 +259,20 @@ public:
     };
     PanVisClock panClock;
     
+    // AutoPan Sequencer Visual Clock (independent from Delay sequencer)
+    struct AutoPanSeqVisClock {
+        std::atomic<double> ppqAtBlockStart{ 0.0 };
+        std::atomic<double> ppqPerSample{ 0.0 };
+        std::atomic<bool>   isPlaying{ false };
+        std::atomic<double> barStartPPQ{ 0.0 };
+        std::atomic<int>    timeSigNumerator{ 4 };
+        std::atomic<int>    timeSigDenominator{ 4 };
+        std::atomic<double> loopStartPPQ{ -1.0 };  // -1 = no loop
+        std::atomic<double> loopEndPPQ{ -1.0 };
+        std::atomic<uint64_t> sampleCounter{ 0 };
+    };
+    AutoPanSeqVisClock autopanSeqClock;
+    
     // Get current pan position for visualizer
     float getCurrentPanPosition() const { 
         // Check if sync mode is enabled

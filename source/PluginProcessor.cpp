@@ -298,6 +298,37 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
             } else if (autopanSeq.enabled.load() && !autopanSeq.active.load()) {
                 DBG("[AUTOPAN SEQ] WARNING: Enabled but not active! isPlaying=" << isPlaying << " ppqValid=" << ppqValid);
             }
+            
+            // Publish AutoPan Sequencer Visual Clock (independent from Delay sequencer)
+            autopanSeqClock.ppqAtBlockStart.store(ppq, std::memory_order_release);
+            autopanSeqClock.isPlaying.store(isPlaying, std::memory_order_release);
+            
+            // Calculate PPQ per sample from BPM
+            const double bpm = pos->getBpm().hasValue() ? *pos->getBpm() : 120.0;
+            const double ppqPerSample = (bpm / 60.0) / dspSampleRate;
+            autopanSeqClock.ppqPerSample.store(ppqPerSample, std::memory_order_release);
+            
+            // Time signature
+            if (pos->getTimeSignature().hasValue()) {
+                auto ts = *pos->getTimeSignature();
+                autopanSeqClock.timeSigNumerator.store(ts.numerator, std::memory_order_release);
+                autopanSeqClock.timeSigDenominator.store(ts.denominator, std::memory_order_release);
+            }
+            
+            // Loop points
+            if (pos->getLoopPoints().hasValue()) {
+                auto loop = *pos->getLoopPoints();
+                autopanSeqClock.loopStartPPQ.store(loop.ppqStart, std::memory_order_release);
+                autopanSeqClock.loopEndPPQ.store(loop.ppqEnd, std::memory_order_release);
+            } else {
+                autopanSeqClock.loopStartPPQ.store(-1.0, std::memory_order_release);
+                autopanSeqClock.loopEndPPQ.store(-1.0, std::memory_order_release);
+            }
+            
+            // Bar start PPQ (calculate from current PPQ and time signature)
+            if (pos->getPpqPositionOfLastBarStart().hasValue()) {
+                autopanSeqClock.barStartPPQ.store(*pos->getPpqPositionOfLastBarStart(), std::memory_order_release);
+            }
 
             // Stop edge: freeze
             if (!isPlaying && wasPlaying.load()) {
