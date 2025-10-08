@@ -12,7 +12,7 @@
 #include "ui/OutputVisualizer.h"
 
 // Tab system enum
-enum class FxPageID { SpaceDelay, Panner };
+enum class FxPageID { SpaceDelay, Panner, Dirt };
 
 // Forward declaration
 class PluginProcessor;
@@ -207,11 +207,13 @@ public:
     // Tab buttons (SVG)
     std::unique_ptr<juce::DrawableButton> tabSpaceDelay;
     std::unique_ptr<juce::DrawableButton> tabPanner;
+    std::unique_ptr<juce::DrawableButton> tabDirt;
         
         // Groups: we will only toggle visibility; we DO NOT reparent anything.
         juce::OwnedArray<juce::Component> dummyKeepAlive; // (unused, but handy if Claude tries to delete)
         std::vector<juce::Component*> spaceDelayGroup;    // pointers to existing delay UI components
-        std::vector<juce::Component*> pannerGroup;        // pointers to panner UI components (later)
+        std::vector<juce::Component*> pannerGroup;        // pointers to panner UI components
+        std::vector<juce::Component*> dirtGroup;          // pointers to dirt UI components
     
         // UI Components
         std::array<std::unique_ptr<CustomKnob>, 8> knobs;
@@ -310,6 +312,36 @@ public:
     std::unique_ptr<juce::Label> autopanAllStepsLabel;
     bool autopanAllStepsEnabled = false;
     
+    // Dirt page components (clone of Delay page layout)
+    std::array<std::unique_ptr<CustomKnob>, 8> dirtKnobs;
+    std::array<std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>, 8> dirtAttachments;
+    std::array<std::unique_ptr<juce::Label>, 8> dirtKnobLabels;
+    std::array<std::unique_ptr<juce::Label>, 8> dirtValueLabels;
+    std::array<std::unique_ptr<IndicatorBar>, 8> dirtIndicatorBars;
+    std::array<std::unique_ptr<CustomDiceButton>, 8> dirtDiceButtons;
+    std::array<std::unique_ptr<LockButton>, 8> dirtLockButtons;
+    std::array<bool, 8> dirtKnobLocked { false, false, false, false, false, false, false, false };
+    
+    // Dirt effects area components
+    std::unique_ptr<juce::Label> dirtEffectsTitle;
+    std::unique_ptr<CustomDiceButton> dirtDiceButton;
+    
+    // Dirt sequencer components (independent sequencer)
+    std::array<std::unique_ptr<StepButton>, 16> dirtStepButtons;
+    int dirtUiSelectedStep = 0;
+    std::unique_ptr<juce::Label> dirtStepAmountLabel;
+    std::unique_ptr<juce::ComboBox> dirtRateDropdown;
+    std::unique_ptr<CircularToggleButton> dirtStdToggle;
+    std::unique_ptr<juce::Label> dirtStepTitle;
+    std::unique_ptr<CustomDiceButton> dirtStepDiceButton;
+    std::unique_ptr<juce::DrawableButton> dirtStepPowerButton;
+    bool dirtStepAreaEnabled = true; // Sequencer enabled by default
+    
+    // Dirt All Steps toggle
+    std::unique_ptr<AllStepsToggleButton> dirtAllStepsToggle;
+    std::unique_ptr<juce::Label> dirtAllStepsLabel;
+    bool dirtAllStepsEnabled = false;
+    
         // Helper methods
         void setupKnobs();
         void setupMasterKnobs();
@@ -337,6 +369,12 @@ public:
         void setupAutoPanEffectsArea();
         void setupAutoPanSequencerArea();
         void setupAutoPanAllStepsToggle();
+        
+        // Dirt page setup methods
+        void setupDirtKnobs();
+        void setupDirtEffectsArea();
+        void setupDirtSequencerArea();
+        void setupDirtAllStepsToggle();
         void setupAutoPanStepPowerButton();
         void updateAutoPanFxAreaVisibility();
         void updateAutoPanStepAreaVisibility();
@@ -345,6 +383,14 @@ public:
         void updateAutoPanParameterFromKnob(int knobIndex);
         void onAutoPanStepButtonClicked(int stepIndex);
         void updateAutoPanSequencerUI();
+        
+        // Dirt page helper methods
+        void randomizeDirtKnobValues();
+        void randomizeIndividualDirtKnob(int knobIndex);
+        void updateDirtParameterFromKnob(int knobIndex);
+        void onDirtStepButtonClicked(int stepIndex);
+        void updateDirtSequencerUI();
+        
         void togglePlayback();
         
         // Tab system helpers

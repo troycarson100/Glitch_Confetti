@@ -21,4 +21,15 @@ struct StepSnapshot {
         bool inverted = false;     // false=Normal, true=Inverted
         float amount = 0.5f;       // 0-1 depth/amount
     } autopan;
+    
+    struct {
+        float drive = 12.0f;       // 0-36 dB
+        float color = 0.0f;        // -1 to +1 (pre-emphasis tilt)
+        float asym = 0.0f;         // -1 to +1 (bias/asymmetry)
+        float texture = 0.35f;     // 0-1 (curve hardness)
+        float lowCut = 60.0f;      // 20-300 Hz
+        float highCut = 12000.0f;  // 3k-22k Hz
+        float tone = 0.0f;         // -1 to +1 (post tilt)
+        float mix = 1.0f;          // 0-1 (dry/wet)
+    } dirt;
 };

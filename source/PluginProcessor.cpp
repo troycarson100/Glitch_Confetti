@@ -23,9 +23,16 @@ PluginProcessor::PluginProcessor()
     autopanSeq.divisionIndex.store(5); // 1/8 default (index 5 = item ID 6)
     autopanSeq.playingStep.store(0);
     
+    // Initialize Dirt sequencer state (independent)
+    dirtSeq.enabled.store(false);
+    dirtSeq.stepsUsed.store(16);
+    dirtSeq.divisionIndex.store(5); // 1/8 default (index 5 = item ID 6)
+    dirtSeq.playingStep.store(0);
+    
     // Initialize UI state
     uiSelectedStep.store(0);
     autopanUiSelectedStep.store(0);
+    dirtUiSelectedStep.store(0);
     
     // Initialize transport cache
     transportCache.valid.store(false);
@@ -52,6 +59,19 @@ PluginProcessor::PluginProcessor()
         autopanStepSnapshots[i].autopan.amount = 1.0f;     // Full amount
     }
     DBG("[Stepper] Initialized AutoPan step snapshots with default values");
+    
+    // Initialize Dirt step snapshots with default values
+    for (int i = 0; i < 16; ++i) {
+        dirtStepSnapshots[i].dirt.drive = 12.0f;      // 12 dB default
+        dirtStepSnapshots[i].dirt.color = 0.0f;       // Neutral
+        dirtStepSnapshots[i].dirt.asym = 0.0f;        // No asymmetry
+        dirtStepSnapshots[i].dirt.texture = 0.35f;    // Warm/medium
+        dirtStepSnapshots[i].dirt.lowCut = 60.0f;     // 60 Hz
+        dirtStepSnapshots[i].dirt.highCut = 12000.0f; // 12 kHz
+        dirtStepSnapshots[i].dirt.tone = 0.0f;        // Neutral
+        dirtStepSnapshots[i].dirt.mix = 1.0f;         // 100% wet
+    }
+    DBG("[Stepper] Initialized Dirt step snapshots with default values");
     
     // Verification log
     DBG("[Stepper] Built formats: VST3/AU/Standalone. BundleID=com.glitchcorp.stepper, Code=Stp1");
@@ -81,9 +101,19 @@ juce::AudioProcessorValueTreeState::ParameterLayout PluginProcessor::createParam
     params.push_back(std::make_unique<juce::AudioParameterBool>("autopanInverted", "AutoPan Inverted", false)); // false = normal, true = inverted
     params.push_back(std::make_unique<juce::AudioParameterFloat>("autopanAmount", "AutoPan Amount", 0.0f, 1.0f, 0.5f)); // pan amount
     
+    // Dirt Parameters - 8 knobs
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("dirtDrive", "Dirt Drive", 0.0f, 36.0f, 12.0f)); // dB
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("dirtColor", "Dirt Color", -1.0f, 1.0f, 0.0f)); // pre-emphasis tilt
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("dirtAsym", "Dirt Asym", -1.0f, 1.0f, 0.0f)); // bias/asymmetry
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("dirtTexture", "Dirt Texture", 0.0f, 1.0f, 0.35f)); // curve hardness
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("dirtLowCut", "Dirt Low-Cut", 20.0f, 300.0f, 60.0f)); // Hz
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("dirtHighCut", "Dirt High-Cut", 3000.0f, 22000.0f, 12000.0f)); // Hz
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("dirtTone", "Dirt Tone", -1.0f, 1.0f, 0.0f)); // post tilt
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("dirtMix", "Dirt Mix", 0.0f, 1.0f, 1.0f)); // dry/wet
+    
     // Page and effect enable parameters
     params.push_back(std::make_unique<juce::AudioParameterChoice>("currentPage", "Current Page", 
-        juce::StringArray {"SpaceDelay", "AutoPan"}, 0)); // 0 = SpaceDelay, 1 = AutoPan
+        juce::StringArray {"SpaceDelay", "AutoPan", "Dirt"}, 0)); // 0 = SpaceDelay, 1 = AutoPan, 2 = Dirt
     params.push_back(std::make_unique<juce::AudioParameterBool>("autopanEnabled", "AutoPan Enabled", false)); // AutoPan effect enabled
     params.push_back(std::make_unique<juce::AudioParameterBool>("autopanTimeSync", "AutoPan Time Sync", true)); // AutoPan sync mode enabled - ON by default
     
@@ -165,8 +195,10 @@ void PluginProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
     spaceDelay.prepare(sampleRate, samplesPerBlock);
     autoPan.prepare(sampleRate, 30.0); // 30ms smoothing
     autoPan.setVisualState(&panVis);
+    dirt.prepare(sampleRate, samplesPerBlock); // Prepare Dirt saturation
     seq.prepare(sampleRate); // Initialize delay sequencer with sample rate
     autopanSeq.prepare(sampleRate); // Initialize AutoPan sequencer with sample rate
+    dirtSeq.prepare(sampleRate); // Initialize Dirt sequencer with sample rate
     
     // Prepare output visualizer buffer (store ~1 second of downsampled audio)
     const int bufferSize = (int)(sampleRate / downsampleRate); // ~1 second at downsample rate
@@ -234,6 +266,7 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                 armPending.store(true);
                 seq.resetPhase();          // visuals/phase reset
                 autopanSeq.resetPhase();   // AutoPan sequencer phase reset
+                dirtSeq.resetPhase();      // Dirt sequencer phase reset
                 
                 // Auto-enable delay sequencer on DAW play (user can still disable with power button)
                 if (followHost.load()) {
@@ -247,6 +280,12 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                     DBG("[AUTOPAN SEQ] ✓ Activated on play edge");
                 } else {
                     DBG("[AUTOPAN SEQ] ✗ NOT activated (enabled=" << autopanSeq.enabled.load() << ")");
+                }
+                
+                // Dirt sequencer activates if enabled (independent of followHost)
+                if (dirtSeq.enabled.load()) {
+                    dirtSeq.active.store(true);  // Activate Dirt sequencer
+                    DBG("[DIRT SEQ] ✓ Activated on play edge");
                 }
                 
                 DBG("[SEQ] Play edge detected");
@@ -268,6 +307,14 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                     DBG("[AUTOPAN SEQ] Lock-in at PPQ=" << ppq << " -> step " << autopanStep);
                 } else {
                     DBG("[AUTOPAN SEQ] Skip lock-in (not enabled)");
+                }
+                
+                // Also lock-in Dirt sequencer if enabled
+                if (dirtSeq.enabled.load()) {
+                    const int dirtStep = dirtSeq.computeStepFromPPQ(ppq);
+                    dirtSeq.currentStep.store(dirtStep);
+                    dirtSeq.playingStep.store(dirtStep);
+                    DBG("[DIRT SEQ] Lock-in at PPQ=" << ppq << " -> step " << dirtStep);
                 }
                 
                 armPending.store(false);
@@ -302,6 +349,16 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                 }
             } else if (autopanSeq.enabled.load() && !autopanSeq.active.load()) {
                 DBG("[AUTOPAN SEQ] WARNING: Enabled but not active! isPlaying=" << isPlaying << " ppqValid=" << ppqValid);
+            }
+            
+            // Dirt sequencer stepping (shares same PPQ/transport, independent timing)
+            if (isPlaying && ppqValid && dirtSeq.active.load()) {
+                const int dirtStep = dirtSeq.computeStepFromPPQ(ppq);
+                if (dirtStep != dirtSeq.currentStep.load()) {
+                    dirtSeq.currentStep.store(dirtStep);
+                    dirtSeq.playingStep.store(dirtStep);
+                    DBG("[DIRT SEQ] ★ Step changed to: " << dirtStep << " PPQ: " << ppq);
+                }
             }
             
             // Publish AutoPan Sequencer Visual Clock (independent from Delay sequencer)
@@ -541,6 +598,42 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
             panClock.incPerSample.store(autoPan.phaseIncSmooth.getCurrentValue(), std::memory_order_release);
             panClock.sampleRate.store(autoPan.sampleRate, std::memory_order_release);
         }
+    }
+    
+    // === DIRT SATURATION (Post-Panner) ===
+    // Processing order: Delay → Panner → Dirt
+    {
+        float drive, color, asym, texture, lowCut, highCut, tone, mix;
+        
+        // Check if Dirt sequencer is active
+        if (dirtSeq.active.load()) {
+            // Use Dirt sequencer snapshot
+            int dirtStep = dirtSeq.currentStep.load();
+            const auto& snapshot = dirtStepSnapshots[juce::jlimit(0, 15, dirtStep)];
+            
+            drive = snapshot.dirt.drive;
+            color = snapshot.dirt.color;
+            asym = snapshot.dirt.asym;
+            texture = snapshot.dirt.texture;
+            lowCut = snapshot.dirt.lowCut;
+            highCut = snapshot.dirt.highCut;
+            tone = snapshot.dirt.tone;
+            mix = snapshot.dirt.mix;
+        } else {
+            // Use APVTS parameters (manual control)
+            drive = valueTreeState.getRawParameterValue("dirtDrive")->load();
+            color = valueTreeState.getRawParameterValue("dirtColor")->load();
+            asym = valueTreeState.getRawParameterValue("dirtAsym")->load();
+            texture = valueTreeState.getRawParameterValue("dirtTexture")->load();
+            lowCut = valueTreeState.getRawParameterValue("dirtLowCut")->load();
+            highCut = valueTreeState.getRawParameterValue("dirtHighCut")->load();
+            tone = valueTreeState.getRawParameterValue("dirtTone")->load();
+            mix = valueTreeState.getRawParameterValue("dirtMix")->load();
+        }
+        
+        // Set targets and process
+        dirt.setTargets(drive, color, asym, texture, lowCut, highCut, tone, mix);
+        dirt.process(buffer);
     }
     
     // Apply master dry/wet mix (post-effects, pre-output)
@@ -798,6 +891,56 @@ void PluginProcessor::updateAutoPanCurrentStepSnapshot(int knobIndex, float valu
             break;
         case 5: // Amount
             autopanStepSnapshots[currentStep].autopan.amount = value;
+            break;
+    }
+}
+
+// Dirt snapshot methods
+StepSnapshot PluginProcessor::getDirtSafeSnapshot(int step) const
+{
+    if (step >= 0 && step < 16) {
+        return dirtStepSnapshots[step];
+    }
+    return dirtStepSnapshots[0];
+}
+
+void PluginProcessor::setDirtStepSnapshot(int step, const StepSnapshot& snapshot) noexcept
+{
+    if (step >= 0 && step < 16) {
+        dirtStepSnapshots[step] = snapshot;
+    }
+}
+
+void PluginProcessor::updateDirtCurrentStepSnapshot(int knobIndex, float value)
+{
+    int currentStep = dirtUiSelectedStep.load();
+    if (currentStep < 0 || currentStep >= 16) return;
+    
+    // Update the specific Dirt parameter in the snapshot
+    switch (knobIndex) {
+        case 0: // Drive
+            dirtStepSnapshots[currentStep].dirt.drive = value;
+            break;
+        case 1: // Color
+            dirtStepSnapshots[currentStep].dirt.color = value;
+            break;
+        case 2: // Asym
+            dirtStepSnapshots[currentStep].dirt.asym = value;
+            break;
+        case 3: // Texture
+            dirtStepSnapshots[currentStep].dirt.texture = value;
+            break;
+        case 4: // Low-Cut
+            dirtStepSnapshots[currentStep].dirt.lowCut = value;
+            break;
+        case 5: // High-Cut
+            dirtStepSnapshots[currentStep].dirt.highCut = value;
+            break;
+        case 6: // Tone
+            dirtStepSnapshots[currentStep].dirt.tone = value;
+            break;
+        case 7: // Mix
+            dirtStepSnapshots[currentStep].dirt.mix = value;
             break;
     }
 }

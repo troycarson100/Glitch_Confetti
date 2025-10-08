@@ -4,6 +4,7 @@
 #include <atomic>
 #include "dsp/FxDelay.h"
 #include "dsp/AutoPan.h"
+#include "dsp/FxDirt.h"
 #include "dsp/DspFlags.h"
 #include "StepSnapshot.h"
 #include "MeterTheme.h"
@@ -148,6 +149,21 @@ public:
     }
     void setAutoPanStepsUsed(int steps) noexcept { autopanSeq.stepsUsed.store(juce::jlimit(1, 16, steps)); }
     void setAutoPanDivisionIndex(int idx) noexcept { autopanSeq.divisionIndex.store(juce::jlimit(0, 7, idx)); }
+    
+    // Dirt sequencer accessors (independent sequencer #3)
+    const SeqState& getDirtSeqState() const { return dirtSeq; }
+    int getDirtPlayingStep() const noexcept { return dirtSeq.playingStep.load(); }
+    int getDirtCurrentStep() const noexcept { return dirtSeq.currentStep.load(); }
+    void setDirtSelectedStep(int step) noexcept { dirtUiSelectedStep.store(step); }
+    void setDirtSequencerEnabled(bool enabled) noexcept {
+        dirtSeq.enabled.store(enabled);
+        if (enabled) {
+            dirtSeq.active.store(true);
+        }
+    }
+    void setDirtStepsUsed(int steps) noexcept { dirtSeq.stepsUsed.store(juce::jlimit(1, 16, steps)); }
+    void setDirtDivisionIndex(int idx) noexcept { dirtSeq.divisionIndex.store(juce::jlimit(0, 7, idx)); }
+    
     bool getSeqActive() const noexcept { return seq.active.load(); }
     int getSelectedStep() const noexcept { return uiSelectedStep.load(); }
     bool isSequencerEnabled() const noexcept { return seq.enabled.load(); }
@@ -162,6 +178,12 @@ public:
     StepSnapshot getAutoPanSafeSnapshot(int step) const;
     void setAutoPanStepSnapshot(int step, const StepSnapshot& snapshot) noexcept;
     void updateAutoPanCurrentStepSnapshot(int knobIndex, float value);
+    
+    // Step snapshot access (Dirt)
+    StepSnapshot getDirtSafeSnapshot(int step) const;
+    void setDirtStepSnapshot(int step, const StepSnapshot& snapshot) noexcept;
+    void updateDirtCurrentStepSnapshot(int knobIndex, float value);
+    
     void setSequencerEnabled(bool enabled) noexcept { 
         seq.enabled.store(enabled); 
         // Only set active if enabled, otherwise leave active state for transport watcher
@@ -219,9 +241,14 @@ private:
     SeqState autopanSeq;
     std::atomic<int> autopanUiSelectedStep { 0 };  // AutoPan editor's selected step
     
+    // Dirt sequencer state (independent from delay and autopan)
+    SeqState dirtSeq;
+    std::atomic<int> dirtUiSelectedStep { 0 };  // Dirt editor's selected step
+    
     // Step snapshots storage (shared structure, independent sequencing)
     std::array<StepSnapshot, 16> stepSnapshots;
     std::array<StepSnapshot, 16> autopanStepSnapshots;
+    std::array<StepSnapshot, 16> dirtStepSnapshots;
     
     // Level tracking for meters
     std::atomic<float> inputLevel { -60.0f };
@@ -251,6 +278,9 @@ public:
     // AutoPan DSP Implementation
     AutoPan autoPan;
     PanVisualState panVis;
+    
+    // Dirt DSP Implementation
+    FxDirt dirt;
     
     // PanMan-style visualizer clock
     struct PanVisClock {
