@@ -42,17 +42,20 @@ struct PanVisualState {
 
 struct AutoPan
 {
-    void prepare(double sr, double smoothingMs = 30.0)
+    void prepare(double sr, double smoothingMs = 200.0)
     {
         sampleRate = (sr > 0.0 ? sr : 44100.0);
         const double secs = juce::jmax(0.0, smoothingMs) / 1000.0;
 
+        // Use longer smoothing for frequency to prevent clicks/scratches
         freqSmooth.reset(sampleRate, secs);
-        depthSmooth.reset(sampleRate, secs);
-        widthSmooth.reset(sampleRate, secs);
-        mixSmooth.reset(sampleRate, secs);
-        shapeSmooth.reset(sampleRate, secs);
-        phaseOffSmooth.reset(sampleRate, secs);
+        // Shorter smoothing for other params for more responsive feel
+        const double shortSecs = 50.0 / 1000.0;
+        depthSmooth.reset(sampleRate, shortSecs);
+        widthSmooth.reset(sampleRate, shortSecs);
+        mixSmooth.reset(sampleRate, shortSecs);
+        shapeSmooth.reset(sampleRate, shortSecs);
+        phaseOffSmooth.reset(sampleRate, shortSecs);
 
         // Keep phase continuous - don't reset it
         phase = juce::jlimit(0.0, 1.0, phase); // Now using 0..1 range
@@ -126,8 +129,8 @@ struct AutoPan
             // Pan amount: x ∈ [-depth, depth]
             const float x = dep * lfo;
 
-            // Convert to mid/side rotation angle φ in [-π/4, +π/4] scaled by x
-            const float phi = (juce::MathConstants<float>::pi * 0.25f) * x;
+            // Convert to mid/side rotation angle φ in [-π/2, +π/2] scaled by x for full L/R panning
+            const float phi = (juce::MathConstants<float>::pi * 0.5f) * x;
 
             // Mid/Side conversion
             float M = (inL + inR) * invSqrt2;

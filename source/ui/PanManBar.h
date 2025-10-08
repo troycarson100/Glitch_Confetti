@@ -94,7 +94,8 @@ private:
         // Use the same shapedLFO function as the audio processing
         const float phaseWithOffset = std::fmod(ph + phOff, 1.0f);
         const float lfo = shapedLFO(phaseWithOffset, shape);
-        const float x = 0.5f + 0.5f * (depth * lfo); // map [-1,1] -> [0,1]
+        // Invert LFO to match mid/side conversion (positive LFO = left in M/S)
+        const float x = 0.5f - 0.5f * (depth * lfo); // map [-1,1] -> [1,0] (inverted)
 
         // Small visual smoothing to remove timer jitter
         const float alpha = 0.25f;
