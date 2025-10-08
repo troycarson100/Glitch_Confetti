@@ -389,7 +389,7 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
             
             // Calculate correct Hz using proper sync formula
             const double bpm = getBpmOrDefault(120.0);
-            rate = syncedHz((float)bpm, div) * 0.25f; // 4x slower for panning
+            rate = syncedHz((float)bpm, div) * 0.5f; // 2x slower for panning
         }
         
         // Set AutoPan parameters using new click-free API
