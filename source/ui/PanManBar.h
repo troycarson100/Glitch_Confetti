@@ -15,6 +15,7 @@ public:
         std::function<float()>  getShape01;        // read APVTS wave shape (0..1)
         std::function<int()>    getWaveType;       // read APVTS wave type (0-4)
         std::function<bool()>   getInverted;       // read APVTS inverted flag
+        std::function<bool()>   getIsPlaying;      // read transport playing state
     };
 
     PanManBar(Reader r, int bins = 64)
@@ -84,9 +85,14 @@ private:
         const double sr   = reader.getSampleRate();
         const double ph0  = reader.getPhase01();
         const double incS = reader.getIncPerSample();
+        const bool isPlaying = reader.getIsPlaying ? reader.getIsPlaying() : true;
 
-        double ph = ph0 + incS * dtSec * (sr > 0.0 ? sr : 44100.0); // cycles
-        ph -= std::floor(ph); // wrap 0..1
+        // Only advance phase if playing
+        double ph = ph0;
+        if (isPlaying) {
+            ph = ph0 + incS * dtSec * (sr > 0.0 ? sr : 44100.0); // cycles
+            ph -= std::floor(ph); // wrap 0..1
+        }
 
         // Depth, phase offset, shape, wave type, and inverted from APVTS (safe to read on UI)
         const float depth = reader.getDepth01 ? reader.getDepth01() : 1.0f;

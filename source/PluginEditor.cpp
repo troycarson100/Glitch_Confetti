@@ -1152,6 +1152,14 @@ void PluginEditor::setupKnobs()
             auto* param = processorRef.getAPVTS().getRawParameterValue("autopanInverted");
             return param ? param->load() > 0.5f : false;
         };
+        r.getIsPlaying = [this] { 
+            // Check if sync is enabled and if so, check transport state
+            auto* syncParam = processorRef.getAPVTS().getRawParameterValue("autopanTimeSync");
+            if (syncParam && syncParam->load() > 0.5f) {
+                return processorRef.isTransportPlaying();
+            }
+            return true; // Free-running mode always plays
+        };
         
         panBar = std::make_unique<PanManBar>(r, 72); // 72 bins looks nice
         panBar->setColours(juce::Colour(0xFF2A2C30), juce::Colours::white); // dark track, white bins

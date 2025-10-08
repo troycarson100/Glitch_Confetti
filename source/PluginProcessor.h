@@ -126,6 +126,7 @@ public:
     
     // Public accessors for UI
     juce::AudioProcessorValueTreeState& getAPVTS() { return valueTreeState; }
+    bool isTransportPlaying() const noexcept { return wasPlaying.load(); }
     void getTransportSnapshot(TransportCache& dest) const noexcept;
     const SeqState& getSeqState() const { return seq; }
     
