@@ -294,8 +294,7 @@ public:
     
     // AutoPan sequencer components (independent from delay page)
     std::array<std::unique_ptr<StepButton>, 16> autopanStepButtons;
-    std::array<bool, 16> autopanStepStates { false, false, false, false, false, false, false, false,
-                                            false, false, false, false, false, false, false, false };
+    int autopanUiSelectedStep = 0;  // UI selected step for editing (0-15)
     std::unique_ptr<juce::Label> autopanStepAmountLabel;
     std::unique_ptr<juce::ComboBox> autopanRateDropdown;
     std::unique_ptr<CircularToggleButton> autopanStdToggle;

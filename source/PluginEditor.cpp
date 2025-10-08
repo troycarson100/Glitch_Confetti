@@ -412,10 +412,43 @@ void PluginEditor::timerCallback()
                 autopanValueLabels[i]->setText(valueText, juce::dontSendNotification);
             }
             
-            // Update indicator bars
+            // Update indicator bars to show current playing step's snapshot value
             if (autopanIndicatorBars[i] != nullptr)
             {
-                autopanIndicatorBars[i]->setValue(autopanKnobs[i]->getValue());
+                float indicatorValue = autopanKnobs[i]->getValue();
+                
+                // If AutoPan sequencer is enabled and running, show the playing step's snapshot value
+                const bool seqEnabled = processorRef.getAutoPanSeqState().enabled.load();
+                const bool seqActive = processorRef.getAutoPanSeqState().active.load();
+                const int playingStep = processorRef.getAutoPanPlayingStep();
+                
+                if (seqEnabled && seqActive && playingStep >= 0 && playingStep < 16)
+                {
+                    StepSnapshot s = processorRef.getAutoPanSafeSnapshot(playingStep);
+                    
+                    switch (i) {
+                        case 0: // Rate (0-1)
+                            indicatorValue = s.autopan.rate;
+                            break;
+                        case 1: // Phase (0-360, normalize to 0-1)
+                            indicatorValue = s.autopan.phase / 360.0f;
+                            break;
+                        case 2: // Wave Type (0-4, normalize to 0-1)
+                            indicatorValue = (float)s.autopan.waveType / 4.0f;
+                            break;
+                        case 3: // Wave Shape (0-1)
+                            indicatorValue = s.autopan.waveShape;
+                            break;
+                        case 4: // Inverted (0-1)
+                            indicatorValue = s.autopan.inverted ? 1.0f : 0.0f;
+                            break;
+                        case 5: // Amount (0-1)
+                            indicatorValue = s.autopan.amount;
+                            break;
+                    }
+                }
+                
+                autopanIndicatorBars[i]->setValue(indicatorValue);
             }
         }
     }
@@ -2953,7 +2986,7 @@ void PluginEditor::onAutoPanStepButtonClicked(int stepIndex)
     DBG("[UI] AutoPan step button " << stepIndex << " clicked");
     
     // Save current step's snapshot before switching
-    int currentStep = processorRef.getAutoPanCurrentStep();
+    int currentStep = autopanUiSelectedStep;  // Use UI selected step, not audio thread step
     if (currentStep >= 0 && currentStep < 16) {
         StepSnapshot currentSnapshot;
         // Read current AutoPan knob values and save to snapshot
@@ -2968,7 +3001,8 @@ void PluginEditor::onAutoPanStepButtonClicked(int stepIndex)
         DBG("[UI] Saved AutoPan snapshot for step " << currentStep);
     }
     
-    // Switch to new step
+    // Switch to new step (both UI and processor tracking)
+    autopanUiSelectedStep = stepIndex;
     processorRef.setAutoPanSelectedStep(stepIndex);
     
     // Load new step's snapshot into knobs
@@ -2980,12 +3014,8 @@ void PluginEditor::onAutoPanStepButtonClicked(int stepIndex)
     if (autopanKnobs[4]) autopanKnobs[4]->setValue(newSnapshot.autopan.inverted ? 1.0f : 0.0f, juce::sendNotification);
     if (autopanKnobs[5]) autopanKnobs[5]->setValue(newSnapshot.autopan.amount, juce::sendNotification);
     
-    // Update all step buttons to show only the selected one as active
-    for (int i = 0; i < 16; ++i) {
-        if (autopanStepButtons[i]) {
-            autopanStepButtons[i]->setSelected(i == stepIndex);
-        }
-    }
+    // Update UI will be called from timer
+    updateAutoPanSequencerUI();
     
     DBG("[UI] Switched to AutoPan step " << stepIndex);
 }
@@ -2993,17 +3023,17 @@ void PluginEditor::onAutoPanStepButtonClicked(int stepIndex)
 void PluginEditor::updateAutoPanSequencerUI()
 {
     // Update AutoPan step button selection and playing states
-    int selectedStep = processorRef.getAutoPanCurrentStep();
-    int playingStep = processorRef.getAutoPanPlayingStep();
+    int selectedStep = autopanUiSelectedStep;  // UI selected step for editing
+    int playingStep = processorRef.getAutoPanPlayingStep();  // Audio thread playing step
     const int stepsUsed = processorRef.getAutoPanSeqState().stepsUsed.load();
     
     for (int i = 0; i < 16; ++i) {
         if (autopanStepButtons[i] != nullptr) {
-            // Only the selected step should show as selected
+            // Selected step (clicked for editing) shows SVG
             autopanStepButtons[i]->setSelected(i == selectedStep);
-            // Show playing highlight if AutoPan sequencer is enabled
+            // Playing step (during sequencer playback) shows grey highlight
             bool sequencerEnabled = processorRef.getAutoPanSeqState().enabled.load();
-            autopanStepButtons[i]->setPlaying(sequencerEnabled && (i == playingStep));
+            autopanStepButtons[i]->setPlaying(sequencerEnabled && (i == playingStep) && (i != selectedStep));
             // Grey out inactive steps beyond stepsUsed
             bool shouldBeEnabled = i < stepsUsed;
             autopanStepButtons[i]->setEnabledStep(shouldBeEnabled);
