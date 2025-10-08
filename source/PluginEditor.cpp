@@ -1616,6 +1616,10 @@ void PluginEditor::updateAutoPanFxAreaVisibility()
     // Grey the time sync toggle
     if (autopanTimeSyncToggle) { autopanTimeSyncToggle->setAlpha(alpha); autopanTimeSyncToggle->setEnabled(autopanFxAreaEnabled); }
 
+    // Grey the All Steps toggle and label (these are in effects area)
+    if (autopanAllStepsToggle) { autopanAllStepsToggle->setAlpha(alpha); autopanAllStepsToggle->setEnabled(autopanFxAreaEnabled); }
+    if (autopanAllStepsLabel) autopanAllStepsLabel->setAlpha(alpha);
+
     // Grey the power button itself when off
     if (autopanFxPowerButton) autopanFxPowerButton->setAlpha(autopanFxAreaEnabled ? 1.0f : 0.3f);
 }
@@ -1640,8 +1644,34 @@ void PluginEditor::updateDirtFxAreaVisibility()
         }
     }
 
+    // Grey the All Steps toggle and label (these are in effects area)
+    if (dirtAllStepsToggle) { dirtAllStepsToggle->setAlpha(alpha); dirtAllStepsToggle->setEnabled(dirtFxAreaEnabled); }
+    if (dirtAllStepsLabel) dirtAllStepsLabel->setAlpha(alpha);
+
     // Grey the power button itself when off
     if (dirtFxPowerButton) dirtFxPowerButton->setAlpha(dirtFxAreaEnabled ? 1.0f : 0.3f);
+}
+
+void PluginEditor::updateDirtStepAreaVisibility()
+{
+    // Grey out Dirt step area components (not including All Steps toggle/label - those are in effects area)
+    float alpha = dirtStepAreaEnabled ? 1.0f : 0.3f;
+    
+    for (int i = 0; i < 16; ++i)
+    {
+        if (dirtStepButtons[i]) { 
+            dirtStepButtons[i]->setAlpha(alpha); 
+            dirtStepButtons[i]->setEnabled(dirtStepAreaEnabled);
+        }
+    }
+    
+    if (dirtStepTitle) dirtStepTitle->setAlpha(alpha);
+    if (dirtStepAmountLabel) { dirtStepAmountLabel->setAlpha(alpha); dirtStepAmountLabel->setEnabled(dirtStepAreaEnabled); }
+    if (dirtRateDropdown) { dirtRateDropdown->setAlpha(alpha); dirtRateDropdown->setEnabled(dirtStepAreaEnabled); }
+    if (dirtStdToggle) { dirtStdToggle->setAlpha(alpha); dirtStdToggle->setEnabled(dirtStepAreaEnabled); }
+    if (dirtStepDiceButton) { dirtStepDiceButton->setAlpha(alpha); dirtStepDiceButton->setEnabled(dirtStepAreaEnabled); }
+    if (dirtStepPowerButton) dirtStepPowerButton->setAlpha(dirtStepAreaEnabled ? 1.0f : 0.3f);
+    // Note: All Steps toggle/label are NOT controlled here - they're in the effects area
 }
 
 //==============================================================================
@@ -3099,6 +3129,7 @@ void PluginEditor::setupAutoPanSequencerArea()
         }
         
         updateAutoPanStepAreaVisibility();
+        repaint();
         DBG("[UI] AutoPan seq.enabled=" << processorRef.getAutoPanSeqState().enabled.load() 
             << " active=" << processorRef.getAutoPanSeqState().active.load());
     };
@@ -3586,6 +3617,9 @@ void PluginEditor::setupDirtSequencerArea()
         } else {
             processorRef.setDirtSequencerEnabled(true);
         }
+        
+        updateDirtStepAreaVisibility();
+        repaint();
     };
     
     DBG("[UI] Dirt sequencer area setup complete");
@@ -3920,19 +3954,22 @@ void PluginEditor::updateAutoPanSequencerUI()
 
 void PluginEditor::updateAutoPanStepAreaVisibility()
 {
-    // Toggle visibility of AutoPan step area components
-    bool visible = autopanStepAreaEnabled;
+    // Grey out AutoPan step area components (not including All Steps toggle/label - those are in effects area)
+    float alpha = autopanStepAreaEnabled ? 1.0f : 0.3f;
     
     for (int i = 0; i < 16; ++i)
     {
-        if (autopanStepButtons[i]) autopanStepButtons[i]->setVisible(visible);
+        if (autopanStepButtons[i]) { 
+            autopanStepButtons[i]->setAlpha(alpha); 
+            autopanStepButtons[i]->setEnabled(autopanStepAreaEnabled);
+        }
     }
     
-    if (autopanStepTitle) autopanStepTitle->setVisible(visible);
-    if (autopanStepAmountLabel) autopanStepAmountLabel->setVisible(visible);
-    if (autopanRateDropdown) autopanRateDropdown->setVisible(visible);
-    if (autopanStdToggle) autopanStdToggle->setVisible(visible);
-    if (autopanStepDiceButton) autopanStepDiceButton->setVisible(visible);
-    if (autopanAllStepsToggle) autopanAllStepsToggle->setVisible(visible);
-    if (autopanAllStepsLabel) autopanAllStepsLabel->setVisible(visible);
+    if (autopanStepTitle) autopanStepTitle->setAlpha(alpha);
+    if (autopanStepAmountLabel) { autopanStepAmountLabel->setAlpha(alpha); autopanStepAmountLabel->setEnabled(autopanStepAreaEnabled); }
+    if (autopanRateDropdown) { autopanRateDropdown->setAlpha(alpha); autopanRateDropdown->setEnabled(autopanStepAreaEnabled); }
+    if (autopanStdToggle) { autopanStdToggle->setAlpha(alpha); autopanStdToggle->setEnabled(autopanStepAreaEnabled); }
+    if (autopanStepDiceButton) { autopanStepDiceButton->setAlpha(alpha); autopanStepDiceButton->setEnabled(autopanStepAreaEnabled); }
+    if (autopanStepPowerButton) autopanStepPowerButton->setAlpha(autopanStepAreaEnabled ? 1.0f : 0.3f);
+    // Note: All Steps toggle/label are NOT controlled here - they're in the effects area
 }

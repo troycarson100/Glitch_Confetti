@@ -381,6 +381,7 @@ public:
         void updateAutoPanFxAreaVisibility();
         void updateAutoPanStepAreaVisibility();
         void updateDirtFxAreaVisibility();
+        void updateDirtStepAreaVisibility();
         void randomizeAutoPanKnobValues();
         void randomizeIndividualAutoPanKnob(int knobIndex);
         void updateAutoPanParameterFromKnob(int knobIndex);
