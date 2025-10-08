@@ -3122,12 +3122,6 @@ void PluginEditor::setupDirtKnobs()
     const int startY = effectArea.getY() + effectArea.getHeight() - 210; // EXACT same as delay page
     
     for (int i = 0; i < 8; ++i) {
-        // Calculate position (4 knobs per row, 2 rows)
-        int row = i / 4;
-        int col = i % 4;
-        int x = startX + col * (knobSize + knobSpacing);
-        int y = startY + row * (knobSize + knobSpacing + 30);
-        
         // Create knob
         dirtKnobs[i] = std::make_unique<CustomKnob>();
         addAndMakeVisible(dirtKnobs[i].get());
@@ -3213,11 +3207,20 @@ void PluginEditor::setupDirtKnobs()
         if (assets.knobInside) {
             dirtKnobs[i]->setInnerImage(assets.knobInside->createCopy());
         }
-
-        // Position the knob
+        
+        // Position knob (EXACT same logic as AutoPan/Delay page)
+        int x = startX + (i % 4) * (knobSize + knobSpacing);
+        int y = startY + (i / 4) * (knobSize + 20);
+        
+        // Move all knob groups up 6px from current position, then top 4 down 8px (EXACT same as delay page)
+        if (i < 4)
+            y -= 23; // Moved up 6px from -25 to -31, then down 8px to -23
+        else
+            y -= 1; // Moved up 6px from +5 to -1
+            
         dirtKnobs[i]->setBounds(x, y, knobSize, knobSize);
         
-        // Create knob label (title above knob)
+        // Create knob label (EXACT same positioning as AutoPan page)
         dirtKnobLabels[i] = std::make_unique<juce::Label>();
         dirtKnobLabels[i]->setText(dirtKnobNames[i], juce::dontSendNotification);
         dirtKnobLabels[i]->setFont(juce::Font(12.0f, juce::Font::bold));
@@ -3225,36 +3228,42 @@ void PluginEditor::setupDirtKnobs()
         dirtKnobLabels[i]->setJustificationType(juce::Justification::centred);
         addAndMakeVisible(dirtKnobLabels[i].get());
         dirtKnobLabels[i]->setVisible(false);
-        dirtKnobLabels[i]->setBounds(x, y - 25, knobSize, 20);
+        dirtKnobLabels[i]->setBounds(x, y - 15, knobSize, 20); // EXACT same as AutoPan page
         
-        // Create value label (shows current value below knob)
+        // Create value label (EXACT same positioning as AutoPan page)
         dirtValueLabels[i] = std::make_unique<juce::Label>();
-        dirtValueLabels[i]->setFont(juce::Font(12.0f));
+        dirtValueLabels[i]->setText("0", juce::dontSendNotification);
+        dirtValueLabels[i]->setFont(juce::Font(10.0f, juce::Font::plain));
         dirtValueLabels[i]->setColour(juce::Label::textColourId, juce::Colours::white);
         dirtValueLabels[i]->setJustificationType(juce::Justification::centred);
         addAndMakeVisible(dirtValueLabels[i].get());
         dirtValueLabels[i]->setVisible(false);
-        dirtValueLabels[i]->setBounds(x, y + knobSize + 18, knobSize, 20);
+        dirtValueLabels[i]->setBounds(x, y + knobSize - 10, knobSize, 15); // EXACT same as AutoPan page
         
-        // Create indicator bar
+        // Create indicator bar (EXACT same positioning as AutoPan page)
         dirtIndicatorBars[i] = std::make_unique<IndicatorBar>();
         addAndMakeVisible(dirtIndicatorBars[i].get());
         dirtIndicatorBars[i]->setVisible(false);
-        dirtIndicatorBars[i]->setBounds(x + 10, y + knobSize + 8, knobSize - 20, 13);
+        dirtIndicatorBars[i]->setBounds(x + 10, y + knobSize + 8, knobSize - 20, 13); // EXACT same as AutoPan page
         dirtIndicatorBars[i]->setValue(0.5f);
         
-        // Create dice button (hidden like delay page)
+        // Create dice button (hidden like AutoPan page)
         dirtDiceButtons[i] = std::make_unique<CustomDiceButton>();
         dirtDiceButtons[i]->onClick = [this, i]() { randomizeIndividualDirtKnob(i); };
         
-        // Create lock button
+        // Create lock button (EXACT same positioning logic as AutoPan page)
         dirtLockButtons[i] = std::make_unique<LockButton>();
         addAndMakeVisible(dirtLockButtons[i].get());
         dirtLockButtons[i]->setVisible(false);
         
         const int diceSize = 10;
-        const int lockX = x + knobSize - diceSize - 5 + 10;
-        const int lockY = y - 20 - 2;
+        const int diceSpacing = 5;
+        
+        juce::Font labelFont(12.0f, juce::Font::bold);
+        int textWidth = labelFont.getStringWidth(dirtKnobNames[i]);
+        int lockX = x + (knobSize / 2) + (textWidth / 2) + diceSpacing;
+        int lockY = y - 10;
+        
         dirtLockButtons[i]->setBounds(lockX, lockY, diceSize, diceSize);
         
         if (assets.unlockedIcon && assets.lockedIcon) {
@@ -3309,66 +3318,71 @@ void PluginEditor::setupDirtSequencerArea()
 {
     DBG("[UI] Setting up Dirt sequencer area...");
     
+    // Sequencer area bounds (EXACT same as AutoPan page)
     auto sequencerArea = juce::Rectangle<int>(25, 374, 413, 140);
     
-    // Create 16 step buttons (4x4 grid)
-    const int buttonSize = 44;
-    const int buttonSpacing = 10;
-    const int gridStartX = sequencerArea.getX() + 15;
-    const int gridStartY = sequencerArea.getY() + 50;
+    // Create step title (EXACT same as AutoPan)
+    dirtStepTitle = std::make_unique<juce::Label>();
+    dirtStepTitle->setText("STEP", juce::dontSendNotification);
+    dirtStepTitle->setFont(juce::Font(22.118f, juce::Font::bold)); // 20% smaller: 27.648f * 0.8 = 22.118f
+    dirtStepTitle->setColour(juce::Label::textColourId, juce::Colours::white);
+    dirtStepTitle->setJustificationType(juce::Justification::centredLeft);
+    addAndMakeVisible(dirtStepTitle.get());
+    dirtStepTitle->setVisible(false);
+    dirtStepTitle->setBounds(sequencerArea.getX() + 10, sequencerArea.getY(), 80, 30);
+    
+    // Create step buttons (2 rows of 8, EXACT same layout as AutoPan page)
+    const int buttonSize = 40;
+    const int buttonSpacing = 8;
+    const int startX = sequencerArea.getX() + 20;
+    const int startY = sequencerArea.getY() + 35;
     
     for (int i = 0; i < 16; ++i) {
-        int row = i / 4;
-        int col = i % 4;
-        int x = gridStartX + col * (buttonSize + buttonSpacing);
-        int y = gridStartY + row * (buttonSize + buttonSpacing);
-        
         dirtStepButtons[i] = std::make_unique<StepButton>(i);
         addAndMakeVisible(dirtStepButtons[i].get());
         dirtStepButtons[i]->setVisible(false);
+        
+        // Position buttons in 2 rows of 8 (EXACT same as AutoPan page)
+        int x = startX + (i % 8) * (buttonSize + buttonSpacing);
+        int y = startY + (i / 8) * (buttonSize + buttonSpacing);
+        
         dirtStepButtons[i]->setBounds(x, y, buttonSize, buttonSize);
         
-        if (assets.stepInactive) {
-            dirtStepButtons[i]->setInactiveImage(assets.stepInactive->createCopy());
-        }
+        // Set step button images
         if (assets.stepActive) {
             dirtStepButtons[i]->setActiveImage(assets.stepActive->createCopy());
+        }
+        if (assets.stepInactive) {
+            dirtStepButtons[i]->setInactiveImage(assets.stepInactive->createCopy());
         }
         
         dirtStepButtons[i]->onClick = [this, i]() { onDirtStepButtonClicked(i); };
     }
     
-    // Create "STEP" title
-    dirtStepTitle = std::make_unique<juce::Label>();
-    dirtStepTitle->setText("STEP", juce::dontSendNotification);
-    dirtStepTitle->setFont(juce::Font(27.648f, juce::Font::bold));
-    dirtStepTitle->setColour(juce::Label::textColourId, juce::Colours::white);
-    dirtStepTitle->setJustificationType(juce::Justification::centredLeft);
-    addAndMakeVisible(dirtStepTitle.get());
-    dirtStepTitle->setVisible(false);
-    dirtStepTitle->setBounds(sequencerArea.getX() + 10, sequencerArea.getY() + 5, 100, 30);
-    
-    // Create step amount label
+    // Create step amount label (EXACT same as AutoPan)
     dirtStepAmountLabel = std::make_unique<juce::Label>();
     dirtStepAmountLabel->setText("16", juce::dontSendNotification);
-    dirtStepAmountLabel->setFont(juce::Font(16.8f, juce::Font::bold));
+    dirtStepAmountLabel->setFont(juce::Font(16.0f, juce::Font::bold));
     dirtStepAmountLabel->setColour(juce::Label::textColourId, juce::Colours::white);
+    dirtStepAmountLabel->setColour(juce::Label::backgroundColourId, juce::Colours::transparentBlack);
+    dirtStepAmountLabel->setColour(juce::Label::outlineColourId, juce::Colours::white);
     dirtStepAmountLabel->setJustificationType(juce::Justification::centred);
-    dirtStepAmountLabel->setEditable(true);
-    addAndMakeVisible(dirtStepAmountLabel.get());
-    dirtStepAmountLabel->setVisible(false);
-    dirtStepAmountLabel->setBounds(gridStartX + 4 * (buttonSize + buttonSpacing) + 25, gridStartY - 5, 40, 30);
-    
+    dirtStepAmountLabel->setBorderSize(juce::BorderSize<int>(2));
+    dirtStepAmountLabel->setEditable(true, true, false);
     dirtStepAmountLabel->onTextChange = [this]() {
         int value = dirtStepAmountLabel->getText().getIntValue();
         if (value >= 1 && value <= 16) {
+            value = juce::jlimit(1, 16, value);
             processorRef.setDirtStepsUsed(value);
             dirtStepAmountLabel->setText(juce::String(value), juce::dontSendNotification);
             updateDirtSequencerUI();
         }
     };
+    addAndMakeVisible(dirtStepAmountLabel.get());
+    dirtStepAmountLabel->setVisible(false);
+    dirtStepAmountLabel->setBounds(sequencerArea.getX() + 180, sequencerArea.getY() - 10, 30, 25);
     
-    // Create rate dropdown
+    // Create rate dropdown (EXACT same as AutoPan)
     dirtRateDropdown = std::make_unique<juce::ComboBox>();
     dirtRateDropdown->addItem("4", 1);
     dirtRateDropdown->addItem("2", 2);
@@ -3378,7 +3392,7 @@ void PluginEditor::setupDirtSequencerArea()
     dirtRateDropdown->addItem("1/8", 6);
     dirtRateDropdown->addItem("1/16", 7);
     dirtRateDropdown->addItem("1/32", 8);
-    dirtRateDropdown->setSelectedId(6); // Default to 1/8
+    dirtRateDropdown->setSelectedId(6);
     
     const int processorDivIdx = processorRef.getDirtSeqState().divisionIndex.load();
     dirtRateDropdown->setSelectedId(processorDivIdx + 1);
@@ -3400,16 +3414,14 @@ void PluginEditor::setupDirtSequencerArea()
     };
     addAndMakeVisible(dirtRateDropdown.get());
     dirtRateDropdown->setVisible(false);
-    dirtRateDropdown->setBounds(gridStartX + 4 * (buttonSize + buttonSpacing) + 25, gridStartY + 35, 90, 30);
+    dirtRateDropdown->setBounds(sequencerArea.getX() + 240, sequencerArea.getY() - 10, 60, 25);
     
-    // Create step dice button
+    // Create step dice button (EXACT same positioning as AutoPan)
     dirtStepDiceButton = std::make_unique<CustomDiceButton>();
     addAndMakeVisible(dirtStepDiceButton.get());
     dirtStepDiceButton->setVisible(false);
-    
-    const int stepDiceSize = 40;
-    dirtStepDiceButton->setBounds(sequencerArea.getX() + sequencerArea.getWidth() - stepDiceSize - 5 + 15 - 5, 
-                                  sequencerArea.getY() - 5 - 40 + 25, stepDiceSize, stepDiceSize);
+    int dirtStepDiceSize = static_cast<int>(35 * 0.7); // 30% smaller than 35px = ~24px
+    dirtStepDiceButton->setBounds(sequencerArea.getX() + 75, sequencerArea.getY() + 5, dirtStepDiceSize, dirtStepDiceSize);
     
     if (assets.diceLarge != nullptr) {
         dirtStepDiceButton->setDiceImage(assets.diceLarge->createCopy());
@@ -3445,7 +3457,7 @@ void PluginEditor::setupDirtSequencerArea()
         if (dirtKnobs[7]) dirtKnobs[7]->setValue(currentSnapshot.dirt.mix, juce::sendNotification);
     };
     
-    // Create step power button
+    // Create step power button (EXACT same positioning as AutoPan)
     dirtStepPowerButton = std::make_unique<juce::DrawableButton>("dirtStepPower", juce::DrawableButton::ButtonStyle::ImageFitted);
     addAndMakeVisible(dirtStepPowerButton.get());
     dirtStepPowerButton->setVisible(false);
