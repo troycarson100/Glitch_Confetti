@@ -2864,12 +2864,22 @@ void PluginEditor::setupAutoPanSequencerArea()
         autopanStepPowerButton->setImages(assets.stepPowerOn->createCopy().get());
     }
     
-    autopanStepPowerButton->onClick = [this]() { 
-        autopanStepAreaEnabled = !autopanStepAreaEnabled;
-        // Enable/disable the AutoPan sequencer in processor
-        processorRef.setAutoPanSequencerEnabled(autopanStepAreaEnabled);
+    // Set up click handler (EXACT same as delay page)
+    autopanStepPowerButton->setClickingTogglesState(true);
+    autopanStepPowerButton->setToggleState(autopanStepAreaEnabled, juce::dontSendNotification);
+    autopanStepPowerButton->onClick = [this]() {
+        autopanStepAreaEnabled = autopanStepPowerButton->getToggleState();
+        DBG("[UI] AutoPan step area power: " << (autopanStepAreaEnabled ? "ON" : "OFF"));
+        
+        if (!autopanStepAreaEnabled) {
+            // Disable sequencer when turning OFF
+            processorRef.setAutoPanSequencerEnabled(false);
+        } else {
+            // Enable sequencer when turning ON
+            processorRef.setAutoPanSequencerEnabled(true);
+        }
+        
         updateAutoPanStepAreaVisibility();
-        DBG("[UI] AutoPan sequencer " << (autopanStepAreaEnabled ? "enabled" : "disabled"));
         DBG("[UI] AutoPan seq.enabled=" << processorRef.getAutoPanSeqState().enabled.load() 
             << " active=" << processorRef.getAutoPanSeqState().active.load());
     };
