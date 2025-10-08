@@ -236,7 +236,6 @@ public:
     std::unique_ptr<DualBarMeter> inMeter, outMeter;
     
     // L/C/R pan indicator
-    std::unique_ptr<class PanIndicator> panIndicator;
     std::unique_ptr<PanManBar> panBar;
     
     // Effects area components

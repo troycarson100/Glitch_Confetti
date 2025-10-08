@@ -418,13 +418,6 @@ void PluginEditor::timerCallback()
         }
     }
     
-    // Update pan indicator - use actual AutoPan position for perfect sync
-    if (panIndicator != nullptr)
-    {
-        // Get current pan position directly from AutoPan processor
-        float panPosition = processorRef.getCurrentPanPosition();
-        panIndicator->setPanPosition(panPosition);
-    }
     
     // Update sequencer UI
     updateSequencerUI();
@@ -1132,10 +1125,6 @@ void PluginEditor::setupKnobs()
         addAndMakeVisible(*inMeter);
         addAndMakeVisible(*outMeter);
         
-        // Create pan indicator
-        panIndicator = std::make_unique<PanIndicator>();
-        addAndMakeVisible(*panIndicator);
-        
         // Create PanManBar visualizer
         PanManBar::Reader r;
         r.getPhase01 = [this] { return processorRef.panClock.phase01.load(std::memory_order_acquire); };
@@ -1158,11 +1147,8 @@ void PluginEditor::setupKnobs()
         inMeter->setBounds(startX - meterSpacing - meterWidth + 10, y + (knobSize - meterHeight) / 2, meterWidth, meterHeight);  // Move right 10px
         outMeter->setBounds(startX + totalKnobWidth + meterSpacing - 10, y + (knobSize - meterHeight) / 2, meterWidth, meterHeight);  // Move left 10px
         
-        // Position pan indicator above the master knobs (90px smaller width, moved up 250px)
-        panIndicator->setBounds(startX - meterSpacing - meterWidth + 10, y - 285, (meterWidth * 2 + meterSpacing + totalKnobWidth - 20) - 90, 25);
-        
-        // Position PanManBar below the pan indicator
-        panBar->setBounds(startX - meterSpacing - meterWidth + 10, y - 250, (meterWidth * 2 + meterSpacing + totalKnobWidth - 20) - 90, 24);
+        // Position PanManBar above the master knobs
+        panBar->setBounds(startX - meterSpacing - meterWidth + 10, y - 285, (meterWidth * 2 + meterSpacing + totalKnobWidth - 20) - 90, 24);
         
         DBG("[UI] Master knobs and stereo meters setup complete");
     }
