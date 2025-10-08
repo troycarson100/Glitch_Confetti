@@ -43,10 +43,6 @@ public:
             g.fillRect(x, r.getCentreY() - 8.0f, 1.0f, 16.0f);
         }
 
-        // Center label only
-        g.setColour(juce::Colours::white.withAlpha(0.85f));
-        g.setFont(12.0f);
-        g.drawFittedText("C", getLocalBounds().withTrimmedLeft(getWidth()/2 - 10).withWidth(20), juce::Justification::centred, 1);
 
         // Compute bin rectangles area (shrink inside the track)
         auto binsArea = r.reduced(8.0f, r.getHeight() * 0.35f);
