@@ -380,6 +380,7 @@ public:
         void setupAutoPanStepPowerButton();
         void updateAutoPanFxAreaVisibility();
         void updateAutoPanStepAreaVisibility();
+        void updateDirtFxAreaVisibility();
         void randomizeAutoPanKnobValues();
         void randomizeIndividualAutoPanKnob(int knobIndex);
         void updateAutoPanParameterFromKnob(int knobIndex);

@@ -1593,6 +1593,57 @@ void PluginEditor::updateFxAreaVisibility()
     if (fxPowerButton) fxPowerButton->setAlpha(fxAreaEnabled ? 1.0f : 0.3f);
 }
 
+void PluginEditor::updateAutoPanFxAreaVisibility()
+{
+    float alpha = autopanFxAreaEnabled ? 1.0f : 0.3f;
+
+    // Grey title, dice
+    if (autopanEffectsTitle) autopanEffectsTitle->setAlpha(alpha);
+    if (autopanDiceButton) { autopanDiceButton->setAlpha(alpha); autopanDiceButton->setEnabled(autopanFxAreaEnabled); }
+
+    // Grey knobs, labels, values, indicators, locks
+    for (int i = 0; i < 6; ++i) {
+        if (autopanKnobs[i]) { autopanKnobs[i]->setAlpha(alpha); autopanKnobs[i]->setEnabled(autopanFxAreaEnabled); }
+        if (autopanKnobLabels[i]) autopanKnobLabels[i]->setAlpha(alpha);
+        if (autopanValueLabels[i]) autopanValueLabels[i]->setAlpha(alpha);
+        if (autopanIndicatorBars[i]) autopanIndicatorBars[i]->setAlpha(alpha);
+        if (autopanLockButtons[i]) { 
+            autopanLockButtons[i]->setEnabled(autopanFxAreaEnabled);
+            autopanLockButtons[i]->setAlpha(alpha);
+        }
+    }
+
+    // Grey the time sync toggle
+    if (autopanTimeSyncToggle) { autopanTimeSyncToggle->setAlpha(alpha); autopanTimeSyncToggle->setEnabled(autopanFxAreaEnabled); }
+
+    // Grey the power button itself when off
+    if (autopanFxPowerButton) autopanFxPowerButton->setAlpha(autopanFxAreaEnabled ? 1.0f : 0.3f);
+}
+
+void PluginEditor::updateDirtFxAreaVisibility()
+{
+    float alpha = dirtFxAreaEnabled ? 1.0f : 0.3f;
+
+    // Grey title, dice
+    if (dirtEffectsTitle) dirtEffectsTitle->setAlpha(alpha);
+    if (dirtDiceButton) { dirtDiceButton->setAlpha(alpha); dirtDiceButton->setEnabled(dirtFxAreaEnabled); }
+
+    // Grey knobs, labels, values, indicators, locks
+    for (int i = 0; i < 8; ++i) {
+        if (dirtKnobs[i]) { dirtKnobs[i]->setAlpha(alpha); dirtKnobs[i]->setEnabled(dirtFxAreaEnabled); }
+        if (dirtKnobLabels[i]) dirtKnobLabels[i]->setAlpha(alpha);
+        if (dirtValueLabels[i]) dirtValueLabels[i]->setAlpha(alpha);
+        if (dirtIndicatorBars[i]) dirtIndicatorBars[i]->setAlpha(alpha);
+        if (dirtLockButtons[i]) { 
+            dirtLockButtons[i]->setEnabled(dirtFxAreaEnabled);
+            dirtLockButtons[i]->setAlpha(alpha);
+        }
+    }
+
+    // Grey the power button itself when off
+    if (dirtFxPowerButton) dirtFxPowerButton->setAlpha(dirtFxAreaEnabled ? 1.0f : 0.3f);
+}
+
 //==============================================================================
 // All Steps Toggle Setup
 //==============================================================================
@@ -2302,7 +2353,7 @@ void PluginEditor::setupTabSystem()
     }
     if (assets.tabDirtIcon) { // Using Dirt icon SVG for the third tab
         tabDirt->setImages(assets.tabDirtIcon->createCopy().release(),
-                          nullptr, nullptr, nullptr, nullptr, nullptr);
+                             nullptr, nullptr, nullptr, nullptr, nullptr);
     }
     
     // Add bright background colors to make tabs visible for testing
@@ -2814,9 +2865,13 @@ void PluginEditor::setupAutoPanEffectsArea()
         autopanFxPowerButton->setImages(assets.fxPowerOn->createCopy().get());
     }
     
+    autopanFxPowerButton->setClickingTogglesState(true);
+    autopanFxPowerButton->setToggleState(autopanFxAreaEnabled, juce::dontSendNotification);
     autopanFxPowerButton->onClick = [this]() { 
-        autopanFxAreaEnabled = !autopanFxAreaEnabled;
+        autopanFxAreaEnabled = autopanFxPowerButton->getToggleState();
+        DBG("[UI] AutoPan FX power: " << (autopanFxAreaEnabled ? "ON" : "OFF"));
         updateAutoPanFxAreaVisibility();
+        repaint();
         
         // Update processor parameter
         auto* autopanEnabledParam = processorRef.getAPVTS().getParameter("autopanEnabled");
@@ -3031,7 +3086,7 @@ void PluginEditor::setupAutoPanSequencerArea()
     // Set up click handler (EXACT same as delay page)
     autopanStepPowerButton->setClickingTogglesState(true);
     autopanStepPowerButton->setToggleState(autopanStepAreaEnabled, juce::dontSendNotification);
-    autopanStepPowerButton->onClick = [this]() {
+    autopanStepPowerButton->onClick = [this]() { 
         autopanStepAreaEnabled = autopanStepPowerButton->getToggleState();
         DBG("[UI] AutoPan step area power: " << (autopanStepAreaEnabled ? "ON" : "OFF"));
         
@@ -3335,6 +3390,8 @@ void PluginEditor::setupDirtEffectsArea()
     dirtFxPowerButton->onClick = [this]() {
         dirtFxAreaEnabled = dirtFxPowerButton->getToggleState();
         DBG("[UI] Dirt FX power: " << (dirtFxAreaEnabled ? "ON" : "OFF"));
+        updateDirtFxAreaVisibility();
+        repaint();
     };
     
     DBG("[UI] Dirt effects area setup complete");
@@ -3440,7 +3497,7 @@ void PluginEditor::setupDirtSequencerArea()
     };
     addAndMakeVisible(dirtRateDropdown.get());
     dirtRateDropdown->setVisible(false);
-    dirtRateDropdown->setBounds(sequencerArea.getX() + 240, sequencerArea.getY() - 10, 60, 25);
+    dirtRateDropdown->setBounds(sequencerArea.getX() + 220, sequencerArea.getY() - 10, 74, 25); // EXACT same as AutoPan
     
     // Create STD toggle (EXACT same positioning as AutoPan)
     dirtStdToggle = std::make_unique<CircularToggleButton>();
@@ -3681,7 +3738,7 @@ void PluginEditor::onAutoPanStepButtonClicked(int stepIndex)
     if (autopanKnobs[5]) autopanKnobs[5]->setValue(newSnapshot.autopan.amount, juce::sendNotification);
     
     // Update UI will be called from timer
-    updateAutoPanSequencerUI();
+        updateAutoPanSequencerUI();
     
     DBG("[UI] Switched to AutoPan step " << stepIndex);
 }
@@ -3859,25 +3916,6 @@ void PluginEditor::updateAutoPanSequencerUI()
         int divisionIndex = processorRef.getAutoPanSeqState().divisionIndex.load();
         autopanRateDropdown->setSelectedId(divisionIndex + 1);
     }
-}
-
-void PluginEditor::updateAutoPanFxAreaVisibility()
-{
-    // Toggle visibility of AutoPan effect area components
-    bool visible = autopanFxAreaEnabled;
-    
-    for (int i = 0; i < 6; ++i)
-    {
-        if (autopanKnobs[i]) autopanKnobs[i]->setVisible(visible);
-        if (autopanKnobLabels[i]) autopanKnobLabels[i]->setVisible(visible);
-        if (autopanValueLabels[i]) autopanValueLabels[i]->setVisible(visible);
-        if (autopanIndicatorBars[i]) autopanIndicatorBars[i]->setVisible(visible);
-        if (autopanLockButtons[i]) autopanLockButtons[i]->setVisible(visible);
-    }
-    
-    if (autopanEffectsTitle) autopanEffectsTitle->setVisible(visible);
-    if (autopanDiceButton) autopanDiceButton->setVisible(visible);
-    if (autopanTimeSyncToggle) autopanTimeSyncToggle->setVisible(visible);
 }
 
 void PluginEditor::updateAutoPanStepAreaVisibility()
