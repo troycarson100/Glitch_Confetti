@@ -2912,6 +2912,13 @@ void PluginEditor::setupAutoPanAllStepsToggle()
         );
     }
     
+    // Set up click handler (EXACT same as delay page)
+    autopanAllStepsToggle->setToggleState(false, juce::dontSendNotification);
+    autopanAllStepsToggle->onClick = [this]() {
+        autopanAllStepsEnabled = autopanAllStepsToggle->getToggleState();
+        DBG("[UI] AutoPan All Steps toggle: " << (autopanAllStepsEnabled ? "ON" : "OFF") << " toggleState=" << autopanAllStepsToggle->getToggleState());
+    };
+    
     // Create "All Steps" label
     autopanAllStepsLabel = std::make_unique<juce::Label>();
     autopanAllStepsLabel->setText("All Steps", juce::dontSendNotification);
