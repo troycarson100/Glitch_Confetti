@@ -130,18 +130,35 @@ public:
     void getTransportSnapshot(TransportCache& dest) const noexcept;
     const SeqState& getSeqState() const { return seq; }
     
-    // Sequencer state access for editor
+    // Sequencer state access for editor (Delay)
     int getPlayingStep() const noexcept { return seq.playingStep.load(); }
     int getCurrentSeqStepAudioThread() const noexcept { return seq.currentStep.load(); } // Read from audio thread
+    
+    // AutoPan sequencer state access for editor
+    const SeqState& getAutoPanSeqState() const { return autopanSeq; }
+    int getAutoPanPlayingStep() const noexcept { return autopanSeq.playingStep.load(); }
+    int getAutoPanCurrentStep() const noexcept { return autopanSeq.currentStep.load(); }
+    void setAutoPanSelectedStep(int step) noexcept { autopanUiSelectedStep.store(step); }
+    void setAutoPanSequencerEnabled(bool enabled) noexcept {
+        autopanSeq.enabled.store(enabled);
+        if (enabled) {
+            autopanSeq.active.store(true);
+        }
+    }
     bool getSeqActive() const noexcept { return seq.active.load(); }
     int getSelectedStep() const noexcept { return uiSelectedStep.load(); }
     bool isSequencerEnabled() const noexcept { return seq.enabled.load(); }
     double getBpmOrDefault(double fallback = 120.0) const noexcept { auto b = transportCache.bpm.load(); return b > 0.0 ? b : fallback; }
     
-    // Step snapshot access
+    // Step snapshot access (Delay)
     StepSnapshot getSafeSnapshot(int step) const;
     void setStepSnapshot(int step, const StepSnapshot& snapshot) noexcept;
     void setSelectedStep(int step) noexcept { uiSelectedStep.store(step); }
+    
+    // AutoPan snapshot access
+    StepSnapshot getAutoPanSafeSnapshot(int step) const;
+    void setAutoPanStepSnapshot(int step, const StepSnapshot& snapshot) noexcept;
+    void updateAutoPanCurrentStepSnapshot(int knobIndex, float value);
     void setSequencerEnabled(bool enabled) noexcept { 
         seq.enabled.store(enabled); 
         // Only set active if enabled, otherwise leave active state for transport watcher
@@ -189,14 +206,19 @@ private:
     // Helper function for sequencer (legacy - now handled by SeqState::beatsPerStepFromDivision)
     static double divisionToBeats(int divIdx);
     
-    // Sequencer state
+    // Sequencer state (Delay page)
     SeqState seq;
     std::atomic<int> uiSelectedStep { 0 };  // Editor's selected step for editing only
     bool prevHostPlaying = false;
     std::chrono::high_resolution_clock::time_point standaloneStartTime;
     
-    // Step snapshots storage
+    // AutoPan sequencer state (independent from delay)
+    SeqState autopanSeq;
+    std::atomic<int> autopanUiSelectedStep { 0 };  // AutoPan editor's selected step
+    
+    // Step snapshots storage (shared structure, independent sequencing)
     std::array<StepSnapshot, 16> stepSnapshots;
+    std::array<StepSnapshot, 16> autopanStepSnapshots;
     
     // Level tracking for meters
     std::atomic<float> inputLevel { -60.0f };

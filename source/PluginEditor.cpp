@@ -2816,9 +2816,73 @@ void PluginEditor::setupAutoPanStepPowerButton()
 
 
 // AutoPan helper methods
-void PluginEditor::randomizeAutoPanKnobValues() { /* TODO: Implement */ }
-void PluginEditor::randomizeIndividualAutoPanKnob(int knobIndex) { /* TODO: Implement */ }
-void PluginEditor::updateAutoPanParameterFromKnob(int knobIndex) { /* TODO: Implement */ }
+void PluginEditor::randomizeAutoPanKnobValues()
+{
+    DBG("[UI] Randomizing AutoPan knob values...");
+    
+    for (int i = 0; i < 6; ++i)
+    {
+        if (autopanLockButtons[i] && autopanLockButtons[i]->getToggleState()) {
+            continue; // Skip locked knobs
+        }
+        
+        float randomValue = juce::Random::getSystemRandom().nextFloat();
+        
+        // Special handling for specific knobs
+        switch (i) {
+            case 2: // Wave Type (0-4)
+                randomValue = (float)(juce::Random::getSystemRandom().nextInt(5)); // 0, 1, 2, 3, or 4
+                break;
+            case 4: // Inverted (0 or 1)
+                randomValue = (float)(juce::Random::getSystemRandom().nextInt(2)); // 0 or 1
+                break;
+            default:
+                // Other knobs use full 0-1 range
+                break;
+        }
+        
+        if (autopanKnobs[i]) {
+            autopanKnobs[i]->setValue(randomValue, juce::sendNotification);
+        }
+    }
+    
+    DBG("[UI] All AutoPan knob values randomized");
+}
+
+void PluginEditor::randomizeIndividualAutoPanKnob(int knobIndex)
+{
+    DBG("[UI] Randomizing individual AutoPan knob " << knobIndex << "...");
+    
+    if (knobIndex >= 0 && knobIndex < 6)
+    {
+        if (autopanLockButtons[knobIndex] && autopanLockButtons[knobIndex]->getToggleState()) {
+            return; // Skip if locked
+        }
+        
+        float randomValue = juce::Random::getSystemRandom().nextFloat();
+        
+        // Special handling for specific knobs
+        switch (knobIndex) {
+            case 2: // Wave Type (0-4)
+                randomValue = (float)(juce::Random::getSystemRandom().nextInt(5));
+                break;
+            case 4: // Inverted (0 or 1)
+                randomValue = (float)(juce::Random::getSystemRandom().nextInt(2));
+                break;
+        }
+        
+        if (autopanKnobs[knobIndex]) {
+            autopanKnobs[knobIndex]->setValue(randomValue, juce::sendNotification);
+        }
+    }
+}
+
+void PluginEditor::updateAutoPanParameterFromKnob(int knobIndex)
+{
+    // This is called when knob values change to update the APVTS
+    // The SliderAttachment already handles this, so this can be empty
+    // or used for additional UI updates if needed
+}
 
 void PluginEditor::onAutoPanStepButtonClicked(int stepIndex)
 {

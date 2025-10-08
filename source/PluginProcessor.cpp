@@ -11,14 +11,21 @@ PluginProcessor::PluginProcessor()
                        ),
     valueTreeState(*this, nullptr, "Parameters", createParameterLayout())
 {
-    // Initialize sequencer state
+    // Initialize delay sequencer state
     seq.enabled.store(false);
     seq.stepsUsed.store(16);
     seq.divisionIndex.store(3); // 1/8 default
     seq.playingStep.store(0);
     
+    // Initialize AutoPan sequencer state (independent)
+    autopanSeq.enabled.store(false);
+    autopanSeq.stepsUsed.store(16);
+    autopanSeq.divisionIndex.store(3); // 1/8 default
+    autopanSeq.playingStep.store(0);
+    
     // Initialize UI state
     uiSelectedStep.store(0);
+    autopanUiSelectedStep.store(0);
     
     // Initialize transport cache
     transportCache.valid.store(false);
@@ -147,7 +154,8 @@ void PluginProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
     spaceDelay.prepare(sampleRate, samplesPerBlock);
     autoPan.prepare(sampleRate, 30.0); // 30ms smoothing
     autoPan.setVisualState(&panVis);
-    seq.prepare(sampleRate); // Initialize sequencer with sample rate
+    seq.prepare(sampleRate); // Initialize delay sequencer with sample rate
+    autopanSeq.prepare(sampleRate); // Initialize AutoPan sequencer with sample rate
 }
 
 void PluginProcessor::releaseResources()
@@ -272,6 +280,7 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
         }
     }
 
+    // === DELAY SEQUENCER ===
     // Apply sequencer step snapshot only if sequencer is active, otherwise use APVTS parameters
     if (seq.active.load()) {
         // Use current step's snapshot for audio processing
@@ -281,6 +290,28 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
     } else {
         // Use empty snapshot to read from APVTS parameters (manual control)
         applySnapshotTargets(StepSnapshot{});
+    }
+    
+    // === AUTOPAN SEQUENCER (Independent) ===
+    // AutoPan has its own sequencer that runs independently
+    if (auto* ph = getPlayHead())
+    {
+        auto pos = ph->getPosition();
+        if (pos.hasValue())
+        {
+            const bool isPlaying = pos->getIsPlaying();
+            const bool ppqValid = pos->getPpqPosition().hasValue();
+            const double ppq = pos->getPpqPosition().hasValue() ? *pos->getPpqPosition() : -1.0;
+            
+            // AutoPan sequencer stepping (independent of delay sequencer)
+            if (isPlaying && ppqValid && autopanSeq.active.load()) {
+                const int autopanStep = autopanSeq.computeStepFromPPQ(ppq);
+                if (autopanStep != autopanSeq.currentStep.load()) {
+                    autopanSeq.currentStep.store(autopanStep);
+                    autopanSeq.playingStep.store(autopanStep);
+                }
+            }
+        }
     }
 
     // Clear any unused output channels
@@ -361,48 +392,57 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
     bool isAutoPanEnabled = autopanEnabledParam ? (autopanEnabledParam->load() > 0.5f) : false;
     
     if (isAutoPanEnabled) {
-        // Apply AutoPan parameters
-        auto* rateParam = valueTreeState.getRawParameterValue("autopanRate");
-        auto* amountParam = valueTreeState.getRawParameterValue("autopanAmount");
-        auto* syncParam = valueTreeState.getRawParameterValue("autopanTimeSync");
+        // Apply AutoPan parameters (from sequencer snapshot or APVTS)
+        float rate, depth, waveShape, phaseOffset;
+        int waveTypeIndex;
+        bool isInverted;
         
-        float rate = rateParam ? rateParam->load() : 0.43f;  // 0-1 range (default ~1/4)
-        
-        // Convert sync mode to Hz if sync is enabled
-        if (syncParam && syncParam->load() > 0.5f) {
-            // Parameter is in 0.0-1.0 range for divisions
-            float knobValue = juce::jlimit(0.0f, 1.0f, rate);
-
-            // Convert knob value (0-1) to sync division index (0-15 for 16 divisions)
-            int divIndex = juce::jlimit(0, numDivisions - 1, (int)(knobValue * (numDivisions - 1)));
+        // Check if AutoPan sequencer is active
+        if (autopanSeq.active.load()) {
+            // Use AutoPan sequencer snapshot
+            int autopanStep = autopanSeq.currentStep.load();
+            const auto& snapshot = autopanStepSnapshots[juce::jlimit(0, 15, autopanStep)];
             
-            // Get the division from our array
-            Div div = allDivisions[divIndex];
-            
-            // Calculate correct Hz using proper sync formula
-            const double bpm = getBpmOrDefault(120.0);
-            rate = syncedHz((float)bpm, div) * 0.5f; // 2x slower for panning
+            rate = snapshot.autopan.rate;  // Already in 0-1 range
+            depth = snapshot.autopan.amount;
+            waveShape = snapshot.autopan.waveShape;
+            phaseOffset = snapshot.autopan.phase / 360.0f; // Convert degrees to 0-1
+            waveTypeIndex = snapshot.autopan.waveType;
+            isInverted = snapshot.autopan.inverted;
         } else {
-            // Free mode: map 0-1 parameter to 0.05-90 Hz range
+            // Use APVTS parameters (manual control)
+            auto* rateParam = valueTreeState.getRawParameterValue("autopanRate");
+            auto* amountParam = valueTreeState.getRawParameterValue("autopanAmount");
+            auto* waveShapeParam = valueTreeState.getRawParameterValue("autopanWaveShape");
+            auto* phaseParam = valueTreeState.getRawParameterValue("autopanPhase");
+            auto* waveTypeParam = valueTreeState.getRawParameterValue("autopanWaveType");
+            auto* invertedParam = valueTreeState.getRawParameterValue("autopanInverted");
+            
+            rate = rateParam ? rateParam->load() : 0.43f;
+            depth = amountParam ? amountParam->load() : 0.5f;
+            waveShape = waveShapeParam ? waveShapeParam->load() : 0.5f;
+            phaseOffset = phaseParam ? (phaseParam->load() / 360.0f) : 0.5f;
+            waveTypeIndex = waveTypeParam ? (int)waveTypeParam->load() : 0;
+            isInverted = invertedParam ? invertedParam->load() > 0.5f : false;
+        }
+        
+        // Convert rate to Hz (applies to both sequencer and manual modes)
+        auto* syncParam = valueTreeState.getRawParameterValue("autopanTimeSync");
+        if (syncParam && syncParam->load() > 0.5f) {
+            // Sync mode: convert 0-1 to musical division Hz
+            float knobValue = juce::jlimit(0.0f, 1.0f, rate);
+            int divIndex = juce::jlimit(0, numDivisions - 1, (int)(knobValue * (numDivisions - 1)));
+            Div div = allDivisions[divIndex];
+            const double bpm = getBpmOrDefault(120.0);
+            rate = syncedHz((float)bpm, div) * 0.5f;
+        } else {
+            // Free mode: map 0-1 to Hz range
             rate = 0.05f + rate * (90.0f - 0.05f);
         }
         
-        // Set AutoPan parameters using new click-free API
-        const float depth = amountParam ? amountParam->load() : 0.5f;  // 0..1
+        // Set AutoPan parameters
         const float width = 1.0f;  // Full width for classic autopan behavior
         const float mix = 1.0f;    // Full wet mix
-
-        // Get wave parameters
-        auto* waveShapeParam = valueTreeState.getRawParameterValue("autopanWaveShape");
-        auto* phaseParam = valueTreeState.getRawParameterValue("autopanPhase");
-        auto* waveTypeParam = valueTreeState.getRawParameterValue("autopanWaveType");
-        auto* invertedParam = valueTreeState.getRawParameterValue("autopanInverted");
-
-        const float waveShape = waveShapeParam ? waveShapeParam->load() : 0.5f;
-        const float phaseOffset = phaseParam ? phaseParam->load() / 360.0f : 0.5f; // Convert 0-360° to 0-1
-        const int waveTypeIndex = waveTypeParam ? (int)waveTypeParam->load() : 0;
-        const bool isInverted = invertedParam ? invertedParam->load() > 0.5f : false;
-        
         const WaveType wType = static_cast<WaveType>(juce::jlimit(0, 4, waveTypeIndex));
 
         autoPan.setTargets(rate, depth, width, mix, waveShape, phaseOffset, wType, isInverted);
@@ -622,6 +662,50 @@ void PluginProcessor::setStepSnapshot(int step, const StepSnapshot& snapshot) no
 {
     if (step >= 0 && step < 16) {
         stepSnapshots[step] = snapshot;
+    }
+}
+
+// AutoPan snapshot methods
+StepSnapshot PluginProcessor::getAutoPanSafeSnapshot(int step) const
+{
+    if (step >= 0 && step < 16) {
+        return autopanStepSnapshots[step];
+    }
+    return autopanStepSnapshots[0];
+}
+
+void PluginProcessor::setAutoPanStepSnapshot(int step, const StepSnapshot& snapshot) noexcept
+{
+    if (step >= 0 && step < 16) {
+        autopanStepSnapshots[step] = snapshot;
+    }
+}
+
+void PluginProcessor::updateAutoPanCurrentStepSnapshot(int knobIndex, float value)
+{
+    int currentStep = autopanUiSelectedStep.load();
+    if (currentStep < 0 || currentStep >= 16) return;
+    
+    // Update the specific AutoPan parameter in the snapshot
+    switch (knobIndex) {
+        case 0: // Rate
+            autopanStepSnapshots[currentStep].autopan.rate = value;
+            break;
+        case 1: // Phase
+            autopanStepSnapshots[currentStep].autopan.phase = value;
+            break;
+        case 2: // Wave Type
+            autopanStepSnapshots[currentStep].autopan.waveType = (int)value;
+            break;
+        case 3: // Wave Shape
+            autopanStepSnapshots[currentStep].autopan.waveShape = value;
+            break;
+        case 4: // Inverted
+            autopanStepSnapshots[currentStep].autopan.inverted = value > 0.5f;
+            break;
+        case 5: // Amount
+            autopanStepSnapshots[currentStep].autopan.amount = value;
+            break;
     }
 }
 
