@@ -224,6 +224,7 @@ public:
            
     // AutoPan DSP Implementation
     AutoPan autoPan;
+    PanVisualState panVis;
     
     // Get current pan position for visualizer
     float getCurrentPanPosition() const { 

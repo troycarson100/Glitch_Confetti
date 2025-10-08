@@ -146,6 +146,7 @@ void PluginProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
     dspSampleRate = sampleRate;
     spaceDelay.prepare(sampleRate, samplesPerBlock);
     autoPan.prepare(sampleRate, 30.0); // 30ms smoothing
+    autoPan.setVisualState(&panVis);
     seq.prepare(sampleRate); // Initialize sequencer with sample rate
 }
 
@@ -379,22 +380,12 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                 knobValue = (rate - 0.1f) / (5.0f - 0.1f);
             }
 
-            // Convert knob value (0-1) to sync division index (0-7)
-            // 0 = 2 (slowest), 1 = 1/64 (fastest) - correct mapping
-            int divIndex = juce::jlimit(0, 7, (int)(knobValue * 7.0f));
+            // Convert knob value (0-1) to sync division index (0-14)
+            // Map to the full range of divisions
+            int divIndex = juce::jlimit(0, numDivisions - 1, (int)(knobValue * (numDivisions - 1)));
             
-            // Map to sync division types
-            SyncDiv div;
-            switch (divIndex) {
-                case 0: div.type = SyncDiv::Half; break;           // 2 beats
-                case 1: div.type = SyncDiv::Quarter; break;        // 1 beat  
-                case 2: div.type = SyncDiv::Eighth; break;         // 1/2 beat
-                case 3: div.type = SyncDiv::Sixteenth; break;      // 1/4 beat
-                case 4: div.type = SyncDiv::ThirtySecond; break;   // 1/8 beat
-                case 5: div.type = SyncDiv::SixtyFourth; break;    // 1/16 beat
-                case 6: div.type = SyncDiv::SixtyFourth; div.triplet = true; break; // 1/16 triplet
-                case 7: div.type = SyncDiv::SixtyFourth; div.dotted = true; break;  // 1/16 dotted
-            }
+            // Get the division from our array
+            Div div = allDivisions[divIndex];
             
             // Calculate correct Hz using proper sync formula
             const double bpm = getBpmOrDefault(120.0);

@@ -1136,12 +1136,25 @@ void PluginEditor::setupKnobs()
         panIndicator = std::make_unique<PanIndicator>();
         addAndMakeVisible(*panIndicator);
         
+        // Create pan visualizer
+        PanVisualizer::Reader r;
+        r.getPhaseAtPublish = [this] { return processorRef.panVis.phaseAtPublish.load(std::memory_order_acquire); };
+        r.getPhaseIncPerSample = [this] { return processorRef.panVis.phaseIncPerSample.load(std::memory_order_acquire); };
+        r.getAudioSamplesAtPublish = [this] { return processorRef.panVis.audioSamplesAtPublish.load(std::memory_order_acquire); };
+        r.getSampleRate = [this] { return processorRef.getSampleRate(); };
+        
+        panViz = std::make_unique<PanVisualizer>(r);
+        addAndMakeVisible(*panViz);
+        
         // Position meters
         inMeter->setBounds(startX - meterSpacing - meterWidth + 10, y + (knobSize - meterHeight) / 2, meterWidth, meterHeight);  // Move right 10px
         outMeter->setBounds(startX + totalKnobWidth + meterSpacing - 10, y + (knobSize - meterHeight) / 2, meterWidth, meterHeight);  // Move left 10px
         
         // Position pan indicator above the master knobs (90px smaller width, moved up 250px)
         panIndicator->setBounds(startX - meterSpacing - meterWidth + 10, y - 285, (meterWidth * 2 + meterSpacing + totalKnobWidth - 20) - 90, 25);
+        
+        // Position pan visualizer below the pan indicator
+        panViz->setBounds(startX - meterSpacing - meterWidth + 10, y - 250, (meterWidth * 2 + meterSpacing + totalKnobWidth - 20) - 90, 40);
         
         DBG("[UI] Master knobs and stereo meters setup complete");
     }

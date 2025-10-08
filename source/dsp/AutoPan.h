@@ -1,38 +1,7 @@
 // AutoPan.h - Proper left-right panning autopan
 #pragma once
 #include <juce_dsp/juce_dsp.h>
-
-// Sync division types
-struct SyncDiv { 
-    enum Type { Whole = 0, Half, Quarter, Eighth, Sixteenth, ThirtySecond, SixtyFourth } type; 
-    bool dotted = false, triplet = false; 
-};
-
-// Calculate beats per cycle for a sync division
-static inline float beatsPerCycle(const SyncDiv& d)
-{
-    float N = 1.0f; // in quarter-notes
-    switch (d.type)
-    {
-        case SyncDiv::Whole:         N = 4.0f;  break; // 4 QN
-        case SyncDiv::Half:          N = 2.0f;  break; // 2 QN
-        case SyncDiv::Quarter:       N = 1.0f;  break; // 1 QN
-        case SyncDiv::Eighth:        N = 0.5f;  break; // 1/2 QN
-        case SyncDiv::Sixteenth:     N = 0.25f; break; // 1/4 QN
-        case SyncDiv::ThirtySecond:  N = 0.125f;break; // 1/8 QN
-        case SyncDiv::SixtyFourth:   N = 0.0625f;break; // 1/16 QN
-    }
-    if (d.dotted)  N *= 1.5f;     // longer duration
-    if (d.triplet) N *= 2.0f/3.0f;// shorter duration
-    return N;
-}
-
-// Calculate synced Hz from BPM and sync division
-static inline float syncedHz(float bpm, const SyncDiv& d)
-{
-    const float qnHz = bpm / 60.0f;          // 1 cycle per quarter note = BPM/60 Hz
-    return qnHz / beatsPerCycle(d);          // divide by number of QN per cycle
-}
+#include "PanSync.h"
 
 // Get host BPM robustly
 static inline float getHostBpm(juce::AudioPlayHead* ph, float fallback = 120.0f)
@@ -64,6 +33,13 @@ static inline float shapedLFO(float phase01, float shape01)
         return juce::jmap((s - 0.5f) * 2.0f, tri, sq);
 }
 
+// Visual state for UI synchronization
+struct PanVisualState {
+    std::atomic<double> phaseAtPublish{ 0.0 };        // 0..1
+    std::atomic<double> phaseIncPerSample{ 0.0 };     // cycles/sample
+    std::atomic<uint64_t> audioSamplesAtPublish{ 0 }; // running sample counter
+};
+
 struct AutoPan
 {
     void prepare(double sr, double smoothingMs = 30.0)
@@ -79,7 +55,8 @@ struct AutoPan
         phaseOffSmooth.reset(sampleRate, secs);
 
         // Keep phase continuous - don't reset it
-        phase = juce::jlimit(0.0, juce::MathConstants<double>::twoPi, phase);
+        phase = juce::jlimit(0.0, 1.0, phase); // Now using 0..1 range
+        panSampleCounter = 0;
     }
 
     // Set targets each block (0..1 except freqHz)
@@ -93,7 +70,7 @@ struct AutoPan
         phaseOffSmooth.setTargetValue(juce::jlimit(0.0f, 1.0f, phaseOffset01)); // 0..1 maps to 0..2π
     }
 
-    // Process with click-free mid/side rotation
+    // Process with click-free mid/side rotation and visual state publishing
     void process(juce::AudioBuffer<float>& buffer, bool isPlaying = true, bool syncToTransport = false, double bpm = 120.0, double ppqPosition = 0.0)
     {
         const int N = buffer.getNumSamples();
@@ -104,7 +81,6 @@ struct AutoPan
         auto* R = (C > 1 ? buffer.getWritePointer(1) : nullptr);
 
         constexpr float invSqrt2 = 0.7071067811865475f;
-        constexpr double twoPi = juce::MathConstants<double>::twoPi;
 
         for (int n = 0; n < N; ++n)
         {
@@ -120,16 +96,17 @@ struct AutoPan
             const float width = widthSmooth.getNextValue();            // 0..1
             const float mix = mixSmooth.getNextValue();                // 0..1
 
-            // Advance continuous phase
-            phase += twoPi * (double)fHz / sampleRate;
-            if (phase >= twoPi) phase -= twoPi;
+            // Advance continuous phase (now in 0..1 range)
+            const double inc = (double)fHz / sampleRate;  // cycles/sample
+            phase += inc;
+            if (phase >= 1.0) phase -= 1.0;  // wrap 0..1
 
-            // Compute phase 0..1 with offset
-            float phase01 = (float)(phase / twoPi);
-            phase01 = std::fmod(phase01 + phOf, 1.0f);
+            // Compute phase with offset
+            double phaseWithOffset = phase + phOf;
+            phaseWithOffset -= std::floor(phaseWithOffset); // wrap to 0..1
 
             // Shaped LFO in [-1,1]
-            const float lfo = shapedLFO(phase01, shp);
+            const float lfo = shapedLFO((float)phaseWithOffset, shp);
 
             // Pan amount: x ∈ [-depth, depth]
             const float x = dep * lfo;
@@ -156,6 +133,15 @@ struct AutoPan
             // True dry/wet crossfade
             L[n] = juce::jmap(mix, inL, wetL);
             if (R) R[n] = juce::jmap(mix, inR, wetR);
+        }
+
+        panSampleCounter += (uint64_t)N;
+
+        // Publish visual state for UI (once per block)
+        if (visualState) {
+            visualState->phaseAtPublish.store(phase, std::memory_order_release);
+            visualState->phaseIncPerSample.store(freqSmooth.getCurrentValue() / sampleRate, std::memory_order_release);
+            visualState->audioSamplesAtPublish.store(panSampleCounter, std::memory_order_release);
         }
     }
 
@@ -211,14 +197,20 @@ struct AutoPan
             phase = std::fmod(phase, juce::MathConstants<double>::twoPi);
     }
 
+    // Set visual state pointer for UI synchronization
+    void setVisualState(PanVisualState* vs) { visualState = vs; }
+
     // Members
     double sampleRate { 44100.0 };
-    double phase { 0.0 };
+    double phase { 0.0 };                    // 0..1 cycles
+    uint64_t panSampleCounter { 0 };         // running sample counter
 
     juce::SmoothedValue<float> freqSmooth;     // Hz
     juce::SmoothedValue<float> depthSmooth;    // 0..1 travel
     juce::SmoothedValue<float> widthSmooth;    // 0..1 stereo->mono(panned)
     juce::SmoothedValue<float> mixSmooth;      // 0..1 dry/wet
     juce::SmoothedValue<float> shapeSmooth;    // 0..1 wave shape morphing (sin⇄tri⇄square)
-    juce::SmoothedValue<float> phaseOffSmooth; // 0..1 phase offset (maps to 0..2π)
+    juce::SmoothedValue<float> phaseOffSmooth; // 0..1 phase offset
+
+    PanVisualState* visualState { nullptr };   // pointer to visual state for UI
 };
