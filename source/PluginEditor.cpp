@@ -2446,6 +2446,22 @@ void PluginEditor::setupAutoPanKnobs()
             // Update current step snapshot with new value
             float value = autopanKnobs[i]->getValue();
             processorRef.updateAutoPanCurrentStepSnapshot(i, value);
+            
+            // If All Steps toggle is active, update all step snapshots
+            if (autopanAllStepsEnabled) {
+                for (int step = 0; step < 16; ++step) {
+                    auto snapshot = processorRef.getAutoPanSafeSnapshot(step);
+                    switch (i) {
+                        case 0: snapshot.autopan.rate = value; break;
+                        case 1: snapshot.autopan.phase = value; break;
+                        case 2: snapshot.autopan.waveType = (int)value; break;
+                        case 3: snapshot.autopan.waveShape = value; break;
+                        case 4: snapshot.autopan.inverted = value > 0.5f; break;
+                        case 5: snapshot.autopan.amount = value; break;
+                    }
+                    processorRef.setAutoPanStepSnapshot(step, snapshot);
+                }
+            }
         };
         
         // autopanKnobs[i]->setLookAndFeel(&customLookAndFeel); // TODO: Add custom look and feel
@@ -2968,11 +2984,14 @@ void PluginEditor::randomizeAutoPanKnobValues()
         
         // Special handling for specific knobs
         switch (i) {
-            case 2: // Wave Type (0-4)
-                randomValue = (float)(juce::Random::getSystemRandom().nextInt(5)); // 0, 1, 2, 3, or 4
+            case 1: // Phase (0-360 degrees)
+                randomValue = juce::Random::getSystemRandom().nextFloat() * 360.0f;
+                break;
+            case 2: // Wave Type (0-4) - normalize to knob range
+                randomValue = (float)(juce::Random::getSystemRandom().nextInt(5));
                 break;
             case 4: // Inverted (0 or 1)
-                randomValue = (float)(juce::Random::getSystemRandom().nextInt(2)); // 0 or 1
+                randomValue = (float)(juce::Random::getSystemRandom().nextInt(2));
                 break;
             default:
                 // Other knobs use full 0-1 range
