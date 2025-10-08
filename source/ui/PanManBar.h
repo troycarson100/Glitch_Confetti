@@ -88,7 +88,7 @@ private:
 
         // Depth, phase offset, and shape from APVTS (safe to read on UI)
         const float depth = reader.getDepth01 ? reader.getDepth01() : 1.0f;
-        const float phOff = reader.getPhaseOffset01 ? reader.getPhaseOffset01() : 0.0f;
+        const float phOff = reader.getPhaseOffset01 ? reader.getPhaseOffset01() : 0.5f;  // Default 180° = 0.5
         const float shape = reader.getShape01 ? reader.getShape01() : 0.0f;
 
         // Use the same shapedLFO function as the audio processing
