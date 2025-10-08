@@ -127,6 +127,16 @@ struct AutoPan
     // Set targets each block (0..1 except freqHz)
     void setTargets(float freqHz, float depth01, float width01, float mix01, float shape01, float phaseOffset01, WaveType wType = WaveType::Sine, bool inv = false)
     {
+        // Detect large frequency changes and apply extra-long smoothing to prevent clicks
+        const float currentFreq = freqSmooth.getCurrentValue();
+        const float freqChange = std::abs(freqHz - currentFreq);
+        const float changeThreshold = 0.5f; // Hz
+        
+        if (freqChange > changeThreshold && sampleRate > 0.0) {
+            // Large frequency change detected - apply very long smoothing (500ms)
+            freqSmooth.reset(sampleRate, 0.5); // 500ms
+        }
+        
         freqSmooth.setTargetValue(juce::jmax(0.0f, freqHz));
         depthSmooth.setTargetValue(juce::jlimit(0.0f, 1.0f, depth01));
         widthSmooth.setTargetValue(juce::jlimit(0.0f, 1.0f, width01));

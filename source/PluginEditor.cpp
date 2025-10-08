@@ -375,14 +375,16 @@ void PluginEditor::timerCallback()
                 switch (i) {
                     case 0: // Rate
                         if (autopanTimeSyncEnabled) {
-                            // Show division text - correct order: 2 (slowest) to 1/64 (fastest)
-                            std::vector<std::pair<juce::String, double>> divisions = {
-                                {"2", 2.0}, {"1", 1.0}, {"1/2", 0.5}, {"1/4", 0.25}, 
-                                {"1/8", 0.125}, {"1/16", 0.0625}, {"1/32", 0.03125}, {"1/64", 0.015625}
+                            // Show division text - matches allDivisions array from PanSync.h
+                            std::vector<juce::String> divisionLabels = {
+                                "4 bars", "2 bars", "1 bar", "1/2.", "1/2", 
+                                "1/4.", "1/4", "1/4T", 
+                                "1/8", "1/8.", "1/8T",
+                                "1/16", "1/16.", "1/16T", "1/32"
                             };
-                            // 0 = 2 (slowest), 1 = 1/64 (fastest) - correct mapping
-                            int divIndex = juce::jlimit(0, 7, (int)(knobValue * 7.0f));
-                            valueText = divisions[divIndex].first;
+                            // Map 0.0-1.0 to indices 0-14 (15 divisions)
+                            int divIndex = juce::jlimit(0, 14, (int)(knobValue * 14.0f));
+                            valueText = divisionLabels[divIndex];
                         } else {
                             valueText = juce::String(knobValue, 2) + "Hz";
                         }
