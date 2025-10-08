@@ -425,7 +425,7 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
             
             // Publish clock data for PanManBar visualizer (once per block)
             panClock.phase01.store(autoPan.phase, std::memory_order_release);
-            panClock.incPerSample.store(autoPan.freqSmooth.getCurrentValue() / autoPan.sampleRate, std::memory_order_release);
+            panClock.incPerSample.store(autoPan.phaseIncSmooth.getCurrentValue(), std::memory_order_release);
             panClock.sampleRate.store(autoPan.sampleRate, std::memory_order_release);
         }
     }

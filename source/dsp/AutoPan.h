@@ -104,13 +104,15 @@ struct PanVisualState {
 
 struct AutoPan
 {
-    void prepare(double sr, double smoothingMs = 500.0)
+    void prepare(double sr, double smoothingMs = 120.0)
     {
         sampleRate = (sr > 0.0 ? sr : 44100.0);
-        const double secs = juce::jmax(0.0, smoothingMs) / 1000.0;
-
-        // Use very long smoothing for frequency to prevent clicks/scratches (500ms baseline)
-        freqSmooth.reset(sampleRate, secs);
+        phase = std::fmod(phase, 1.0); // Keep phase continuous - don't reset it
+        
+        // Smooth the PHASE INCREMENT (cycles/sample), not frequency - this is the key!
+        const double glideSec = juce::jmax(0.0, smoothingMs) / 1000.0;
+        phaseIncSmooth.reset(sampleRate, glideSec); // 120ms feels great
+        
         // Shorter smoothing for other params for more responsive feel
         const double shortSecs = 50.0 / 1000.0;
         depthSmooth.reset(sampleRate, shortSecs);
@@ -118,31 +120,39 @@ struct AutoPan
         mixSmooth.reset(sampleRate, shortSecs);
         shapeSmooth.reset(sampleRate, shortSecs);
         phaseOffSmooth.reset(sampleRate, shortSecs);
-
-        // Keep phase continuous - don't reset it
-        phase = juce::jlimit(0.0, 1.0, phase); // Now using 0..1 range
+        
+        // Initialize motion detection
+        lastRateTarget = 0.0;
+        motionHoldSamples = 0;
+        lfoOutZ = 0.0f;
+        
         panSampleCounter = 0;
     }
 
     // Set targets each block (0..1 except freqHz)
     void setTargets(float freqHz, float depth01, float width01, float mix01, float shape01, float phaseOffset01, WaveType wType = WaveType::Sine, bool inv = false)
     {
-        // Detect large frequency changes and apply extra-long smoothing to prevent clicks
-        const float currentFreq = freqSmooth.getCurrentValue();
-        const float freqChange = std::abs(freqHz - currentFreq);
-        const float changeThreshold = 0.2f; // Hz - more sensitive detection
+        freqHz = juce::jlimit(0.0f, 20.0f, freqHz); // Cap at reasonable rate
         
-        if (freqChange > changeThreshold && sampleRate > 0.0) {
-            // Large frequency change detected - apply ultra-long smoothing (1000ms = 1 second)
-            freqSmooth.reset(sampleRate, 1.0); // 1000ms
+        // Convert frequency to phase increment (cycles/sample) and smooth THAT
+        const double incTarget = (double)freqHz / sampleRate;
+        phaseIncSmooth.setTargetValue(incTarget);
+        
+        // Detect active knob motion for shape softening
+        const double delta = std::abs((double)freqHz - lastRateTarget);
+        lastRateTarget = (double)freqHz;
+        if (delta > 0.005) { // Turning quickly
+            motionHoldSamples = (int)std::round(0.06 * sampleRate); // Keep soft for 60ms
+        } else if (motionHoldSamples > 0) {
+            --motionHoldSamples;
         }
         
-        freqSmooth.setTargetValue(juce::jmax(0.0f, freqHz));
+        // Set other parameter targets
         depthSmooth.setTargetValue(juce::jlimit(0.0f, 1.0f, depth01));
         widthSmooth.setTargetValue(juce::jlimit(0.0f, 1.0f, width01));
         mixSmooth.setTargetValue(juce::jlimit(0.0f, 1.0f, mix01));
         shapeSmooth.setTargetValue(juce::jlimit(0.0f, 1.0f, shape01));
-        phaseOffSmooth.setTargetValue(juce::jlimit(0.0f, 1.0f, phaseOffset01)); // 0..1 maps to 0..2π
+        phaseOffSmooth.setTargetValue(juce::jlimit(0.0f, 1.0f, phaseOffset01));
         waveType = wType;
         inverted = inv;
     }
@@ -166,31 +176,34 @@ struct AutoPan
             const float inR = (R ? R[n] : inL);
 
             // Get smoothed parameters per sample
-            const float fHz  = freqSmooth.getNextValue();              // smoothed frequency
             const float dep  = depthSmooth.getNextValue();             // 0..1
-            const float shp  = shapeSmooth.getNextValue();             // 0..1 morph
+            float shp  = shapeSmooth.getNextValue();                   // 0..1 morph
             const float phOf = phaseOffSmooth.getNextValue();          // 0..1
             const float width = widthSmooth.getNextValue();            // 0..1
             const float mix = mixSmooth.getNextValue();                // 0..1
 
-            // Advance continuous phase (now in 0..1 range)
-            const double inc = (double)fHz / sampleRate;  // cycles/sample
+            // Get SMOOTHED phase increment (cycles/sample) - this prevents clicks!
+            const double inc = phaseIncSmooth.getNextValue();
             
             if (syncToTransport && isPlaying) {
                 // True transport sync: calculate phase from PPQ position
-                // Since fHz = (BPM/60) / quarterNotesPerCycle, we can calculate:
-                // quarterNotesPerCycle = (BPM/60) / fHz
-                // So beatsPerCycle = quarterNotesPerCycle * (BPM/60) / (BPM/60) = quarterNotesPerCycle
-                const double quarterNotesPerCycle = (double)bpm / (60.0 * (double)fHz);
+                // Use current increment to calculate quarter notes per cycle
+                const double freqHz = inc * sampleRate;
+                const double quarterNotesPerCycle = (freqHz > 0.0) ? ((double)bpm / (60.0 * freqHz)) : 1.0;
                 const double transportPhase = std::fmod(ppqPosition / quarterNotesPerCycle, 1.0);
                 phase = transportPhase;
             } else if (syncToTransport && !isPlaying) {
                 // Transport sync enabled but not playing - freeze at current position
                 // Don't advance phase
             } else {
-                // Free-running mode: increment phase normally
+                // Free-running mode: advance phase with smoothed increment
                 phase += inc;
                 if (phase >= 1.0) phase -= 1.0;  // wrap 0..1
+            }
+
+            // Soften shape while user is actively turning the rate knob
+            if (motionHoldSamples > 0) {
+                shp = juce::jmap(0.65f, shp, 0.0f); // Bias toward sine during motion
             }
 
             // Compute phase with offset
@@ -198,7 +211,13 @@ struct AutoPan
             phaseWithOffset -= std::floor(phaseWithOffset); // wrap to 0..1
 
             // Shaped LFO in [-1,1] with wave type and inversion support
-            const float lfo = shapedLFO((float)phaseWithOffset, shp, waveType, inverted);
+            float lfo = shapedLFO((float)phaseWithOffset, shp, waveType, inverted);
+            
+            // Tiny output pole (2ms) to erase micro-zipper on hard shapes
+            const double lfoOutTauMs = 2.0;
+            const float poleA = (float)std::exp(-1.0 / ((lfoOutTauMs * 0.001) * sampleRate));
+            lfoOutZ = poleA * lfoOutZ + (1.0f - poleA) * lfo;
+            lfo = lfoOutZ;
 
             // Pan amount: x ∈ [-depth, depth]
             const float x = dep * lfo;
@@ -232,7 +251,7 @@ struct AutoPan
         // Publish visual state for UI (once per block)
         if (visualState) {
             visualState->phaseAtPublish.store(phase, std::memory_order_release);
-            visualState->phaseIncPerSample.store(freqSmooth.getCurrentValue() / sampleRate, std::memory_order_release);
+            visualState->phaseIncPerSample.store(phaseIncSmooth.getCurrentValue(), std::memory_order_release);
             visualState->audioSamplesAtPublish.store(panSampleCounter, std::memory_order_release);
         }
     }
@@ -264,9 +283,10 @@ struct AutoPan
         
         double currentPhase = phase;
         if (syncToTransport && isPlaying) {
-            const float fHz = freqSmooth.getCurrentValue();
+            const double inc = phaseIncSmooth.getCurrentValue();
+            const double fHz = inc * sampleRate;
             const double currentBeat = ppqPosition;
-            const double beatsPerCycle = 60.0 / bpm * fHz; // Convert Hz back to beats per cycle
+            const double beatsPerCycle = (fHz > 0.0) ? (60.0 / bpm * fHz) : 1.0; // Convert Hz back to beats per cycle
             currentPhase = juce::MathConstants<double>::twoPi * std::fmod(currentBeat / beatsPerCycle, 1.0);
         }
         
@@ -306,13 +326,20 @@ struct AutoPan
     double phase { 0.0 };                    // 0..1 cycles
     uint64_t panSampleCounter { 0 };         // running sample counter
 
-    juce::SmoothedValue<float> freqSmooth;     // Hz
+    // Smooth the PHASE INCREMENT (cycles/sample) - this is the key to click-free rate changes!
+    juce::SmoothedValue<double, juce::ValueSmoothingTypes::Linear> phaseIncSmooth;
+    
     juce::SmoothedValue<float> depthSmooth;    // 0..1 travel
     juce::SmoothedValue<float> widthSmooth;    // 0..1 stereo->mono(panned)
     juce::SmoothedValue<float> mixSmooth;      // 0..1 dry/wet
     juce::SmoothedValue<float> shapeSmooth;    // 0..1 wave shape morphing (sin⇄tri⇄square)
     juce::SmoothedValue<float> phaseOffSmooth; // 0..1 phase offset
 
+    // Motion detection for shape softening during knob movement
+    double lastRateTarget { 0.0 };
+    int motionHoldSamples { 0 };
+    float lfoOutZ { 0.0f };                    // Tiny output pole for micro-zipper removal
+    
     WaveType waveType { WaveType::Sine };      // Wave type (Sine, Triangle, Ramp, etc.)
     bool inverted { false };                   // LFO inversion
 
