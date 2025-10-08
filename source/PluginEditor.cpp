@@ -116,6 +116,17 @@ void PluginEditor::paint (juce::Graphics& g)
             // Fallback background
             g.fillAll (juce::Colour(0xff2a2a2a));
         }
+    } else if (currentPage == FxPageID::Dirt) {
+        // Draw the Dirt background SVG
+        if (assets.dirtBackgroundTab3 != nullptr)
+        {
+            assets.dirtBackgroundTab3->drawWithin(g, getLocalBounds().toFloat(), juce::RectanglePlacement::centred, 1.0f);
+        }
+        else
+        {
+            // Fallback background
+            g.fillAll (juce::Colour(0xff2a2a2a));
+        }
     }
     
     // Only draw grid overlay and main areas if UI is visible
