@@ -1,6 +1,7 @@
 // PanManBar.h - PanMan-style visualizer with moving white boxes
 #pragma once
 #include <juce_gui_basics/juce_gui_basics.h>
+#include "../dsp/AutoPan.h"  // For shapedLFO function
 
 class PanManBar : public juce::Component, private juce::Timer
 {
@@ -11,7 +12,7 @@ public:
         std::function<double()> getSampleRate;     // (from audio)
         std::function<float()>  getDepth01;        // read APVTS depth (0..1)
         std::function<float()>  getPhaseOffset01;  // read APVTS phase offset (0..1)
-        std::function<float()>  getShape01;        // optional, if you morph waves
+        std::function<float()>  getShape01;        // read APVTS wave shape (0..1)
     };
 
     PanManBar(Reader r, int bins = 64)
@@ -84,12 +85,14 @@ private:
         double ph = ph0 + incS * dtSec * (sr > 0.0 ? sr : 44100.0); // cycles
         ph -= std::floor(ph); // wrap 0..1
 
-        // Depth & phase offset from APVTS (safe to read on UI)
+        // Depth, phase offset, and shape from APVTS (safe to read on UI)
         const float depth = reader.getDepth01 ? reader.getDepth01() : 1.0f;
         const float phOff = reader.getPhaseOffset01 ? reader.getPhaseOffset01() : 0.0f;
+        const float shape = reader.getShape01 ? reader.getShape01() : 0.0f;
 
-        // Simple sine visual (stable, smooth). If you morph shapes, reuse your same UI-safe function.
-        const float lfo = std::sin(juce::MathConstants<float>::twoPi * (float) std::fmod(ph + phOff, 1.0));
+        // Use the same shapedLFO function as the audio processing
+        const float phaseWithOffset = std::fmod(ph + phOff, 1.0f);
+        const float lfo = shapedLFO(phaseWithOffset, shape);
         const float x = 0.5f + 0.5f * (depth * lfo); // map [-1,1] -> [0,1]
 
         // Small visual smoothing to remove timer jitter
