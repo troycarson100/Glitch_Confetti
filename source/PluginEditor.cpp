@@ -67,6 +67,16 @@ PluginEditor::PluginEditor (PluginProcessor& p)
         processorRef.setAutoPanSequencerEnabled(autopanStepAreaEnabled);
         DBG("[UI] Initial AutoPan sequencer state synced: enabled=" << autopanStepAreaEnabled);
         
+        // Setup Dirt page components
+        setupDirtKnobs();
+        setupDirtEffectsArea();
+        setupDirtSequencerArea();
+        setupDirtAllStepsToggle();
+        
+        // Sync Dirt sequencer state with processor on startup
+        processorRef.setDirtSequencerEnabled(dirtStepAreaEnabled);
+        DBG("[UI] Initial Dirt sequencer state synced: enabled=" << dirtStepAreaEnabled);
+        
         // Setup tab system
         setupTabSystem();
         
@@ -457,12 +467,47 @@ void PluginEditor::timerCallback()
         }
     }
     
+    // Update Dirt knob indicators (same pattern as AutoPan)
+    for (int i = 0; i < 8; ++i)
+    {
+        if (dirtIndicatorBars[i] != nullptr && dirtKnobs[i] != nullptr)
+        {
+            float indicatorValue = dirtKnobs[i]->getValue();
+            
+            // If Dirt sequencer is enabled and running, show the playing step's snapshot value
+            const bool seqEnabled = processorRef.getDirtSeqState().enabled.load();
+            const bool seqActive = processorRef.getDirtSeqState().active.load();
+            const int playingStep = processorRef.getDirtPlayingStep();
+            
+            if (seqEnabled && seqActive && playingStep >= 0 && playingStep < 16)
+            {
+                StepSnapshot s = processorRef.getDirtSafeSnapshot(playingStep);
+                
+                switch (i) {
+                    case 0: indicatorValue = s.dirt.drive / 36.0f; break; // Normalize 0-36 to 0-1
+                    case 1: indicatorValue = (s.dirt.color + 1.0f) / 2.0f; break; // Normalize -1..1 to 0-1
+                    case 2: indicatorValue = (s.dirt.asym + 1.0f) / 2.0f; break; // Normalize -1..1 to 0-1
+                    case 3: indicatorValue = s.dirt.texture; break;
+                    case 4: indicatorValue = (s.dirt.lowCut - 20.0f) / 280.0f; break; // Normalize 20-300 to 0-1
+                    case 5: indicatorValue = (s.dirt.highCut - 3000.0f) / 19000.0f; break; // Normalize 3k-22k to 0-1
+                    case 6: indicatorValue = (s.dirt.tone + 1.0f) / 2.0f; break; // Normalize -1..1 to 0-1
+                    case 7: indicatorValue = s.dirt.mix; break;
+                }
+            }
+            
+            dirtIndicatorBars[i]->setValue(indicatorValue);
+        }
+    }
+    
     
     // Update sequencer UI (Delay)
     updateSequencerUI();
     
     // Update AutoPan sequencer UI
     updateAutoPanSequencerUI();
+    
+    // Update Dirt sequencer UI
+    updateDirtSequencerUI();
 }
 
 //==============================================================================
@@ -2210,6 +2255,7 @@ void PluginEditor::setupTabSystem()
     // --- Tabs (SVGs you mentioned are already loaded in your Assets) ---
     tabSpaceDelay = std::make_unique<juce::DrawableButton>("tabSpace", juce::DrawableButton::ImageOnButtonBackground);
     tabPanner = std::make_unique<juce::DrawableButton>("tabPanner", juce::DrawableButton::ImageOnButtonBackground);
+    tabDirt = std::make_unique<juce::DrawableButton>("tabDirt", juce::DrawableButton::ImageOnButtonBackground);
     
     // Use the tab SVGs you provided:
     if (assets.tabTitleSpaceDelay) {
@@ -2220,13 +2266,19 @@ void PluginEditor::setupTabSystem()
         tabPanner->setImages(assets.tabTitleAutoPan->createCopy().release(),
                              nullptr, nullptr, nullptr, nullptr, nullptr);
     }
+    if (assets.tabDirtIcon) { // Using Dirt icon SVG for the third tab
+        tabDirt->setImages(assets.tabDirtIcon->createCopy().release(),
+                          nullptr, nullptr, nullptr, nullptr, nullptr);
+    }
     
     // Add bright background colors to make tabs visible for testing
     tabSpaceDelay->setColour(juce::DrawableButton::backgroundColourId, juce::Colour(0xFFFF6600)); // Bright orange
     tabPanner->setColour(juce::DrawableButton::backgroundColourId, juce::Colour(0xFF00FF00)); // Bright green
+    tabDirt->setColour(juce::DrawableButton::backgroundColourId, juce::Colour(0xFFFF00FF)); // Bright magenta
     
     tabSpaceDelay->setTriggeredOnMouseDown(true);
     tabPanner->setTriggeredOnMouseDown(true);
+    tabDirt->setTriggeredOnMouseDown(true);
     
     // Click handlers
     tabSpaceDelay->onClick = [this]{ 
@@ -2237,17 +2289,24 @@ void PluginEditor::setupTabSystem()
         DBG("[UI] Panner tab clicked!");
         showPage(FxPageID::Panner); 
     };
+    tabDirt->onClick = [this]{ 
+        DBG("[UI] Dirt tab clicked!");
+        showPage(FxPageID::Dirt); 
+    };
     
     // Ensure tabs never obstruct the master area clicks; they only sit over the header strip
     tabSpaceDelay->setAlwaysOnTop(true);
     tabPanner->setAlwaysOnTop(true);
+    tabDirt->setAlwaysOnTop(true);
     
     addAndMakeVisible(*tabSpaceDelay);
     addAndMakeVisible(*tabPanner);
+    addAndMakeVisible(*tabDirt);
     
     // Position tabs immediately after creation - smaller and moved up 10px
     tabSpaceDelay->setBounds(24, 0, 120, 34);
     tabPanner->setBounds(170, 0, 120, 34);
+    tabDirt->setBounds(316, 0, 120, 34);
     
     DBG("[UI] Tab buttons created and added to editor");
     DBG("[UI] tabSpaceDelay bounds: " << tabSpaceDelay->getBounds().toString());
@@ -2330,6 +2389,34 @@ void PluginEditor::setupTabSystem()
     if (autopanStepDiceButton) pannerGroup.push_back(autopanStepDiceButton.get());
     if (autopanStepPowerButton) pannerGroup.push_back(autopanStepPowerButton.get());
     
+    // Collect pointers to Dirt UI components
+    dirtGroup.clear();
+    
+    // Add Dirt knobs and related components
+    for (int i = 0; i < 8; ++i) {
+        if (dirtKnobs[i]) dirtGroup.push_back(dirtKnobs[i].get());
+        if (dirtKnobLabels[i]) dirtGroup.push_back(dirtKnobLabels[i].get());
+        if (dirtValueLabels[i]) dirtGroup.push_back(dirtValueLabels[i].get());
+        if (dirtIndicatorBars[i]) dirtGroup.push_back(dirtIndicatorBars[i].get());
+        if (dirtLockButtons[i]) dirtGroup.push_back(dirtLockButtons[i].get());
+    }
+    
+    // Add Dirt effects area components
+    if (dirtEffectsTitle) dirtGroup.push_back(dirtEffectsTitle.get());
+    if (dirtDiceButton) dirtGroup.push_back(dirtDiceButton.get());
+    
+    // Add Dirt sequencer components
+    if (dirtAllStepsToggle) dirtGroup.push_back(dirtAllStepsToggle.get());
+    if (dirtAllStepsLabel) dirtGroup.push_back(dirtAllStepsLabel.get());
+    for (int i = 0; i < 16; ++i) {
+        if (dirtStepButtons[i]) dirtGroup.push_back(dirtStepButtons[i].get());
+    }
+    if (dirtStepAmountLabel) dirtGroup.push_back(dirtStepAmountLabel.get());
+    if (dirtRateDropdown) dirtGroup.push_back(dirtRateDropdown.get());
+    if (dirtStepTitle) dirtGroup.push_back(dirtStepTitle.get());
+    if (dirtStepDiceButton) dirtGroup.push_back(dirtStepDiceButton.get());
+    if (dirtStepPowerButton) dirtGroup.push_back(dirtStepPowerButton.get());
+    
     // Initialize with SpaceDelay page visible
     showPage(FxPageID::SpaceDelay);
     
@@ -2342,16 +2429,17 @@ void PluginEditor::showPage(FxPageID id)
     if (currentPage == id) return;
     currentPage = id;
 
-    const bool wantSpace = (id == FxPageID::SpaceDelay);
-
-    // Update processor parameters
+    // Update processor parameters (0 = SpaceDelay, 1 = AutoPan, 2 = Dirt)
     auto* currentPageParam = processorRef.getAPVTS().getParameter("currentPage");
     if (currentPageParam) {
-        currentPageParam->setValueNotifyingHost(wantSpace ? 0.0f : 1.0f);
+        float pageValue = 0.0f;
+        if (id == FxPageID::Panner) pageValue = 1.0f;
+        else if (id == FxPageID::Dirt) pageValue = 2.0f;
+        currentPageParam->setValueNotifyingHost(pageValue);
     }
     
     // Enable AutoPan effect when switching to AutoPan page
-    if (!wantSpace) {
+    if (id == FxPageID::Panner) {
         autopanFxAreaEnabled = true;
         auto* autopanEnabledParam = processorRef.getAPVTS().getParameter("autopanEnabled");
         if (autopanEnabledParam) {
@@ -2366,15 +2454,14 @@ void PluginEditor::showPage(FxPageID id)
         for (auto* c : v) if (c) c->setVisible(vis);
     };
 
-    setVisibleVec(spaceDelayGroup, wantSpace);
-    setVisibleVec(pannerGroup, !wantSpace);
+    setVisibleVec(spaceDelayGroup, id == FxPageID::SpaceDelay);
+    setVisibleVec(pannerGroup, id == FxPageID::Panner);
+    setVisibleVec(dirtGroup, id == FxPageID::Dirt);
 
-    // Optional: a simple visual hint — raise the active tab
-    if (wantSpace) { 
-        if (tabSpaceDelay) tabSpaceDelay->toFront(false); 
-    } else { 
-        if (tabPanner) tabPanner->toFront(false); 
-    }
+    // Raise the active tab to front
+    if (id == FxPageID::SpaceDelay && tabSpaceDelay) tabSpaceDelay->toFront(false);
+    else if (id == FxPageID::Panner && tabPanner) tabPanner->toFront(false);
+    else if (id == FxPageID::Dirt && tabDirt) tabDirt->toFront(false);
 
     repaint();
 }
@@ -2980,6 +3067,422 @@ void PluginEditor::setupAutoPanStepPowerButton()
     DBG("[UI] AutoPan step power button already created in setupAutoPanSequencerArea");
 }
 
+//==============================================================================
+// Dirt Page Setup Methods
+//==============================================================================
+
+void PluginEditor::setupDirtKnobs()
+{
+    DBG("[UI] Setting up Dirt knobs...");
+
+    // Dirt knob names (8 knobs - exact Delay page layout)
+    std::vector<juce::String> dirtKnobNames = {
+        "Drive", "Color", "Asym", "Texture", "Low-Cut", "High-Cut", "Tone", "Mix"
+    };
+
+    // Effect area bounds (EXACT same as delay page)
+    auto effectArea = juce::Rectangle<int>(25, 54, 413, 296);
+    const int knobSize = 80; // EXACT same as delay page
+    const int knobSpacing = 20; // EXACT same as delay page
+    const int startX = effectArea.getX() + 15; // EXACT same as delay page
+    const int startY = effectArea.getY() + effectArea.getHeight() - 210; // EXACT same as delay page
+    
+    for (int i = 0; i < 8; ++i) {
+        // Calculate position (4 knobs per row, 2 rows)
+        int row = i / 4;
+        int col = i % 4;
+        int x = startX + col * (knobSize + knobSpacing);
+        int y = startY + row * (knobSize + knobSpacing + 30);
+        
+        // Create knob
+        dirtKnobs[i] = std::make_unique<CustomKnob>();
+        addAndMakeVisible(dirtKnobs[i].get());
+        dirtKnobs[i]->setVisible(false); // Initially hidden until Dirt page is selected
+        
+        // Set knob properties
+        dirtKnobs[i]->setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
+        dirtKnobs[i]->setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
+        
+        // Set specific ranges for each Dirt knob
+        switch (i) {
+            case 0: // Drive (0-36 dB)
+                dirtKnobs[i]->setRange(0.0, 36.0, 0.1);
+                dirtKnobs[i]->setValue(12.0, juce::dontSendNotification);
+                break;
+            case 1: // Color (-1 to +1)
+                dirtKnobs[i]->setRange(-1.0, 1.0, 0.01);
+                dirtKnobs[i]->setValue(0.0, juce::dontSendNotification);
+                break;
+            case 2: // Asym (-1 to +1)
+                dirtKnobs[i]->setRange(-1.0, 1.0, 0.01);
+                dirtKnobs[i]->setValue(0.0, juce::dontSendNotification);
+                break;
+            case 3: // Texture (0-1)
+                dirtKnobs[i]->setRange(0.0, 1.0, 0.01);
+                dirtKnobs[i]->setValue(0.35, juce::dontSendNotification);
+                break;
+            case 4: // Low-Cut (20-300 Hz)
+                dirtKnobs[i]->setRange(20.0, 300.0, 1.0);
+                dirtKnobs[i]->setValue(60.0, juce::dontSendNotification);
+                break;
+            case 5: // High-Cut (3000-22000 Hz)
+                dirtKnobs[i]->setRange(3000.0, 22000.0, 100.0);
+                dirtKnobs[i]->setValue(12000.0, juce::dontSendNotification);
+                break;
+            case 6: // Tone (-1 to +1)
+                dirtKnobs[i]->setRange(-1.0, 1.0, 0.01);
+                dirtKnobs[i]->setValue(0.0, juce::dontSendNotification);
+                break;
+            case 7: // Mix (0-1)
+                dirtKnobs[i]->setRange(0.0, 1.0, 0.01);
+                dirtKnobs[i]->setValue(1.0, juce::dontSendNotification);
+                break;
+        }
+        
+        // Connect to parameters
+        std::vector<juce::String> paramIds = {
+            "dirtDrive", "dirtColor", "dirtAsym", "dirtTexture", 
+            "dirtLowCut", "dirtHighCut", "dirtTone", "dirtMix"
+        };
+        
+        dirtAttachments[i] = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+            processorRef.getAPVTS(), paramIds[i], *dirtKnobs[i]);
+        
+        // Add listener to save snapshots when knob changes
+        dirtKnobs[i]->onValueChange = [this, i]() {
+            float value = dirtKnobs[i]->getValue();
+            processorRef.updateDirtCurrentStepSnapshot(i, value);
+            
+            // If All Steps toggle is active, update all step snapshots
+            if (dirtAllStepsEnabled) {
+                for (int step = 0; step < 16; ++step) {
+                    auto snapshot = processorRef.getDirtSafeSnapshot(step);
+                    switch (i) {
+                        case 0: snapshot.dirt.drive = value; break;
+                        case 1: snapshot.dirt.color = value; break;
+                        case 2: snapshot.dirt.asym = value; break;
+                        case 3: snapshot.dirt.texture = value; break;
+                        case 4: snapshot.dirt.lowCut = value; break;
+                        case 5: snapshot.dirt.highCut = value; break;
+                        case 6: snapshot.dirt.tone = value; break;
+                        case 7: snapshot.dirt.mix = value; break;
+                    }
+                    processorRef.setDirtStepSnapshot(step, snapshot);
+                }
+            }
+        };
+        
+        // Set knob images
+        if (assets.knobRing) {
+            dirtKnobs[i]->setRingImage(assets.knobRing->createCopy());
+        }
+        if (assets.knobInside) {
+            dirtKnobs[i]->setInnerImage(assets.knobInside->createCopy());
+        }
+
+        // Position the knob
+        dirtKnobs[i]->setBounds(x, y, knobSize, knobSize);
+        
+        // Create knob label (title above knob)
+        dirtKnobLabels[i] = std::make_unique<juce::Label>();
+        dirtKnobLabels[i]->setText(dirtKnobNames[i], juce::dontSendNotification);
+        dirtKnobLabels[i]->setFont(juce::Font(12.0f, juce::Font::bold));
+        dirtKnobLabels[i]->setColour(juce::Label::textColourId, juce::Colours::white);
+        dirtKnobLabels[i]->setJustificationType(juce::Justification::centred);
+        addAndMakeVisible(dirtKnobLabels[i].get());
+        dirtKnobLabels[i]->setVisible(false);
+        dirtKnobLabels[i]->setBounds(x, y - 25, knobSize, 20);
+        
+        // Create value label (shows current value below knob)
+        dirtValueLabels[i] = std::make_unique<juce::Label>();
+        dirtValueLabels[i]->setFont(juce::Font(12.0f));
+        dirtValueLabels[i]->setColour(juce::Label::textColourId, juce::Colours::white);
+        dirtValueLabels[i]->setJustificationType(juce::Justification::centred);
+        addAndMakeVisible(dirtValueLabels[i].get());
+        dirtValueLabels[i]->setVisible(false);
+        dirtValueLabels[i]->setBounds(x, y + knobSize + 18, knobSize, 20);
+        
+        // Create indicator bar
+        dirtIndicatorBars[i] = std::make_unique<IndicatorBar>();
+        addAndMakeVisible(dirtIndicatorBars[i].get());
+        dirtIndicatorBars[i]->setVisible(false);
+        dirtIndicatorBars[i]->setBounds(x + 10, y + knobSize + 8, knobSize - 20, 13);
+        dirtIndicatorBars[i]->setValue(0.5f);
+        
+        // Create dice button (hidden like delay page)
+        dirtDiceButtons[i] = std::make_unique<CustomDiceButton>();
+        dirtDiceButtons[i]->onClick = [this, i]() { randomizeIndividualDirtKnob(i); };
+        
+        // Create lock button
+        dirtLockButtons[i] = std::make_unique<LockButton>();
+        addAndMakeVisible(dirtLockButtons[i].get());
+        dirtLockButtons[i]->setVisible(false);
+        
+        const int diceSize = 10;
+        const int lockX = x + knobSize - diceSize - 5 + 10;
+        const int lockY = y - 20 - 2;
+        dirtLockButtons[i]->setBounds(lockX, lockY, diceSize, diceSize);
+        
+        if (assets.unlockedIcon && assets.lockedIcon) {
+            auto imgUnlocked = assets.unlockedIcon->createCopy();
+            auto imgLocked = assets.lockedIcon->createCopy();
+            dirtLockButtons[i]->setImages(std::move(imgUnlocked), std::move(imgLocked));
+        }
+        dirtLockButtons[i]->setToggleState(dirtKnobLocked[i], juce::dontSendNotification);
+        dirtLockButtons[i]->onClick = [this, i]() {
+            dirtKnobLocked[i] = dirtLockButtons[i]->getToggleState();
+            repaint();
+        };
+    }
+
+    DBG("[UI] Dirt knobs setup complete");
+}
+
+void PluginEditor::setupDirtEffectsArea()
+{
+    DBG("[UI] Setting up Dirt effects area...");
+    
+    auto effectArea = juce::Rectangle<int>(25, 54, 413, 296);
+    
+    // Create "EFFECT" title
+    dirtEffectsTitle = std::make_unique<juce::Label>();
+    dirtEffectsTitle->setText("EFFECT", juce::dontSendNotification);
+    dirtEffectsTitle->setFont(juce::Font(27.648f, juce::Font::bold));
+    dirtEffectsTitle->setColour(juce::Label::textColourId, juce::Colours::white);
+    dirtEffectsTitle->setJustificationType(juce::Justification::centredLeft);
+    addAndMakeVisible(dirtEffectsTitle.get());
+    dirtEffectsTitle->setVisible(false);
+    dirtEffectsTitle->setBounds(effectArea.getX() + 10, effectArea.getY() + 5, 100, 30);
+    
+    // Create dice button
+    dirtDiceButton = std::make_unique<CustomDiceButton>();
+    addAndMakeVisible(dirtDiceButton.get());
+    dirtDiceButton->setVisible(false);
+    
+    const int diceSize = 32;
+    dirtDiceButton->setBounds(effectArea.getX() + 130, effectArea.getY() + 5, diceSize, diceSize);
+    
+    if (assets.diceLarge != nullptr) {
+        dirtDiceButton->setDiceImage(assets.diceLarge->createCopy());
+    }
+    
+    dirtDiceButton->onClick = [this]() { randomizeDirtKnobValues(); };
+    
+    DBG("[UI] Dirt effects area setup complete");
+}
+
+void PluginEditor::setupDirtSequencerArea()
+{
+    DBG("[UI] Setting up Dirt sequencer area...");
+    
+    auto sequencerArea = juce::Rectangle<int>(25, 374, 413, 140);
+    
+    // Create 16 step buttons (4x4 grid)
+    const int buttonSize = 44;
+    const int buttonSpacing = 10;
+    const int gridStartX = sequencerArea.getX() + 15;
+    const int gridStartY = sequencerArea.getY() + 50;
+    
+    for (int i = 0; i < 16; ++i) {
+        int row = i / 4;
+        int col = i % 4;
+        int x = gridStartX + col * (buttonSize + buttonSpacing);
+        int y = gridStartY + row * (buttonSize + buttonSpacing);
+        
+        dirtStepButtons[i] = std::make_unique<StepButton>(i);
+        addAndMakeVisible(dirtStepButtons[i].get());
+        dirtStepButtons[i]->setVisible(false);
+        dirtStepButtons[i]->setBounds(x, y, buttonSize, buttonSize);
+        
+        if (assets.stepInactive) {
+            dirtStepButtons[i]->setInactiveImage(assets.stepInactive->createCopy());
+        }
+        if (assets.stepActive) {
+            dirtStepButtons[i]->setActiveImage(assets.stepActive->createCopy());
+        }
+        
+        dirtStepButtons[i]->onClick = [this, i]() { onDirtStepButtonClicked(i); };
+    }
+    
+    // Create "STEP" title
+    dirtStepTitle = std::make_unique<juce::Label>();
+    dirtStepTitle->setText("STEP", juce::dontSendNotification);
+    dirtStepTitle->setFont(juce::Font(27.648f, juce::Font::bold));
+    dirtStepTitle->setColour(juce::Label::textColourId, juce::Colours::white);
+    dirtStepTitle->setJustificationType(juce::Justification::centredLeft);
+    addAndMakeVisible(dirtStepTitle.get());
+    dirtStepTitle->setVisible(false);
+    dirtStepTitle->setBounds(sequencerArea.getX() + 10, sequencerArea.getY() + 5, 100, 30);
+    
+    // Create step amount label
+    dirtStepAmountLabel = std::make_unique<juce::Label>();
+    dirtStepAmountLabel->setText("16", juce::dontSendNotification);
+    dirtStepAmountLabel->setFont(juce::Font(16.8f, juce::Font::bold));
+    dirtStepAmountLabel->setColour(juce::Label::textColourId, juce::Colours::white);
+    dirtStepAmountLabel->setJustificationType(juce::Justification::centred);
+    dirtStepAmountLabel->setEditable(true);
+    addAndMakeVisible(dirtStepAmountLabel.get());
+    dirtStepAmountLabel->setVisible(false);
+    dirtStepAmountLabel->setBounds(gridStartX + 4 * (buttonSize + buttonSpacing) + 25, gridStartY - 5, 40, 30);
+    
+    dirtStepAmountLabel->onTextChange = [this]() {
+        int value = dirtStepAmountLabel->getText().getIntValue();
+        if (value >= 1 && value <= 16) {
+            processorRef.setDirtStepsUsed(value);
+            dirtStepAmountLabel->setText(juce::String(value), juce::dontSendNotification);
+            updateDirtSequencerUI();
+        }
+    };
+    
+    // Create rate dropdown
+    dirtRateDropdown = std::make_unique<juce::ComboBox>();
+    dirtRateDropdown->addItem("4", 1);
+    dirtRateDropdown->addItem("2", 2);
+    dirtRateDropdown->addItem("1", 3);
+    dirtRateDropdown->addItem("1/2", 4);
+    dirtRateDropdown->addItem("1/4", 5);
+    dirtRateDropdown->addItem("1/8", 6);
+    dirtRateDropdown->addItem("1/16", 7);
+    dirtRateDropdown->addItem("1/32", 8);
+    dirtRateDropdown->setSelectedId(6); // Default to 1/8
+    
+    const int processorDivIdx = processorRef.getDirtSeqState().divisionIndex.load();
+    dirtRateDropdown->setSelectedId(processorDivIdx + 1);
+    
+    dirtRateDropdown->setColour(juce::ComboBox::backgroundColourId, juce::Colours::transparentBlack);
+    dirtRateDropdown->setColour(juce::ComboBox::outlineColourId, juce::Colours::transparentBlack);
+    dirtRateDropdown->setColour(juce::ComboBox::buttonColourId, juce::Colours::transparentBlack);
+    dirtRateDropdown->setColour(juce::ComboBox::textColourId, juce::Colours::white);
+    dirtRateDropdown->setColour(juce::ComboBox::arrowColourId, juce::Colours::white);
+    dirtRateDropdown->onChange = [this]() {
+        if (dirtRateDropdown != nullptr) {
+            const int selected = dirtRateDropdown->getSelectedId();
+            if (selected >= 1 && selected <= 8) {
+                const int newDivisionIndex = juce::jlimit(0, 7, selected - 1);
+                processorRef.setDirtDivisionIndex(newDivisionIndex);
+                updateDirtSequencerUI();
+            }
+        }
+    };
+    addAndMakeVisible(dirtRateDropdown.get());
+    dirtRateDropdown->setVisible(false);
+    dirtRateDropdown->setBounds(gridStartX + 4 * (buttonSize + buttonSpacing) + 25, gridStartY + 35, 90, 30);
+    
+    // Create step dice button
+    dirtStepDiceButton = std::make_unique<CustomDiceButton>();
+    addAndMakeVisible(dirtStepDiceButton.get());
+    dirtStepDiceButton->setVisible(false);
+    
+    const int stepDiceSize = 40;
+    dirtStepDiceButton->setBounds(sequencerArea.getX() + sequencerArea.getWidth() - stepDiceSize - 5 + 15 - 5, 
+                                  sequencerArea.getY() - 5 - 40 + 25, stepDiceSize, stepDiceSize);
+    
+    if (assets.diceLarge != nullptr) {
+        dirtStepDiceButton->setDiceImage(assets.diceLarge->createCopy());
+    }
+    
+    dirtStepDiceButton->onClick = [this]() {
+        DBG("[UI] Dirt step dice button clicked - randomizing all step snapshots");
+        
+        for (int step = 0; step < 16; ++step) {
+            auto snapshot = processorRef.getDirtSafeSnapshot(step);
+            
+            if (!dirtKnobLocked[0]) snapshot.dirt.drive = juce::Random::getSystemRandom().nextFloat() * 36.0f;
+            if (!dirtKnobLocked[1]) snapshot.dirt.color = juce::Random::getSystemRandom().nextFloat() * 2.0f - 1.0f;
+            if (!dirtKnobLocked[2]) snapshot.dirt.asym = juce::Random::getSystemRandom().nextFloat() * 2.0f - 1.0f;
+            if (!dirtKnobLocked[3]) snapshot.dirt.texture = juce::Random::getSystemRandom().nextFloat();
+            if (!dirtKnobLocked[4]) snapshot.dirt.lowCut = 20.0f + juce::Random::getSystemRandom().nextFloat() * 280.0f;
+            if (!dirtKnobLocked[5]) snapshot.dirt.highCut = 3000.0f + juce::Random::getSystemRandom().nextFloat() * 19000.0f;
+            if (!dirtKnobLocked[6]) snapshot.dirt.tone = juce::Random::getSystemRandom().nextFloat() * 2.0f - 1.0f;
+            if (!dirtKnobLocked[7]) snapshot.dirt.mix = juce::Random::getSystemRandom().nextFloat();
+            
+            processorRef.setDirtStepSnapshot(step, snapshot);
+        }
+        
+        int currentStep = processorRef.getDirtCurrentStep();
+        StepSnapshot currentSnapshot = processorRef.getDirtSafeSnapshot(currentStep);
+        if (dirtKnobs[0]) dirtKnobs[0]->setValue(currentSnapshot.dirt.drive, juce::sendNotification);
+        if (dirtKnobs[1]) dirtKnobs[1]->setValue(currentSnapshot.dirt.color, juce::sendNotification);
+        if (dirtKnobs[2]) dirtKnobs[2]->setValue(currentSnapshot.dirt.asym, juce::sendNotification);
+        if (dirtKnobs[3]) dirtKnobs[3]->setValue(currentSnapshot.dirt.texture, juce::sendNotification);
+        if (dirtKnobs[4]) dirtKnobs[4]->setValue(currentSnapshot.dirt.lowCut, juce::sendNotification);
+        if (dirtKnobs[5]) dirtKnobs[5]->setValue(currentSnapshot.dirt.highCut, juce::sendNotification);
+        if (dirtKnobs[6]) dirtKnobs[6]->setValue(currentSnapshot.dirt.tone, juce::sendNotification);
+        if (dirtKnobs[7]) dirtKnobs[7]->setValue(currentSnapshot.dirt.mix, juce::sendNotification);
+    };
+    
+    // Create step power button
+    dirtStepPowerButton = std::make_unique<juce::DrawableButton>("dirtStepPower", juce::DrawableButton::ButtonStyle::ImageFitted);
+    addAndMakeVisible(dirtStepPowerButton.get());
+    dirtStepPowerButton->setVisible(false);
+    
+    const int powerButtonSize = 40;
+    dirtStepPowerButton->setBounds(sequencerArea.getX() + sequencerArea.getWidth() - powerButtonSize - 5 + 15 - 5 - 1, 
+                                   sequencerArea.getY() - 5 - 40 + 25 + 5, powerButtonSize, powerButtonSize);
+    
+    dirtStepPowerButton->setColour(juce::DrawableButton::backgroundColourId, juce::Colours::transparentBlack);
+    dirtStepPowerButton->setColour(juce::DrawableButton::backgroundOnColourId, juce::Colours::transparentBlack);
+    
+    if (assets.stepPowerOn != nullptr) {
+        dirtStepPowerButton->setImages(assets.stepPowerOn->createCopy().get());
+    }
+    
+    dirtStepPowerButton->setClickingTogglesState(true);
+    dirtStepPowerButton->setToggleState(dirtStepAreaEnabled, juce::dontSendNotification);
+    dirtStepPowerButton->onClick = [this]() {
+        dirtStepAreaEnabled = dirtStepPowerButton->getToggleState();
+        DBG("[UI] Dirt step area power: " << (dirtStepAreaEnabled ? "ON" : "OFF"));
+        
+        if (!dirtStepAreaEnabled) {
+            processorRef.setDirtSequencerEnabled(false);
+        } else {
+            processorRef.setDirtSequencerEnabled(true);
+        }
+    };
+    
+    DBG("[UI] Dirt sequencer area setup complete");
+}
+
+void PluginEditor::setupDirtAllStepsToggle()
+{
+    DBG("[UI] Setting up Dirt All Steps toggle...");
+    
+    auto effectArea = juce::Rectangle<int>(25, 54, 413, 296);
+    
+    dirtAllStepsToggle = std::make_unique<AllStepsToggleButton>();
+    addAndMakeVisible(dirtAllStepsToggle.get());
+    dirtAllStepsToggle->setVisible(false);
+    
+    const int buttonSize = 29;
+    dirtAllStepsToggle->setBounds(effectArea.getX() + effectArea.getWidth()/2 - buttonSize/2 + 30, 
+                                  effectArea.getY() - 1, buttonSize, buttonSize);
+    
+    if (assets.stepTopInactive != nullptr && assets.stepTopActive != nullptr) {
+        static_cast<AllStepsToggleButton*>(dirtAllStepsToggle.get())->setImages(
+            assets.stepTopInactive->createCopy(),
+            assets.stepTopActive->createCopy()
+        );
+    }
+    
+    dirtAllStepsToggle->setToggleState(false, juce::dontSendNotification);
+    dirtAllStepsToggle->onClick = [this]() {
+        dirtAllStepsEnabled = dirtAllStepsToggle->getToggleState();
+        DBG("[UI] Dirt All Steps toggle: " << (dirtAllStepsEnabled ? "ON" : "OFF"));
+    };
+    
+    dirtAllStepsLabel = std::make_unique<juce::Label>();
+    dirtAllStepsLabel->setText("All Steps", juce::dontSendNotification);
+    dirtAllStepsLabel->setFont(juce::Font(14.4f, juce::Font::bold));
+    dirtAllStepsLabel->setColour(juce::Label::textColourId, juce::Colours::white);
+    dirtAllStepsLabel->setJustificationType(juce::Justification::centredLeft);
+    addAndMakeVisible(dirtAllStepsLabel.get());
+    dirtAllStepsLabel->setVisible(false);
+    dirtAllStepsLabel->setBounds(effectArea.getX() + effectArea.getWidth()/2 + buttonSize/2 + 5 + 30, 
+                                effectArea.getY() + 1, 80, 24);
+    
+    DBG("[UI] Dirt All Steps toggle setup complete");
+}
+
 
 // AutoPan helper methods
 void PluginEditor::randomizeAutoPanKnobValues()
@@ -3090,6 +3593,143 @@ void PluginEditor::onAutoPanStepButtonClicked(int stepIndex)
     updateAutoPanSequencerUI();
     
     DBG("[UI] Switched to AutoPan step " << stepIndex);
+}
+
+// Dirt page helper methods
+void PluginEditor::randomizeDirtKnobValues()
+{
+    DBG("[UI] Randomizing Dirt knob values...");
+    
+    for (int i = 0; i < 8; ++i)
+    {
+        if (dirtKnobLocked[i]) {
+            continue; // Skip locked knobs
+        }
+        
+        float randomValue = juce::Random::getSystemRandom().nextFloat();
+        
+        switch (i) {
+            case 0: // Drive (0-36 dB)
+                randomValue = juce::Random::getSystemRandom().nextFloat() * 36.0f;
+                break;
+            case 1: // Color (-1 to +1)
+                randomValue = juce::Random::getSystemRandom().nextFloat() * 2.0f - 1.0f;
+                break;
+            case 2: // Asym (-1 to +1)
+                randomValue = juce::Random::getSystemRandom().nextFloat() * 2.0f - 1.0f;
+                break;
+            case 3: // Texture (0-1)
+                randomValue = juce::Random::getSystemRandom().nextFloat();
+                break;
+            case 4: // Low-Cut (20-300 Hz)
+                randomValue = 20.0f + juce::Random::getSystemRandom().nextFloat() * 280.0f;
+                break;
+            case 5: // High-Cut (3000-22000 Hz)
+                randomValue = 3000.0f + juce::Random::getSystemRandom().nextFloat() * 19000.0f;
+                break;
+            case 6: // Tone (-1 to +1)
+                randomValue = juce::Random::getSystemRandom().nextFloat() * 2.0f - 1.0f;
+                break;
+            case 7: // Mix (0-1)
+                randomValue = juce::Random::getSystemRandom().nextFloat();
+                break;
+        }
+        
+        if (dirtKnobs[i]) {
+            dirtKnobs[i]->setValue(randomValue, juce::sendNotification);
+        }
+    }
+    
+    DBG("[UI] All Dirt knob values randomized");
+}
+
+void PluginEditor::randomizeIndividualDirtKnob(int knobIndex)
+{
+    if (knobIndex < 0 || knobIndex >= 8 || dirtKnobLocked[knobIndex])
+        return;
+    
+    float randomValue = juce::Random::getSystemRandom().nextFloat();
+    
+    switch (knobIndex) {
+        case 0: randomValue = juce::Random::getSystemRandom().nextFloat() * 36.0f; break;
+        case 1: randomValue = juce::Random::getSystemRandom().nextFloat() * 2.0f - 1.0f; break;
+        case 2: randomValue = juce::Random::getSystemRandom().nextFloat() * 2.0f - 1.0f; break;
+        case 3: randomValue = juce::Random::getSystemRandom().nextFloat(); break;
+        case 4: randomValue = 20.0f + juce::Random::getSystemRandom().nextFloat() * 280.0f; break;
+        case 5: randomValue = 3000.0f + juce::Random::getSystemRandom().nextFloat() * 19000.0f; break;
+        case 6: randomValue = juce::Random::getSystemRandom().nextFloat() * 2.0f - 1.0f; break;
+        case 7: randomValue = juce::Random::getSystemRandom().nextFloat(); break;
+    }
+    
+    if (dirtKnobs[knobIndex]) {
+        dirtKnobs[knobIndex]->setValue(randomValue, juce::sendNotification);
+    }
+}
+
+void PluginEditor::onDirtStepButtonClicked(int stepIndex)
+{
+    DBG("[UI] Dirt step button " << stepIndex << " clicked");
+    
+    // Save current step's snapshot before switching
+    int currentStep = dirtUiSelectedStep;
+    if (currentStep >= 0 && currentStep < 16) {
+        StepSnapshot currentSnapshot;
+        if (dirtKnobs[0]) currentSnapshot.dirt.drive = dirtKnobs[0]->getValue();
+        if (dirtKnobs[1]) currentSnapshot.dirt.color = dirtKnobs[1]->getValue();
+        if (dirtKnobs[2]) currentSnapshot.dirt.asym = dirtKnobs[2]->getValue();
+        if (dirtKnobs[3]) currentSnapshot.dirt.texture = dirtKnobs[3]->getValue();
+        if (dirtKnobs[4]) currentSnapshot.dirt.lowCut = dirtKnobs[4]->getValue();
+        if (dirtKnobs[5]) currentSnapshot.dirt.highCut = dirtKnobs[5]->getValue();
+        if (dirtKnobs[6]) currentSnapshot.dirt.tone = dirtKnobs[6]->getValue();
+        if (dirtKnobs[7]) currentSnapshot.dirt.mix = dirtKnobs[7]->getValue();
+        
+        processorRef.setDirtStepSnapshot(currentStep, currentSnapshot);
+    }
+    
+    // Switch to new step
+    dirtUiSelectedStep = stepIndex;
+    processorRef.setDirtSelectedStep(stepIndex);
+    
+    // Load new step's snapshot into knobs
+    StepSnapshot newSnapshot = processorRef.getDirtSafeSnapshot(stepIndex);
+    if (dirtKnobs[0]) dirtKnobs[0]->setValue(newSnapshot.dirt.drive, juce::sendNotification);
+    if (dirtKnobs[1]) dirtKnobs[1]->setValue(newSnapshot.dirt.color, juce::sendNotification);
+    if (dirtKnobs[2]) dirtKnobs[2]->setValue(newSnapshot.dirt.asym, juce::sendNotification);
+    if (dirtKnobs[3]) dirtKnobs[3]->setValue(newSnapshot.dirt.texture, juce::sendNotification);
+    if (dirtKnobs[4]) dirtKnobs[4]->setValue(newSnapshot.dirt.lowCut, juce::sendNotification);
+    if (dirtKnobs[5]) dirtKnobs[5]->setValue(newSnapshot.dirt.highCut, juce::sendNotification);
+    if (dirtKnobs[6]) dirtKnobs[6]->setValue(newSnapshot.dirt.tone, juce::sendNotification);
+    if (dirtKnobs[7]) dirtKnobs[7]->setValue(newSnapshot.dirt.mix, juce::sendNotification);
+    
+    updateDirtSequencerUI();
+    
+    DBG("[UI] Switched to Dirt step " << stepIndex);
+}
+
+void PluginEditor::updateDirtSequencerUI()
+{
+    int selectedStep = dirtUiSelectedStep;
+    int playingStep = processorRef.getDirtCurrentStep();
+    const int stepsUsed = processorRef.getDirtSeqState().stepsUsed.load();
+    
+    for (int i = 0; i < 16; ++i) {
+        if (dirtStepButtons[i] != nullptr) {
+            dirtStepButtons[i]->setSelected(i == selectedStep);
+            bool sequencerEnabled = processorRef.getDirtSeqState().enabled.load();
+            dirtStepButtons[i]->setPlaying(sequencerEnabled && (i == playingStep));
+            bool shouldBeEnabled = i < stepsUsed;
+            dirtStepButtons[i]->setEnabledStep(shouldBeEnabled);
+        }
+    }
+    
+    if (dirtStepAmountLabel != nullptr) {
+        dirtStepAmountLabel->setText(juce::String(stepsUsed), juce::dontSendNotification);
+    }
+    
+    if (dirtRateDropdown != nullptr) {
+        int divisionIndex = processorRef.getDirtSeqState().divisionIndex.load();
+        dirtRateDropdown->setSelectedId(divisionIndex + 1);
+    }
 }
 
 void PluginEditor::updateAutoPanSequencerUI()
