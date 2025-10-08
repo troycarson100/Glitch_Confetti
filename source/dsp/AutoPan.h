@@ -101,9 +101,15 @@ struct AutoPan
             
             if (syncToTransport && isPlaying) {
                 // True transport sync: calculate phase from PPQ position
-                const double beatsPerCycle = 60.0 / (double)fHz;  // beats per LFO cycle
-                const double transportPhase = std::fmod(ppqPosition / beatsPerCycle, 1.0);
+                // Since fHz = (BPM/60) / quarterNotesPerCycle, we can calculate:
+                // quarterNotesPerCycle = (BPM/60) / fHz
+                // So beatsPerCycle = quarterNotesPerCycle * (BPM/60) / (BPM/60) = quarterNotesPerCycle
+                const double quarterNotesPerCycle = (double)bpm / (60.0 * (double)fHz);
+                const double transportPhase = std::fmod(ppqPosition / quarterNotesPerCycle, 1.0);
                 phase = transportPhase;
+            } else if (syncToTransport && !isPlaying) {
+                // Transport sync enabled but not playing - freeze at current position
+                // Don't advance phase
             } else {
                 // Free-running mode: increment phase normally
                 phase += inc;
