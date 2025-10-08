@@ -7,6 +7,7 @@
 #include "dsp/DspFlags.h"
 #include "StepSnapshot.h"
 #include "MeterTheme.h"
+#include "ui/AudioRingBuffer.h"
 
 // Real-time safe level tracking for meters
 struct MeterState {
@@ -272,6 +273,11 @@ public:
         std::atomic<uint64_t> sampleCounter{ 0 };
     };
     AutoPanSeqVisClock autopanSeqClock;
+    
+    // Output Visualizer - ring buffer for waveform display
+    AudioRingBuffer outputVisualizerBuffer;
+    int downsampleCounter = 0;
+    const int downsampleRate = 128; // Push to visualizer every 128 samples
     
     // Get current pan position for visualizer
     float getCurrentPanPosition() const { 

@@ -9,6 +9,7 @@
 #include "ui/BigComboWithSvgLNF.h"
 #include "DualBarMeter.h"
 #include "ui/PanManBar.h"
+#include "ui/OutputVisualizer.h"
 
 // Tab system enum
 enum class FxPageID { SpaceDelay, Panner };
@@ -237,6 +238,7 @@ public:
     
     // L/C/R pan indicator
     std::unique_ptr<PanManBar> panBar;
+    std::unique_ptr<OutputVisualizer> outputVisualizer;
     
     // Effects area components
     std::unique_ptr<juce::Label> effectsTitle;

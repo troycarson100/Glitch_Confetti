@@ -167,6 +167,11 @@ void PluginProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
     autoPan.setVisualState(&panVis);
     seq.prepare(sampleRate); // Initialize delay sequencer with sample rate
     autopanSeq.prepare(sampleRate); // Initialize AutoPan sequencer with sample rate
+    
+    // Prepare output visualizer buffer (store ~1 second of downsampled audio)
+    const int bufferSize = (int)(sampleRate / downsampleRate); // ~1 second at downsample rate
+    outputVisualizerBuffer.prepare(bufferSize);
+    downsampleCounter = 0;
 }
 
 void PluginProcessor::releaseResources()
@@ -575,6 +580,26 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
     
     // Legacy single-value tracking for compatibility
     outputLevel.store(juce::jmax(outputMeter.rmsDbL.load(), outputMeter.rmsDbR.load()));
+    
+    // Feed output visualizer (post-FX, downsampled)
+    const int numSamples = buffer.getNumSamples();
+    const int numChannels = buffer.getNumChannels();
+    if (numChannels > 0) {
+        for (int i = 0; i < numSamples; ++i) {
+            if (++downsampleCounter >= downsampleRate) {
+                downsampleCounter = 0;
+                
+                // Calculate mono amplitude (average L+R if stereo)
+                float monoSample = buffer.getSample(0, i);
+                if (numChannels > 1) {
+                    monoSample = (monoSample + buffer.getSample(1, i)) * 0.5f;
+                }
+                
+                // Push to ring buffer for visualization
+                outputVisualizerBuffer.push(monoSample);
+            }
+        }
+    }
 
     // Debug logging
     static int c = 0;

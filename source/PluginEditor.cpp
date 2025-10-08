@@ -1212,6 +1212,17 @@ void PluginEditor::setupKnobs()
         // Position PanManBar above the master knobs
         panBar->setBounds(startX - meterSpacing - meterWidth + 10, y - 285, (meterWidth * 2 + meterSpacing + totalKnobWidth - 20) - 90, 24);
         
+        // Create and position Output Visualizer (glowing waveform display)
+        outputVisualizer = std::make_unique<OutputVisualizer>(processorRef.outputVisualizerBuffer);
+        addAndMakeVisible(*outputVisualizer);
+        
+        // Position visualizer in upper portion of master area (above macro knobs, below title)
+        const int vizX = masterArea.getX() + 10;
+        const int vizY = masterArea.getY() + 40; // Below "MASTER" title
+        const int vizWidth = masterArea.getWidth() - 20;
+        const int vizHeight = 120; // Enough height for smooth waveform
+        outputVisualizer->setBounds(vizX, vizY, vizWidth, vizHeight);
+        
         DBG("[UI] Master knobs and stereo meters setup complete");
     }
 
