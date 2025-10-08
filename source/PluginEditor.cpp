@@ -1136,7 +1136,7 @@ void PluginEditor::setupKnobs()
         };
         r.getPhaseOffset01 = [this] { 
             auto* param = processorRef.getAPVTS().getRawParameterValue("autopanPhase");
-            return param ? param->load() / 360.0f : 0.0f;
+            return param ? param->load() / 360.0f : 0.5f;  // Default 180° = 0.5
         };
         r.getShape01 = [this] { 
             auto* param = processorRef.getAPVTS().getRawParameterValue("autopanWaveShape");
