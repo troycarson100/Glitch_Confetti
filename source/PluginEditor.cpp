@@ -380,10 +380,10 @@ void PluginEditor::timerCallback()
                                 "4 bars", "2 bars", "1 bar", "1/2.", "1/2", 
                                 "1/4.", "1/4", "1/4T", 
                                 "1/8", "1/8.", "1/8T",
-                                "1/16", "1/16.", "1/16T", "1/32"
+                                "1/16", "1/16.", "1/16T", "1/32", "1/64"
                             };
-                            // Map 0.0-1.0 to indices 0-14 (15 divisions)
-                            int divIndex = juce::jlimit(0, 14, (int)(knobValue * 14.0f));
+                            // Map 0.0-1.0 to indices 0-15 (16 divisions)
+                            int divIndex = juce::jlimit(0, 15, (int)(knobValue * 15.0f));
                             valueText = divisionLabels[divIndex];
                         } else {
                             valueText = juce::String(knobValue, 2) + "Hz";

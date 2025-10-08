@@ -104,12 +104,12 @@ struct PanVisualState {
 
 struct AutoPan
 {
-    void prepare(double sr, double smoothingMs = 200.0)
+    void prepare(double sr, double smoothingMs = 500.0)
     {
         sampleRate = (sr > 0.0 ? sr : 44100.0);
         const double secs = juce::jmax(0.0, smoothingMs) / 1000.0;
 
-        // Use longer smoothing for frequency to prevent clicks/scratches
+        // Use very long smoothing for frequency to prevent clicks/scratches (500ms baseline)
         freqSmooth.reset(sampleRate, secs);
         // Shorter smoothing for other params for more responsive feel
         const double shortSecs = 50.0 / 1000.0;
@@ -130,11 +130,11 @@ struct AutoPan
         // Detect large frequency changes and apply extra-long smoothing to prevent clicks
         const float currentFreq = freqSmooth.getCurrentValue();
         const float freqChange = std::abs(freqHz - currentFreq);
-        const float changeThreshold = 0.5f; // Hz
+        const float changeThreshold = 0.2f; // Hz - more sensitive detection
         
         if (freqChange > changeThreshold && sampleRate > 0.0) {
-            // Large frequency change detected - apply very long smoothing (500ms)
-            freqSmooth.reset(sampleRate, 0.5); // 500ms
+            // Large frequency change detected - apply ultra-long smoothing (1000ms = 1 second)
+            freqSmooth.reset(sampleRate, 1.0); // 1000ms
         }
         
         freqSmooth.setTargetValue(juce::jmax(0.0f, freqHz));

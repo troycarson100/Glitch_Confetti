@@ -4,7 +4,7 @@
 enum class Div {
     Bars4, Bars2, Bar, DottedHalf, Half, DottedQuarter, Quarter,
     TripletQuarter, Eighth, DottedEighth, TripletEighth,
-    Sixteenth, DottedSixteenth, TripletSixteenth, ThirtySecond
+    Sixteenth, DottedSixteenth, TripletSixteenth, ThirtySecond, SixtyFourth
 };
 
 static inline float quarterNotesPerCycle(Div d)
@@ -26,6 +26,7 @@ static inline float quarterNotesPerCycle(Div d)
         case Div::DottedSixteenth:  return 0.375f; // dotted 1/16
         case Div::TripletSixteenth: return 1.0f/6.0f;
         case Div::ThirtySecond:     return 0.125f; // 1/32
+        case Div::SixtyFourth:      return 0.0625f; // 1/64
     }
     return 1.0f;
 }
@@ -56,6 +57,7 @@ static inline juce::String getDivDisplayName(Div d)
         case Div::DottedSixteenth:  return "1/16.";
         case Div::TripletSixteenth: return "1/16T";
         case Div::ThirtySecond:     return "1/32";
+        case Div::SixtyFourth:      return "1/64";
     }
     return "1/4";
 }
@@ -65,7 +67,7 @@ static constexpr Div allDivisions[] = {
     Div::Bars4, Div::Bars2, Div::Bar, Div::DottedHalf, Div::Half, 
     Div::DottedQuarter, Div::Quarter, Div::TripletQuarter, 
     Div::Eighth, Div::DottedEighth, Div::TripletEighth,
-    Div::Sixteenth, Div::DottedSixteenth, Div::TripletSixteenth, Div::ThirtySecond
+    Div::Sixteenth, Div::DottedSixteenth, Div::TripletSixteenth, Div::ThirtySecond, Div::SixtyFourth
 };
 
 static constexpr int numDivisions = sizeof(allDivisions) / sizeof(allDivisions[0]);
