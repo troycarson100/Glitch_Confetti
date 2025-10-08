@@ -325,6 +325,8 @@ public:
     // Dirt effects area components
     std::unique_ptr<juce::Label> dirtEffectsTitle;
     std::unique_ptr<CustomDiceButton> dirtDiceButton;
+    std::unique_ptr<juce::DrawableButton> dirtFxPowerButton;
+    bool dirtFxAreaEnabled = true;
     
     // Dirt sequencer components (independent sequencer)
     std::array<std::unique_ptr<StepButton>, 16> dirtStepButtons;

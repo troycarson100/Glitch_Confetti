@@ -2438,6 +2438,7 @@ void PluginEditor::setupTabSystem()
     // Add Dirt effects area components
     if (dirtEffectsTitle) dirtGroup.push_back(dirtEffectsTitle.get());
     if (dirtDiceButton) dirtGroup.push_back(dirtDiceButton.get());
+    if (dirtFxPowerButton) dirtGroup.push_back(dirtFxPowerButton.get());
     
     // Add Dirt sequencer components
     if (dirtAllStepsToggle) dirtGroup.push_back(dirtAllStepsToggle.get());
@@ -2447,6 +2448,7 @@ void PluginEditor::setupTabSystem()
     }
     if (dirtStepAmountLabel) dirtGroup.push_back(dirtStepAmountLabel.get());
     if (dirtRateDropdown) dirtGroup.push_back(dirtRateDropdown.get());
+    if (dirtStdToggle) dirtGroup.push_back(dirtStdToggle.get());
     if (dirtStepTitle) dirtGroup.push_back(dirtStepTitle.get());
     if (dirtStepDiceButton) dirtGroup.push_back(dirtStepDiceButton.get());
     if (dirtStepPowerButton) dirtGroup.push_back(dirtStepPowerButton.get());
@@ -3311,6 +3313,30 @@ void PluginEditor::setupDirtEffectsArea()
     
     dirtDiceButton->onClick = [this]() { randomizeDirtKnobValues(); };
     
+    // Create FX power button (EXACT same positioning as AutoPan)
+    dirtFxPowerButton = std::make_unique<juce::DrawableButton>("dirtFxPower", juce::DrawableButton::ButtonStyle::ImageFitted);
+    addAndMakeVisible(dirtFxPowerButton.get());
+    dirtFxPowerButton->setVisible(false);
+
+    const int buttonSize = 46;
+    dirtFxPowerButton->setBounds(effectArea.getX() + effectArea.getWidth() - buttonSize - 8 + 8 + 3, 
+                                 effectArea.getY() + 6 - 20 + 4, buttonSize, buttonSize);
+
+    dirtFxPowerButton->setColour(juce::DrawableButton::backgroundColourId, juce::Colours::transparentBlack);
+    dirtFxPowerButton->setColour(juce::DrawableButton::backgroundOnColourId, juce::Colours::transparentBlack);
+
+    if (assets.fxPowerOn != nullptr)
+    {
+        dirtFxPowerButton->setImages(assets.fxPowerOn->createCopy().get());
+    }
+
+    dirtFxPowerButton->setClickingTogglesState(true);
+    dirtFxPowerButton->setToggleState(dirtFxAreaEnabled, juce::dontSendNotification);
+    dirtFxPowerButton->onClick = [this]() {
+        dirtFxAreaEnabled = dirtFxPowerButton->getToggleState();
+        DBG("[UI] Dirt FX power: " << (dirtFxAreaEnabled ? "ON" : "OFF"));
+    };
+    
     DBG("[UI] Dirt effects area setup complete");
 }
 
@@ -3415,6 +3441,25 @@ void PluginEditor::setupDirtSequencerArea()
     addAndMakeVisible(dirtRateDropdown.get());
     dirtRateDropdown->setVisible(false);
     dirtRateDropdown->setBounds(sequencerArea.getX() + 240, sequencerArea.getY() - 10, 60, 25);
+    
+    // Create STD toggle (EXACT same positioning as AutoPan)
+    dirtStdToggle = std::make_unique<CircularToggleButton>();
+    dirtStdToggle->setButtonText("-");
+    addAndMakeVisible(dirtStdToggle.get());
+    dirtStdToggle->setVisible(false);
+    dirtStdToggle->setBounds(sequencerArea.getX() + 288, sequencerArea.getY() - 14, 30, 30);
+    
+    dirtStdToggle->onClick = [this]() {
+        // Cycle through -/t/. states
+        static int stdState = 0; // 0=-, 1=t, 2=.
+        stdState = (stdState + 1) % 3;
+        
+        switch (stdState) {
+            case 0: dirtStdToggle->setButtonText("-"); break;
+            case 1: dirtStdToggle->setButtonText("t"); break;
+            case 2: dirtStdToggle->setButtonText("."); break;
+        }
+    };
     
     // Create step dice button (EXACT same positioning as AutoPan)
     dirtStepDiceButton = std::make_unique<CustomDiceButton>();
