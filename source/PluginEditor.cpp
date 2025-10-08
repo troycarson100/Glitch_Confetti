@@ -63,6 +63,10 @@ PluginEditor::PluginEditor (PluginProcessor& p)
         setupAutoPanAllStepsToggle();
         setupAutoPanStepPowerButton();
         
+        // Sync AutoPan sequencer state with processor on startup
+        processorRef.setAutoPanSequencerEnabled(autopanStepAreaEnabled);
+        DBG("[UI] Initial AutoPan sequencer state synced: enabled=" << autopanStepAreaEnabled);
+        
         // Setup tab system
         setupTabSystem();
         
@@ -2752,7 +2756,12 @@ void PluginEditor::setupAutoPanSequencerArea()
     autopanRateDropdown->addItem("1/8", 6);
     autopanRateDropdown->addItem("1/16", 7);
     autopanRateDropdown->addItem("1/32", 8);
-    autopanRateDropdown->setSelectedId(6); // Default to 1/8
+    autopanRateDropdown->setSelectedId(6); // Default to 1/8 (ID 6 = divisionIndex 5)
+    
+    // Sync with processor's autopanSeq.divisionIndex on startup
+    const int processorDivIdx = processorRef.getAutoPanSeqState().divisionIndex.load();
+    autopanRateDropdown->setSelectedId(processorDivIdx + 1); // divisionIndex 0-7 -> ID 1-8
+    DBG("[UI] AutoPan rate dropdown initialized: divIdx=" << processorDivIdx << " -> ID=" << (processorDivIdx + 1));
     autopanRateDropdown->setColour(juce::ComboBox::backgroundColourId, juce::Colours::transparentBlack);
     autopanRateDropdown->setColour(juce::ComboBox::outlineColourId, juce::Colours::transparentBlack);
     autopanRateDropdown->setColour(juce::ComboBox::buttonColourId, juce::Colours::transparentBlack);
@@ -2861,6 +2870,8 @@ void PluginEditor::setupAutoPanSequencerArea()
         processorRef.setAutoPanSequencerEnabled(autopanStepAreaEnabled);
         updateAutoPanStepAreaVisibility();
         DBG("[UI] AutoPan sequencer " << (autopanStepAreaEnabled ? "enabled" : "disabled"));
+        DBG("[UI] AutoPan seq.enabled=" << processorRef.getAutoPanSeqState().enabled.load() 
+            << " active=" << processorRef.getAutoPanSeqState().active.load());
     };
     
     DBG("[UI] AutoPan sequencer area setup complete");
@@ -3026,14 +3037,35 @@ void PluginEditor::updateAutoPanSequencerUI()
     int selectedStep = autopanUiSelectedStep;  // UI selected step for editing
     int playingStep = processorRef.getAutoPanPlayingStep();  // Audio thread playing step
     const int stepsUsed = processorRef.getAutoPanSeqState().stepsUsed.load();
+    const bool enabled = processorRef.getAutoPanSeqState().enabled.load();
+    const bool active = processorRef.getAutoPanSeqState().active.load();
+    const int divIdx = processorRef.getAutoPanSeqState().divisionIndex.load();
+    
+    static int lastPlayingStep = -1;
+    static int debugTimer = 0;
+    
+    // Log every 10 calls (~1 second)
+    if ((debugTimer++ % 10) == 0) {
+        DBG("[UI] AutoPan: enabled=" << enabled << " active=" << active 
+            << " divIdx=" << divIdx << " steps=" << stepsUsed 
+            << " playing=" << playingStep << " selected=" << selectedStep
+            << " (should show playing highlight: " << (enabled && active) << ")");
+    }
+    
+    if (playingStep != lastPlayingStep) {
+        DBG("[UI] AutoPan playingStep changed: " << lastPlayingStep << " -> " << playingStep);
+        lastPlayingStep = playingStep;
+    }
     
     for (int i = 0; i < 16; ++i) {
         if (autopanStepButtons[i] != nullptr) {
             // Selected step (clicked for editing) shows SVG
             autopanStepButtons[i]->setSelected(i == selectedStep);
             // Playing step (during sequencer playback) shows grey highlight
+            // Only show playing highlight if sequencer is enabled AND DAW is playing (active)
             bool sequencerEnabled = processorRef.getAutoPanSeqState().enabled.load();
-            autopanStepButtons[i]->setPlaying(sequencerEnabled && (i == playingStep) && (i != selectedStep));
+            bool sequencerActive = processorRef.getAutoPanSeqState().active.load();
+            autopanStepButtons[i]->setPlaying(sequencerEnabled && sequencerActive && (i == playingStep) && (i != selectedStep));
             // Grey out inactive steps beyond stepsUsed
             bool shouldBeEnabled = i < stepsUsed;
             autopanStepButtons[i]->setEnabledStep(shouldBeEnabled);

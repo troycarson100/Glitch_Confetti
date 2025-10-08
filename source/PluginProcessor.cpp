@@ -20,7 +20,7 @@ PluginProcessor::PluginProcessor()
     // Initialize AutoPan sequencer state (independent)
     autopanSeq.enabled.store(false);
     autopanSeq.stepsUsed.store(16);
-    autopanSeq.divisionIndex.store(3); // 1/8 default
+    autopanSeq.divisionIndex.store(5); // 1/8 default (index 5 = item ID 6)
     autopanSeq.playingStep.store(0);
     
     // Initialize UI state
@@ -41,6 +41,17 @@ PluginProcessor::PluginProcessor()
     
     // Initialize standalone start time
     standaloneStartTime = std::chrono::high_resolution_clock::now();
+    
+    // Initialize AutoPan step snapshots with default values
+    for (int i = 0; i < 16; ++i) {
+        autopanStepSnapshots[i].autopan.rate = 0.43f;      // ~1/4 note (default)
+        autopanStepSnapshots[i].autopan.phase = 180.0f;    // 180° default
+        autopanStepSnapshots[i].autopan.waveType = 0;      // Sine
+        autopanStepSnapshots[i].autopan.waveShape = 0.5f;  // Middle
+        autopanStepSnapshots[i].autopan.inverted = false;  // Not inverted
+        autopanStepSnapshots[i].autopan.amount = 1.0f;     // Full amount
+    }
+    DBG("[Stepper] Initialized AutoPan step snapshots with default values");
     
     // Verification log
     DBG("[Stepper] Built formats: VST3/AU/Standalone. BundleID=com.glitchcorp.stepper, Code=Stp1");
@@ -217,12 +228,25 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
             if (playEdge) {
                 armPending.store(true);
                 seq.resetPhase();          // visuals/phase reset
-                // Auto-enable sequencer on DAW play (user can still disable with power button)
+                autopanSeq.resetPhase();   // AutoPan sequencer phase reset
+                
+                // Auto-enable delay sequencer on DAW play (user can still disable with power button)
                 if (followHost.load()) {
-                    seq.enabled.store(true);  // Enable sequencer
-                    seq.active.store(true);   // Activate sequencer
+                    seq.enabled.store(true);  // Enable delay sequencer
+                    seq.active.store(true);   // Activate delay sequencer
                 }
-                DBG("[SEQ] Play edge detected, enabled: " << seq.enabled.load() << " active: " << seq.active.load());
+                
+                // AutoPan sequencer activates if enabled (independent of followHost)
+                if (autopanSeq.enabled.load()) {
+                    autopanSeq.active.store(true);  // Activate AutoPan sequencer
+                    DBG("[AUTOPAN SEQ] ✓ Activated on play edge");
+                } else {
+                    DBG("[AUTOPAN SEQ] ✗ NOT activated (enabled=" << autopanSeq.enabled.load() << ")");
+                }
+                
+                DBG("[SEQ] Play edge detected");
+                DBG("[SEQ] Delay: enabled=" << seq.enabled.load() << " active=" << seq.active.load());
+                DBG("[SEQ] AutoPan: enabled=" << autopanSeq.enabled.load() << " active=" << autopanSeq.active.load());
             }
 
             // If arming and PPQ now valid, lock-in
@@ -230,6 +254,17 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                 const int step = seq.computeStepFromPPQ(ppq);
                 seq.currentStep.store(step);
                 seq.playingStep.store(step);
+                
+                // Also lock-in AutoPan sequencer if enabled
+                if (autopanSeq.enabled.load()) {
+                    const int autopanStep = autopanSeq.computeStepFromPPQ(ppq);
+                    autopanSeq.currentStep.store(autopanStep);
+                    autopanSeq.playingStep.store(autopanStep);
+                    DBG("[AUTOPAN SEQ] Lock-in at PPQ=" << ppq << " -> step " << autopanStep);
+                } else {
+                    DBG("[AUTOPAN SEQ] Skip lock-in (not enabled)");
+                }
+                
                 armPending.store(false);
             }
 
@@ -241,6 +276,27 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                     seq.playingStep.store(step);
                     DBG("[SEQ] Step changed to: " << step << " PPQ: " << ppq);
                 }
+            }
+            
+            // AutoPan sequencer stepping (shares same PPQ/transport as delay sequencer)
+            static int autopanDebugCounter = 0;
+            if ((autopanDebugCounter++ % 100) == 0) {  // Log every 100 blocks
+                DBG("[AUTOPAN SEQ DEBUG] isPlaying=" << isPlaying << " ppqValid=" << ppqValid 
+                    << " active=" << autopanSeq.active.load() << " enabled=" << autopanSeq.enabled.load()
+                    << " PPQ=" << ppq);
+            }
+            
+            if (isPlaying && ppqValid && autopanSeq.active.load()) {
+                const int autopanStep = autopanSeq.computeStepFromPPQ(ppq);
+                if (autopanStep != autopanSeq.currentStep.load()) {
+                    autopanSeq.currentStep.store(autopanStep);
+                    autopanSeq.playingStep.store(autopanStep);
+                    DBG("[AUTOPAN SEQ] ★ Step changed to: " << autopanStep << " PPQ: " << ppq 
+                        << " divIdx=" << autopanSeq.divisionIndex.load() 
+                        << " stepsUsed=" << autopanSeq.stepsUsed.load());
+                }
+            } else if (autopanSeq.enabled.load() && !autopanSeq.active.load()) {
+                DBG("[AUTOPAN SEQ] WARNING: Enabled but not active! isPlaying=" << isPlaying << " ppqValid=" << ppqValid);
             }
 
             // Stop edge: freeze
@@ -292,27 +348,8 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
         applySnapshotTargets(StepSnapshot{});
     }
     
-    // === AUTOPAN SEQUENCER (Independent) ===
-    // AutoPan has its own sequencer that runs independently
-    if (auto* ph = getPlayHead())
-    {
-        auto pos = ph->getPosition();
-        if (pos.hasValue())
-        {
-            const bool isPlaying = pos->getIsPlaying();
-            const bool ppqValid = pos->getPpqPosition().hasValue();
-            const double ppq = pos->getPpqPosition().hasValue() ? *pos->getPpqPosition() : -1.0;
-            
-            // AutoPan sequencer stepping (independent of delay sequencer)
-            if (isPlaying && ppqValid && autopanSeq.active.load()) {
-                const int autopanStep = autopanSeq.computeStepFromPPQ(ppq);
-                if (autopanStep != autopanSeq.currentStep.load()) {
-                    autopanSeq.currentStep.store(autopanStep);
-                    autopanSeq.playingStep.store(autopanStep);
-                }
-            }
-        }
-    }
+    // Note: AutoPan sequencer stepping is now handled in the main transport section above
+    // to share the same play head position and timing with the delay sequencer
 
     // Clear any unused output channels
     for (auto i = getTotalNumInputChannels(); i < getTotalNumOutputChannels(); ++i)

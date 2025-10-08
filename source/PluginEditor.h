@@ -301,7 +301,7 @@ public:
     std::unique_ptr<juce::Label> autopanStepTitle;
     std::unique_ptr<CustomDiceButton> autopanStepDiceButton;
     std::unique_ptr<juce::DrawableButton> autopanStepPowerButton;
-    bool autopanStepAreaEnabled = true;
+    bool autopanStepAreaEnabled = false; // Sequencer disabled by default (user must enable with power button)
     
     // AutoPan All Steps toggle
     std::unique_ptr<AllStepsToggleButton> autopanAllStepsToggle;
