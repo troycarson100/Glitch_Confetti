@@ -2349,30 +2349,38 @@ void PluginEditor::setupAutoPanKnobs()
         
         // Set specific ranges and values for each AutoPan knob
         switch (i) {
-            case 0: // Rate (0.05-90 Hz, default 1.0 Hz)
-                autopanKnobs[i]->setRange(0.05, 90.0, 0.01);
-                autopanKnobs[i]->setValue(1.0, juce::dontSendNotification);
+            case 0: { // Rate - initialize with sync range since sync is ON by default
+                autopanKnobs[i]->setRange(0.0, 1.0, 0.001);  // 0-1 for divisions
+                // Get the current parameter value (should be in 0-1 range for sync)
+                auto* rateParam = processorRef.getAPVTS().getRawParameterValue("autopanRate");
+                autopanKnobs[i]->setValue(rateParam ? rateParam->load() : 0.5, juce::dontSendNotification);
                 break;
-            case 1: // Phase (0-360 degrees, default 180 degrees)
+            }
+            case 1: { // Phase (0-360 degrees, default 180 degrees)
                 autopanKnobs[i]->setRange(0.0, 360.0, 1.0);
                 autopanKnobs[i]->setValue(180.0, juce::dontSendNotification);
                 break;
-            case 2: // Wave Type (0-4, default 0 = Sine)
+            }
+            case 2: { // Wave Type (0-4, default 0 = Sine)
                 autopanKnobs[i]->setRange(0, 4, 1);
                 autopanKnobs[i]->setValue(0, juce::dontSendNotification);
                 break;
-            case 3: // Wave Shape (0-1, default 0.5)
+            }
+            case 3: { // Wave Shape (0-1, default 0.5)
                 autopanKnobs[i]->setRange(0.0, 1.0, 0.01);
                 autopanKnobs[i]->setValue(0.5, juce::dontSendNotification);
                 break;
-            case 4: // Normal/Inverted (0-1, default 0 = Normal)
+            }
+            case 4: { // Normal/Inverted (0-1, default 0 = Normal)
                 autopanKnobs[i]->setRange(0, 1, 1);
                 autopanKnobs[i]->setValue(0, juce::dontSendNotification);
                 break;
-            case 5: // Amount (0-1, default 0.5)
+            }
+            case 5: { // Amount (0-1, default 0.5)
                 autopanKnobs[i]->setRange(0.0, 1.0, 0.01);
                 autopanKnobs[i]->setValue(0.5, juce::dontSendNotification);
                 break;
+            }
         }
         
         // Connect to parameters
