@@ -64,16 +64,7 @@ public:
             const float a = std::exp(- (dist * dist) / (2.0f * falloffSigma * falloffSigma));
             const float alpha = juce::jlimit(0.08f, 1.0f, a); // keep a faint floor
 
-            // Make center bin slightly larger (when very close to center)
-            float binWidth = dx - 1.0f;
-            float binHeight = h;
-            if (dist < 0.02f) // Very close to center (within 2% of total width)
-            {
-                binWidth *= 1.3f;   // 30% wider
-                binHeight *= 1.2f;  // 20% taller
-            }
-
-            juce::Rectangle<float> bin(binsArea.getX() + i * dx, binsArea.getY(), binWidth, binHeight);
+            juce::Rectangle<float> bin(binsArea.getX() + i * dx, binsArea.getY(), dx - 1.0f, h);
             g.setColour(binColour.withAlpha(alpha));
             g.fillRoundedRectangle(bin, 2.0f);
         }
