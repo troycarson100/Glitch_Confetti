@@ -226,6 +226,14 @@ public:
     AutoPan autoPan;
     PanVisualState panVis;
     
+    // PanMan-style visualizer clock
+    struct PanVisClock {
+        std::atomic<double> phase01{ 0.0 };         // cycles in [0..1]
+        std::atomic<double> incPerSample{ 0.0 };    // cycles per sample
+        std::atomic<double> sampleRate{ 44100.0 };  // for UI interp
+    };
+    PanVisClock panClock;
+    
     // Get current pan position for visualizer
     float getCurrentPanPosition() const { 
         // Check if sync mode is enabled

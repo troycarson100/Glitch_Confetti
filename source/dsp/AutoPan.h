@@ -199,6 +199,15 @@ struct AutoPan
 
     // Set visual state pointer for UI synchronization
     void setVisualState(PanVisualState* vs) { visualState = vs; }
+    
+    // Publish clock data for PanManBar visualizer
+    void publishClockData(double phase01, double incPerSample, double sr) {
+        if (visualState) {
+            visualState->phaseAtPublish.store(phase01, std::memory_order_release);
+            visualState->phaseIncPerSample.store(incPerSample, std::memory_order_release);
+            visualState->audioSamplesAtPublish.store(panSampleCounter, std::memory_order_release);
+        }
+    }
 
     // Members
     double sampleRate { 44100.0 };

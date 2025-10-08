@@ -421,6 +421,11 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                 // Free-running mode
                 autoPan.process(buffer, isPlaying, syncToTransport);
             }
+            
+            // Publish clock data for PanManBar visualizer (once per block)
+            panClock.phase01.store(autoPan.phase, std::memory_order_release);
+            panClock.incPerSample.store(autoPan.freqSmooth.getCurrentValue() / autoPan.sampleRate, std::memory_order_release);
+            panClock.sampleRate.store(autoPan.sampleRate, std::memory_order_release);
         }
     }
     

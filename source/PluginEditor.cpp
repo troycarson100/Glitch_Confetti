@@ -1136,15 +1136,23 @@ void PluginEditor::setupKnobs()
         panIndicator = std::make_unique<PanIndicator>();
         addAndMakeVisible(*panIndicator);
         
-        // Create pan visualizer
-        PanVisualizer::Reader r;
-        r.getPhaseAtPublish = [this] { return processorRef.panVis.phaseAtPublish.load(std::memory_order_acquire); };
-        r.getPhaseIncPerSample = [this] { return processorRef.panVis.phaseIncPerSample.load(std::memory_order_acquire); };
-        r.getAudioSamplesAtPublish = [this] { return processorRef.panVis.audioSamplesAtPublish.load(std::memory_order_acquire); };
-        r.getSampleRate = [this] { return processorRef.getSampleRate(); };
+        // Create PanManBar visualizer
+        PanManBar::Reader r;
+        r.getPhase01 = [this] { return processorRef.panClock.phase01.load(std::memory_order_acquire); };
+        r.getIncPerSample = [this] { return processorRef.panClock.incPerSample.load(std::memory_order_acquire); };
+        r.getSampleRate = [this] { return processorRef.panClock.sampleRate.load(std::memory_order_acquire); };
+        r.getDepth01 = [this] { 
+            auto* param = processorRef.getAPVTS().getRawParameterValue("autopanAmount");
+            return param ? param->load() : 0.5f;
+        };
+        r.getPhaseOffset01 = [this] { 
+            auto* param = processorRef.getAPVTS().getRawParameterValue("autopanPhase");
+            return param ? param->load() / 360.0f : 0.0f;
+        };
         
-        panViz = std::make_unique<PanVisualizer>(r);
-        addAndMakeVisible(*panViz);
+        panBar = std::make_unique<PanManBar>(r, 72); // 72 bins looks nice
+        panBar->setColours(juce::Colour(0xFF2A2C30), juce::Colours::white); // dark track, white bins
+        addAndMakeVisible(*panBar);
         
         // Position meters
         inMeter->setBounds(startX - meterSpacing - meterWidth + 10, y + (knobSize - meterHeight) / 2, meterWidth, meterHeight);  // Move right 10px
@@ -1153,8 +1161,8 @@ void PluginEditor::setupKnobs()
         // Position pan indicator above the master knobs (90px smaller width, moved up 250px)
         panIndicator->setBounds(startX - meterSpacing - meterWidth + 10, y - 285, (meterWidth * 2 + meterSpacing + totalKnobWidth - 20) - 90, 25);
         
-        // Position pan visualizer below the pan indicator
-        panViz->setBounds(startX - meterSpacing - meterWidth + 10, y - 250, (meterWidth * 2 + meterSpacing + totalKnobWidth - 20) - 90, 40);
+        // Position PanManBar below the pan indicator
+        panBar->setBounds(startX - meterSpacing - meterWidth + 10, y - 250, (meterWidth * 2 + meterSpacing + totalKnobWidth - 20) - 90, 24);
         
         DBG("[UI] Master knobs and stereo meters setup complete");
     }
