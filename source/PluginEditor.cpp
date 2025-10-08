@@ -3033,41 +3033,12 @@ void PluginEditor::onAutoPanStepButtonClicked(int stepIndex)
 
 void PluginEditor::updateAutoPanSequencerUI()
 {
-    // Update AutoPan step button selection and playing states
+    // Update AutoPan step button selection and playing states (EXACT same logic as Delay sequencer)
     int selectedStep = autopanUiSelectedStep;  // UI selected step for editing
+    int playingStep = processorRef.getAutoPanCurrentStep();  // Read from audio thread (same as Delay sequencer)
     const int stepsUsed = processorRef.getAutoPanSeqState().stepsUsed.load();
-    const bool enabled = processorRef.getAutoPanSeqState().enabled.load();
-    const bool active = processorRef.getAutoPanSeqState().active.load();
-    const int divIdx = processorRef.getAutoPanSeqState().divisionIndex.load();
-    
-    // Read from the independent AutoPan sequencer visual clock
-    const double ppqNow = processorRef.autopanSeqClock.ppqAtBlockStart.load(std::memory_order_acquire);
-    const bool isPlaying = processorRef.autopanSeqClock.isPlaying.load(std::memory_order_acquire);
-    
-    // Compute current playing step from PPQ (independent calculation, not shared with Delay)
-    int playingStep = -1;
-    if (isPlaying && enabled && active) {
-        // Use the AutoPan sequencer's own division and step count
-        const double beatsPerStep = processorRef.getAutoPanSeqState().beatsPerStepFromDivision(divIdx);
-        if (beatsPerStep > 0.0 && std::isfinite(ppqNow)) {
-            const double stepsExact = ppqNow / beatsPerStep;
-            const int k = (int)std::floor(stepsExact);
-            playingStep = ((k % stepsUsed) + stepsUsed) % stepsUsed;
-        }
-    }
     
     static int lastPlayingStep = -1;
-    static int debugTimer = 0;
-    
-    // Log every 10 calls (~1 second)
-    if ((debugTimer++ % 10) == 0) {
-        DBG("[UI] AutoPan: enabled=" << enabled << " active=" << active 
-            << " divIdx=" << divIdx << " steps=" << stepsUsed 
-            << " playing=" << playingStep << " selected=" << selectedStep
-            << " PPQ=" << ppqNow << " isPlaying=" << isPlaying
-            << " (should show playing highlight: " << (enabled && active && isPlaying) << ")");
-    }
-    
     if (playingStep != lastPlayingStep) {
         DBG("[UI] AutoPan playingStep changed: " << lastPlayingStep << " -> " << playingStep);
         lastPlayingStep = playingStep;
@@ -3077,11 +3048,9 @@ void PluginEditor::updateAutoPanSequencerUI()
         if (autopanStepButtons[i] != nullptr) {
             // Selected step (clicked for editing) shows SVG
             autopanStepButtons[i]->setSelected(i == selectedStep);
-            // Playing step (during sequencer playback) shows grey highlight
-            // Only show playing highlight if sequencer is enabled AND DAW is playing (active)
+            // Show playing highlight only if sequencer is enabled (EXACT same as Delay sequencer)
             bool sequencerEnabled = processorRef.getAutoPanSeqState().enabled.load();
-            bool sequencerActive = processorRef.getAutoPanSeqState().active.load();
-            autopanStepButtons[i]->setPlaying(sequencerEnabled && sequencerActive && (i == playingStep) && (i != selectedStep));
+            autopanStepButtons[i]->setPlaying(sequencerEnabled && (i == playingStep));
             // Grey out inactive steps beyond stepsUsed
             bool shouldBeEnabled = i < stepsUsed;
             autopanStepButtons[i]->setEnabledStep(shouldBeEnabled);
