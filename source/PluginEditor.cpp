@@ -478,6 +478,29 @@ void PluginEditor::timerCallback()
         }
     }
     
+    // Update Dirt knob value labels
+    for (int i = 0; i < 8; ++i)
+    {
+        if (dirtKnobs[i] != nullptr && dirtValueLabels[i] != nullptr)
+        {
+            float knobValue = dirtKnobs[i]->getValue();
+            juce::String valueText;
+            
+            switch (i) {
+                case 0: valueText = juce::String(knobValue, 1) + " dB"; break; // Drive
+                case 1: valueText = juce::String(knobValue, 2); break; // Color
+                case 2: valueText = juce::String(knobValue, 2); break; // Asym
+                case 3: valueText = juce::String(knobValue, 2); break; // Texture
+                case 4: valueText = juce::String((int)knobValue) + " Hz"; break; // Low-Cut
+                case 5: valueText = juce::String((int)knobValue) + " Hz"; break; // High-Cut
+                case 6: valueText = juce::String(knobValue, 2); break; // Tone
+                case 7: valueText = juce::String((int)(knobValue * 100)) + "%"; break; // Mix
+            }
+            
+            dirtValueLabels[i]->setText(valueText, juce::dontSendNotification);
+        }
+    }
+    
     // Update Dirt knob indicators (same pattern as AutoPan)
     for (int i = 0; i < 8; ++i)
     {
