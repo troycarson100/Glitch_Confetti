@@ -98,8 +98,17 @@ struct AutoPan
 
             // Advance continuous phase (now in 0..1 range)
             const double inc = (double)fHz / sampleRate;  // cycles/sample
-            phase += inc;
-            if (phase >= 1.0) phase -= 1.0;  // wrap 0..1
+            
+            if (syncToTransport && isPlaying) {
+                // True transport sync: calculate phase from PPQ position
+                const double beatsPerCycle = 60.0 / (double)fHz;  // beats per LFO cycle
+                const double transportPhase = std::fmod(ppqPosition / beatsPerCycle, 1.0);
+                phase = transportPhase;
+            } else {
+                // Free-running mode: increment phase normally
+                phase += inc;
+                if (phase >= 1.0) phase -= 1.0;  // wrap 0..1
+            }
 
             // Compute phase with offset
             double phaseWithOffset = phase + phOf;
