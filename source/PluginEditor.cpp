@@ -4545,6 +4545,17 @@ void PluginEditor::setupChorusKnobs()
         };
     }
 
+    // Create parameter attachments to connect knobs to APVTS
+    std::vector<juce::String> chorusParamIds = {
+        "chorusDelayMs", "chorusRateHz", "chorusDepthMs", "chorusFeedback", 
+        "chorusVoices", "chorusWidth", "chorusShape", "chorusMix"
+    };
+    
+    for (int i = 0; i < 8; ++i) {
+        chorusAttachments[i] = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+            processorRef.getAPVTS(), chorusParamIds[i], *chorusKnobs[i]);
+    }
+
     DBG("[UI] Chorus knobs setup complete");
 }
 
