@@ -305,13 +305,7 @@ void PluginEditor::paint (juce::Graphics& g)
 
 void PluginEditor::resized()
 {
-    // Place the tabs along the top strip - smaller and moved up 10px
-    const int tabH = 34; // visual tab height (smaller)
-    const int tabW = 120; // width (smaller)
-
-    // Positions moved up 10px and closer together
-    if (tabSpaceDelay) tabSpaceDelay->setBounds(24, 0, tabW, tabH);   // orange left tab
-    if (tabPanner) tabPanner->setBounds(170, 0, tabW, tabH);      // green tab closer to left tab
+    // Tabs are positioned in setupTabSystem() - no need to reposition here
 }
 
 
@@ -2697,11 +2691,13 @@ void PluginEditor::setupTabSystem()
     addAndMakeVisible(*tabDirt);
     addAndMakeVisible(*tabChorus);
     
-    // Position tabs immediately after creation - smaller and moved up 10px
-    tabSpaceDelay->setBounds(24, 0, 120, 34);
-    tabPanner->setBounds(170, 0, 120, 34);
-    tabDirt->setBounds(316, 0, 120, 34);
-    tabChorus->setBounds(462, 0, 120, 34);
+    // Position tabs - 25% smaller than original (120→90, 34→26)
+    const int tabW = 90;  // 25% smaller
+    const int tabH = 26;  // 25% smaller
+    tabSpaceDelay->setBounds(24, 0, tabW, tabH);
+    tabPanner->setBounds(170, 0, tabW, tabH);
+    tabDirt->setBounds(316, 0, tabW, tabH);
+    tabChorus->setBounds(462, 0, tabW, tabH);
     
     DBG("[UI] Tab buttons created and added to editor");
     DBG("[UI] tabSpaceDelay bounds: " << tabSpaceDelay->getBounds().toString());
@@ -2739,12 +2735,13 @@ void PluginEditor::setupTabSystem()
         selector->setColour(juce::PopupMenu::highlightedBackgroundColourId, juce::Colour(0xFF4A4A4A));
     }
     
-    // Position dropdowns as small carrot buttons (20x20px)
-    const int carrotSize = 20;
-    effectSelector1->setBounds(24 + 120 + 5, 7, carrotSize, carrotSize);
-    effectSelector2->setBounds(170 + 120 + 5, 7, carrotSize, carrotSize);
-    effectSelector3->setBounds(316 + 120 + 5, 7, carrotSize, carrotSize);
-    effectSelector4->setBounds(462 + 120 + 5, 7, carrotSize, carrotSize);
+    // Position dropdowns as small carrot buttons (40% smaller = 12x12px)
+    const int carrotSize = 12;  // 40% smaller than 20px
+    const int carrotY = 7;
+    effectSelector1->setBounds(24 + tabW + 5, carrotY, carrotSize, carrotSize);
+    effectSelector2->setBounds(170 + tabW + 5, carrotY, carrotSize, carrotSize);
+    effectSelector3->setBounds(316 + tabW + 5, carrotY, carrotSize, carrotSize);
+    effectSelector4->setBounds(462 + tabW + 5, carrotY, carrotSize, carrotSize);
     
     // Set initial selections based on current router assignment
     auto& router = processorRef.getEffectRouter();
