@@ -3088,8 +3088,9 @@ void PluginEditor::setupAutoPanSequencerArea()
     autopanStepAmountLabel->setColour(juce::TextEditor::backgroundColourId, juce::Colours::transparentBlack);
     autopanStepAmountLabel->setColour(juce::TextEditor::outlineColourId, juce::Colours::white);
     autopanStepAmountLabel->setColour(juce::TextEditor::focusedOutlineColourId, juce::Colours::white);
-    autopanStepAmountLabel->setJustification(juce::Justification::centred);
+    autopanStepAmountLabel->setJustification(juce::Justification::centred); // Use centred text
     autopanStepAmountLabel->setBorder(juce::BorderSize<int>(2));
+    autopanStepAmountLabel->setIndents(0, 0); // No left/top padding for better centering
     autopanStepAmountLabel->setInputRestrictions(2, "0123456789"); // Only allow 1-2 digit numbers
     autopanStepAmountLabel->setWantsKeyboardFocus(true);
     autopanStepAmountLabel->setMouseClickGrabsKeyboardFocus(true);
@@ -3644,8 +3645,9 @@ void PluginEditor::setupDirtSequencerArea()
     dirtStepAmountLabel->setColour(juce::TextEditor::backgroundColourId, juce::Colours::transparentBlack);
     dirtStepAmountLabel->setColour(juce::TextEditor::outlineColourId, juce::Colours::white);
     dirtStepAmountLabel->setColour(juce::TextEditor::focusedOutlineColourId, juce::Colours::white);
-    dirtStepAmountLabel->setJustification(juce::Justification::centred);
+    dirtStepAmountLabel->setJustification(juce::Justification::centred); // Use centred text
     dirtStepAmountLabel->setBorder(juce::BorderSize<int>(2));
+    dirtStepAmountLabel->setIndents(0, 0); // No left/top padding for better centering
     dirtStepAmountLabel->setInputRestrictions(2, "0123456789"); // Only allow 1-2 digit numbers
     dirtStepAmountLabel->setWantsKeyboardFocus(true);
     dirtStepAmountLabel->setMouseClickGrabsKeyboardFocus(true);
