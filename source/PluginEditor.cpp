@@ -162,7 +162,10 @@ void PluginEditor::paint (juce::Graphics& g)
             else if (tabNumber == 2) background = assets.spaceDelayBackgroundTab2.get();
             else if (tabNumber == 3) background = assets.spaceDelayBackgroundTab3.get();
             else if (tabNumber == 4) background = assets.spaceDelayBackgroundTab4.get();
-            DBG("[ROUTER] Showing SpaceDelay_Background_Tab" << tabNumber << " for slot " << slotIndex);
+            DBG("[ROUTER] SpaceDelay slot=" << slotIndex << " tabNumber=" << tabNumber 
+                << " Tab1ptr=" << (void*)assets.spaceDelayBackgroundTab1.get()
+                << " Tab2ptr=" << (void*)assets.spaceDelayBackgroundTab2.get()
+                << " selectedPtr=" << (void*)background);
             break;
             
         case EffectID::AutoPan:
