@@ -2689,6 +2689,12 @@ void PluginEditor::setupTabSystem()
     tabDirt->setBounds(316, 0, tabW, tabH);
     tabChorus->setBounds(462, 0, tabW, tabH);
     
+    // Force tab buttons to clip their content to their bounds
+    for (auto* tab : {tabSpaceDelay.get(), tabPanner.get(), tabDirt.get(), tabChorus.get()})
+    {
+        tab->setPaintingIsUnclipped(false);
+    }
+    
     DBG("[UI] Tab buttons created and added to editor");
     DBG("[UI] tabSpaceDelay bounds: " << tabSpaceDelay->getBounds().toString());
     DBG("[UI] tabPanner bounds: " << tabPanner->getBounds().toString());
