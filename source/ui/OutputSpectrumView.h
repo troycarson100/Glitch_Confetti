@@ -75,8 +75,19 @@ public:
         g.setGradientFill(bgGradient);
         g.fillRect(bounds);
         
+        // === DRAWING BOUNDS with margins to prevent cutoff ===
+        // Add generous margins to keep all content within the visible frame
+        const float leftMargin = 8.0f;
+        const float rightMargin = 8.0f;
+        const float topMargin = 20.0f;
+        const float bottomMargin = 12.0f;
+        
+        auto drawBounds = bounds.reduced(leftMargin, topMargin);
+        drawBounds = drawBounds.withTrimmedRight(rightMargin - leftMargin);
+        drawBounds = drawBounds.withTrimmedBottom(bottomMargin - topMargin);
+        
         // === GRID ===
-        drawGrid(g, bounds);
+        drawGrid(g, drawBounds);
         
         // === TRAIL ECHOES (oldest first) ===
         const std::array<float, MaxTrails> trailAlphas = {0.03f, 0.05f, 0.08f, 0.12f, 0.18f, 0.25f, 0.35f, 0.5f};
@@ -89,11 +100,11 @@ public:
             float alpha = trailAlphas[i];
             float verticalOffset = (MaxTrails - i) * -1.5f; // Slight vertical decay
             
-            drawSpectrumCurve(g, bounds, trail, alpha, verticalOffset, false);
+            drawSpectrumCurve(g, drawBounds, trail, alpha, verticalOffset, false);
         }
         
         // === LIVE CURVE (on top) ===
-        drawSpectrumCurve(g, bounds, currentFrame, 1.0f, 0.0f, true);
+        drawSpectrumCurve(g, drawBounds, currentFrame, 1.0f, 0.0f, true);
     }
     
     void resized() override
@@ -203,13 +214,13 @@ private:
             g.fillPath(fillPath);
         }
         
-        // Draw the curve stroke
-        g.setColour(juce::Colours::white.withAlpha(alpha * 0.9f));
-        g.strokePath(curvePath, juce::PathStrokeType(2.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+        // Draw the curve stroke (more defined with sharper stroke)
+        g.setColour(juce::Colours::white.withAlpha(alpha * 0.95f));
+        g.strokePath(curvePath, juce::PathStrokeType(2.5f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
         
-        // Add glow layer
-        g.setColour(juce::Colours::white.withAlpha(alpha * 0.3f));
-        g.strokePath(curvePath, juce::PathStrokeType(4.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+        // Add glow layer (slightly more prominent)
+        g.setColour(juce::Colours::white.withAlpha(alpha * 0.4f));
+        g.strokePath(curvePath, juce::PathStrokeType(5.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
     }
     
     float freqToX(float freq, const juce::Rectangle<float>& bounds) const
@@ -224,16 +235,17 @@ private:
     
     float dbToY(float db, const juce::Rectangle<float>& bounds) const
     {
-        // -90 dB at bottom, +18 dB at top with margin to prevent cutoff
-        // Increased headroom from +6 to +18 dB to prevent clipping on loud signals
-        // Use power curve (0.8) for better visual distribution
-        const float topMargin = 10.0f; // Pixels of margin at top to prevent cutoff
-        const float bottomMargin = 5.0f; // Small margin at bottom
-        const float usableHeight = bounds.getHeight() - topMargin - bottomMargin;
+        // -90 dB at bottom, with generous visual headroom to prevent hitting top
+        // Scale down the visual amplitude by using larger dB range
+        // This is VISUAL ONLY - doesn't affect audio
+        // Margins are now handled in paint(), so use full bounds height
         
-        float t = juce::jlimit(0.0f, 1.0f, (db + 90.0f) / 108.0f); // 90+18=108 dB range
-        t = std::pow(t, 0.8f); // Ease low end
-        return bounds.getBottom() - bottomMargin - (t * usableHeight);
+        // Use 140 dB range to compress the display more (prevents hitting top)
+        float t = juce::jlimit(0.0f, 1.0f, (db + 90.0f) / 140.0f); // Much wider range = more compressed visually
+        t = std::pow(t, 0.7f); // Even more compression to keep peaks lower
+        
+        // Scale down to 80% of available height for extra safety
+        return bounds.getBottom() - (t * bounds.getHeight() * 0.8f);
     }
     
     // Lock-free FIFO for audio→UI communication

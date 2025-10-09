@@ -178,9 +178,9 @@ private:
             float magHigh = computeBinMagnitude(binHigh);
             float mag = juce::jmax(magLow, magHigh);
             
-            // Convert to dB (increased ceiling to +18 dB for headroom)
+            // Convert to dB (increased ceiling to +24 dB for headroom)
             float db = 20.0f * std::log10(mag + 1e-12f);
-            db = juce::jlimit(-90.0f, 18.0f, db);
+            db = juce::jlimit(-90.0f, 24.0f, db);
             
             // Apply filter attenuation (12 dB/oct slopes)
             float filterGain = calculateFilterGain(freq);

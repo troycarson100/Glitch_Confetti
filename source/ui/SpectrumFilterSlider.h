@@ -43,19 +43,19 @@ public:
                                        bounds.getRight() - highCutX, bounds.getHeight());
         g.fillRoundedRectangle(highCut, 3.0f);
         
-        // Draw handles
-        const float handleWidth = 4.0f;
+        // Draw handles (3x thicker, white)
+        const float handleWidth = 12.0f; // 3x thicker (was 4.0f)
         const float handleHeight = bounds.getHeight() + 4.0f;
         
-        // Low cut handle (highpass)
-        g.setColour(juce::Colours::orange.withAlpha(0.9f));
+        // Low cut handle (highpass) - white
+        g.setColour(juce::Colours::white.withAlpha(0.95f));
         g.fillRoundedRectangle(lowCutX - handleWidth * 0.5f, bounds.getY() - 2.0f,
-                              handleWidth, handleHeight, 2.0f);
+                              handleWidth, handleHeight, 3.0f);
         
-        // High cut handle (lowpass)
-        g.setColour(juce::Colours::cyan.withAlpha(0.9f));
+        // High cut handle (lowpass) - white
+        g.setColour(juce::Colours::white.withAlpha(0.95f));
         g.fillRoundedRectangle(highCutX - handleWidth * 0.5f, bounds.getY() - 2.0f,
-                              handleWidth, handleHeight, 2.0f);
+                              handleWidth, handleHeight, 3.0f);
         
         // Frequency labels
         g.setFont(10.0f);
