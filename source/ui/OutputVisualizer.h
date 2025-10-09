@@ -28,19 +28,8 @@ public:
     {
         auto bounds = getLocalBounds().toFloat();
         
-        // Background - subtle dark gradient
-        juce::ColourGradient bgGradient(
-            juce::Colour(0xFF1A1A1A), bounds.getX(), bounds.getY(),
-            juce::Colour(0xFF0F0F0F), bounds.getX(), bounds.getBottom(),
-            false
-        );
-        g.setGradientFill(bgGradient);
-        g.fillRect(bounds);
-        
-        // Draw center line (subtle reference)
+        // No background - transparent so only white waveform is visible
         const float centerY = bounds.getCentreY();
-        g.setColour(juce::Colour(0x20FFFFFF));
-        g.drawHorizontalLine((int)centerY, bounds.getX(), bounds.getRight());
         
         // Get latest samples from ring buffer
         const int numSamples = juce::jmin(500, audioBuffer.size());
