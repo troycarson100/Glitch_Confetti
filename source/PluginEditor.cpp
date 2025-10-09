@@ -5592,22 +5592,23 @@ void PluginEditor::setupReverbEffectsArea()
         randomizeReverbKnobValues();
     };
     
-    // Create FX power button
-    reverbFxPowerButton = std::make_unique<juce::DrawableButton>("reverbFxPower", juce::DrawableButton::ImageFitted);
+    // Create FX power button (EXACT same as Chorus)
+    reverbFxPowerButton = std::make_unique<juce::DrawableButton>("reverbFxPower", juce::DrawableButton::ButtonStyle::ImageFitted);
     addAndMakeVisible(reverbFxPowerButton.get());
     reverbFxPowerButton->setVisible(false);
-    reverbFxPowerButton->setClickingTogglesState(true);
-    
-    const int powerSize = 40;
-    // Position it to the right of the dice button
-    reverbFxPowerButton->setBounds(effectArea.getX() + 170, effectArea.getY() - 5, powerSize, powerSize);
-    
+
+    const int buttonSize = 46;
+    reverbFxPowerButton->setBounds(effectArea.getX() + effectArea.getWidth() - buttonSize - 8 + 8 + 3, 
+                                 effectArea.getY() + 6 - 20 + 4, buttonSize, buttonSize);
+
     reverbFxPowerButton->setColour(juce::DrawableButton::backgroundColourId, juce::Colours::transparentBlack);
     reverbFxPowerButton->setColour(juce::DrawableButton::backgroundOnColourId, juce::Colours::transparentBlack);
     
     if (assets.fxPowerOn != nullptr) {
         reverbFxPowerButton->setImages(assets.fxPowerOn->createCopy().get());
     }
+    
+    reverbFxPowerButton->setClickingTogglesState(true);
     
     auto* verbEnabledParam = processorRef.getAPVTS().getRawParameterValue("verbEnabled");
     if (verbEnabledParam) {
@@ -5723,8 +5724,6 @@ void PluginEditor::setupReverbSequencerArea()
     
     // Rate dropdown (EXACT same as Dirt)
     reverbRateDropdown = std::make_unique<juce::ComboBox>();
-    addAndMakeVisible(reverbRateDropdown.get());
-    reverbRateDropdown->setVisible(false);
     
     reverbRateDropdown->addItem("4", 1);
     reverbRateDropdown->addItem("2", 2);
@@ -5742,6 +5741,12 @@ void PluginEditor::setupReverbSequencerArea()
         DBG("[UI] Reverb rate changed to index: " << selectedIndex);
     };
     
+    // Make dropdown background transparent
+    reverbRateDropdown->setColour(juce::ComboBox::backgroundColourId, juce::Colours::transparentBlack);
+    reverbRateDropdown->setColour(juce::ComboBox::outlineColourId, juce::Colours::white.withAlpha(0.3f));
+    
+    addAndMakeVisible(reverbRateDropdown.get());
+    reverbRateDropdown->setVisible(false);
     reverbRateDropdown->setBounds(sequencerArea.getX() + 220, sequencerArea.getY() - 10, 74, 25);
     
     // STD toggle (EXACT same positioning as Dirt)
@@ -5840,6 +5845,7 @@ void PluginEditor::setupReverbAllStepsToggle()
     reverbAllStepsToggle->onClick = [this]() {
         reverbAllStepsEnabled = reverbAllStepsToggle->getToggleState();
         DBG("[UI] Reverb All Steps toggle: " << (reverbAllStepsEnabled ? "ON" : "OFF"));
+        reverbAllStepsLabel->setAlpha(reverbAllStepsEnabled ? 1.0f : 0.5f);
     };
     
     // Label - match Dirt's exact positioning
@@ -5850,6 +5856,7 @@ void PluginEditor::setupReverbAllStepsToggle()
     reverbAllStepsLabel->setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(reverbAllStepsLabel.get());
     reverbAllStepsLabel->setVisible(false);
+    reverbAllStepsLabel->setAlpha(1.0f); // Start fully visible (will grey when toggled off)
     reverbAllStepsLabel->setBounds(effectArea.getX() + effectArea.getWidth()/2 + buttonSize/2 + 5 + 30, 
                                 effectArea.getY() + 1, 80, 24);
     
