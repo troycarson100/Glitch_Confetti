@@ -2656,14 +2656,28 @@ void PluginEditor::showPage(FxPageID id)
         currentPageParam->setValueNotifyingHost(pageValue);
     }
     
-    // Enable AutoPan effect when switching to AutoPan page
+    // Update AutoPan UI to reflect current parameter state (don't force it on)
     if (id == FxPageID::Panner) {
-        autopanFxAreaEnabled = true;
-        auto* autopanEnabledParam = processorRef.getAPVTS().getParameter("autopanEnabled");
+        auto* autopanEnabledParam = processorRef.getAPVTS().getRawParameterValue("autopanEnabled");
         if (autopanEnabledParam) {
-            autopanEnabledParam->setValueNotifyingHost(1.0f);
+            autopanFxAreaEnabled = autopanEnabledParam->load() > 0.5f;
+            if (autopanFxPowerButton) {
+                autopanFxPowerButton->setToggleState(autopanFxAreaEnabled, juce::dontSendNotification);
+            }
         }
         updateAutoPanFxAreaVisibility();
+    }
+    
+    // Update Dirt UI to reflect current parameter state (don't force it on)
+    if (id == FxPageID::Dirt) {
+        auto* dirtEnabledParam = processorRef.getAPVTS().getRawParameterValue("dirtEnabled");
+        if (dirtEnabledParam) {
+            dirtFxAreaEnabled = dirtEnabledParam->load() > 0.5f;
+            if (dirtFxPowerButton) {
+                dirtFxPowerButton->setToggleState(dirtFxAreaEnabled, juce::dontSendNotification);
+            }
+        }
+        updateDirtFxAreaVisibility();
     }
 
     // Show/Hide without touching parents or bounds
