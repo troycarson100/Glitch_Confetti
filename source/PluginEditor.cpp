@@ -1961,7 +1961,7 @@ void PluginEditor::setupSequencerArea()
     stepAmountLabel->setBorderSize(juce::BorderSize<int>(2));
     // Allow direct editing for step count (1..16)
     stepAmountLabel->setEditable(true, true, false);
-    stepAmountLabel->onTextChange = [this]() {
+    stepAmountLabel->onEditorHide = [this]() {
         if (stepAmountLabel != nullptr)
         {
             int value = stepAmountLabel->getText().getIntValue();
@@ -3050,9 +3050,9 @@ void PluginEditor::setupAutoPanSequencerArea()
     autopanStepAmountLabel->setJustificationType(juce::Justification::centred);
     autopanStepAmountLabel->setBorderSize(juce::BorderSize<int>(2));
     autopanStepAmountLabel->setEditable(true, true, false);
-    autopanStepAmountLabel->onTextChange = [this]() {
-        int value = autopanStepAmountLabel->getText().getIntValue();
-        if (value >= 1 && value <= 16) {
+    autopanStepAmountLabel->onEditorHide = [this]() {
+        if (autopanStepAmountLabel != nullptr) {
+            int value = autopanStepAmountLabel->getText().getIntValue();
             value = juce::jlimit(1, 16, value);
             processorRef.setAutoPanStepsUsed(value);
             autopanStepAmountLabel->setText(juce::String(value), juce::dontSendNotification);
@@ -3571,9 +3571,9 @@ void PluginEditor::setupDirtSequencerArea()
     dirtStepAmountLabel->setJustificationType(juce::Justification::centred);
     dirtStepAmountLabel->setBorderSize(juce::BorderSize<int>(2));
     dirtStepAmountLabel->setEditable(true, true, false);
-    dirtStepAmountLabel->onTextChange = [this]() {
-        int value = dirtStepAmountLabel->getText().getIntValue();
-        if (value >= 1 && value <= 16) {
+    dirtStepAmountLabel->onEditorHide = [this]() {
+        if (dirtStepAmountLabel != nullptr) {
+            int value = dirtStepAmountLabel->getText().getIntValue();
             value = juce::jlimit(1, 16, value);
             processorRef.setDirtStepsUsed(value);
             dirtStepAmountLabel->setText(juce::String(value), juce::dontSendNotification);
