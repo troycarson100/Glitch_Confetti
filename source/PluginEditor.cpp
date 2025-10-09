@@ -3110,7 +3110,7 @@ void PluginEditor::setupAutoPanSequencerArea()
             processorRef.setAutoPanStepsUsed(value);
             autopanStepAmountLabel->setText(juce::String(value), false);
             updateAutoPanSequencerUI();
-            autopanStepAmountLabel->moveCaretToEnd();
+            autopanStepAmountLabel->giveAwayKeyboardFocus(); // Exit editing mode
         }
     };
     autopanStepAmountLabel->onFocusLost = [this]() {
@@ -3666,7 +3666,7 @@ void PluginEditor::setupDirtSequencerArea()
             processorRef.setDirtStepsUsed(value);
             dirtStepAmountLabel->setText(juce::String(value), false);
             updateDirtSequencerUI();
-            dirtStepAmountLabel->moveCaretToEnd();
+            dirtStepAmountLabel->giveAwayKeyboardFocus(); // Exit editing mode
         }
     };
     dirtStepAmountLabel->onFocusLost = [this]() {
