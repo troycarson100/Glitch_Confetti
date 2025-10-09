@@ -2723,12 +2723,13 @@ void PluginEditor::setupTabSystem()
         selector->setTextWhenNothingSelected("");
         selector->setTextWhenNoChoicesAvailable("");
         
-        // Transparent background, no text visible when closed
+        // Completely transparent - no ComboBox drawing, just our carrot SVG
         selector->setColour(juce::ComboBox::backgroundColourId, juce::Colours::transparentBlack);
         selector->setColour(juce::ComboBox::textColourId, juce::Colours::transparentBlack);
         selector->setColour(juce::ComboBox::outlineColourId, juce::Colours::transparentBlack);
         selector->setColour(juce::ComboBox::buttonColourId, juce::Colours::transparentBlack);
         selector->setColour(juce::ComboBox::arrowColourId, juce::Colours::transparentBlack);
+        selector->setColour(juce::ComboBox::focusedOutlineColourId, juce::Colours::transparentBlack);
         
         // Popup menu styling (visible when opened)
         selector->setColour(juce::PopupMenu::backgroundColourId, juce::Colour(0xFF2A2A2A));
