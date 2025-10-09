@@ -43,4 +43,15 @@ struct StepSnapshot {
         float tone = 0.25f;        // 0-1 (wave shape: 0=sin, 0.5=tri, 1=soft square)
         float mix = 0.5f;          // 0-1 (dry/wet mix)
     } chorus;
+    
+    struct {
+        float type = 0.0f;         // 0-2 (0=Hall, 1=Room, 2=Shimmer)
+        float size = 0.7f;         // 0.1-1.5 (room size/decay time)
+        float predelayMs = 20.0f;  // 0-200 ms (predelay time)
+        float dampHz = 8000.0f;    // 1000-20000 Hz (HF damping)
+        float diffusion = 0.7f;    // 0-1 (diffusion amount)
+        float early = 0.35f;       // 0-1 (early reflections level - Room mode)
+        float shimmer = 0.0f;      // 0-1 (shimmer amount - Shimmer mode)
+        float mix = 0.25f;         // 0-1 (dry/wet mix)
+    } reverb;
 };
