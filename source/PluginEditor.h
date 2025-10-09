@@ -387,9 +387,6 @@ public:
     std::unique_ptr<juce::Label> chorusAllStepsLabel;
     bool chorusAllStepsEnabled = false;
     
-    // Tab button
-    std::unique_ptr<juce::DrawableButton> tabChorus;
-    
         // Helper methods
         void setupKnobs();
         void setupMasterKnobs();

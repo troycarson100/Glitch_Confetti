@@ -2698,18 +2698,19 @@ void PluginEditor::setupTabSystem()
         selector->addItem("Chorus", 4);
         
         selector->setJustificationType(juce::Justification::centred);
-        selector->setColour(juce::ComboBox::backgroundColourId, juce::Colour(0xFF2A2A2A));
-        selector->setColour(juce::ComboBox::textColourId, juce::Colours::white);
-        selector->setColour(juce::ComboBox::outlineColourId, juce::Colour(0xFF4A4A4A));
-        selector->setColour(juce::ComboBox::buttonColourId, juce::Colour(0xFF3A3A3A));
-        selector->setColour(juce::ComboBox::arrowColourId, juce::Colours::lightgrey);
+        // TEMPORARY: Bright colors for debugging visibility
+        selector->setColour(juce::ComboBox::backgroundColourId, juce::Colours::orange);
+        selector->setColour(juce::ComboBox::textColourId, juce::Colours::black);
+        selector->setColour(juce::ComboBox::outlineColourId, juce::Colours::red);
+        selector->setColour(juce::ComboBox::buttonColourId, juce::Colours::yellow);
+        selector->setColour(juce::ComboBox::arrowColourId, juce::Colours::black);
     }
     
-    // Position dropdowns to the right of each tab button (small dropdowns)
-    effectSelector1->setBounds(24 + 120 + 5, 7, 40, 20);    // Right of SpaceDelay tab
-    effectSelector2->setBounds(170 + 120 + 5, 7, 40, 20);   // Right of Panner tab
-    effectSelector3->setBounds(316 + 120 + 5, 7, 40, 20);   // Right of Dirt tab
-    effectSelector4->setBounds(462 + 120 + 5, 7, 40, 20);   // Right of Chorus tab
+    // Position dropdowns to the right of each tab button (larger for visibility testing)
+    effectSelector1->setBounds(24 + 120 + 5, 7, 80, 25);    // Right of SpaceDelay tab - LARGER
+    effectSelector2->setBounds(170 + 120 + 5, 7, 80, 25);   // Right of Panner tab - LARGER
+    effectSelector3->setBounds(316 + 120 + 5, 7, 80, 25);   // Right of Dirt tab - LARGER
+    effectSelector4->setBounds(462 + 120 + 5, 7, 80, 25);   // Right of Chorus tab - LARGER
     
     // Set initial selections based on current router assignment
     auto& router = processorRef.getEffectRouter();

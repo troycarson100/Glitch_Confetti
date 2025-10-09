@@ -863,7 +863,9 @@ void PluginProcessor::setStateInformation (const void* data, int sizeInBytes)
             {
                 // Restore default if invalid
                 DBG("[State] Invalid router assignment detected, restoring defaults");
-                effectRouter = EffectRouter(); // Reset to defaults
+                // Reinitialize with default constructor (can't assign due to atomic members)
+                effectRouter.~EffectRouter();
+                new (&effectRouter) EffectRouter();
             }
         }
         
