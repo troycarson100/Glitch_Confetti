@@ -24,9 +24,6 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     // Lock the size - no resizing
     setResizable (false, false);
     
-    // Ensure editor allows child components to receive mouse clicks
-    setInterceptsMouseClicks(true, true);
-    
     // Load all UI assets
     if (!assets.loadAll()) {
         DBG("[UI] Failed to load UI assets!");
@@ -1964,9 +1961,6 @@ void PluginEditor::setupSequencerArea()
     stepAmountLabel->setBorderSize(juce::BorderSize<int>(2));
     // Allow direct editing for step count (1..16)
     stepAmountLabel->setEditable(true, true, false);
-    stepAmountLabel->setWantsKeyboardFocus(true);
-    stepAmountLabel->setInterceptsMouseClicks(true, false);
-    stepAmountLabel->setMouseClickGrabsKeyboardFocus(true);
     stepAmountLabel->onEditorHide = [this]() {
         if (stepAmountLabel != nullptr)
         {
@@ -2667,20 +2661,12 @@ void PluginEditor::showPage(FxPageID id)
     else if (id == FxPageID::Panner && tabPanner) tabPanner->toFront(false);
     else if (id == FxPageID::Dirt && tabDirt) tabDirt->toFront(false);
     
-    // Ensure editable labels can receive mouse clicks after visibility toggle
+    // Bring step amount labels to front when page is shown (they're already configured with setAlwaysOnTop)
     if (id == FxPageID::Panner && autopanStepAmountLabel) {
-        autopanStepAmountLabel->toFront(true); // Bring to absolute front
-        autopanStepAmountLabel->setEditable(true, true, false);
-        autopanStepAmountLabel->setInterceptsMouseClicks(true, false);
-        autopanStepAmountLabel->setWantsKeyboardFocus(true);
-        autopanStepAmountLabel->setMouseClickGrabsKeyboardFocus(true);
+        autopanStepAmountLabel->toFront(true); // true = exclusive, brings to absolute front
     }
     else if (id == FxPageID::Dirt && dirtStepAmountLabel) {
-        dirtStepAmountLabel->toFront(true); // Bring to absolute front
-        dirtStepAmountLabel->setEditable(true, true, false);
-        dirtStepAmountLabel->setInterceptsMouseClicks(true, false);
-        dirtStepAmountLabel->setWantsKeyboardFocus(true);
-        dirtStepAmountLabel->setMouseClickGrabsKeyboardFocus(true);
+        dirtStepAmountLabel->toFront(true); // true = exclusive, brings to absolute front
     }
 
     repaint();
@@ -3072,9 +3058,8 @@ void PluginEditor::setupAutoPanSequencerArea()
     autopanStepAmountLabel->setJustificationType(juce::Justification::centred);
     autopanStepAmountLabel->setBorderSize(juce::BorderSize<int>(2));
     autopanStepAmountLabel->setEditable(true, true, false);
-    autopanStepAmountLabel->setWantsKeyboardFocus(true);
-    autopanStepAmountLabel->setInterceptsMouseClicks(true, false);
-    autopanStepAmountLabel->setMouseClickGrabsKeyboardFocus(true);
+    autopanStepAmountLabel->setInterceptsMouseClicks(true, false); // Ensure it receives mouse clicks
+    autopanStepAmountLabel->setWantsKeyboardFocus(true); // Ensure it can receive keyboard focus
     autopanStepAmountLabel->onEditorHide = [this]() {
         if (autopanStepAmountLabel != nullptr) {
             int value = autopanStepAmountLabel->getText().getIntValue();
@@ -3087,6 +3072,7 @@ void PluginEditor::setupAutoPanSequencerArea()
     addAndMakeVisible(autopanStepAmountLabel.get());
     autopanStepAmountLabel->setVisible(false); // Initially hidden until AutoPan page is selected
     autopanStepAmountLabel->setBounds(sequencerArea.getX() + 180, sequencerArea.getY() - 10, 30, 25);
+    autopanStepAmountLabel->setAlwaysOnTop(true); // Keep on top of other components
     
     // Create rate dropdown (EXACT same positioning as delay page)
     autopanRateDropdown = std::make_unique<juce::ComboBox>();
@@ -3596,9 +3582,8 @@ void PluginEditor::setupDirtSequencerArea()
     dirtStepAmountLabel->setJustificationType(juce::Justification::centred);
     dirtStepAmountLabel->setBorderSize(juce::BorderSize<int>(2));
     dirtStepAmountLabel->setEditable(true, true, false);
-    dirtStepAmountLabel->setWantsKeyboardFocus(true);
-    dirtStepAmountLabel->setInterceptsMouseClicks(true, false);
-    dirtStepAmountLabel->setMouseClickGrabsKeyboardFocus(true);
+    dirtStepAmountLabel->setInterceptsMouseClicks(true, false); // Ensure it receives mouse clicks
+    dirtStepAmountLabel->setWantsKeyboardFocus(true); // Ensure it can receive keyboard focus
     dirtStepAmountLabel->onEditorHide = [this]() {
         if (dirtStepAmountLabel != nullptr) {
             int value = dirtStepAmountLabel->getText().getIntValue();
@@ -3611,6 +3596,7 @@ void PluginEditor::setupDirtSequencerArea()
     addAndMakeVisible(dirtStepAmountLabel.get());
     dirtStepAmountLabel->setVisible(false);
     dirtStepAmountLabel->setBounds(sequencerArea.getX() + 180, sequencerArea.getY() - 10, 30, 25);
+    dirtStepAmountLabel->setAlwaysOnTop(true); // Keep on top of other components
     
     // Create rate dropdown (EXACT same as AutoPan)
     dirtRateDropdown = std::make_unique<juce::ComboBox>();
