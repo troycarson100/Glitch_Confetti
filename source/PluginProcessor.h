@@ -11,6 +11,7 @@
 #include "MeterTheme.h"
 #include "ui/AudioRingBuffer.h"
 #include "EffectRouter.h"
+#include "dsp/SpectrumAnalyzer.h"
 
 // Real-time safe level tracking for meters
 struct MeterState {
@@ -340,6 +341,9 @@ public:
     AudioRingBuffer outputVisualizerBuffer;
     int downsampleCounter = 0;
     const int downsampleRate = 128; // Push to visualizer every 128 samples
+    
+    // Spectrum Analyzer - FFT-based spectrum view with trails
+    SpectrumAnalyzer spectrumAnalyzer;
     
     // Get current pan position for visualizer
     float getCurrentPanPosition() const { 

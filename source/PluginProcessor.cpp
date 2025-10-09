@@ -239,6 +239,9 @@ void PluginProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
     const int bufferSize = (int)(sampleRate / downsampleRate); // ~1 second at downsample rate
     outputVisualizerBuffer.prepare(bufferSize);
     downsampleCounter = 0;
+    
+    // Prepare spectrum analyzer
+    spectrumAnalyzer.prepare(sampleRate);
 }
 
 void PluginProcessor::releaseResources()
@@ -828,6 +831,10 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
             }
         }
     }
+    
+    // Feed spectrum analyzer (post-FX output)
+    // Process entire buffer for FFT analysis
+    spectrumAnalyzer.processBlock(buffer.getArrayOfReadPointers(), numChannels, numSamples);
 
     // Debug logging
     static int c = 0;
