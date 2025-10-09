@@ -4092,7 +4092,8 @@ void PluginEditor::updateDirtSequencerUI()
         }
     }
     
-    if (dirtStepAmountLabel != nullptr) {
+    // Update step amount display (don't overwrite if user is editing)
+    if (dirtStepAmountLabel != nullptr && !dirtStepAmountLabel->hasKeyboardFocus(true)) {
         dirtStepAmountLabel->setText(juce::String(stepsUsed), false); // TextEditor uses bool, not notification enum
     }
     
@@ -4128,8 +4129,8 @@ void PluginEditor::updateAutoPanSequencerUI()
         }
     }
     
-    // Update step amount display
-    if (autopanStepAmountLabel != nullptr) {
+    // Update step amount display (don't overwrite if user is editing)
+    if (autopanStepAmountLabel != nullptr && !autopanStepAmountLabel->hasKeyboardFocus(true)) {
         autopanStepAmountLabel->setText(juce::String(stepsUsed), false); // TextEditor uses bool, not notification enum
     }
     
