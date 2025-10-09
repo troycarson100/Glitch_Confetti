@@ -463,6 +463,7 @@ public:
     void onEffectSelectorChanged(int slotIndex);
     void updateAllEffectSelectors();
     void updateBackgroundsAfterSwap();
+    void updateTabButtonImages();
     juce::ComboBox* getEffectSelectorForSlot(int slotIndex);
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PluginEditor)

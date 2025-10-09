@@ -287,6 +287,20 @@ void PluginEditor::paint (juce::Graphics& g)
             }
             break;
     }
+    
+    // Draw carrot icons on dropdowns (FX_Type_Carrot_Inactive.svg)
+    if (assets.fxTypeCarrotInactive)
+    {
+        for (auto* selector : {effectSelector1.get(), effectSelector2.get(), 
+                                effectSelector3.get(), effectSelector4.get()})
+        {
+            if (selector && selector->isVisible())
+            {
+                auto bounds = selector->getBounds().toFloat();
+                assets.fxTypeCarrotInactive->drawWithin(g, bounds, juce::RectanglePlacement::centred, 1.0f);
+            }
+        }
+    }
 }
 
 void PluginEditor::resized()
@@ -2633,51 +2647,21 @@ void PluginEditor::setupTabSystem()
 {
     DBG("[UI] Setting up tab system...");
     
-    // Create tab buttons
-    tabSpaceDelay = std::make_unique<juce::DrawableButton>("SpaceDelayTab", juce::DrawableButton::ButtonStyle::ImageFitted);
-    tabPanner = std::make_unique<juce::DrawableButton>("PannerTab", juce::DrawableButton::ButtonStyle::ImageFitted);
+    // === CREATE TAB BUTTONS WITH DYNAMIC EFFECT TITLE SVGs ===
+    tabSpaceDelay = std::make_unique<juce::DrawableButton>("tabSlot1", juce::DrawableButton::ImageFitted);
+    tabPanner = std::make_unique<juce::DrawableButton>("tabSlot2", juce::DrawableButton::ImageFitted);
+    tabDirt = std::make_unique<juce::DrawableButton>("tabSlot3", juce::DrawableButton::ImageFitted);
+    tabChorus = std::make_unique<juce::DrawableButton>("tabSlot4", juce::DrawableButton::ImageFitted);
     
-    DBG("[UI] Tab buttons created successfully");
-    DBG("[UI] tabSpaceDelay pointer: " << tabSpaceDelay.get());
-    DBG("[UI] tabPanner pointer: " << tabPanner.get());
+    // Set initial tab images based on router assignment (will update dynamically)
+    updateTabButtonImages();
     
-    // Set tab images (using existing assets)
-    if (assets.tabTitleSpaceDelay) {
-        tabSpaceDelay->setImages(assets.tabTitleSpaceDelay.get());
+    // Make tab backgrounds transparent (just show the SVG title)
+    for (auto* tab : {tabSpaceDelay.get(), tabPanner.get(), tabDirt.get(), tabChorus.get()})
+    {
+        tab->setColour(juce::DrawableButton::backgroundColourId, juce::Colours::transparentBlack);
+        tab->setColour(juce::DrawableButton::backgroundOnColourId, juce::Colours::transparentBlack);
     }
-    if (assets.tabTitleSpaceDelay) { // Using same asset for now
-        tabPanner->setImages(assets.tabTitleSpaceDelay.get());
-    }
-    
-    // --- Tabs (SVGs you mentioned are already loaded in your Assets) ---
-    tabSpaceDelay = std::make_unique<juce::DrawableButton>("tabSpace", juce::DrawableButton::ImageOnButtonBackground);
-    tabPanner = std::make_unique<juce::DrawableButton>("tabPanner", juce::DrawableButton::ImageOnButtonBackground);
-    tabDirt = std::make_unique<juce::DrawableButton>("tabDirt", juce::DrawableButton::ImageOnButtonBackground);
-    tabChorus = std::make_unique<juce::DrawableButton>("tabChorus", juce::DrawableButton::ImageOnButtonBackground);
-    
-    // Use the tab SVGs you provided:
-    if (assets.tabTitleSpaceDelay) {
-        tabSpaceDelay->setImages(assets.tabTitleSpaceDelay->createCopy().release(),
-                                 nullptr, nullptr, nullptr, nullptr, nullptr);
-    }
-    if (assets.tabTitleAutoPan) { // Using AutoPan SVG for the second tab
-        tabPanner->setImages(assets.tabTitleAutoPan->createCopy().release(),
-                             nullptr, nullptr, nullptr, nullptr, nullptr);
-    }
-    if (assets.tabDirtIcon) { // Using Dirt icon SVG for the third tab
-        tabDirt->setImages(assets.tabDirtIcon->createCopy().release(),
-                             nullptr, nullptr, nullptr, nullptr, nullptr);
-    }
-    if (assets.tabChorusIcon) { // Using Chorus icon SVG for the fourth tab
-        tabChorus->setImages(assets.tabChorusIcon->createCopy().release(),
-                             nullptr, nullptr, nullptr, nullptr, nullptr);
-    }
-    
-    // Add bright background colors to make tabs visible for testing
-    tabSpaceDelay->setColour(juce::DrawableButton::backgroundColourId, juce::Colour(0xFFFF6600)); // Bright orange
-    tabPanner->setColour(juce::DrawableButton::backgroundColourId, juce::Colour(0xFF00FF00)); // Bright green
-    tabDirt->setColour(juce::DrawableButton::backgroundColourId, juce::Colour(0xFFFF00FF)); // Bright magenta
-    tabChorus->setColour(juce::DrawableButton::backgroundColourId, juce::Colour(0xFF00FFFF)); // Bright cyan
     
     tabSpaceDelay->setTriggeredOnMouseDown(true);
     tabPanner->setTriggeredOnMouseDown(true);
@@ -2738,20 +2722,29 @@ void PluginEditor::setupTabSystem()
         selector->addItem("Dirt", 3);
         selector->addItem("Chorus", 4);
         
-        selector->setJustificationType(juce::Justification::centred);
-        // TEMPORARY: Bright colors for debugging visibility
-        selector->setColour(juce::ComboBox::backgroundColourId, juce::Colours::orange);
-        selector->setColour(juce::ComboBox::textColourId, juce::Colours::black);
-        selector->setColour(juce::ComboBox::outlineColourId, juce::Colours::red);
-        selector->setColour(juce::ComboBox::buttonColourId, juce::Colours::yellow);
-        selector->setColour(juce::ComboBox::arrowColourId, juce::Colours::black);
+        // Hide text when closed - just show carrot icon
+        selector->setTextWhenNothingSelected("");
+        selector->setTextWhenNoChoicesAvailable("");
+        
+        // Transparent background, no text visible when closed
+        selector->setColour(juce::ComboBox::backgroundColourId, juce::Colours::transparentBlack);
+        selector->setColour(juce::ComboBox::textColourId, juce::Colours::transparentBlack);
+        selector->setColour(juce::ComboBox::outlineColourId, juce::Colours::transparentBlack);
+        selector->setColour(juce::ComboBox::buttonColourId, juce::Colours::transparentBlack);
+        selector->setColour(juce::ComboBox::arrowColourId, juce::Colours::transparentBlack);
+        
+        // Popup menu styling (visible when opened)
+        selector->setColour(juce::PopupMenu::backgroundColourId, juce::Colour(0xFF2A2A2A));
+        selector->setColour(juce::PopupMenu::textColourId, juce::Colours::white);
+        selector->setColour(juce::PopupMenu::highlightedBackgroundColourId, juce::Colour(0xFF4A4A4A));
     }
     
-    // Position dropdowns to the right of each tab button (larger for visibility testing)
-    effectSelector1->setBounds(24 + 120 + 5, 7, 80, 25);    // Right of SpaceDelay tab - LARGER
-    effectSelector2->setBounds(170 + 120 + 5, 7, 80, 25);   // Right of Panner tab - LARGER
-    effectSelector3->setBounds(316 + 120 + 5, 7, 80, 25);   // Right of Dirt tab - LARGER
-    effectSelector4->setBounds(462 + 120 + 5, 7, 80, 25);   // Right of Chorus tab - LARGER
+    // Position dropdowns as small carrot buttons (20x20px)
+    const int carrotSize = 20;
+    effectSelector1->setBounds(24 + 120 + 5, 7, carrotSize, carrotSize);
+    effectSelector2->setBounds(170 + 120 + 5, 7, carrotSize, carrotSize);
+    effectSelector3->setBounds(316 + 120 + 5, 7, carrotSize, carrotSize);
+    effectSelector4->setBounds(462 + 120 + 5, 7, carrotSize, carrotSize);
     
     // Set initial selections based on current router assignment
     auto& router = processorRef.getEffectRouter();
@@ -5270,6 +5263,40 @@ void PluginEditor::updateBackgroundsAfterSwap()
     // which reads from router dynamically
     DBG("[ROUTER] Background update triggered (will apply in next paint)");
     
-    // TODO: When we implement dynamic backgrounds in Phase 2,
-    // this will update the background drawables based on current router assignment
+    // Update tab button images to show correct effect titles
+    updateTabButtonImages();
+}
+
+void PluginEditor::updateTabButtonImages()
+{
+    auto& router = processorRef.getEffectRouter();
+    
+    // Helper to get effect title SVG
+    auto getEffectTitleSVG = [this](EffectID effect) -> juce::Drawable* {
+        switch (effect)
+        {
+            case EffectID::SpaceDelay: return assets.tabTitleSpaceDelay.get();
+            case EffectID::AutoPan:    return assets.tabTitleAutoPan.get();
+            case EffectID::Dirt:       return assets.tabDirtIcon.get();
+            case EffectID::Chorus:     return assets.tabChorusIcon.get();
+        }
+        return nullptr;
+    };
+    
+    // Update each tab button to show its assigned effect's title
+    EffectID effect1 = router.getEffectInSlot(SlotID::Slot1);
+    EffectID effect2 = router.getEffectInSlot(SlotID::Slot2);
+    EffectID effect3 = router.getEffectInSlot(SlotID::Slot3);
+    EffectID effect4 = router.getEffectInSlot(SlotID::Slot4);
+    
+    if (auto* svg = getEffectTitleSVG(effect1))
+        tabSpaceDelay->setImages(svg->createCopy().release());
+    if (auto* svg = getEffectTitleSVG(effect2))
+        tabPanner->setImages(svg->createCopy().release());
+    if (auto* svg = getEffectTitleSVG(effect3))
+        tabDirt->setImages(svg->createCopy().release());
+    if (auto* svg = getEffectTitleSVG(effect4))
+        tabChorus->setImages(svg->createCopy().release());
+    
+    DBG("[ROUTER] Tab button images updated");
 }
