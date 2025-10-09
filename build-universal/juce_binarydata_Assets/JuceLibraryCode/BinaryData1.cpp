@@ -274,8 +274,18 @@ const char* getNamedResource (const char* resourceNameUTF8, int& numBytes)
         case 0x163d7b13:  numBytes = 14169; return gui_xml;
         case 0xe214babe:  numBytes = 3904; return Background_Mustard_svg;
         case 0x187f005b:  numBytes = 308; return Button_Step_Top_Active_svg;
-        case 0x2759b740:  numBytes = 240; return Button_Step_Top_Inactive_svg;
+        case 0x2759b740:  numBytes = 217; return Button_Step_Top_Inactive_svg;
+        case 0x74a27ad9:  numBytes = 4991; return Chorus_Background_Tab1_svg;
+        case 0x74b0925a:  numBytes = 5183; return Chorus_Background_Tab2_svg;
+        case 0x74bea9db:  numBytes = 5248; return Chorus_Background_Tab3_svg;
+        case 0x74ccc15c:  numBytes = 5257; return Chorus_Background_Tab4_svg;
+        case 0xc53e8c17:  numBytes = 4444; return Chorus_Icon_svg;
         case 0xd67e60c8:  numBytes = 21950; return Dice_Large_svg;
+        case 0xce28d43a:  numBytes = 4991; return Dirt_Background_Tab1_svg;
+        case 0xce36ebbb:  numBytes = 5188; return Dirt_Background_Tab2_svg;
+        case 0xce45033c:  numBytes = 5352; return Dirt_Background_Tab3_svg;
+        case 0xce531abd:  numBytes = 5269; return Dirt_Background_Tab4_svg;
+        case 0x5f124556:  numBytes = 3176; return Dirt_Icon_svg;
         case 0x25f9d20f:  numBytes = 18163; return Drive_svg;
         case 0xcf336db8:  numBytes = 1235; return Effect_Background_Plate_svg;
         case 0x2d6c2f0b:  numBytes = 1573; return FX_Power_On_svg;
@@ -290,16 +300,30 @@ const char* getNamedResource (const char* resourceNameUTF8, int& numBytes)
         case 0xa5c377f1:  numBytes = 3525; return Knob_Macro_Ring_svg;
         case 0x93d72835:  numBytes = 555; return Knob_Master_Inside_svg;
         case 0x90dc9d69:  numBytes = 3551; return Knob_Master_Ring_svg;
+        case 0xc9d067cf:  numBytes = 388; return Locked_svg;
         case 0xbf9da913:  numBytes = 25949; return LowCut_svg;
+        case 0x2d549d6d:  numBytes = 2708; return Macro1_Assign_Button_svg;
+        case 0xfafeff2e:  numBytes = 2712; return Macro2_Assign_Button_svg;
         case 0x51240354:  numBytes = 2706; return Macro_Assign_Button_svg;
         case 0x6cba58d9:  numBytes = 1234; return Maste_Background_Plate_svg;
         case 0xa3349de1:  numBytes = 12015; return Mix_svg;
+        case 0x559d0511:  numBytes = 4991; return Panner_Background_Tab1_svg;
+        case 0x5d271c09:  numBytes = 5192; return Panner_Background_Tab21_svg;
+        case 0x55ab1c92:  numBytes = 5296; return Panner_Background_Tab2_svg;
+        case 0x55b93413:  numBytes = 5209; return Panner_Background_Tab3_svg;
+        case 0x55c74b94:  numBytes = 5265; return Panner_Background_Tab4_svg;
+        case 0x051b93d0:  numBytes = 5003; return SpaceDelay_Background_Tab1_svg;
+        case 0x0529ab51:  numBytes = 5192; return SpaceDelay_Background_Tab2_svg;
+        case 0x0537c2d2:  numBytes = 5217; return SpaceDelay_Background_Tab3_svg;
+        case 0x0545da53:  numBytes = 5245; return SpaceDelay_Background_Tab4_svg;
         case 0x239664fe:  numBytes = 309; return Step_Active_svg;
         case 0x0e90bb5d:  numBytes = 1222; return Step_Background_Plate_svg;
         case 0xca2a7f23:  numBytes = 218; return Step_Inactive_svg;
         case 0x98f47731:  numBytes = 1586; return Step_Power_On_svg;
+        case 0x67059122:  numBytes = 3313; return Tab_Title_AutoPan_svg;
         case 0x07054c1e:  numBytes = 2998; return Tab_Title_Space_Delay_svg;
         case 0x880d7612:  numBytes = 13971; return Time_svg;
+        case 0xdb3f4328:  numBytes = 412; return Unlocked_svg;
         case 0x90b4bb08:  numBytes = 41683; return Wow_Depth_svg;
         case 0xdd1caa65:  numBytes = 39199; return Wow_Rate_svg;
         case 0x2b192f8c:  numBytes = 26320; return Akira_Expanded_otf;
@@ -318,7 +342,17 @@ const char* namedResourceList[] =
     "Background_Mustard_svg",
     "Button_Step_Top_Active_svg",
     "Button_Step_Top_Inactive_svg",
+    "Chorus_Background_Tab1_svg",
+    "Chorus_Background_Tab2_svg",
+    "Chorus_Background_Tab3_svg",
+    "Chorus_Background_Tab4_svg",
+    "Chorus_Icon_svg",
     "Dice_Large_svg",
+    "Dirt_Background_Tab1_svg",
+    "Dirt_Background_Tab2_svg",
+    "Dirt_Background_Tab3_svg",
+    "Dirt_Background_Tab4_svg",
+    "Dirt_Icon_svg",
     "Drive_svg",
     "Effect_Background_Plate_svg",
     "FX_Power_On_svg",
@@ -333,16 +367,30 @@ const char* namedResourceList[] =
     "Knob_Macro_Ring_svg",
     "Knob_Master_Inside_svg",
     "Knob_Master_Ring_svg",
+    "Locked_svg",
     "LowCut_svg",
+    "Macro1_Assign_Button_svg",
+    "Macro2_Assign_Button_svg",
     "Macro_Assign_Button_svg",
     "Maste_Background_Plate_svg",
     "Mix_svg",
+    "Panner_Background_Tab1_svg",
+    "Panner_Background_Tab21_svg",
+    "Panner_Background_Tab2_svg",
+    "Panner_Background_Tab3_svg",
+    "Panner_Background_Tab4_svg",
+    "SpaceDelay_Background_Tab1_svg",
+    "SpaceDelay_Background_Tab2_svg",
+    "SpaceDelay_Background_Tab3_svg",
+    "SpaceDelay_Background_Tab4_svg",
     "Step_Active_svg",
     "Step_Background_Plate_svg",
     "Step_Inactive_svg",
     "Step_Power_On_svg",
+    "Tab_Title_AutoPan_svg",
     "Tab_Title_Space_Delay_svg",
     "Time_svg",
+    "Unlocked_svg",
     "Wow_Depth_svg",
     "Wow_Rate_svg",
     "Akira_Expanded_otf",
@@ -356,7 +404,17 @@ const char* originalFilenames[] =
     "Background_Mustard.svg",
     "Button_Step_Top_Active.svg",
     "Button_Step_Top_Inactive.svg",
+    "Chorus_Background_Tab1.svg",
+    "Chorus_Background_Tab2.svg",
+    "Chorus_Background_Tab3.svg",
+    "Chorus_Background_Tab4.svg",
+    "Chorus_Icon.svg",
     "Dice_Large.svg",
+    "Dirt_Background_Tab1.svg",
+    "Dirt_Background_Tab2.svg",
+    "Dirt_Background_Tab3.svg",
+    "Dirt_Background_Tab4.svg",
+    "Dirt_Icon.svg",
     "Drive.svg",
     "Effect_Background_Plate.svg",
     "FX_Power_On.svg",
@@ -371,16 +429,30 @@ const char* originalFilenames[] =
     "Knob_Macro_Ring.svg",
     "Knob_Master_Inside.svg",
     "Knob_Master_Ring.svg",
+    "Locked.svg",
     "Low-Cut.svg",
+    "Macro1_Assign_Button.svg",
+    "Macro2_Assign_Button.svg",
     "Macro_Assign_Button.svg",
     "Maste_Background_Plate.svg",
     "Mix.svg",
+    "Panner_Background_Tab1.svg",
+    "Panner_Background_Tab2-1.svg",
+    "Panner_Background_Tab2.svg",
+    "Panner_Background_Tab3.svg",
+    "Panner_Background_Tab4.svg",
+    "SpaceDelay_Background_Tab1.svg",
+    "SpaceDelay_Background_Tab2.svg",
+    "SpaceDelay_Background_Tab3.svg",
+    "SpaceDelay_Background_Tab4.svg",
     "Step_Active.svg",
     "Step_Background_Plate.svg",
     "Step_Inactive.svg",
     "Step_Power_On.svg",
+    "Tab_Title_AutoPan.svg",
     "Tab_Title_Space_Delay.svg",
     "Time.svg",
+    "Unlocked.svg",
     "Wow Depth.svg",
     "Wow Rate.svg",
     "Akira Expanded.otf",

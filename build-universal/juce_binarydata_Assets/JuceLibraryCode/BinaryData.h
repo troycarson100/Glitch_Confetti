@@ -18,10 +18,40 @@ namespace BinaryData
     const int            Button_Step_Top_Active_svgSize = 308;
 
     extern const char*   Button_Step_Top_Inactive_svg;
-    const int            Button_Step_Top_Inactive_svgSize = 240;
+    const int            Button_Step_Top_Inactive_svgSize = 217;
+
+    extern const char*   Chorus_Background_Tab1_svg;
+    const int            Chorus_Background_Tab1_svgSize = 4991;
+
+    extern const char*   Chorus_Background_Tab2_svg;
+    const int            Chorus_Background_Tab2_svgSize = 5183;
+
+    extern const char*   Chorus_Background_Tab3_svg;
+    const int            Chorus_Background_Tab3_svgSize = 5248;
+
+    extern const char*   Chorus_Background_Tab4_svg;
+    const int            Chorus_Background_Tab4_svgSize = 5257;
+
+    extern const char*   Chorus_Icon_svg;
+    const int            Chorus_Icon_svgSize = 4444;
 
     extern const char*   Dice_Large_svg;
     const int            Dice_Large_svgSize = 21950;
+
+    extern const char*   Dirt_Background_Tab1_svg;
+    const int            Dirt_Background_Tab1_svgSize = 4991;
+
+    extern const char*   Dirt_Background_Tab2_svg;
+    const int            Dirt_Background_Tab2_svgSize = 5188;
+
+    extern const char*   Dirt_Background_Tab3_svg;
+    const int            Dirt_Background_Tab3_svgSize = 5352;
+
+    extern const char*   Dirt_Background_Tab4_svg;
+    const int            Dirt_Background_Tab4_svgSize = 5269;
+
+    extern const char*   Dirt_Icon_svg;
+    const int            Dirt_Icon_svgSize = 3176;
 
     extern const char*   Drive_svg;
     const int            Drive_svgSize = 18163;
@@ -65,8 +95,17 @@ namespace BinaryData
     extern const char*   Knob_Master_Ring_svg;
     const int            Knob_Master_Ring_svgSize = 3551;
 
+    extern const char*   Locked_svg;
+    const int            Locked_svgSize = 388;
+
     extern const char*   LowCut_svg;
     const int            LowCut_svgSize = 25949;
+
+    extern const char*   Macro1_Assign_Button_svg;
+    const int            Macro1_Assign_Button_svgSize = 2708;
+
+    extern const char*   Macro2_Assign_Button_svg;
+    const int            Macro2_Assign_Button_svgSize = 2712;
 
     extern const char*   Macro_Assign_Button_svg;
     const int            Macro_Assign_Button_svgSize = 2706;
@@ -76,6 +115,33 @@ namespace BinaryData
 
     extern const char*   Mix_svg;
     const int            Mix_svgSize = 12015;
+
+    extern const char*   Panner_Background_Tab1_svg;
+    const int            Panner_Background_Tab1_svgSize = 4991;
+
+    extern const char*   Panner_Background_Tab21_svg;
+    const int            Panner_Background_Tab21_svgSize = 5192;
+
+    extern const char*   Panner_Background_Tab2_svg;
+    const int            Panner_Background_Tab2_svgSize = 5296;
+
+    extern const char*   Panner_Background_Tab3_svg;
+    const int            Panner_Background_Tab3_svgSize = 5209;
+
+    extern const char*   Panner_Background_Tab4_svg;
+    const int            Panner_Background_Tab4_svgSize = 5265;
+
+    extern const char*   SpaceDelay_Background_Tab1_svg;
+    const int            SpaceDelay_Background_Tab1_svgSize = 5003;
+
+    extern const char*   SpaceDelay_Background_Tab2_svg;
+    const int            SpaceDelay_Background_Tab2_svgSize = 5192;
+
+    extern const char*   SpaceDelay_Background_Tab3_svg;
+    const int            SpaceDelay_Background_Tab3_svgSize = 5217;
+
+    extern const char*   SpaceDelay_Background_Tab4_svg;
+    const int            SpaceDelay_Background_Tab4_svgSize = 5245;
 
     extern const char*   Step_Active_svg;
     const int            Step_Active_svgSize = 309;
@@ -89,11 +155,17 @@ namespace BinaryData
     extern const char*   Step_Power_On_svg;
     const int            Step_Power_On_svgSize = 1586;
 
+    extern const char*   Tab_Title_AutoPan_svg;
+    const int            Tab_Title_AutoPan_svgSize = 3313;
+
     extern const char*   Tab_Title_Space_Delay_svg;
     const int            Tab_Title_Space_Delay_svgSize = 2998;
 
     extern const char*   Time_svg;
     const int            Time_svgSize = 13971;
+
+    extern const char*   Unlocked_svg;
+    const int            Unlocked_svgSize = 412;
 
     extern const char*   Wow_Depth_svg;
     const int            Wow_Depth_svgSize = 41683;
@@ -111,7 +183,7 @@ namespace BinaryData
     const int            AlteHaasGroteskRegular_ttfSize = 143896;
 
     // Number of elements in the namedResourceList and originalFileNames arrays.
-    const int namedResourceListSize = 34;
+    const int namedResourceListSize = 58;
 
     // Points to the start of a list of resource names.
     extern const char* namedResourceList[];
