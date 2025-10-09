@@ -2661,12 +2661,16 @@ void PluginEditor::showPage(FxPageID id)
     else if (id == FxPageID::Panner && tabPanner) tabPanner->toFront(false);
     else if (id == FxPageID::Dirt && tabDirt) tabDirt->toFront(false);
     
-    // Bring editable labels to front to ensure they can receive mouse clicks
+    // Ensure editable labels can receive mouse clicks after visibility toggle
     if (id == FxPageID::Panner && autopanStepAmountLabel) {
         autopanStepAmountLabel->toFront(false);
+        autopanStepAmountLabel->setEditable(true, true, false); // Re-enable editing after visibility toggle
+        autopanStepAmountLabel->setInterceptsMouseClicks(true, false); // Ensure it receives mouse clicks
     }
     else if (id == FxPageID::Dirt && dirtStepAmountLabel) {
         dirtStepAmountLabel->toFront(false);
+        dirtStepAmountLabel->setEditable(true, true, false); // Re-enable editing after visibility toggle
+        dirtStepAmountLabel->setInterceptsMouseClicks(true, false); // Ensure it receives mouse clicks
     }
 
     repaint();
