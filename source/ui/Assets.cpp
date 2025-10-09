@@ -22,7 +22,7 @@ bool UiAssets::loadAll()
     
     // Load all background variants (effect × tab position)
     spaceDelayBackgroundTab1 = loadSVG (SpaceDelay_Background_Tab1_svg, SpaceDelay_Background_Tab1_svgSize);
-    spaceDelayBackgroundTab2 = spaceDelayBackgroundTab1 ? spaceDelayBackgroundTab1->createCopy() : nullptr; // TODO: Create Tab2 variant
+    spaceDelayBackgroundTab2 = loadSVG (SpaceDelay_Background_Tab2_svg, SpaceDelay_Background_Tab2_svgSize);
     spaceDelayBackgroundTab3 = loadSVG (SpaceDelay_Background_Tab3_svg, SpaceDelay_Background_Tab3_svgSize);
     spaceDelayBackgroundTab4 = loadSVG (SpaceDelay_Background_Tab4_svg, SpaceDelay_Background_Tab4_svgSize);
     
@@ -39,7 +39,7 @@ bool UiAssets::loadAll()
     chorusBackgroundTab1 = loadSVG (Chorus_Background_Tab1_svg, Chorus_Background_Tab1_svgSize);
     chorusBackgroundTab2 = loadSVG (Chorus_Background_Tab2_svg, Chorus_Background_Tab2_svgSize);
     chorusBackgroundTab3 = loadSVG (Chorus_Background_Tab3_svg, Chorus_Background_Tab3_svgSize);
-    chorusBackgroundTab4 = chorusBackgroundTab3 ? chorusBackgroundTab3->createCopy() : nullptr; // TODO: Create Tab4 variant
+    chorusBackgroundTab4 = loadSVG (Chorus_Background_Tab4_svg, Chorus_Background_Tab4_svgSize);
     
     effectPlate       = loadSVG (Effect_Background_Plate_svg, Effect_Background_Plate_svgSize);
     stepActive        = loadSVG (Step_Active_svg, Step_Active_svgSize);
