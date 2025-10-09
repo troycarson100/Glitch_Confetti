@@ -45,16 +45,25 @@ public:
         return assignment[static_cast<int>(slot)];
     }
     
-    // Get the slot where an effect currently lives
-    SlotID getSlotForEffect(EffectID effect) const
+    // Get the slot where an effect currently lives (returns -1 if not assigned)
+    int getSlotIndexForEffect(EffectID effect) const
     {
         for (int i = 0; i < 4; ++i)
         {
             if (assignment[i] == effect)
-                return static_cast<SlotID>(i);
+                return i;
         }
-        // Should never happen (all effects must be assigned)
-        jassertfalse;
+        // Effect not currently assigned to any slot
+        return -1;
+    }
+    
+    // Get the slot where an effect currently lives (legacy wrapper)
+    SlotID getSlotForEffect(EffectID effect) const
+    {
+        int idx = getSlotIndexForEffect(effect);
+        if (idx >= 0)
+            return static_cast<SlotID>(idx);
+        // Fallback (should only happen during initial assignment)
         return SlotID::Slot1;
     }
     
@@ -75,11 +84,21 @@ public:
     // Assign an effect to a slot (triggers swap if target effect is already assigned elsewhere)
     void assignEffectToSlot(EffectID effect, SlotID targetSlot)
     {
-        SlotID currentSlot = getSlotForEffect(effect);
-        if (currentSlot != targetSlot)
+        int currentSlotIdx = getSlotIndexForEffect(effect);
+        
+        // If effect is not currently assigned, just place it in the target slot
+        // (this replaces whatever was there)
+        if (currentSlotIdx < 0)
         {
-            swapSlots(currentSlot, targetSlot);
+            assignment[static_cast<int>(targetSlot)] = effect;
+            routerVersion.fetch_add(1);
         }
+        // If effect is already in a different slot, swap them
+        else if (currentSlotIdx != static_cast<int>(targetSlot))
+        {
+            swapSlots(static_cast<SlotID>(currentSlotIdx), targetSlot);
+        }
+        // If effect is already in target slot, no-op
     }
     
     // Get the routing order (effects in slot order for DSP chain)
