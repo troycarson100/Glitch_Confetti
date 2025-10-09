@@ -2,6 +2,7 @@
 #include "PluginProcessor.h"
 #include "BinaryData.h"
 #include "ui/PanIndicator.h"
+#include "ui/RouterComboLookAndFeel.h"
 
 //==============================================================================
 // CustomEffectDropdown Implementation
@@ -2705,6 +2706,9 @@ void PluginEditor::setupTabSystem()
     DBG("[UI] tabPanner bounds: " << tabPanner->getBounds().toString());
     
     // === EFFECT SELECTOR DROPDOWNS ===
+    // Create custom LookAndFeel for large popup menus with small buttons
+    routerComboLNF = std::make_unique<RouterComboLookAndFeel>();
+    
     // Create dropdowns next to each tab button for dynamic effect assignment
     effectSelector1 = std::make_unique<juce::ComboBox>("EffectSelector1");
     effectSelector2 = std::make_unique<juce::ComboBox>("EffectSelector2");
@@ -2735,6 +2739,9 @@ void PluginEditor::setupTabSystem()
         selector->setColour(juce::PopupMenu::backgroundColourId, juce::Colour(0xFF2A2A2A));
         selector->setColour(juce::PopupMenu::textColourId, juce::Colours::white);
         selector->setColour(juce::PopupMenu::highlightedBackgroundColourId, juce::Colour(0xFF4A4A4A));
+        
+        // Apply custom LookAndFeel for large popup menu with small button
+        selector->setLookAndFeel(routerComboLNF.get());
     }
     
     // Position dropdowns as small carrot buttons (40% smaller = 12x12px)
@@ -2795,7 +2802,7 @@ void PluginEditor::setupTabSystem()
     
     // Add effects area components
     if (effectsTitle) spaceDelayGroup.push_back(effectsTitle.get());
-    if (spaceDelayTitle) spaceDelayGroup.push_back(spaceDelayTitle.get());
+    // OLD spaceDelayTitle removed - replaced by dynamic tab button titles
     // OLD effectTypeDropdown removed - replaced by router dropdowns
     if (diceButton) spaceDelayGroup.push_back(diceButton.get());
     if (timeSyncToggle) spaceDelayGroup.push_back(timeSyncToggle.get());

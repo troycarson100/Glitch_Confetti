@@ -258,6 +258,7 @@ public:
     std::unique_ptr<juce::DrawableButton> spaceDelayTitle;
     std::unique_ptr<juce::ComboBox> effectTypeDropdown;
     std::unique_ptr<BigComboWithSvgLNF> fxComboLNF;
+    std::unique_ptr<class RouterComboLookAndFeel> routerComboLNF;
     std::unique_ptr<CustomDiceButton> diceButton;
     std::unique_ptr<juce::Button> timeSyncToggle; // S circle toggle
     bool timeSyncEnabled = false;
