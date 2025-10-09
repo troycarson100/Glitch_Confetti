@@ -4392,9 +4392,9 @@ void PluginEditor::setupChorusKnobs()
 {
     DBG("[UI] Setting up Chorus knobs...");
 
-    // Chorus knob names (8 knobs)
+    // Chorus knob names (8 knobs) - new order to match ChorusEngine
     std::vector<juce::String> chorusKnobNames = {
-        "Rate", "Depth", "Voices", "Delay", "Feedback", "Width", "Tone", "Mix"
+        "Delay", "Rate", "Depth", "Feedback", "Voices", "Width", "Shape", "Mix"
     };
 
     // Effect area bounds (EXACT same as Dirt page)
@@ -4410,39 +4410,39 @@ void PluginEditor::setupChorusKnobs()
         addAndMakeVisible(chorusKnobs[i].get());
         chorusKnobs[i]->setVisible(false);
 
-        // Set parameter ranges based on knob index
+        // Set parameter ranges based on knob index (new ChorusEngine parameters)
         switch (i) {
-            case 0: // Rate (Hz)
-                chorusKnobs[i]->setRange(0.1, 10.0, 0.01);
-                chorusKnobs[i]->setValue(1.5);
+            case 0: // Delay (ms) - base delay time
+                chorusKnobs[i]->setRange(5.0, 50.0, 0.01);
+                chorusKnobs[i]->setValue(18.0);
                 break;
-            case 1: // Depth (%)
-                chorusKnobs[i]->setRange(0.0, 100.0, 0.1);
-                chorusKnobs[i]->setValue(40.0);
+            case 1: // Rate (Hz) - LFO rate
+                chorusKnobs[i]->setRange(0.02, 8.0, 0.01);
+                chorusKnobs[i]->setValue(0.8);
                 break;
-            case 2: // Voices (1-4)
-                chorusKnobs[i]->setRange(1.0, 4.0, 1.0);
-                chorusKnobs[i]->setValue(2.0);
+            case 2: // Depth (ms) - modulation amplitude
+                chorusKnobs[i]->setRange(0.0, 12.0, 0.01);
+                chorusKnobs[i]->setValue(5.0);
                 break;
-            case 3: // Delay Time (ms)
-                chorusKnobs[i]->setRange(5.0, 50.0, 0.1);
-                chorusKnobs[i]->setValue(20.0);
+            case 3: // Feedback (0-1) - feedback amount
+                chorusKnobs[i]->setRange(0.0, 0.9, 0.01);
+                chorusKnobs[i]->setValue(0.15);
                 break;
-            case 4: // Feedback (%)
-                chorusKnobs[i]->setRange(0.0, 80.0, 0.1);
-                chorusKnobs[i]->setValue(20.0);
+            case 4: // Voices (2-8) - number of voices
+                chorusKnobs[i]->setRange(2.0, 8.0, 1.0);
+                chorusKnobs[i]->setValue(4.0);
                 break;
-            case 5: // Width (%)
-                chorusKnobs[i]->setRange(0.0, 200.0, 1.0);
-                chorusKnobs[i]->setValue(100.0);
+            case 5: // Width (0-1) - stereo width
+                chorusKnobs[i]->setRange(0.0, 1.0, 0.01);
+                chorusKnobs[i]->setValue(0.85);
                 break;
-            case 6: // Tone (-1 to +1)
-                chorusKnobs[i]->setRange(-1.0, 1.0, 0.01);
-                chorusKnobs[i]->setValue(0.0);
+            case 6: // Shape (0-1) - wave shape: 0=sin, 0.5=tri, 1=soft square
+                chorusKnobs[i]->setRange(0.0, 1.0, 0.01);
+                chorusKnobs[i]->setValue(0.25);
                 break;
-            case 7: // Mix (%)
-                chorusKnobs[i]->setRange(0.0, 100.0, 0.1);
-                chorusKnobs[i]->setValue(50.0);
+            case 7: // Mix (0-1) - dry/wet mix
+                chorusKnobs[i]->setRange(0.0, 1.0, 0.01);
+                chorusKnobs[i]->setValue(0.5);
                 break;
         }
 
@@ -4455,14 +4455,14 @@ void PluginEditor::setupChorusKnobs()
                         auto snapshot = processorRef.getChorusSafeSnapshot(step);
                         float value = chorusKnobs[i]->getValue();
                         switch (i) {
-                            case 0: snapshot.chorus.rate = value; break;
-                            case 1: snapshot.chorus.depth = value; break;
-                            case 2: snapshot.chorus.voices = value; break;
-                            case 3: snapshot.chorus.delayTime = value; break;
-                            case 4: snapshot.chorus.feedback = value; break;
-                            case 5: snapshot.chorus.width = value; break;
-                            case 6: snapshot.chorus.tone = value; break;
-                            case 7: snapshot.chorus.mix = value; break;
+                            case 0: snapshot.chorus.delayTime = value; break;  // Delay
+                            case 1: snapshot.chorus.rate = value; break;        // Rate
+                            case 2: snapshot.chorus.depth = value; break;       // Depth
+                            case 3: snapshot.chorus.feedback = value; break;    // Feedback
+                            case 4: snapshot.chorus.voices = value; break;      // Voices
+                            case 5: snapshot.chorus.width = value; break;       // Width
+                            case 6: snapshot.chorus.tone = value; break;        // Shape
+                            case 7: snapshot.chorus.mix = value; break;         // Mix
                         }
                         processorRef.setChorusStepSnapshot(step, snapshot);
                     }
@@ -4782,14 +4782,14 @@ void PluginEditor::setupChorusSequencerArea()
         for (int step = 0; step < 16; ++step) {
             auto snapshot = processorRef.getChorusSafeSnapshot(step);
             
-            if (!chorusKnobLocked[0]) snapshot.chorus.rate = 0.1f + juce::Random::getSystemRandom().nextFloat() * 9.9f;
-            if (!chorusKnobLocked[1]) snapshot.chorus.depth = juce::Random::getSystemRandom().nextFloat() * 100.0f;
-            if (!chorusKnobLocked[2]) snapshot.chorus.voices = 1.0f + juce::Random::getSystemRandom().nextFloat() * 3.0f;
-            if (!chorusKnobLocked[3]) snapshot.chorus.delayTime = 5.0f + juce::Random::getSystemRandom().nextFloat() * 45.0f;
-            if (!chorusKnobLocked[4]) snapshot.chorus.feedback = juce::Random::getSystemRandom().nextFloat() * 80.0f;
-            if (!chorusKnobLocked[5]) snapshot.chorus.width = juce::Random::getSystemRandom().nextFloat() * 200.0f;
-            if (!chorusKnobLocked[6]) snapshot.chorus.tone = juce::Random::getSystemRandom().nextFloat() * 2.0f - 1.0f;
-            if (!chorusKnobLocked[7]) snapshot.chorus.mix = juce::Random::getSystemRandom().nextFloat() * 100.0f;
+            if (!chorusKnobLocked[0]) snapshot.chorus.delayTime = 5.0f + juce::Random::getSystemRandom().nextFloat() * 45.0f;  // Delay 5-50ms
+            if (!chorusKnobLocked[1]) snapshot.chorus.rate = 0.02f + juce::Random::getSystemRandom().nextFloat() * 7.98f;        // Rate 0.02-8Hz
+            if (!chorusKnobLocked[2]) snapshot.chorus.depth = juce::Random::getSystemRandom().nextFloat() * 12.0f;               // Depth 0-12ms
+            if (!chorusKnobLocked[3]) snapshot.chorus.feedback = juce::Random::getSystemRandom().nextFloat() * 0.9f;             // Feedback 0-0.9
+            if (!chorusKnobLocked[4]) snapshot.chorus.voices = 2.0f + juce::Random::getSystemRandom().nextFloat() * 6.0f;        // Voices 2-8
+            if (!chorusKnobLocked[5]) snapshot.chorus.width = juce::Random::getSystemRandom().nextFloat();                       // Width 0-1
+            if (!chorusKnobLocked[6]) snapshot.chorus.tone = juce::Random::getSystemRandom().nextFloat();                        // Shape 0-1
+            if (!chorusKnobLocked[7]) snapshot.chorus.mix = juce::Random::getSystemRandom().nextFloat();                         // Mix 0-1
             
             processorRef.setChorusStepSnapshot(step, snapshot);
         }
@@ -4969,12 +4969,12 @@ void PluginEditor::onChorusStepButtonClicked(int stepIndex)
     int currentStep = chorusUiSelectedStep;
     if (currentStep >= 0 && currentStep < 16) {
         StepSnapshot currentSnapshot;
-        if (chorusKnobs[0]) currentSnapshot.chorus.rate = chorusKnobs[0]->getValue();
-        if (chorusKnobs[1]) currentSnapshot.chorus.depth = chorusKnobs[1]->getValue();
-        if (chorusKnobs[2]) currentSnapshot.chorus.voices = chorusKnobs[2]->getValue();
-        if (chorusKnobs[3]) currentSnapshot.chorus.delayTime = chorusKnobs[3]->getValue();
-        if (chorusKnobs[4]) currentSnapshot.chorus.feedback = chorusKnobs[4]->getValue();
-        if (chorusKnobs[5]) currentSnapshot.chorus.width = chorusKnobs[5]->getValue();
+        if (chorusKnobs[0]) currentSnapshot.chorus.delayTime = chorusKnobs[0]->getValue();  // Delay
+        if (chorusKnobs[1]) currentSnapshot.chorus.rate = chorusKnobs[1]->getValue();        // Rate
+        if (chorusKnobs[2]) currentSnapshot.chorus.depth = chorusKnobs[2]->getValue();       // Depth
+        if (chorusKnobs[3]) currentSnapshot.chorus.feedback = chorusKnobs[3]->getValue();    // Feedback
+        if (chorusKnobs[4]) currentSnapshot.chorus.voices = chorusKnobs[4]->getValue();      // Voices
+        if (chorusKnobs[5]) currentSnapshot.chorus.width = chorusKnobs[5]->getValue();       // Width
         if (chorusKnobs[6]) currentSnapshot.chorus.tone = chorusKnobs[6]->getValue();
         if (chorusKnobs[7]) currentSnapshot.chorus.mix = chorusKnobs[7]->getValue();
         
@@ -4985,14 +4985,14 @@ void PluginEditor::onChorusStepButtonClicked(int stepIndex)
     processorRef.setChorusSelectedStep(stepIndex);
     
     StepSnapshot newSnapshot = processorRef.getChorusSafeSnapshot(stepIndex);
-    if (chorusKnobs[0]) chorusKnobs[0]->setValue(newSnapshot.chorus.rate, juce::sendNotification);
-    if (chorusKnobs[1]) chorusKnobs[1]->setValue(newSnapshot.chorus.depth, juce::sendNotification);
-    if (chorusKnobs[2]) chorusKnobs[2]->setValue(newSnapshot.chorus.voices, juce::sendNotification);
-    if (chorusKnobs[3]) chorusKnobs[3]->setValue(newSnapshot.chorus.delayTime, juce::sendNotification);
-    if (chorusKnobs[4]) chorusKnobs[4]->setValue(newSnapshot.chorus.feedback, juce::sendNotification);
-    if (chorusKnobs[5]) chorusKnobs[5]->setValue(newSnapshot.chorus.width, juce::sendNotification);
-    if (chorusKnobs[6]) chorusKnobs[6]->setValue(newSnapshot.chorus.tone, juce::sendNotification);
-    if (chorusKnobs[7]) chorusKnobs[7]->setValue(newSnapshot.chorus.mix, juce::sendNotification);
+    if (chorusKnobs[0]) chorusKnobs[0]->setValue(newSnapshot.chorus.delayTime, juce::sendNotification);  // Delay
+    if (chorusKnobs[1]) chorusKnobs[1]->setValue(newSnapshot.chorus.rate, juce::sendNotification);        // Rate
+    if (chorusKnobs[2]) chorusKnobs[2]->setValue(newSnapshot.chorus.depth, juce::sendNotification);       // Depth
+    if (chorusKnobs[3]) chorusKnobs[3]->setValue(newSnapshot.chorus.feedback, juce::sendNotification);    // Feedback
+    if (chorusKnobs[4]) chorusKnobs[4]->setValue(newSnapshot.chorus.voices, juce::sendNotification);      // Voices
+    if (chorusKnobs[5]) chorusKnobs[5]->setValue(newSnapshot.chorus.width, juce::sendNotification);       // Width
+    if (chorusKnobs[6]) chorusKnobs[6]->setValue(newSnapshot.chorus.tone, juce::sendNotification);        // Shape
+    if (chorusKnobs[7]) chorusKnobs[7]->setValue(newSnapshot.chorus.mix, juce::sendNotification);         // Mix
     
     updateChorusSequencerUI();
     

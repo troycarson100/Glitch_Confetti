@@ -34,13 +34,13 @@ struct StepSnapshot {
     } dirt;
     
     struct {
-        float rate = 1.5f;         // 0.1-10 Hz
-        float depth = 40.0f;       // 0-100%
-        float voices = 2.0f;       // 1-4
-        float delayTime = 20.0f;   // 5-50 ms
-        float feedback = 20.0f;    // 0-80%
-        float width = 100.0f;      // 0-200%
-        float tone = 0.0f;         // -1 to +1
-        float mix = 50.0f;         // 0-100%
+        float delayTime = 18.0f;   // 5-50 ms (base delay)
+        float rate = 0.8f;         // 0.02-8 Hz (LFO rate)
+        float depth = 5.0f;        // 0-12 ms (modulation amplitude)
+        float feedback = 0.15f;    // 0-0.9 (feedback amount)
+        float voices = 4.0f;       // 2-8 (number of voices)
+        float width = 0.85f;       // 0-1 (stereo width)
+        float tone = 0.25f;        // 0-1 (wave shape: 0=sin, 0.5=tri, 1=soft square)
+        float mix = 0.5f;          // 0-1 (dry/wet mix)
     } chorus;
 };

@@ -131,15 +131,15 @@ juce::AudioProcessorValueTreeState::ParameterLayout PluginProcessor::createParam
     params.push_back(std::make_unique<juce::AudioParameterFloat>("dirtTone", "Dirt Tone", -1.0f, 1.0f, 0.0f)); // post tilt
     params.push_back(std::make_unique<juce::AudioParameterFloat>("dirtMix", "Dirt Mix", 0.0f, 1.0f, 1.0f)); // dry/wet
     
-    // Chorus Parameters
-    params.push_back(std::make_unique<juce::AudioParameterFloat>("chorusRate", "Chorus Rate", 0.1f, 10.0f, 1.5f)); // Hz (will map to sync divisions like AutoPan)
-    params.push_back(std::make_unique<juce::AudioParameterFloat>("chorusDepth", "Chorus Depth", 0.0f, 100.0f, 40.0f)); // %
-    params.push_back(std::make_unique<juce::AudioParameterFloat>("chorusVoices", "Chorus Voices", 1.0f, 4.0f, 2.0f)); // 1-4
-    params.push_back(std::make_unique<juce::AudioParameterFloat>("chorusDelay", "Chorus Delay", 5.0f, 50.0f, 20.0f)); // ms
-    params.push_back(std::make_unique<juce::AudioParameterFloat>("chorusFeedback", "Chorus Feedback", 0.0f, 80.0f, 20.0f)); // %
-    params.push_back(std::make_unique<juce::AudioParameterFloat>("chorusWidth", "Chorus Width", 0.0f, 200.0f, 100.0f)); // %
-    params.push_back(std::make_unique<juce::AudioParameterFloat>("chorusTone", "Chorus Tone", -1.0f, 1.0f, 0.0f)); // -1 to +1
-    params.push_back(std::make_unique<juce::AudioParameterFloat>("chorusMix", "Chorus Mix", 0.0f, 100.0f, 50.0f)); // %
+    // Chorus Parameters (best-in-class 8-knob DSP)
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("chorusDelayMs",  "Ch Delay",   juce::NormalisableRange<float>(5.0f, 50.0f, 0.01f, 0.4f), 18.0f)); // base delay
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("chorusRateHz",   "Ch Rate",    juce::NormalisableRange<float>(0.02f, 8.0f, 0.0f, 0.3f),    0.8f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("chorusDepthMs",  "Ch Depth",   juce::NormalisableRange<float>(0.0f,  12.0f, 0.0f, 0.5f),    5.0f)); // modulation amplitude in ms
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("chorusFeedback", "Ch Fdbk",    juce::NormalisableRange<float>(0.0f,  0.9f,  0.0f, 1.0f),     0.15f));
+    params.push_back(std::make_unique<juce::AudioParameterInt  >("chorusVoices",   "Ch Voices",  2, 8, 4));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("chorusWidth",    "Ch Width",   juce::NormalisableRange<float>(0.0f,  1.0f,  0.0f, 1.0f),    0.85f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("chorusShape",    "Ch Shape",   juce::NormalisableRange<float>(0.0f,  1.0f,  0.0f, 1.0f),    0.25f)); // 0=sin .. 0.5=tri .. 1=soft square
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("chorusMix",      "Ch Mix",     juce::NormalisableRange<float>(0.0f,  1.0f,  0.0f, 1.0f),    0.5f));
     
     // Page and effect enable parameters
     params.push_back(std::make_unique<juce::AudioParameterChoice>("currentPage", "Current Page", 
@@ -704,7 +704,8 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
     bool isChorusEnabled = chorusEnabledParam ? (chorusEnabledParam->load() > 0.5f) : false;
     
     if (isChorusEnabled) {
-        float rate, depth, voices, delayTime, feedback, width, tone, mix;
+        int voices;
+        float baseDelayMs, rateHz, depthMs, width, feedback, shape, mix;
         
         // Check if Chorus sequencer is enabled AND active
         if (chorusSeq.enabled.load() && chorusSeq.active.load()) {
@@ -712,28 +713,28 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
             int chorusStep = chorusSeq.currentStep.load();
             const auto& snapshot = chorusStepSnapshots[juce::jlimit(0, 15, chorusStep)];
             
-            rate = snapshot.chorus.rate;
-            depth = snapshot.chorus.depth;
-            voices = snapshot.chorus.voices;
-            delayTime = snapshot.chorus.delayTime;
-            feedback = snapshot.chorus.feedback;
-            width = snapshot.chorus.width;
-            tone = snapshot.chorus.tone;
-            mix = snapshot.chorus.mix;
+            baseDelayMs = snapshot.chorus.delayTime;  // delayMs
+            rateHz = snapshot.chorus.rate;            // rateHz
+            depthMs = snapshot.chorus.depth;          // depthMs
+            voices = (int)snapshot.chorus.voices;     // voices (int)
+            width = snapshot.chorus.width;            // width (0-1)
+            feedback = snapshot.chorus.feedback;      // feedback (0-1)
+            shape = snapshot.chorus.tone;             // shape (0-1)
+            mix = snapshot.chorus.mix;                // mix (0-1)
         } else {
             // Use APVTS parameters (manual control)
-            rate = valueTreeState.getRawParameterValue("chorusRate")->load();
-            depth = valueTreeState.getRawParameterValue("chorusDepth")->load();
-            voices = valueTreeState.getRawParameterValue("chorusVoices")->load();
-            delayTime = valueTreeState.getRawParameterValue("chorusDelay")->load();
-            feedback = valueTreeState.getRawParameterValue("chorusFeedback")->load();
+            baseDelayMs = valueTreeState.getRawParameterValue("chorusDelayMs")->load();
+            rateHz = valueTreeState.getRawParameterValue("chorusRateHz")->load();
+            depthMs = valueTreeState.getRawParameterValue("chorusDepthMs")->load();
+            voices = (int)valueTreeState.getRawParameterValue("chorusVoices")->load();
             width = valueTreeState.getRawParameterValue("chorusWidth")->load();
-            tone = valueTreeState.getRawParameterValue("chorusTone")->load();
+            feedback = valueTreeState.getRawParameterValue("chorusFeedback")->load();
+            shape = valueTreeState.getRawParameterValue("chorusShape")->load();
             mix = valueTreeState.getRawParameterValue("chorusMix")->load();
         }
         
-        // Set targets and process
-        chorus.setTargets(rate, depth, voices, delayTime, feedback, width, tone, mix);
+        // Set smoothed targets and process
+        chorus.setParams(voices, baseDelayMs, rateHz, depthMs, width, feedback, shape, mix);
         chorus.process(buffer);
     }
     

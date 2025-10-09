@@ -308,7 +308,7 @@ public:
     FxDirt dirt;
     
     // Chorus DSP Implementation
-    FxChorus chorus;
+    ChorusEngine chorus;
     
     // PanMan-style visualizer clock
     struct PanVisClock {
