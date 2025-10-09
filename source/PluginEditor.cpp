@@ -4842,21 +4842,33 @@ void PluginEditor::setupChorusAllStepsToggle()
     chorusAllStepsToggle = std::make_unique<AllStepsToggleButton>();
     addAndMakeVisible(chorusAllStepsToggle.get());
     chorusAllStepsToggle->setVisible(false);
-    chorusAllStepsToggle->setBounds(effectArea.getX() + effectArea.getWidth() - 70, effectArea.getY() + effectArea.getHeight() - 35, 24, 24);
     
+    const int buttonSize = 29;
+    chorusAllStepsToggle->setBounds(effectArea.getX() + effectArea.getWidth()/2 - buttonSize/2 + 30, 
+                                    effectArea.getY() - 1, buttonSize, buttonSize);
+    
+    if (assets.stepTopInactive != nullptr && assets.stepTopActive != nullptr) {
+        static_cast<AllStepsToggleButton*>(chorusAllStepsToggle.get())->setImages(
+            assets.stepTopInactive->createCopy(),
+            assets.stepTopActive->createCopy()
+        );
+    }
+    
+    chorusAllStepsToggle->setToggleState(false, juce::dontSendNotification);
     chorusAllStepsToggle->onClick = [this]() {
         chorusAllStepsEnabled = chorusAllStepsToggle->getToggleState();
-        DBG("[UI] Chorus All Steps: " << (chorusAllStepsEnabled ? "ON" : "OFF"));
+        DBG("[UI] Chorus All Steps toggle: " << (chorusAllStepsEnabled ? "ON" : "OFF"));
     };
     
     chorusAllStepsLabel = std::make_unique<juce::Label>();
     chorusAllStepsLabel->setText("All Steps", juce::dontSendNotification);
-    chorusAllStepsLabel->setFont(juce::Font(11.0f, juce::Font::bold));
+    chorusAllStepsLabel->setFont(juce::Font(14.4f, juce::Font::bold));
     chorusAllStepsLabel->setColour(juce::Label::textColourId, juce::Colours::white);
-    chorusAllStepsLabel->setJustificationType(juce::Justification::centredRight);
+    chorusAllStepsLabel->setJustificationType(juce::Justification::centred);
     addAndMakeVisible(chorusAllStepsLabel.get());
     chorusAllStepsLabel->setVisible(false);
-    chorusAllStepsLabel->setBounds(effectArea.getX() + effectArea.getWidth() - 140, effectArea.getY() + effectArea.getHeight() - 35, 65, 24);
+    chorusAllStepsLabel->setBounds(effectArea.getX() + effectArea.getWidth()/2 - 40, 
+                                    effectArea.getY() - 1 + buttonSize + 2, 80, 20);
     
     DBG("[UI] Chorus All Steps toggle setup complete");
 }
