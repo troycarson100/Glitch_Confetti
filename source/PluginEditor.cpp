@@ -4516,14 +4516,22 @@ void PluginEditor::setupChorusKnobs()
         chorusDiceButtons[i] = std::make_unique<CustomDiceButton>();
         chorusDiceButtons[i]->onClick = [this, i]() { randomizeIndividualChorusKnob(i); };
 
-        // Create lock button
+        // Create lock button (EXACT same as Dirt page)
         chorusLockButtons[i] = std::make_unique<LockButton>();
         addAndMakeVisible(chorusLockButtons[i].get());
         chorusLockButtons[i]->setVisible(false);
-        chorusLockButtons[i]->setBounds(x + knobSize - 8, y - 8, 16, 16);
-        chorusLockButtons[i]->setClickingTogglesState(true);
         
-        // Set lock button images
+        const int diceSize = 10;
+        const int diceSpacing = 5;
+        
+        juce::Font labelFont(12.0f, juce::Font::bold);
+        int textWidth = labelFont.getStringWidth(chorusKnobNames[i]);
+        
+        int lockX = x + (knobSize / 2) + (textWidth / 2) + diceSpacing;
+        int lockY = y - 10;
+        
+        chorusLockButtons[i]->setBounds(lockX, lockY, diceSize, diceSize);
+        
         if (assets.unlockedIcon && assets.lockedIcon) {
             auto imgUnlocked = assets.unlockedIcon->createCopy();
             auto imgLocked = assets.lockedIcon->createCopy();
@@ -4864,11 +4872,11 @@ void PluginEditor::setupChorusAllStepsToggle()
     chorusAllStepsLabel->setText("All Steps", juce::dontSendNotification);
     chorusAllStepsLabel->setFont(juce::Font(14.4f, juce::Font::bold));
     chorusAllStepsLabel->setColour(juce::Label::textColourId, juce::Colours::white);
-    chorusAllStepsLabel->setJustificationType(juce::Justification::centred);
+    chorusAllStepsLabel->setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(chorusAllStepsLabel.get());
     chorusAllStepsLabel->setVisible(false);
-    chorusAllStepsLabel->setBounds(effectArea.getX() + effectArea.getWidth()/2 - 40, 
-                                    effectArea.getY() - 1 + buttonSize + 2, 80, 20);
+    chorusAllStepsLabel->setBounds(effectArea.getX() + effectArea.getWidth()/2 + buttonSize/2 + 5 + 30, 
+                                    effectArea.getY() + 1, 80, 24);
     
     DBG("[UI] Chorus All Steps toggle setup complete");
 }
