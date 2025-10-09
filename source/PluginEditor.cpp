@@ -2631,10 +2631,11 @@ void PluginEditor::setupTabSystem()
     DBG("[UI] Setting up tab system...");
     
     // === CREATE TAB BUTTONS WITH DYNAMIC EFFECT TITLE SVGs ===
-    tabSpaceDelay = std::make_unique<juce::DrawableButton>("tabSlot1", juce::DrawableButton::ImageFitted);
-    tabPanner = std::make_unique<juce::DrawableButton>("tabSlot2", juce::DrawableButton::ImageFitted);
-    tabDirt = std::make_unique<juce::DrawableButton>("tabSlot3", juce::DrawableButton::ImageFitted);
-    tabChorus = std::make_unique<juce::DrawableButton>("tabSlot4", juce::DrawableButton::ImageFitted);
+    // Use ImageOnButtonBackground to constrain SVG to button bounds
+    tabSpaceDelay = std::make_unique<juce::DrawableButton>("tabSlot1", juce::DrawableButton::ImageOnButtonBackground);
+    tabPanner = std::make_unique<juce::DrawableButton>("tabSlot2", juce::DrawableButton::ImageOnButtonBackground);
+    tabDirt = std::make_unique<juce::DrawableButton>("tabSlot3", juce::DrawableButton::ImageOnButtonBackground);
+    tabChorus = std::make_unique<juce::DrawableButton>("tabSlot4", juce::DrawableButton::ImageOnButtonBackground);
     
     // Set initial tab images based on router assignment (will update dynamically)
     updateTabButtonImages();
