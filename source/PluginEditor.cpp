@@ -139,50 +139,55 @@ PluginEditor::~PluginEditor()
 void PluginEditor::paint (juce::Graphics& g)
 {
     // === ROUTER-AWARE BACKGROUNDS ===
-    // Get the effect assigned to current slot and draw its background for this tab position
-    // Formula: {EffectName}_Background_Tab{SlotIndex+1}.svg
+    // Background selection: Slot position determines Tab number
+    // Page 1 (Slot 0) → Tab1, Page 2 (Slot 1) → Tab2, etc.
+    // Effect determines which effect's background family to use
+    // Formula: Show {AssignedEffect}_Background_Tab{CurrentSlot+1}.svg
     auto& router = processorRef.getEffectRouter();
     int slotIndex = static_cast<int>(currentPage);  // Page maps to slot (0-3)
     EffectID assignedEffect = router.getEffectInSlot(static_cast<SlotID>(slotIndex));
     
-    // Get the appropriate background based on (effect × slot)
-    // Slot index determines Tab number (0→Tab1, 1→Tab2, 2→Tab3, 3→Tab4)
+    // Get the background: effect family + slot's tab number
     juce::Drawable* background = nullptr;
+    
+    // Determine tab suffix based on current slot/page
+    int tabNumber = slotIndex + 1;  // Slot 0→Tab1, Slot 1→Tab2, Slot 2→Tab3, Slot 3→Tab4
     
     switch (assignedEffect)
     {
         case EffectID::SpaceDelay:
-            // SpaceDelay_Background_Tab{1,2,3,4}.svg based on slot
-            if (slotIndex == 0) background = assets.spaceDelayBackgroundTab1.get();
-            else if (slotIndex == 1) background = assets.spaceDelayBackgroundTab2.get();
-            else if (slotIndex == 2) background = assets.spaceDelayBackgroundTab3.get();
-            else if (slotIndex == 3) background = assets.spaceDelayBackgroundTab4.get();
+            if (tabNumber == 1) background = assets.spaceDelayBackgroundTab1.get();
+            else if (tabNumber == 2) background = assets.spaceDelayBackgroundTab2.get();
+            else if (tabNumber == 3) background = assets.spaceDelayBackgroundTab3.get();
+            else if (tabNumber == 4) background = assets.spaceDelayBackgroundTab4.get();
             break;
             
         case EffectID::AutoPan:
-            // Panner_Background_Tab{1,2,3,4}.svg based on slot
-            if (slotIndex == 0) background = assets.pannerBackgroundTab1.get();
-            else if (slotIndex == 1) background = assets.pannerBackgroundTab2.get();
-            else if (slotIndex == 2) background = assets.pannerBackgroundTab3.get();
-            else if (slotIndex == 3) background = assets.pannerBackgroundTab4.get();
+            if (tabNumber == 1) background = assets.pannerBackgroundTab1.get();
+            else if (tabNumber == 2) background = assets.pannerBackgroundTab2.get();
+            else if (tabNumber == 3) background = assets.pannerBackgroundTab3.get();
+            else if (tabNumber == 4) background = assets.pannerBackgroundTab4.get();
             break;
             
         case EffectID::Dirt:
-            // Dirt_Background_Tab{1,2,3,4}.svg based on slot
-            if (slotIndex == 0) background = assets.dirtBackgroundTab1.get();
-            else if (slotIndex == 1) background = assets.dirtBackgroundTab2.get();
-            else if (slotIndex == 2) background = assets.dirtBackgroundTab3.get();
-            else if (slotIndex == 3) background = assets.dirtBackgroundTab4.get();
+            if (tabNumber == 1) background = assets.dirtBackgroundTab1.get();
+            else if (tabNumber == 2) background = assets.dirtBackgroundTab2.get();
+            else if (tabNumber == 3) background = assets.dirtBackgroundTab3.get();
+            else if (tabNumber == 4) background = assets.dirtBackgroundTab4.get();
             break;
             
         case EffectID::Chorus:
-            // Chorus_Background_Tab{1,2,3,4}.svg based on slot
-            if (slotIndex == 0) background = assets.chorusBackgroundTab1.get();
-            else if (slotIndex == 1) background = assets.chorusBackgroundTab2.get();
-            else if (slotIndex == 2) background = assets.chorusBackgroundTab3.get();
-            else if (slotIndex == 3) background = assets.chorusBackgroundTab4.get();
+            if (tabNumber == 1) background = assets.chorusBackgroundTab1.get();
+            else if (tabNumber == 2) background = assets.chorusBackgroundTab2.get();
+            else if (tabNumber == 3) background = assets.chorusBackgroundTab3.get();
+            else if (tabNumber == 4) background = assets.chorusBackgroundTab4.get();
             break;
     }
+    
+    DBG("[ROUTER] Showing " << (assignedEffect == EffectID::SpaceDelay ? "SpaceDelay" :
+                                assignedEffect == EffectID::AutoPan ? "AutoPan" :
+                                assignedEffect == EffectID::Dirt ? "Dirt" : "Chorus")
+        << " background Tab" << tabNumber << " for slot " << slotIndex);
     
     // Draw the background or fallback
     if (background != nullptr)
