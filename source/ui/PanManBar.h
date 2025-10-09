@@ -34,18 +34,7 @@ public:
         auto r = getLocalBounds().toFloat();
         const float radius = juce::jmin(r.getHeight() * 0.5f, 10.0f);
 
-        // Track
-        g.setColour(trackColour);
-        g.fillRoundedRectangle(r, radius);
-
-        // Ticks (subtle)
-        g.setColour(trackColour.brighter(0.15f).withAlpha(0.35f));
-        const int bigTicks = 4; // L | | C | | R
-        for (int i = 0; i <= bigTicks; ++i)
-        {
-            const float x = r.getX() + r.getWidth() * (float) i / (float) bigTicks;
-            g.fillRect(x, r.getCentreY() - 8.0f, 1.0f, 16.0f);
-        }
+        // No background - transparent
 
 
         // Compute bin rectangles area (shrink inside the track)
