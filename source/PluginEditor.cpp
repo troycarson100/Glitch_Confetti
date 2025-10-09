@@ -1778,9 +1778,10 @@ void PluginEditor::setupSpaceDelayUI()
     spaceDelayTitle->setClickingTogglesState(false);
     spaceDelayTitle->setEnabled(true); // Enable it so it's not greyed out
     
-    // Create effect type dropdown
+    // Create effect type dropdown (DEPRECATED - replaced by router dropdowns)
     effectTypeDropdown = std::make_unique<juce::ComboBox>();
-    addAndMakeVisible(effectTypeDropdown.get());
+    // Don't add to UI - replaced by new router effect selectors
+    // addAndMakeVisible(effectTypeDropdown.get());
     
     // Create and configure BigComboWithSvgLNF for larger popup menus with SVG caret
     fxComboLNF = std::make_unique<BigComboWithSvgLNF>();
@@ -2794,7 +2795,7 @@ void PluginEditor::setupTabSystem()
     // Add effects area components
     if (effectsTitle) spaceDelayGroup.push_back(effectsTitle.get());
     if (spaceDelayTitle) spaceDelayGroup.push_back(spaceDelayTitle.get());
-    if (effectTypeDropdown) spaceDelayGroup.push_back(effectTypeDropdown.get());
+    // OLD effectTypeDropdown removed - replaced by router dropdowns
     if (diceButton) spaceDelayGroup.push_back(diceButton.get());
     if (timeSyncToggle) spaceDelayGroup.push_back(timeSyncToggle.get());
     if (fxPowerButton) spaceDelayGroup.push_back(fxPowerButton.get());
