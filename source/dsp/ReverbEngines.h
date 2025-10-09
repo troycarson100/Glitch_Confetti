@@ -60,11 +60,19 @@ struct HallReverb
     {
         sampleRate = sr;
         const int maxSamps = (int) std::ceil (sr * maxMs / 1000.0) + 8;
+        
+        // Prepare IIR filters with ProcessSpec first
+        juce::dsp::ProcessSpec spec;
+        spec.sampleRate = sr;
+        spec.maximumBlockSize = 512;
+        spec.numChannels = 1;
+        
         for (int i=0; i<N; ++i)
         {
             lines[i].setSize (1, maxSamps); lines[i].clear(); widx[i]=0;
             
-            // Prepare allpass filter
+            // Prepare allpass filter with ProcessSpec
+            ap[i].prepare(spec);
             ap[i].reset();
             *ap[i].coefficients = *juce::dsp::IIR::Coefficients<float>::makeAllPass (sr, 600.0f, 0.5f);
             
