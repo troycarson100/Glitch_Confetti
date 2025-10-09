@@ -6,6 +6,7 @@
 #include "dsp/AutoPan.h"
 #include "dsp/FxDirt.h"
 #include "dsp/FxChorus.h"
+#include "dsp/ReverbEngines.h"
 #include "dsp/DspFlags.h"
 #include "StepSnapshot.h"
 #include "MeterTheme.h"
@@ -314,6 +315,9 @@ public:
     
     // Chorus DSP Implementation
     ChorusEngine chorus;
+    
+    // Reverb DSP Implementation
+    MultiReverb reverb;
     
     // PanMan-style visualizer clock
     struct PanVisClock {

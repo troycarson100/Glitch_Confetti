@@ -165,6 +165,25 @@ juce::AudioProcessorValueTreeState::ParameterLayout PluginProcessor::createParam
         "masterLPHz", "LPF",
         juce::NormalisableRange<float>(20.0f, 20000.0f, 0.0f, 0.5f), 20000.0f)); // Start at 20 kHz (bypass)
     
+    // Reverb Parameters (8 knobs: Type, Size, Predelay, Damping, Diffusion, Early, Shimmer, Mix)
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(
+        "verbType", "Type", juce::NormalisableRange<float>(0.0f, 2.0f, 0.0f, 1.0f), 0.0f)); // 0=Hall,1=Room,2=Shimmer
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(
+        "verbSize", "Size", juce::NormalisableRange<float>(0.1f, 1.5f, 0.0f, 0.7f), 0.7f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(
+        "verbPredelayMs", "PreDelay", juce::NormalisableRange<float>(0.0f, 200.0f, 0.01f, 0.5f), 20.0f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(
+        "verbDampHz", "Damping", juce::NormalisableRange<float>(1000.0f, 20000.0f, 0.0f, 0.5f), 8000.0f)); // log-ish
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(
+        "verbDiffusion", "Diffusion", juce::NormalisableRange<float>(0.0f, 1.0f, 0.0f, 1.0f), 0.7f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(
+        "verbEarlyLevel", "Early", juce::NormalisableRange<float>(0.0f, 1.0f, 0.0f, 1.0f), 0.35f)); // room only
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(
+        "verbShimmerAmt", "Shimmer", juce::NormalisableRange<float>(0.0f, 1.0f, 0.0f, 1.0f), 0.0f)); // shimmer only
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(
+        "verbMix", "Mix", juce::NormalisableRange<float>(0.0f, 1.0f, 0.0f, 1.0f), 0.25f));
+    params.push_back(std::make_unique<juce::AudioParameterBool>("verbEnabled", "Reverb Enabled", true)); // Reverb effect enabled
+    
     return { params.begin(), params.end() };
 }
 
@@ -238,6 +257,7 @@ void PluginProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
     autoPan.setVisualState(&panVis);
     dirt.prepare(sampleRate, samplesPerBlock); // Prepare Dirt saturation
     chorus.prepare(sampleRate, samplesPerBlock); // Prepare Chorus effect
+    reverb.prepare(sampleRate, samplesPerBlock); // Prepare Reverb effect
     seq.prepare(sampleRate); // Initialize delay sequencer with sample rate
     autopanSeq.prepare(sampleRate); // Initialize AutoPan sequencer with sample rate
     dirtSeq.prepare(sampleRate); // Initialize Dirt sequencer with sample rate
@@ -639,6 +659,33 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
             case EffectID::Chorus:
                 processChorusEffect(buffer);
                 break;
+                
+            case EffectID::Reverb:
+            {
+                // Process Reverb effect
+                auto* verbEnabledParam = valueTreeState.getRawParameterValue("verbEnabled");
+                bool isVerbEnabled = verbEnabledParam ? (verbEnabledParam->load() > 0.5f) : false;
+                
+                if (isVerbEnabled && buffer.getNumChannels() > 0 && buffer.getNumSamples() > 0)
+                {
+                    // Read reverb parameters
+                    const float type      = valueTreeState.getRawParameterValue("verbType")->load();
+                    const float size      = valueTreeState.getRawParameterValue("verbSize")->load();
+                    const float predelay  = valueTreeState.getRawParameterValue("verbPredelayMs")->load();
+                    const float dampHz    = valueTreeState.getRawParameterValue("verbDampHz")->load();
+                    const float diffusion = valueTreeState.getRawParameterValue("verbDiffusion")->load();
+                    const float early     = valueTreeState.getRawParameterValue("verbEarlyLevel")->load();
+                    const float shimmer   = valueTreeState.getRawParameterValue("verbShimmerAmt")->load();
+                    const float mix       = valueTreeState.getRawParameterValue("verbMix")->load();
+                    
+                    // Update reverb targets (smoothed internally)
+                    reverb.setParams(type, size, predelay, dampHz, diffusion, early, shimmer, mix);
+                    
+                    // Process in-place
+                    reverb.processBlock(buffer);
+                }
+                break;
+            }
         }
     }
     

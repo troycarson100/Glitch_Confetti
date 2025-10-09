@@ -14,7 +14,8 @@ enum class EffectID {
     SpaceDelay = 0,
     AutoPan = 1,
     Dirt = 2,
-    Chorus = 3
+    Chorus = 3,
+    Reverb = 4
 };
 
 enum class SlotID {
@@ -29,7 +30,7 @@ class EffectRouter
 public:
     EffectRouter()
     {
-        // Default assignment: each effect in its original slot
+        // Default assignment: first 4 effects in slots (Reverb initially unassigned)
         assignment[0] = EffectID::SpaceDelay;
         assignment[1] = EffectID::AutoPan;
         assignment[2] = EffectID::Dirt;
@@ -133,14 +134,15 @@ public:
         routerVersion.store(tree.getProperty("version", 0));
     }
     
-    // Validate assignment (ensure no duplicates, all effects present)
+    // Validate assignment (ensure no duplicates in the 4 slots)
+    // Note: With 5 effects and 4 slots, one effect will always be unassigned
     bool isValid() const
     {
-        bool seen[4] = { false, false, false, false };
+        bool seen[5] = { false, false, false, false, false };
         for (int i = 0; i < 4; ++i)
         {
             int effectIdx = static_cast<int>(assignment[i]);
-            if (effectIdx < 0 || effectIdx > 3 || seen[effectIdx])
+            if (effectIdx < 0 || effectIdx > 4 || seen[effectIdx])
                 return false;
             seen[effectIdx] = true;
         }
