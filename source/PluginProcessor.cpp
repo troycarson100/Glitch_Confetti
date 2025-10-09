@@ -36,11 +36,18 @@ PluginProcessor::PluginProcessor()
     chorusSeq.divisionIndex.store(5); // 1/8 default (index 5 = item ID 6)
     chorusSeq.playingStep.store(0);
     
+    // Initialize Reverb sequencer state (independent)
+    reverbSeq.enabled.store(false);
+    reverbSeq.stepsUsed.store(16);
+    reverbSeq.divisionIndex.store(5); // 1/8 default (index 5 = item ID 6)
+    reverbSeq.playingStep.store(0);
+    
     // Initialize UI state
     uiSelectedStep.store(0);
     autopanUiSelectedStep.store(0);
     dirtUiSelectedStep.store(0);
     chorusUiSelectedStep.store(0);
+    reverbUiSelectedStep.store(0);
     
     // Initialize transport cache
     transportCache.valid.store(false);
@@ -262,6 +269,7 @@ void PluginProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
     autopanSeq.prepare(sampleRate); // Initialize AutoPan sequencer with sample rate
     dirtSeq.prepare(sampleRate); // Initialize Dirt sequencer with sample rate
     chorusSeq.prepare(sampleRate); // Initialize Chorus sequencer with sample rate
+    reverbSeq.prepare(sampleRate); // Initialize Reverb sequencer with sample rate
     
     // Prepare output visualizer buffer (store ~1 second of downsampled audio)
     const int bufferSize = (int)(sampleRate / downsampleRate); // ~1 second at downsample rate
@@ -1314,6 +1322,59 @@ void PluginProcessor::updateChorusCurrentStepSnapshot(int knobIndex, float value
             break;
         case 7: // Mix
             chorusStepSnapshots[currentStep].chorus.mix = value;
+            break;
+    }
+}
+
+// ===============================================================================
+// REVERB SEQUENCER SNAPSHOT METHODS
+// ===============================================================================
+
+StepSnapshot PluginProcessor::getReverbSafeSnapshot(int step) const
+{
+    if (step >= 0 && step < 16) {
+        return reverbStepSnapshots[step];
+    }
+    return reverbStepSnapshots[0];
+}
+
+void PluginProcessor::setReverbStepSnapshot(int step, const StepSnapshot& snapshot) noexcept
+{
+    if (step >= 0 && step < 16) {
+        reverbStepSnapshots[step] = snapshot;
+    }
+}
+
+void PluginProcessor::updateReverbCurrentStepSnapshot(int knobIndex, float value)
+{
+    int currentStep = reverbUiSelectedStep.load();
+    if (currentStep < 0 || currentStep >= 16) return;
+    
+    // Update the specific Reverb parameter in the snapshot
+    switch (knobIndex) {
+        case 0: // Type
+            reverbStepSnapshots[currentStep].reverb.type = value;
+            break;
+        case 1: // Size
+            reverbStepSnapshots[currentStep].reverb.size = value;
+            break;
+        case 2: // Predelay
+            reverbStepSnapshots[currentStep].reverb.predelayMs = value;
+            break;
+        case 3: // Damping
+            reverbStepSnapshots[currentStep].reverb.dampHz = value;
+            break;
+        case 4: // Diffusion
+            reverbStepSnapshots[currentStep].reverb.diffusion = value;
+            break;
+        case 5: // Early
+            reverbStepSnapshots[currentStep].reverb.early = value;
+            break;
+        case 6: // Shimmer
+            reverbStepSnapshots[currentStep].reverb.shimmer = value;
+            break;
+        case 7: // Mix
+            reverbStepSnapshots[currentStep].reverb.mix = value;
             break;
     }
 }

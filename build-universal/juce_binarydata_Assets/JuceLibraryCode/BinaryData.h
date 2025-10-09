@@ -131,6 +131,18 @@ namespace BinaryData
     extern const char*   Panner_Background_Tab4_svg;
     const int            Panner_Background_Tab4_svgSize = 5265;
 
+    extern const char*   Reverb1_Background_Tab1_svg;
+    const int            Reverb1_Background_Tab1_svgSize = 4946;
+
+    extern const char*   Reverb1_Background_Tab2_svg;
+    const int            Reverb1_Background_Tab2_svgSize = 5178;
+
+    extern const char*   Reverb1_Background_Tab3_svg;
+    const int            Reverb1_Background_Tab3_svgSize = 5215;
+
+    extern const char*   Reverb1_Background_Tab4_svg;
+    const int            Reverb1_Background_Tab4_svgSize = 5233;
+
     extern const char*   SpaceDelay_Background_Tab1_svg;
     const int            SpaceDelay_Background_Tab1_svgSize = 5003;
 
@@ -161,11 +173,17 @@ namespace BinaryData
     extern const char*   Tab_Title_Space_Delayv2_svg;
     const int            Tab_Title_Space_Delayv2_svgSize = 2998;
 
+    extern const char*   Tab_Title_Space_Delayv2_svg_backup2_svg;
+    const int            Tab_Title_Space_Delayv2_svg_backup2_svgSize = 2998;
+
     extern const char*   Time_svg;
     const int            Time_svgSize = 13971;
 
     extern const char*   Unlocked_svg;
     const int            Unlocked_svgSize = 412;
+
+    extern const char*   Verb_Icon_svg;
+    const int            Verb_Icon_svgSize = 34568;
 
     extern const char*   Wow_Depth_svg;
     const int            Wow_Depth_svgSize = 41683;
@@ -183,7 +201,7 @@ namespace BinaryData
     const int            AlteHaasGroteskRegular_ttfSize = 143896;
 
     // Number of elements in the namedResourceList and originalFileNames arrays.
-    const int namedResourceListSize = 58;
+    const int namedResourceListSize = 64;
 
     // Points to the start of a list of resource names.
     extern const char* namedResourceList[];

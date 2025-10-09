@@ -13,7 +13,7 @@
 #include "ui/SpectrumFilterSlider.h"
 
 // Tab system enum
-enum class FxPageID { SpaceDelay, Panner, Dirt, Chorus };
+enum class FxPageID { SpaceDelay, Panner, Dirt, Chorus, Reverb };
 
 // Forward declaration
 class PluginProcessor;
@@ -226,6 +226,7 @@ public:
         std::vector<juce::Component*> pannerGroup;        // pointers to panner UI components
         std::vector<juce::Component*> dirtGroup;          // pointers to dirt UI components
         std::vector<juce::Component*> chorusGroup;        // pointers to chorus UI components
+        std::vector<juce::Component*> reverbGroup;        // pointers to reverb UI components
     
         // UI Components
         std::array<std::unique_ptr<CustomKnob>, 8> knobs;
@@ -389,6 +390,38 @@ public:
     std::unique_ptr<juce::Label> chorusAllStepsLabel;
     bool chorusAllStepsEnabled = false;
     
+    // Reverb page components (clone of Chorus page layout)
+    std::array<std::unique_ptr<CustomKnob>, 8> reverbKnobs;
+    std::array<std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>, 8> reverbAttachments;
+    std::array<std::unique_ptr<juce::Label>, 8> reverbKnobLabels;
+    std::array<std::unique_ptr<juce::Label>, 8> reverbValueLabels;
+    std::array<std::unique_ptr<IndicatorBar>, 8> reverbIndicatorBars;
+    std::array<std::unique_ptr<CustomDiceButton>, 8> reverbDiceButtons;
+    std::array<std::unique_ptr<LockButton>, 8> reverbLockButtons;
+    std::array<bool, 8> reverbKnobLocked { false, false, false, false, false, false, false, false };
+    
+    // Reverb effects area components
+    std::unique_ptr<juce::Label> reverbEffectsTitle;
+    std::unique_ptr<CustomDiceButton> reverbDiceButton;
+    std::unique_ptr<juce::DrawableButton> reverbFxPowerButton;
+    bool reverbFxAreaEnabled = true;
+    
+    // Reverb sequencer components (independent sequencer)
+    std::array<std::unique_ptr<StepButton>, 16> reverbStepButtons;
+    int reverbUiSelectedStep = 0;
+    std::unique_ptr<juce::TextEditor> reverbStepAmountLabel;
+    std::unique_ptr<juce::ComboBox> reverbRateDropdown;
+    std::unique_ptr<CircularToggleButton> reverbStdToggle;
+    std::unique_ptr<juce::Label> reverbStepTitle;
+    std::unique_ptr<CustomDiceButton> reverbStepDiceButton;
+    std::unique_ptr<juce::DrawableButton> reverbStepPowerButton;
+    bool reverbStepAreaEnabled = true;
+    
+    // Reverb All Steps toggle
+    std::unique_ptr<AllStepsToggleButton> reverbAllStepsToggle;
+    std::unique_ptr<juce::Label> reverbAllStepsLabel;
+    bool reverbAllStepsEnabled = false;
+    
         // Helper methods
         void setupKnobs();
         void setupMasterKnobs();
@@ -452,6 +485,19 @@ public:
         void updateChorusParameterFromKnob(int knobIndex);
         void onChorusStepButtonClicked(int stepIndex);
         void updateChorusSequencerUI();
+        
+        // Reverb page setup methods
+        void setupReverbKnobs();
+        void setupReverbEffectsArea();
+        void setupReverbSequencerArea();
+        void setupReverbAllStepsToggle();
+        void updateReverbFxAreaVisibility();
+        void updateReverbStepAreaVisibility();
+        void randomizeReverbKnobValues();
+        void randomizeIndividualReverbKnob(int knobIndex);
+        void updateReverbParameterFromKnob(int knobIndex);
+        void onReverbStepButtonClicked(int stepIndex);
+        void updateReverbSequencerUI();
         
         void togglePlayback();
         

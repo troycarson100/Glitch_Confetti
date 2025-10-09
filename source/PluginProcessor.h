@@ -210,6 +210,24 @@ public:
     void setChorusStepSnapshot(int step, const StepSnapshot& snapshot) noexcept;
     void updateChorusCurrentStepSnapshot(int knobIndex, float value);
     
+    // Reverb sequencer accessors
+    const SeqState& getReverbSeqState() const { return reverbSeq; }
+    int getReverbPlayingStep() const noexcept { return reverbSeq.playingStep.load(); }
+    int getReverbCurrentStep() const noexcept { return reverbSeq.currentStep.load(); }
+    void setReverbSelectedStep(int step) noexcept { reverbUiSelectedStep.store(step); }
+    void setReverbSequencerEnabled(bool enabled) noexcept {
+        reverbSeq.enabled.store(enabled);
+        if (enabled) {
+            reverbSeq.active.store(true);
+        }
+    }
+    void setReverbStepsUsed(int steps) noexcept { reverbSeq.stepsUsed.store(juce::jlimit(1, 16, steps)); }
+    void setReverbDivisionIndex(int index) noexcept { reverbSeq.divisionIndex.store(juce::jlimit(0, 7, index)); }
+    void setReverbStdMode(int mode) noexcept { reverbSeq.stdMode.store(juce::jlimit(0, 2, mode)); }
+    StepSnapshot getReverbSafeSnapshot(int step) const;
+    void setReverbStepSnapshot(int step, const StepSnapshot& snapshot) noexcept;
+    void updateReverbCurrentStepSnapshot(int knobIndex, float value);
+    
     void setSequencerEnabled(bool enabled) noexcept { 
         seq.enabled.store(enabled); 
         // Only set active if enabled, otherwise leave active state for transport watcher
@@ -275,11 +293,16 @@ private:
     SeqState chorusSeq;
     std::atomic<int> chorusUiSelectedStep { 0 };  // Chorus editor's selected step
     
+    // Reverb Sequencer State (independent from all other sequencers)
+    SeqState reverbSeq;
+    std::atomic<int> reverbUiSelectedStep { 0 };  // Reverb editor's selected step
+    
     // Step snapshots storage (shared structure, independent sequencing)
     std::array<StepSnapshot, 16> stepSnapshots;
     std::array<StepSnapshot, 16> autopanStepSnapshots;
     std::array<StepSnapshot, 16> dirtStepSnapshots;
     std::array<StepSnapshot, 16> chorusStepSnapshots;
+    std::array<StepSnapshot, 16> reverbStepSnapshots;
     
     // Level tracking for meters
     std::atomic<float> inputLevel { -60.0f };

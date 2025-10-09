@@ -112,6 +112,17 @@ PluginEditor::PluginEditor (PluginProcessor& p)
         processorRef.setChorusSequencerEnabled(chorusStepAreaEnabled);
         DBG("[UI] Initial Chorus sequencer state synced: enabled=" << chorusStepAreaEnabled);
         
+        // Setup Reverb page
+        DBG("[UI] Setting up Reverb page...");
+        setupReverbKnobs();
+        setupReverbEffectsArea();
+        setupReverbSequencerArea();
+        setupReverbAllStepsToggle();
+        
+        // Sync Reverb sequencer state with processor on startup
+        processorRef.setReverbSequencerEnabled(reverbStepAreaEnabled);
+        DBG("[UI] Initial Reverb sequencer state synced: enabled=" << reverbStepAreaEnabled);
+        
         // Initialize Chorus FX power button state from parameter
         auto* chorusEnabledParam = processorRef.getAPVTS().getRawParameterValue("chorusEnabled");
         if (chorusEnabledParam) {
@@ -842,6 +853,9 @@ void PluginEditor::timerCallback()
     
     // Update Chorus sequencer UI
     updateChorusSequencerUI();
+    
+    // Update Reverb sequencer UI
+    updateReverbSequencerUI();
 }
 
 bool PluginEditor::keyPressed(const juce::KeyPress& key)
@@ -2969,6 +2983,36 @@ void PluginEditor::setupTabSystem()
     if (chorusStepDiceButton) chorusGroup.push_back(chorusStepDiceButton.get());
     if (chorusStepPowerButton) chorusGroup.push_back(chorusStepPowerButton.get());
     
+    // Populate Reverb group
+    reverbGroup.clear();
+    
+    // Add Reverb knobs and related components
+    for (int i = 0; i < 8; ++i) {
+        if (reverbKnobs[i]) reverbGroup.push_back(reverbKnobs[i].get());
+        if (reverbKnobLabels[i]) reverbGroup.push_back(reverbKnobLabels[i].get());
+        if (reverbValueLabels[i]) reverbGroup.push_back(reverbValueLabels[i].get());
+        if (reverbIndicatorBars[i]) reverbGroup.push_back(reverbIndicatorBars[i].get());
+        if (reverbLockButtons[i]) reverbGroup.push_back(reverbLockButtons[i].get());
+    }
+    
+    // Add Reverb effects area components
+    if (reverbEffectsTitle) reverbGroup.push_back(reverbEffectsTitle.get());
+    if (reverbDiceButton) reverbGroup.push_back(reverbDiceButton.get());
+    if (reverbFxPowerButton) reverbGroup.push_back(reverbFxPowerButton.get());
+    
+    // Add Reverb sequencer components
+    if (reverbAllStepsToggle) reverbGroup.push_back(reverbAllStepsToggle.get());
+    if (reverbAllStepsLabel) reverbGroup.push_back(reverbAllStepsLabel.get());
+    for (int i = 0; i < 16; ++i) {
+        if (reverbStepButtons[i]) reverbGroup.push_back(reverbStepButtons[i].get());
+    }
+    if (reverbStepAmountLabel) reverbGroup.push_back(reverbStepAmountLabel.get());
+    if (reverbRateDropdown) reverbGroup.push_back(reverbRateDropdown.get());
+    if (reverbStdToggle) reverbGroup.push_back(reverbStdToggle.get());
+    if (reverbStepTitle) reverbGroup.push_back(reverbStepTitle.get());
+    if (reverbStepDiceButton) reverbGroup.push_back(reverbStepDiceButton.get());
+    if (reverbStepPowerButton) reverbGroup.push_back(reverbStepPowerButton.get());
+    
     // Initialize with SpaceDelay page visible
     showPage(FxPageID::SpaceDelay);
     
@@ -2976,6 +3020,7 @@ void PluginEditor::setupTabSystem()
     DBG("[UI] AutoPan components: " << pannerGroup.size());
     DBG("[UI] Dirt components: " << dirtGroup.size());
     DBG("[UI] Chorus components: " << chorusGroup.size());
+    DBG("[UI] Reverb components: " << reverbGroup.size());
 }
 
 void PluginEditor::showPage(FxPageID id)
@@ -2994,6 +3039,7 @@ void PluginEditor::showPage(FxPageID id)
             if (id == FxPageID::Panner) pageValue = 1.0f;
             else if (id == FxPageID::Dirt) pageValue = 2.0f;
             else if (id == FxPageID::Chorus) pageValue = 3.0f;
+            else if (id == FxPageID::Reverb) pageValue = 4.0f;
             currentPageParam->setValueNotifyingHost(pageValue);
         }
     }
@@ -3033,6 +3079,18 @@ void PluginEditor::showPage(FxPageID id)
         }
         updateChorusFxAreaVisibility();
     }
+    
+    // Update Reverb UI to reflect current parameter state (don't force it on)
+    if (id == FxPageID::Reverb) {
+        auto* verbEnabledParam = processorRef.getAPVTS().getRawParameterValue("verbEnabled");
+        if (verbEnabledParam) {
+            reverbFxAreaEnabled = verbEnabledParam->load() > 0.5f;
+            if (reverbFxPowerButton) {
+                reverbFxPowerButton->setToggleState(reverbFxAreaEnabled, juce::dontSendNotification);
+            }
+        }
+        updateReverbFxAreaVisibility();
+    }
 
     // Show/Hide without touching parents or bounds
     auto setVisibleVec = [](const std::vector<juce::Component*>& v, bool vis)
@@ -3051,6 +3109,7 @@ void PluginEditor::showPage(FxPageID id)
     setVisibleVec(pannerGroup, false);
     setVisibleVec(dirtGroup, false);
     setVisibleVec(chorusGroup, false);
+    setVisibleVec(reverbGroup, false);
     
     // Show only the group for the effect assigned to this slot
     switch (assignedEffect)
@@ -3070,6 +3129,10 @@ void PluginEditor::showPage(FxPageID id)
         case EffectID::Chorus:
             setVisibleVec(chorusGroup, true);
             DBG("[ROUTER] Showing Chorus UI for slot " << slotIndex);
+            break;
+        case EffectID::Reverb:
+            setVisibleVec(reverbGroup, true);
+            DBG("[ROUTER] Showing Reverb UI for slot " << slotIndex);
             break;
     }
 
@@ -3091,6 +3154,10 @@ void PluginEditor::showPage(FxPageID id)
     else if (id == FxPageID::Chorus && chorusStepAmountLabel) {
         chorusStepAmountLabel->toFront(true);
         chorusStepAmountLabel->setWantsKeyboardFocus(true);
+    }
+    else if (id == FxPageID::Reverb && reverbStepAmountLabel) {
+        reverbStepAmountLabel->toFront(true);
+        reverbStepAmountLabel->setWantsKeyboardFocus(true);
     }
 
     repaint();
@@ -5220,6 +5287,617 @@ void PluginEditor::updateChorusSequencerUI()
 }
 
 // ===============================================================================
+// REVERB PAGE SETUP METHODS
+// ===============================================================================
+
+void PluginEditor::setupReverbKnobs()
+{
+    DBG("[UI] Setting up Reverb knobs...");
+
+    // Reverb knob names (8 knobs): Type, Size, Predelay, Damping, Diffusion, Early, Shimmer, Mix
+    std::vector<juce::String> reverbKnobNames = {
+        "Type", "Size", "Predelay", "Damping", "Diffusion", "Early", "Shimmer", "Mix"
+    };
+
+    // Effect area bounds (EXACT same as Chorus page)
+    auto effectArea = juce::Rectangle<int>(25, 54, 413, 296);
+    const int knobSize = 80;
+    const int knobSpacing = 20;
+    const int startX = effectArea.getX() + 15;
+    const int startY = effectArea.getY() + effectArea.getHeight() - 210;
+
+    for (int i = 0; i < 8; ++i)
+    {
+        reverbKnobs[i] = std::make_unique<CustomKnob>();
+        addAndMakeVisible(reverbKnobs[i].get());
+        reverbKnobs[i]->setVisible(false);
+        
+        reverbKnobs[i]->setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
+        reverbKnobs[i]->setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
+
+        // Set parameter ranges based on knob index
+        switch (i) {
+            case 0: // Type (0-2: Hall/Room/Shimmer)
+                reverbKnobs[i]->setRange(0.0, 2.0, 0.01);
+                reverbKnobs[i]->setValue(0.0, juce::dontSendNotification);
+                break;
+            case 1: // Size (0.1-1.5)
+                reverbKnobs[i]->setRange(0.1, 1.5, 0.01);
+                reverbKnobs[i]->setValue(0.7, juce::dontSendNotification);
+                break;
+            case 2: // Predelay (0-200ms)
+                reverbKnobs[i]->setRange(0.0, 200.0, 0.1);
+                reverbKnobs[i]->setValue(20.0, juce::dontSendNotification);
+                break;
+            case 3: // Damping (1000-20000 Hz)
+                reverbKnobs[i]->setRange(1000.0, 20000.0, 10.0);
+                reverbKnobs[i]->setValue(8000.0, juce::dontSendNotification);
+                break;
+            case 4: // Diffusion (0-1)
+                reverbKnobs[i]->setRange(0.0, 1.0, 0.01);
+                reverbKnobs[i]->setValue(0.7, juce::dontSendNotification);
+                break;
+            case 5: // Early reflections (0-1)
+                reverbKnobs[i]->setRange(0.0, 1.0, 0.01);
+                reverbKnobs[i]->setValue(0.35, juce::dontSendNotification);
+                break;
+            case 6: // Shimmer (0-1)
+                reverbKnobs[i]->setRange(0.0, 1.0, 0.01);
+                reverbKnobs[i]->setValue(0.0, juce::dontSendNotification);
+                break;
+            case 7: // Mix (0-1)
+                reverbKnobs[i]->setRange(0.0, 1.0, 0.01);
+                reverbKnobs[i]->setValue(0.25, juce::dontSendNotification);
+                break;
+        }
+
+        reverbKnobs[i]->onValueChange = [this, i]() {
+            if (reverbKnobs[i] != nullptr) {
+                updateReverbParameterFromKnob(i);
+
+                if (reverbAllStepsEnabled) {
+                    // Update all steps with current knob value
+                    for (int step = 0; step < 16; ++step) {
+                        auto snapshot = processorRef.getReverbSafeSnapshot(step);
+                        float value = reverbKnobs[i]->getValue();
+                        switch (i) {
+                            case 0: snapshot.reverb.type = value; break;
+                            case 1: snapshot.reverb.size = value; break;
+                            case 2: snapshot.reverb.predelayMs = value; break;
+                            case 3: snapshot.reverb.dampHz = value; break;
+                            case 4: snapshot.reverb.diffusion = value; break;
+                            case 5: snapshot.reverb.early = value; break;
+                            case 6: snapshot.reverb.shimmer = value; break;
+                            case 7: snapshot.reverb.mix = value; break;
+                        }
+                        processorRef.setReverbStepSnapshot(step, snapshot);
+                    }
+                }
+            }
+        };
+
+        if (assets.knobRing != nullptr)
+            reverbKnobs[i]->setRingImage(assets.knobRing->createCopy());
+        if (assets.knobInside != nullptr)
+            reverbKnobs[i]->setInnerImage(assets.knobInside->createCopy());
+
+        int x = startX + (i % 4) * (knobSize + knobSpacing);
+        int y = startY + (i / 4) * (knobSize + 20);
+
+        if (i < 4)
+            y -= 23;
+        else
+            y -= 1;
+
+        reverbKnobs[i]->setBounds(x, y, knobSize, knobSize);
+
+        // Create label
+        reverbKnobLabels[i] = std::make_unique<juce::Label>();
+        reverbKnobLabels[i]->setText(reverbKnobNames[i], juce::dontSendNotification);
+        reverbKnobLabels[i]->setFont(juce::Font(12.0f, juce::Font::bold));
+        reverbKnobLabels[i]->setColour(juce::Label::textColourId, juce::Colours::white);
+        reverbKnobLabels[i]->setJustificationType(juce::Justification::centred);
+        addAndMakeVisible(reverbKnobLabels[i].get());
+        reverbKnobLabels[i]->setVisible(false);
+        reverbKnobLabels[i]->setBounds(x, y - 15, knobSize, 20);
+
+        // Create value label
+        reverbValueLabels[i] = std::make_unique<juce::Label>();
+        reverbValueLabels[i]->setText("0", juce::dontSendNotification);
+        reverbValueLabels[i]->setFont(juce::Font(10.0f, juce::Font::plain));
+        reverbValueLabels[i]->setColour(juce::Label::textColourId, juce::Colours::white);
+        reverbValueLabels[i]->setJustificationType(juce::Justification::centred);
+        addAndMakeVisible(reverbValueLabels[i].get());
+        reverbValueLabels[i]->setVisible(false);
+        reverbValueLabels[i]->setBounds(x, y + knobSize - 10, knobSize, 15);
+
+        // Create indicator bar
+        reverbIndicatorBars[i] = std::make_unique<IndicatorBar>();
+        addAndMakeVisible(reverbIndicatorBars[i].get());
+        reverbIndicatorBars[i]->setVisible(false);
+        reverbIndicatorBars[i]->setBounds(x + 10, y + knobSize + 8, knobSize - 20, 13);
+        reverbIndicatorBars[i]->setValue(0.5f);
+
+        // Create dice button
+        reverbDiceButtons[i] = std::make_unique<CustomDiceButton>();
+        reverbDiceButtons[i]->onClick = [this, i]() { randomizeIndividualReverbKnob(i); };
+
+        // Create lock button
+        reverbLockButtons[i] = std::make_unique<LockButton>();
+        addAndMakeVisible(reverbLockButtons[i].get());
+        reverbLockButtons[i]->setVisible(false);
+        
+        const int diceSize = 10;
+        const int diceSpacing = 5;
+        
+        juce::Font labelFont(12.0f, juce::Font::bold);
+        int textWidth = labelFont.getStringWidth(reverbKnobNames[i]);
+        
+        int lockX = x + (knobSize / 2) + (textWidth / 2) + diceSpacing;
+        int lockY = y - 10;
+        
+        reverbLockButtons[i]->setBounds(lockX, lockY, diceSize, diceSize);
+        
+        if (assets.unlockedIcon && assets.lockedIcon) {
+            auto imgUnlocked = assets.unlockedIcon->createCopy();
+            auto imgLocked = assets.lockedIcon->createCopy();
+            reverbLockButtons[i]->setImages(std::move(imgUnlocked), std::move(imgLocked));
+        }
+        
+        reverbLockButtons[i]->setToggleState(reverbKnobLocked[i], juce::dontSendNotification);
+        reverbLockButtons[i]->onClick = [this, i]() {
+            reverbKnobLocked[i] = reverbLockButtons[i]->getToggleState();
+            DBG("[UI] Reverb knob " << i << " lock: " << (reverbKnobLocked[i] ? "LOCKED" : "UNLOCKED"));
+        };
+    }
+
+    // Create parameter attachments to connect knobs to APVTS
+    std::vector<juce::String> reverbParamIds = {
+        "verbType", "verbSize", "verbPredelayMs", "verbDampHz", 
+        "verbDiffusion", "verbEarlyLevel", "verbShimmerAmt", "verbMix"
+    };
+    
+    for (int i = 0; i < 8; ++i) {
+        reverbAttachments[i] = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+            processorRef.getAPVTS(), reverbParamIds[i], *reverbKnobs[i]);
+    }
+
+    DBG("[UI] Reverb knobs setup complete");
+}
+
+void PluginEditor::setupReverbEffectsArea()
+{
+    DBG("[UI] Setting up Reverb effects area...");
+    
+    auto effectArea = juce::Rectangle<int>(25, 54, 413, 296);
+    
+    // Create "EFFECT" title
+    reverbEffectsTitle = std::make_unique<juce::Label>();
+    reverbEffectsTitle->setText("EFFECT", juce::dontSendNotification);
+    reverbEffectsTitle->setFont(juce::Font(27.648f, juce::Font::bold));
+    reverbEffectsTitle->setColour(juce::Label::textColourId, juce::Colours::white);
+    reverbEffectsTitle->setJustificationType(juce::Justification::centredLeft);
+    addAndMakeVisible(reverbEffectsTitle.get());
+    reverbEffectsTitle->setVisible(false);
+    reverbEffectsTitle->setBounds(effectArea.getX() + 10, effectArea.getY() + 5, 100, 30);
+    
+    // Create dice button
+    reverbDiceButton = std::make_unique<CustomDiceButton>();
+    addAndMakeVisible(reverbDiceButton.get());
+    reverbDiceButton->setVisible(false);
+    
+    const int diceSize = 32;
+    reverbDiceButton->setBounds(effectArea.getX() + 130, effectArea.getY() + 5, diceSize, diceSize);
+    
+    if (assets.diceLarge != nullptr)
+    {
+        reverbDiceButton->setDiceImage(assets.diceLarge->createCopy());
+    }
+    
+    reverbDiceButton->onClick = [this]() {
+        DBG("[UI] Reverb dice button clicked - randomizing all knobs");
+        randomizeReverbKnobValues();
+    };
+    
+    // Create FX power button
+    reverbFxPowerButton = std::make_unique<juce::DrawableButton>("reverbFxPower", juce::DrawableButton::ImageFitted);
+    addAndMakeVisible(reverbFxPowerButton.get());
+    reverbFxPowerButton->setVisible(false);
+    reverbFxPowerButton->setClickingTogglesState(true);
+    
+    const int powerSize = 16;
+    reverbFxPowerButton->setBounds(effectArea.getX() + 170, effectArea.getY() + 13, powerSize, powerSize);
+    
+    if (assets.fxPowerOn != nullptr) {
+        reverbFxPowerButton->setImages(assets.fxPowerOn.get());
+    }
+    
+    auto* verbEnabledParam = processorRef.getAPVTS().getRawParameterValue("verbEnabled");
+    if (verbEnabledParam) {
+        reverbFxAreaEnabled = verbEnabledParam->load() > 0.5f;
+        reverbFxPowerButton->setToggleState(reverbFxAreaEnabled, juce::dontSendNotification);
+    }
+    
+    reverbFxPowerButton->onClick = [this]() {
+        reverbFxAreaEnabled = reverbFxPowerButton->getToggleState();
+        DBG("[UI] Reverb FX power: " << (reverbFxAreaEnabled ? "ON" : "OFF"));
+        
+        auto* param = processorRef.getAPVTS().getParameter("verbEnabled");
+        if (param) {
+            param->setValueNotifyingHost(reverbFxAreaEnabled ? 1.0f : 0.0f);
+        }
+        
+        updateReverbFxAreaVisibility();
+    };
+    
+    DBG("[UI] Reverb effects area setup complete");
+}
+
+void PluginEditor::setupReverbSequencerArea()
+{
+    DBG("[UI] Setting up Reverb sequencer area...");
+    
+    auto stepArea = juce::Rectangle<int>(451, 54, 350, 296);
+    
+    // "SEQUENCER" title (20% smaller)
+    reverbStepTitle = std::make_unique<juce::Label>();
+    reverbStepTitle->setText("SEQUENCER", juce::dontSendNotification);
+    reverbStepTitle->setFont(juce::Font(22.118f, juce::Font::bold));
+    reverbStepTitle->setColour(juce::Label::textColourId, juce::Colours::white);
+    reverbStepTitle->setJustificationType(juce::Justification::centredLeft);
+    addAndMakeVisible(reverbStepTitle.get());
+    reverbStepTitle->setVisible(false);
+    reverbStepTitle->setBounds(stepArea.getX() + 10, stepArea.getY() + 5, 150, 30);
+    
+    // Create 16 step buttons
+    const int buttonSize = 40;
+    const int buttonSpacing = 10;
+    const int startX = stepArea.getX() + 15;
+    const int startY = stepArea.getY() + 110;
+    
+    for (int i = 0; i < 16; ++i)
+    {
+        reverbStepButtons[i] = std::make_unique<StepButton>(i);
+        addAndMakeVisible(reverbStepButtons[i].get());
+        reverbStepButtons[i]->setVisible(false);
+        
+        int x = startX + (i % 4) * (buttonSize + buttonSpacing);
+        int y = startY + (i / 4) * (buttonSize + buttonSpacing);
+        
+        reverbStepButtons[i]->setBounds(x, y, buttonSize, buttonSize);
+        
+        if (assets.stepActive != nullptr) {
+            reverbStepButtons[i]->setActiveImage(assets.stepActive->createCopy());
+        }
+        if (assets.stepInactive != nullptr) {
+            reverbStepButtons[i]->setInactiveImage(assets.stepInactive->createCopy());
+        }
+        
+        reverbStepButtons[i]->onClick = [this, i]() { onReverbStepButtonClicked(i); };
+    }
+    
+    // Step amount label (TextEditor)
+    reverbStepAmountLabel = std::make_unique<juce::TextEditor>();
+    reverbStepAmountLabel->setText("16");
+    reverbStepAmountLabel->setFont(juce::Font(16.0f, juce::Font::bold));
+    reverbStepAmountLabel->setColour(juce::TextEditor::textColourId, juce::Colours::white);
+    reverbStepAmountLabel->setColour(juce::TextEditor::backgroundColourId, juce::Colours::transparentBlack);
+    reverbStepAmountLabel->setColour(juce::TextEditor::outlineColourId, juce::Colours::white);
+    reverbStepAmountLabel->setColour(juce::TextEditor::focusedOutlineColourId, juce::Colours::white);
+    reverbStepAmountLabel->setJustification(juce::Justification::centred);
+    reverbStepAmountLabel->setBorder(juce::BorderSize<int>(2));
+    reverbStepAmountLabel->setIndents(0, 0);
+    reverbStepAmountLabel->setInputRestrictions(2, "0123456789");
+    reverbStepAmountLabel->setWantsKeyboardFocus(true);
+    reverbStepAmountLabel->setMouseClickGrabsKeyboardFocus(true);
+    reverbStepAmountLabel->setCaretVisible(true);
+    reverbStepAmountLabel->setPopupMenuEnabled(false);
+    reverbStepAmountLabel->setScrollbarsShown(false);
+    reverbStepAmountLabel->setMultiLine(false);
+    reverbStepAmountLabel->setReturnKeyStartsNewLine(false);
+    reverbStepAmountLabel->setInterceptsMouseClicks(true, false);
+    reverbStepAmountLabel->setAlwaysOnTop(true);
+    
+    reverbStepAmountLabel->onReturnKey = [this]() {
+        int value = juce::jlimit(1, 16, reverbStepAmountLabel->getText().getIntValue());
+        processorRef.setReverbStepsUsed(value);
+        reverbStepAmountLabel->setText(juce::String(value), false);
+        updateReverbSequencerUI();
+        reverbStepAmountLabel->giveAwayKeyboardFocus();
+    };
+    
+    reverbStepAmountLabel->onFocusLost = [this]() {
+        int value = juce::jlimit(1, 16, reverbStepAmountLabel->getText().getIntValue());
+        processorRef.setReverbStepsUsed(value);
+        reverbStepAmountLabel->setText(juce::String(value), false);
+        updateReverbSequencerUI();
+    };
+    
+    reverbStepAmountLabel->onTextChange = [this]() {
+        // Empty - validation happens on return/focus lost
+    };
+    
+    addAndMakeVisible(reverbStepAmountLabel.get());
+    reverbStepAmountLabel->setVisible(false);
+    const int stepLabelX = stepArea.getX() + 235;
+    const int stepLabelY = stepArea.getY() + 58;
+    reverbStepAmountLabel->setBounds(stepLabelX, stepLabelY, 30, 22);
+    
+    // Rate dropdown
+    reverbRateDropdown = std::make_unique<juce::ComboBox>();
+    addAndMakeVisible(reverbRateDropdown.get());
+    reverbRateDropdown->setVisible(false);
+    
+    reverbRateDropdown->addItem("4", 1);
+    reverbRateDropdown->addItem("2", 2);
+    reverbRateDropdown->addItem("1", 3);
+    reverbRateDropdown->addItem("1/2", 4);
+    reverbRateDropdown->addItem("1/4", 5);
+    reverbRateDropdown->addItem("1/8", 6);
+    reverbRateDropdown->addItem("1/16", 7);
+    reverbRateDropdown->addItem("1/32", 8);
+    
+    reverbRateDropdown->setSelectedId(6);
+    reverbRateDropdown->onChange = [this]() {
+        int selectedIndex = reverbRateDropdown->getSelectedId() - 1;
+        processorRef.setReverbDivisionIndex(selectedIndex);
+        DBG("[UI] Reverb rate changed to index: " << selectedIndex);
+    };
+    
+    const int rateX = stepArea.getX() + 120;
+    const int rateY = stepArea.getY() + 58;
+    reverbRateDropdown->setBounds(rateX, rateY, 60, 22);
+    
+    // STD toggle
+    reverbStdToggle = std::make_unique<CircularToggleButton>();
+    addAndMakeVisible(reverbStdToggle.get());
+    reverbStdToggle->setVisible(false);
+    reverbStdToggle->setClickingTogglesState(true);
+    
+    const int stdSize = 20;
+    const int stdX = stepArea.getX() + 185;
+    const int stdY = stepArea.getY() + 59;
+    reverbStdToggle->setBounds(stdX, stdY, stdSize, stdSize);
+    
+    reverbStdToggle->onClick = [this]() {
+        int currentMode = processorRef.getReverbSeqState().stdMode.load();
+        int nextMode = (currentMode + 1) % 3;
+        processorRef.setReverbStdMode(nextMode);
+        DBG("[UI] Reverb STD mode: " << nextMode);
+    };
+    
+    // Step dice button
+    reverbStepDiceButton = std::make_unique<CustomDiceButton>();
+    addAndMakeVisible(reverbStepDiceButton.get());
+    reverbStepDiceButton->setVisible(false);
+    
+    const int stepDiceSize = 32;
+    reverbStepDiceButton->setBounds(stepArea.getX() + 280, stepArea.getY() + 5, stepDiceSize, stepDiceSize);
+    
+    if (assets.diceLarge != nullptr) {
+        reverbStepDiceButton->setDiceImage(assets.diceLarge->createCopy());
+    }
+    
+    reverbStepDiceButton->onClick = [this]() {
+        DBG("[UI] Reverb step dice clicked - randomizing current step");
+        randomizeReverbKnobValues();
+    };
+    
+    // Step power button
+    reverbStepPowerButton = std::make_unique<juce::DrawableButton>("reverbStepPower", juce::DrawableButton::ImageFitted);
+    addAndMakeVisible(reverbStepPowerButton.get());
+    reverbStepPowerButton->setVisible(false);
+    reverbStepPowerButton->setClickingTogglesState(true);
+    
+    const int stepPowerSize = 16;
+    reverbStepPowerButton->setBounds(stepArea.getX() + 320, stepArea.getY() + 13, stepPowerSize, stepPowerSize);
+    
+    if (assets.stepPowerOn != nullptr) {
+        reverbStepPowerButton->setImages(assets.stepPowerOn.get());
+    }
+    
+    reverbStepAreaEnabled = processorRef.getReverbSeqState().enabled.load();
+    reverbStepPowerButton->setToggleState(reverbStepAreaEnabled, juce::dontSendNotification);
+    
+    reverbStepPowerButton->onClick = [this]() {
+        reverbStepAreaEnabled = reverbStepPowerButton->getToggleState();
+        DBG("[UI] Reverb sequencer power: " << (reverbStepAreaEnabled ? "ON" : "OFF"));
+        processorRef.setReverbSequencerEnabled(reverbStepAreaEnabled);
+        updateReverbStepAreaVisibility();
+    };
+    
+    DBG("[UI] Reverb sequencer area setup complete");
+}
+
+void PluginEditor::setupReverbAllStepsToggle()
+{
+    DBG("[UI] Setting up Reverb All Steps toggle...");
+    
+    auto effectArea = juce::Rectangle<int>(25, 54, 413, 296);
+    
+    reverbAllStepsToggle = std::make_unique<AllStepsToggleButton>();
+    addAndMakeVisible(reverbAllStepsToggle.get());
+    reverbAllStepsToggle->setVisible(false);
+    reverbAllStepsToggle->setClickingTogglesState(true);
+    
+    const int toggleSize = 28;
+    const int toggleX = effectArea.getX() + 200;
+    const int toggleY = effectArea.getY() + 8;
+    reverbAllStepsToggle->setBounds(toggleX, toggleY, toggleSize, toggleSize);
+    
+    reverbAllStepsToggle->onClick = [this]() {
+        reverbAllStepsEnabled = reverbAllStepsToggle->getToggleState();
+        DBG("[UI] Reverb All Steps: " << (reverbAllStepsEnabled ? "ON" : "OFF"));
+        reverbAllStepsLabel->setAlpha(reverbAllStepsEnabled ? 1.0f : 0.5f);
+    };
+    
+    // Label
+    reverbAllStepsLabel = std::make_unique<juce::Label>();
+    reverbAllStepsLabel->setText("All Steps", juce::dontSendNotification);
+    reverbAllStepsLabel->setFont(juce::Font(14.4f, juce::Font::bold));
+    reverbAllStepsLabel->setColour(juce::Label::textColourId, juce::Colours::white);
+    reverbAllStepsLabel->setJustificationType(juce::Justification::centredLeft);
+    addAndMakeVisible(reverbAllStepsLabel.get());
+    reverbAllStepsLabel->setVisible(false);
+    reverbAllStepsLabel->setAlpha(0.5f);
+    reverbAllStepsLabel->setBounds(toggleX + toggleSize + 5, toggleY + 5, 80, 20);
+    
+    DBG("[UI] Reverb All Steps toggle setup complete");
+}
+
+void PluginEditor::updateReverbFxAreaVisibility()
+{
+    float alpha = reverbFxAreaEnabled ? 1.0f : 0.3f;
+    
+    if (reverbEffectsTitle) reverbEffectsTitle->setAlpha(alpha);
+    if (reverbDiceButton) { reverbDiceButton->setAlpha(alpha); reverbDiceButton->setEnabled(reverbFxAreaEnabled); }
+    
+    for (int i = 0; i < 8; ++i) {
+        if (reverbKnobs[i]) { reverbKnobs[i]->setAlpha(alpha); reverbKnobs[i]->setEnabled(reverbFxAreaEnabled); }
+        if (reverbKnobLabels[i]) reverbKnobLabels[i]->setAlpha(alpha);
+        if (reverbValueLabels[i]) reverbValueLabels[i]->setAlpha(alpha);
+        if (reverbIndicatorBars[i]) reverbIndicatorBars[i]->setAlpha(alpha);
+        if (reverbLockButtons[i]) { 
+            reverbLockButtons[i]->setEnabled(reverbFxAreaEnabled);
+            reverbLockButtons[i]->setAlpha(alpha);
+        }
+    }
+    
+    if (reverbAllStepsToggle) { reverbAllStepsToggle->setAlpha(alpha); reverbAllStepsToggle->setEnabled(reverbFxAreaEnabled); }
+    if (reverbAllStepsLabel) reverbAllStepsLabel->setAlpha(reverbAllStepsEnabled && reverbFxAreaEnabled ? 1.0f : 0.3f);
+}
+
+void PluginEditor::updateReverbStepAreaVisibility()
+{
+    float alpha = reverbStepAreaEnabled ? 1.0f : 0.3f;
+    
+    if (reverbStepTitle) reverbStepTitle->setAlpha(alpha);
+    if (reverbStepDiceButton) { reverbStepDiceButton->setAlpha(alpha); reverbStepDiceButton->setEnabled(reverbStepAreaEnabled); }
+    if (reverbStepAmountLabel) reverbStepAmountLabel->setAlpha(alpha);
+    if (reverbRateDropdown) { reverbRateDropdown->setAlpha(alpha); reverbRateDropdown->setEnabled(reverbStepAreaEnabled); }
+    if (reverbStdToggle) { reverbStdToggle->setAlpha(alpha); reverbStdToggle->setEnabled(reverbStepAreaEnabled); }
+    
+    for (int i = 0; i < 16; ++i) {
+        if (reverbStepButtons[i]) { 
+            reverbStepButtons[i]->setAlpha(alpha); 
+            reverbStepButtons[i]->setEnabled(reverbStepAreaEnabled);
+        }
+    }
+}
+
+void PluginEditor::randomizeReverbKnobValues()
+{
+    for (int i = 0; i < 8; ++i) {
+        if (!reverbKnobLocked[i] && reverbKnobs[i] != nullptr) {
+            randomizeIndividualReverbKnob(i);
+        }
+    }
+}
+
+void PluginEditor::randomizeIndividualReverbKnob(int knobIndex)
+{
+    if (knobIndex < 0 || knobIndex >= 8 || reverbKnobs[knobIndex] == nullptr) return;
+    if (reverbKnobLocked[knobIndex]) return;
+    
+    juce::Random& rng = juce::Random::getSystemRandom();
+    float randomValue = 0.0f;
+    
+    switch (knobIndex) {
+        case 0: randomValue = rng.nextFloat() * 2.0f; break; // Type (0-2)
+        case 1: randomValue = 0.1f + rng.nextFloat() * 1.4f; break; // Size (0.1-1.5)
+        case 2: randomValue = rng.nextFloat() * 200.0f; break; // Predelay (0-200)
+        case 3: randomValue = 1000.0f + rng.nextFloat() * 19000.0f; break; // Damping (1k-20k)
+        case 4: randomValue = rng.nextFloat(); break; // Diffusion (0-1)
+        case 5: randomValue = rng.nextFloat(); break; // Early (0-1)
+        case 6: randomValue = rng.nextFloat(); break; // Shimmer (0-1)
+        case 7: randomValue = rng.nextFloat(); break; // Mix (0-1)
+    }
+    
+    reverbKnobs[knobIndex]->setValue(randomValue, juce::sendNotification);
+}
+
+void PluginEditor::updateReverbParameterFromKnob(int knobIndex)
+{
+    if (knobIndex < 0 || knobIndex >= 8 || reverbKnobs[knobIndex] == nullptr) return;
+    
+    float value = reverbKnobs[knobIndex]->getValue();
+    
+    // Update current step snapshot
+    int currentStep = reverbUiSelectedStep;
+    if (currentStep >= 0 && currentStep < 16) {
+        auto currentSnapshot = processorRef.getReverbSafeSnapshot(currentStep);
+        
+        switch (knobIndex) {
+            case 0: currentSnapshot.reverb.type = value; break;
+            case 1: currentSnapshot.reverb.size = value; break;
+            case 2: currentSnapshot.reverb.predelayMs = value; break;
+            case 3: currentSnapshot.reverb.dampHz = value; break;
+            case 4: currentSnapshot.reverb.diffusion = value; break;
+            case 5: currentSnapshot.reverb.early = value; break;
+            case 6: currentSnapshot.reverb.shimmer = value; break;
+            case 7: currentSnapshot.reverb.mix = value; break;
+        }
+        
+        processorRef.setReverbStepSnapshot(currentStep, currentSnapshot);
+    }
+}
+
+void PluginEditor::onReverbStepButtonClicked(int stepIndex)
+{
+    if (stepIndex < 0 || stepIndex >= 16) return;
+    
+    reverbUiSelectedStep = stepIndex;
+    DBG("[UI] Reverb step " << stepIndex << " selected");
+    
+    auto snapshot = processorRef.getReverbSafeSnapshot(stepIndex);
+    
+    for (int i = 0; i < 8; ++i) {
+        if (reverbKnobs[i] != nullptr) {
+            float value = 0.0f;
+            switch (i) {
+                case 0: value = snapshot.reverb.type; break;
+                case 1: value = snapshot.reverb.size; break;
+                case 2: value = snapshot.reverb.predelayMs; break;
+                case 3: value = snapshot.reverb.dampHz; break;
+                case 4: value = snapshot.reverb.diffusion; break;
+                case 5: value = snapshot.reverb.early; break;
+                case 6: value = snapshot.reverb.shimmer; break;
+                case 7: value = snapshot.reverb.mix; break;
+            }
+            reverbKnobs[i]->setValue(value, juce::dontSendNotification);
+        }
+    }
+    
+    updateReverbSequencerUI();
+}
+
+void PluginEditor::updateReverbSequencerUI()
+{
+    int selectedStep = reverbUiSelectedStep;
+    int playingStep = processorRef.getReverbPlayingStep();
+    const int stepsUsed = processorRef.getReverbSeqState().stepsUsed.load();
+    
+    for (int i = 0; i < 16; ++i) {
+        if (reverbStepButtons[i] != nullptr) {
+            reverbStepButtons[i]->setSelected(i == selectedStep);
+            bool sequencerEnabled = processorRef.getReverbSeqState().enabled.load();
+            reverbStepButtons[i]->setPlaying(sequencerEnabled && (i == playingStep) && (i != selectedStep));
+            bool shouldBeEnabled = i < stepsUsed;
+            reverbStepButtons[i]->setEnabledStep(shouldBeEnabled);
+        }
+    }
+    
+    if (reverbStepAmountLabel != nullptr && !reverbStepAmountLabel->hasKeyboardFocus(true)) {
+        reverbStepAmountLabel->setText(juce::String(stepsUsed), false);
+    }
+    
+    if (reverbRateDropdown != nullptr) {
+        int divisionIndex = processorRef.getReverbSeqState().divisionIndex.load();
+        reverbRateDropdown->setSelectedId(divisionIndex + 1);
+    }
+}
+
+// ===============================================================================
 // EFFECT ROUTER UI HELPERS
 // ===============================================================================
 
@@ -5296,6 +5974,9 @@ void PluginEditor::onEffectSelectorChanged(int slotIndex)
             break;
         case EffectID::Chorus:
             setVisibleVec(chorusGroup, true);
+            break;
+        case EffectID::Reverb:
+            setVisibleVec(reverbGroup, true);
             break;
     }
     

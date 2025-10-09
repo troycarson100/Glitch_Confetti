@@ -312,6 +312,10 @@ const char* getNamedResource (const char* resourceNameUTF8, int& numBytes)
         case 0x55ab1c92:  numBytes = 5296; return Panner_Background_Tab2_svg;
         case 0x55b93413:  numBytes = 5209; return Panner_Background_Tab3_svg;
         case 0x55c74b94:  numBytes = 5265; return Panner_Background_Tab4_svg;
+        case 0x36af5f12:  numBytes = 4946; return Reverb1_Background_Tab1_svg;
+        case 0x36bd7693:  numBytes = 5178; return Reverb1_Background_Tab2_svg;
+        case 0x36cb8e14:  numBytes = 5215; return Reverb1_Background_Tab3_svg;
+        case 0x36d9a595:  numBytes = 5233; return Reverb1_Background_Tab4_svg;
         case 0x051b93d0:  numBytes = 5003; return SpaceDelay_Background_Tab1_svg;
         case 0x0529ab51:  numBytes = 5192; return SpaceDelay_Background_Tab2_svg;
         case 0x0537c2d2:  numBytes = 5217; return SpaceDelay_Background_Tab3_svg;
@@ -322,8 +326,10 @@ const char* getNamedResource (const char* resourceNameUTF8, int& numBytes)
         case 0x98f47731:  numBytes = 1586; return Step_Power_On_svg;
         case 0x67059122:  numBytes = 3313; return Tab_Title_AutoPan_svg;
         case 0x7e84025a:  numBytes = 2998; return Tab_Title_Space_Delayv2_svg;
+        case 0xd3c801f0:  numBytes = 2998; return Tab_Title_Space_Delayv2_svg_backup2_svg;
         case 0x880d7612:  numBytes = 13971; return Time_svg;
         case 0xdb3f4328:  numBytes = 412; return Unlocked_svg;
+        case 0xd85830be:  numBytes = 34568; return Verb_Icon_svg;
         case 0x90b4bb08:  numBytes = 41683; return Wow_Depth_svg;
         case 0xdd1caa65:  numBytes = 39199; return Wow_Rate_svg;
         case 0x2b192f8c:  numBytes = 26320; return Akira_Expanded_otf;
@@ -379,6 +385,10 @@ const char* namedResourceList[] =
     "Panner_Background_Tab2_svg",
     "Panner_Background_Tab3_svg",
     "Panner_Background_Tab4_svg",
+    "Reverb1_Background_Tab1_svg",
+    "Reverb1_Background_Tab2_svg",
+    "Reverb1_Background_Tab3_svg",
+    "Reverb1_Background_Tab4_svg",
     "SpaceDelay_Background_Tab1_svg",
     "SpaceDelay_Background_Tab2_svg",
     "SpaceDelay_Background_Tab3_svg",
@@ -389,8 +399,10 @@ const char* namedResourceList[] =
     "Step_Power_On_svg",
     "Tab_Title_AutoPan_svg",
     "Tab_Title_Space_Delayv2_svg",
+    "Tab_Title_Space_Delayv2_svg_backup2_svg",
     "Time_svg",
     "Unlocked_svg",
+    "Verb_Icon_svg",
     "Wow_Depth_svg",
     "Wow_Rate_svg",
     "Akira_Expanded_otf",
@@ -441,6 +453,10 @@ const char* originalFilenames[] =
     "Panner_Background_Tab2.svg",
     "Panner_Background_Tab3.svg",
     "Panner_Background_Tab4.svg",
+    "Reverb1_Background_Tab1.svg",
+    "Reverb1_Background_Tab2.svg",
+    "Reverb1_Background_Tab3.svg",
+    "Reverb1_Background_Tab4.svg",
     "SpaceDelay_Background_Tab1.svg",
     "SpaceDelay_Background_Tab2.svg",
     "SpaceDelay_Background_Tab3.svg",
@@ -451,8 +467,10 @@ const char* originalFilenames[] =
     "Step_Power_On.svg",
     "Tab_Title_AutoPan.svg",
     "Tab_Title_Space_Delay-v2.svg",
+    "Tab_Title_Space_Delay-v2.svg.backup2.svg",
     "Time.svg",
     "Unlocked.svg",
+    "Verb_Icon.svg",
     "Wow Depth.svg",
     "Wow Rate.svg",
     "Akira Expanded.otf",
