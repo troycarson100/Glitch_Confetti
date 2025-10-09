@@ -1616,8 +1616,31 @@ void PluginEditor::setupKnobs()
         const int vizX = startX - meterSpacing - meterWidth + 10;
         const int vizY = panBarY + 24 + 10; // Below PanManBar + 10px gap
         const int vizWidth = (meterWidth * 2 + meterSpacing + totalKnobWidth - 20) - 90;
-        const int vizHeight = 205; // Increased by 85px (was 120px) to show full spectrum without cutoff
+        const int vizHeight = 190; // Reduced by 15px (was 205px) to move filter slider up
         outputSpectrumView->setBounds(vizX, vizY, vizWidth, vizHeight);
+        
+        // Create and position spectrum filter slider (LP/HP control)
+        spectrumFilterSlider = std::make_unique<SpectrumFilterSlider>();
+        addAndMakeVisible(*spectrumFilterSlider);
+        
+        const int filterSliderY = vizY + vizHeight + 5; // 5px gap below spectrum
+        const int filterSliderHeight = 20;
+        spectrumFilterSlider->setBounds(vizX, filterSliderY, vizWidth, filterSliderHeight);
+        
+        // Connect filter changes to both audio processor AND spectrum analyzer
+        spectrumFilterSlider->onFilterChange = [this](float lowCut, float highCut) {
+            // Update APVTS parameters (affects actual audio)
+            auto* hpParam = processorRef.getAPVTS().getParameter("masterHPHz");
+            auto* lpParam = processorRef.getAPVTS().getParameter("masterLPHz");
+            
+            if (hpParam)
+                hpParam->setValueNotifyingHost(hpParam->convertTo0to1(lowCut));
+            if (lpParam)
+                lpParam->setValueNotifyingHost(lpParam->convertTo0to1(highCut));
+            
+            // Also update spectrum analyzer visualization
+            processorRef.spectrumAnalyzer.setFilterFrequencies(lowCut, highCut);
+        };
         
         DBG("[UI] Master knobs and stereo meters setup complete");
     }

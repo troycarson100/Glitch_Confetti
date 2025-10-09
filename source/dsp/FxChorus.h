@@ -156,8 +156,14 @@ struct ChorusEngine
                 wetR += monoV * gR;
             }
 
-            // average voices to keep level sensible (use smoothVoices for fractional division)
-            if (smoothVoices > 0.0f) { wetL /= smoothVoices; wetR /= smoothVoices; }
+            // Normalize by voice count with gain compensation
+            // Divide by sqrt(voices) instead of voices to maintain perceived loudness
+            // This prevents the chorus from getting too quiet with more voices
+            if (smoothVoices > 0.0f) { 
+                float normFactor = std::sqrt(smoothVoices); // sqrt compensation
+                wetL /= normFactor; 
+                wetR /= normFactor; 
+            }
 
             // store for feedback sweetener
             fbAccum[0] = wetL; fbAccum[1] = wetR;

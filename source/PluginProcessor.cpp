@@ -157,6 +157,14 @@ juce::AudioProcessorValueTreeState::ParameterLayout PluginProcessor::createParam
     params.push_back(std::make_unique<juce::AudioParameterFloat>("masterOutput", "Master Output", 
         juce::NormalisableRange<float>(-60.0f, 6.0f, 0.01f, 1.0f), 0.0f)); // -60 to +6 dB, default 0.0 dB, logarithmic skew
     
+    // Master HP/LP Filters (log-scaled for frequency)
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(
+        "masterHPHz", "HPF",
+        juce::NormalisableRange<float>(20.0f, 20000.0f, 0.0f, 0.5f), 20.0f)); // Start at 20 Hz (bypass)
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(
+        "masterLPHz", "LPF",
+        juce::NormalisableRange<float>(20.0f, 20000.0f, 0.0f, 0.5f), 20000.0f)); // Start at 20 kHz (bypass)
+    
     return { params.begin(), params.end() };
 }
 
@@ -242,6 +250,38 @@ void PluginProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
     
     // Prepare spectrum analyzer
     spectrumAnalyzer.prepare(sampleRate);
+    
+    // Prepare master HP/LP filters
+    juce::dsp::ProcessSpec spec;
+    spec.sampleRate = sampleRate;
+    spec.maximumBlockSize = (juce::uint32)samplesPerBlock;
+    spec.numChannels = 2;
+    
+    for (int ch = 0; ch < 2; ++ch)
+    {
+        masterHPF[ch].reset();
+        masterLPF[ch].reset();
+        masterHPF[ch].prepare(spec);
+        masterLPF[ch].prepare(spec);
+        
+        masterHPF[ch].setType(juce::dsp::StateVariableTPTFilterType::highpass);
+        masterLPF[ch].setType(juce::dsp::StateVariableTPTFilterType::lowpass);
+        
+        // Butterworth-like 12 dB/oct: Q = 1/sqrt(2) ≈ 0.707
+        masterHPF[ch].setResonance(1.0f / std::sqrt(2.0f));
+        masterLPF[ch].setResonance(1.0f / std::sqrt(2.0f));
+    }
+    
+    // Smooth cutoffs (glide ~50 ms for smooth sweeps)
+    const double glideSec = 0.05;
+    hpCutoffSmooth.reset(sampleRate, glideSec);
+    lpCutoffSmooth.reset(sampleRate, glideSec);
+    
+    // Initialize from current params
+    auto* hpParam = valueTreeState.getRawParameterValue("masterHPHz");
+    auto* lpParam = valueTreeState.getRawParameterValue("masterLPHz");
+    if (hpParam) hpCutoffSmooth.setCurrentAndTargetValue(hpParam->load());
+    if (lpParam) lpCutoffSmooth.setCurrentAndTargetValue(lpParam->load());
 }
 
 void PluginProcessor::releaseResources()
@@ -774,7 +814,53 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
     }
     #endif // End of old hardcoded effect processing (replaced by router above)
     
-    // Apply master dry/wet mix (post-effects, pre-output)
+    // Apply master HP/LP filters to WET signal only (before dry/wet mix)
+    auto* hpParam = valueTreeState.getRawParameterValue("masterHPHz");
+    auto* lpParam = valueTreeState.getRawParameterValue("masterLPHz");
+    
+    if (hpParam && lpParam)
+    {
+        const float hpTarget = juce::jlimit(20.0f, 20000.0f, hpParam->load());
+        const float lpTarget = juce::jlimit(20.0f, 20000.0f, lpParam->load());
+        
+        hpCutoffSmooth.setTargetValue(hpTarget);
+        lpCutoffSmooth.setTargetValue(lpTarget);
+        
+        const int numSamplesLocal = buffer.getNumSamples();
+        const int numChannelsLocal = buffer.getNumChannels();
+        
+        for (int n = 0; n < numSamplesLocal; ++n)
+        {
+            const float hpHz = hpCutoffSmooth.getNextValue();
+            const float lpHz = lpCutoffSmooth.getNextValue();
+            
+            // Update both channels' cutoffs (per-sample for ultra-smooth sweeps)
+            masterHPF[0].setCutoffFrequency(hpHz);
+            masterLPF[0].setCutoffFrequency(lpHz);
+            
+            if (numChannelsLocal > 1)
+            {
+                masterHPF[1].setCutoffFrequency(hpHz);
+                masterLPF[1].setCutoffFrequency(lpHz);
+            }
+            
+            // Process each channel (wet signal only)
+            for (int ch = 0; ch < numChannelsLocal; ++ch)
+            {
+                float x = buffer.getWritePointer(ch)[n];
+                
+                // Apply HPF then LPF to wet signal
+                if (hpHz > 20.0f)
+                    x = masterHPF[ch].processSample(0, x);
+                if (lpHz < 20000.0f)
+                    x = masterLPF[ch].processSample(0, x);
+                
+                buffer.getWritePointer(ch)[n] = x;
+            }
+        }
+    }
+    
+    // Apply master dry/wet mix (post-effects & filters, pre-output)
     auto* masterDryWetParam = valueTreeState.getRawParameterValue("masterDryWet");
     if (masterDryWetParam != nullptr) {
         float dryWet = masterDryWetParam->load(); // 0.0 = 100% dry, 1.0 = 100% wet
@@ -797,7 +883,7 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
         // If dryWet == 1.0f (100% wet), the current buffer is already the wet signal, no mixing needed
     }
     
-    // Apply master output gain (post-effects) with limiting
+    // Apply master output gain (post dry/wet mix)
     auto* masterOutputParam = valueTreeState.getRawParameterValue("masterOutput");
     if (masterOutputParam != nullptr) {
         float outputGainDb = masterOutputParam->load();
@@ -833,7 +919,7 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
     }
     
     // Feed spectrum analyzer (post-FX output)
-    // Process entire buffer for FFT analysis
+    // Process entire buffer for FFT analysis (read-only, doesn't modify output)
     spectrumAnalyzer.processBlock(buffer.getArrayOfReadPointers(), numChannels, numSamples);
 
     // Debug logging

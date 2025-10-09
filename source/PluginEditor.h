@@ -10,6 +10,7 @@
 #include "DualBarMeter.h"
 #include "ui/PanManBar.h"
 #include "ui/OutputSpectrumView.h"
+#include "ui/SpectrumFilterSlider.h"
 
 // Tab system enum
 enum class FxPageID { SpaceDelay, Panner, Dirt, Chorus };
@@ -252,6 +253,7 @@ public:
     // L/C/R pan indicator
     std::unique_ptr<PanManBar> panBar;
     std::unique_ptr<OutputSpectrumView> outputSpectrumView;
+    std::unique_ptr<SpectrumFilterSlider> spectrumFilterSlider;
     
     // Effects area components
     std::unique_ptr<juce::Label> effectsTitle;

@@ -34,6 +34,16 @@ public:
         // Build Blackman-Harris window (92 dB sidelobe rejection)
         buildBlackmanHarrisWindow();
         
+        // Initialize filters to bypass (all-pass)
+        lowCutFreq.store(20.0f);
+        highCutFreq.store(20000.0f);
+        hpB0 = 1.0f; hpB1 = 0.0f; hpB2 = 0.0f;
+        hpA1 = 0.0f; hpA2 = 0.0f;
+        hpX1 = 0.0f; hpX2 = 0.0f; hpY1 = 0.0f; hpY2 = 0.0f;
+        lpB0 = 1.0f; lpB1 = 0.0f; lpB2 = 0.0f;
+        lpA1 = 0.0f; lpA2 = 0.0f;
+        lpX1 = 0.0f; lpX2 = 0.0f; lpY1 = 0.0f; lpY2 = 0.0f;
+        
         hopCounter = 0;
         accumulatorPos = 0;
     }
@@ -56,6 +66,9 @@ public:
         
         attackAlpha = juce::jlimit(0.0f, 1.0f, attackAlpha);
         releaseAlpha = juce::jlimit(0.0f, 1.0f, releaseAlpha);
+        
+        // Update filter coefficients
+        updateFilters();
     }
     
     void setOutputView(OutputSpectrumView* view)
@@ -63,16 +76,27 @@ public:
         outputView = view;
     }
     
+    void setFilterFrequencies(float lowCut, float highCut)
+    {
+        lowCutFreq.store(lowCut);
+        highCutFreq.store(highCut);
+        
+        // Update filter coefficients on message thread (safe)
+        juce::MessageManager::callAsync([this]() {
+            updateFilters();
+        });
+    }
+    
     /**
      * Process a stereo buffer (post-FX output)
-     * Converts to mono, accumulates for FFT, and pushes frames to UI
+     * Creates filtered copy for analysis only (doesn't modify output audio)
      */
     void processBlock(const float* const* channelData, int numChannels, int numSamples)
     {
         if (outputView == nullptr || currentSampleRate <= 0.0)
             return;
         
-        // Process samples in chunks
+        // Process samples for FFT (with optional filtering for visualization only)
         for (int i = 0; i < numSamples; ++i)
         {
             // Convert stereo to mono
@@ -81,6 +105,10 @@ public:
                 mono = 0.5f * (channelData[0][i] + channelData[1][i]);
             else if (numChannels == 1)
                 mono = channelData[0][i];
+            
+            // Apply filters to the mono signal for visualization
+            // This doesn't affect the output audio, only what we analyze
+            mono = applyFiltersToSample(mono);
             
             // Accumulate into circular buffer
             accumulatorBuffer[accumulatorPos] = mono;
@@ -150,9 +178,13 @@ private:
             float magHigh = computeBinMagnitude(binHigh);
             float mag = juce::jmax(magLow, magHigh);
             
-            // Convert to dB
+            // Convert to dB (increased ceiling to +18 dB for headroom)
             float db = 20.0f * std::log10(mag + 1e-12f);
-            db = juce::jlimit(-90.0f, 6.0f, db);
+            db = juce::jlimit(-90.0f, 18.0f, db);
+            
+            // Apply filter attenuation (12 dB/oct slopes)
+            float filterGain = calculateFilterGain(freq);
+            db += filterGain; // Subtract attenuation in dB
             
             magnitudes[displayBin] = db;
         }
@@ -187,6 +219,99 @@ private:
         return std::sqrt(real * real + imag * imag);
     }
     
+    void updateFilters()
+    {
+        if (currentSampleRate <= 0.0) return;
+        
+        // Update filter coefficients (simple biquad)
+        float lowCut = lowCutFreq.load();
+        float highCut = highCutFreq.load();
+        
+        // Calculate biquad coefficients for highpass (12dB/oct = 2-pole)
+        if (lowCut > 20.0f)
+        {
+            float w0 = 2.0f * juce::MathConstants<float>::pi * lowCut / (float)currentSampleRate;
+            float cosw0 = std::cos(w0);
+            float sinw0 = std::sin(w0);
+            float alpha = sinw0 / (2.0f * 0.707f); // Q = 0.707 (Butterworth)
+            
+            float a0 = 1.0f + alpha;
+            hpB0 = (1.0f + cosw0) / (2.0f * a0);
+            hpB1 = -(1.0f + cosw0) / a0;
+            hpB2 = (1.0f + cosw0) / (2.0f * a0);
+            hpA1 = -2.0f * cosw0 / a0;
+            hpA2 = (1.0f - alpha) / a0;
+        }
+        else
+        {
+            // Bypass (all-pass)
+            hpB0 = 1.0f; hpB1 = 0.0f; hpB2 = 0.0f;
+            hpA1 = 0.0f; hpA2 = 0.0f;
+        }
+        
+        // Calculate biquad coefficients for lowpass
+        if (highCut < 20000.0f)
+        {
+            float w0 = 2.0f * juce::MathConstants<float>::pi * highCut / (float)currentSampleRate;
+            float cosw0 = std::cos(w0);
+            float sinw0 = std::sin(w0);
+            float alpha = sinw0 / (2.0f * 0.707f); // Q = 0.707 (Butterworth)
+            
+            float a0 = 1.0f + alpha;
+            lpB0 = (1.0f - cosw0) / (2.0f * a0);
+            lpB1 = (1.0f - cosw0) / a0;
+            lpB2 = (1.0f - cosw0) / (2.0f * a0);
+            lpA1 = -2.0f * cosw0 / a0;
+            lpA2 = (1.0f - alpha) / a0;
+        }
+        else
+        {
+            // Bypass (all-pass)
+            lpB0 = 1.0f; lpB1 = 0.0f; lpB2 = 0.0f;
+            lpA1 = 0.0f; lpA2 = 0.0f;
+        }
+    }
+    
+    float applyFiltersToSample(float input)
+    {
+        // Apply highpass filter (biquad)
+        float hpOut = hpB0 * input + hpB1 * hpX1 + hpB2 * hpX2 - hpA1 * hpY1 - hpA2 * hpY2;
+        hpX2 = hpX1; hpX1 = input;
+        hpY2 = hpY1; hpY1 = hpOut;
+        
+        // Apply lowpass filter (biquad) to highpass output
+        float lpOut = lpB0 * hpOut + lpB1 * lpX1 + lpB2 * lpX2 - lpA1 * lpY1 - lpA2 * lpY2;
+        lpX2 = lpX1; lpX1 = hpOut;
+        lpY2 = lpY1; lpY1 = lpOut;
+        
+        return lpOut;
+    }
+    
+    float calculateFilterGain(float freq) const
+    {
+        // 12 dB/octave slopes for LP/HP filters (for visual display only)
+        const float lowCut = lowCutFreq.load();
+        const float highCut = highCutFreq.load();
+        
+        float gain = 0.0f; // dB
+        
+        // Highpass: -12dB/octave below lowCut
+        if (freq < lowCut)
+        {
+            float octavesBelow = std::log2(lowCut / juce::jmax(1.0f, freq));
+            gain -= octavesBelow * 12.0f;
+        }
+        
+        // Lowpass: -12dB/octave above highCut
+        if (freq > highCut)
+        {
+            float octavesAbove = std::log2(freq / highCut);
+            gain -= octavesAbove * 12.0f;
+        }
+        
+        return juce::jmax(-90.0f, gain); // Don't go below noise floor
+    }
+    
     // FFT engine
     std::unique_ptr<juce::dsp::FFT> fft;
     
@@ -210,6 +335,19 @@ private:
     
     // Output view (not owned)
     OutputSpectrumView* outputView = nullptr;
+    
+    // Filter frequencies (atomic for thread-safe UI control)
+    std::atomic<float> lowCutFreq{20.0f};
+    std::atomic<float> highCutFreq{20000.0f};
+    
+    // Biquad filter coefficients (for visualization filtering only)
+    float hpB0 = 1.0f, hpB1 = 0.0f, hpB2 = 0.0f;
+    float hpA1 = 0.0f, hpA2 = 0.0f;
+    float hpX1 = 0.0f, hpX2 = 0.0f, hpY1 = 0.0f, hpY2 = 0.0f;
+    
+    float lpB0 = 1.0f, lpB1 = 0.0f, lpB2 = 0.0f;
+    float lpA1 = 0.0f, lpA2 = 0.0f;
+    float lpX1 = 0.0f, lpX2 = 0.0f, lpY1 = 0.0f, lpY2 = 0.0f;
     
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SpectrumAnalyzer)
 };

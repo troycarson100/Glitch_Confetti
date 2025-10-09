@@ -224,13 +224,14 @@ private:
     
     float dbToY(float db, const juce::Rectangle<float>& bounds) const
     {
-        // -90 dB at bottom, +6 dB at top with margin to prevent cutoff
+        // -90 dB at bottom, +18 dB at top with margin to prevent cutoff
+        // Increased headroom from +6 to +18 dB to prevent clipping on loud signals
         // Use power curve (0.8) for better visual distribution
         const float topMargin = 10.0f; // Pixels of margin at top to prevent cutoff
         const float bottomMargin = 5.0f; // Small margin at bottom
         const float usableHeight = bounds.getHeight() - topMargin - bottomMargin;
         
-        float t = juce::jlimit(0.0f, 1.0f, (db + 90.0f) / 96.0f);
+        float t = juce::jlimit(0.0f, 1.0f, (db + 90.0f) / 108.0f); // 90+18=108 dB range
         t = std::pow(t, 0.8f); // Ease low end
         return bounds.getBottom() - bottomMargin - (t * usableHeight);
     }

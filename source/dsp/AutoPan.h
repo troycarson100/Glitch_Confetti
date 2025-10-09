@@ -229,16 +229,27 @@ struct AutoPan
             lfoOutZRight = poleA * lfoOutZRight + (1.0f - poleA) * rightLfo;
             rightLfo = lfoOutZRight;
 
-            // Amplitude modulation (Ableton-style):
-            // LFO in [-1,1], convert to gain 0..1
+            // Equal-power panning (proper stereo panning):
+            // LFO in [-1,1], depth scales the pan amount
             // At phase=0°: both channels modulate together (tremolo)
             // At phase=180°: opposite modulation (stereo panning)
-            const float leftGain  = 1.0f - (dep * 0.5f * (leftLfo  + 1.0f)); // depth scales modulation
-            const float rightGain = 1.0f - (dep * 0.5f * (rightLfo + 1.0f));
+            
+            // Map LFO to pan position: -dep (full left) to +dep (full right)
+            float panPosL = dep * leftLfo;   // -dep..+dep
+            float panPosR = dep * rightLfo;  // -dep..+dep
+            
+            // Equal-power panning law (constant energy, -3dB in center)
+            // panPos = 0 (center): both = 0.707 (-3dB)
+            // panPos = -1 (left): left = 1.0, right = 0.0
+            // panPos = +1 (right): left = 0.0, right = 1.0
+            const float leftGainL  = std::cos((panPosL + 1.0f) * juce::MathConstants<float>::pi * 0.25f);
+            const float rightGainL = std::sin((panPosL + 1.0f) * juce::MathConstants<float>::pi * 0.25f);
+            const float leftGainR  = std::cos((panPosR + 1.0f) * juce::MathConstants<float>::pi * 0.25f);
+            const float rightGainR = std::sin((panPosR + 1.0f) * juce::MathConstants<float>::pi * 0.25f);
 
-            // Apply amplitude modulation
-            float wetL = inL * leftGain;
-            float wetR = inR * rightGain;
+            // Apply panning
+            float wetL = inL * leftGainL;
+            float wetR = inR * rightGainR;
 
             // True dry/wet crossfade
             L[n] = juce::jmap(mix, inL, wetL);

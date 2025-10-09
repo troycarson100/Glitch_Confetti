@@ -345,6 +345,10 @@ public:
     // Spectrum Analyzer - FFT-based spectrum view with trails
     SpectrumAnalyzer spectrumAnalyzer;
     
+    // Master HP/LP Filters (12dB/oct Butterworth)
+    juce::dsp::StateVariableTPTFilter<float> masterHPF[2], masterLPF[2]; // Stereo
+    juce::SmoothedValue<float> hpCutoffSmooth, lpCutoffSmooth; // Smooth cutoff changes
+    
     // Get current pan position for visualizer
     float getCurrentPanPosition() const { 
         // Check if sync mode is enabled
