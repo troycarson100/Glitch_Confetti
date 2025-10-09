@@ -12,7 +12,7 @@
 #include "ui/OutputVisualizer.h"
 
 // Tab system enum
-enum class FxPageID { SpaceDelay, Panner, Dirt };
+enum class FxPageID { SpaceDelay, Panner, Dirt, Chorus };
 
 // Forward declaration
 class PluginProcessor;
@@ -217,6 +217,7 @@ public:
         std::vector<juce::Component*> spaceDelayGroup;    // pointers to existing delay UI components
         std::vector<juce::Component*> pannerGroup;        // pointers to panner UI components
         std::vector<juce::Component*> dirtGroup;          // pointers to dirt UI components
+        std::vector<juce::Component*> chorusGroup;        // pointers to chorus UI components
     
         // UI Components
         std::array<std::unique_ptr<CustomKnob>, 8> knobs;
@@ -347,6 +348,41 @@ public:
     std::unique_ptr<juce::Label> dirtAllStepsLabel;
     bool dirtAllStepsEnabled = false;
     
+    // Chorus page components (clone of Dirt page layout)
+    std::array<std::unique_ptr<CustomKnob>, 8> chorusKnobs;
+    std::array<std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>, 8> chorusAttachments;
+    std::array<std::unique_ptr<juce::Label>, 8> chorusKnobLabels;
+    std::array<std::unique_ptr<juce::Label>, 8> chorusValueLabels;
+    std::array<std::unique_ptr<IndicatorBar>, 8> chorusIndicatorBars;
+    std::array<std::unique_ptr<CustomDiceButton>, 8> chorusDiceButtons;
+    std::array<std::unique_ptr<LockButton>, 8> chorusLockButtons;
+    std::array<bool, 8> chorusKnobLocked { false, false, false, false, false, false, false, false };
+    
+    // Chorus effects area components
+    std::unique_ptr<juce::Label> chorusEffectsTitle;
+    std::unique_ptr<CustomDiceButton> chorusDiceButton;
+    std::unique_ptr<juce::DrawableButton> chorusFxPowerButton;
+    bool chorusFxAreaEnabled = true;
+    
+    // Chorus sequencer components (independent sequencer)
+    std::array<std::unique_ptr<StepButton>, 16> chorusStepButtons;
+    int chorusUiSelectedStep = 0;
+    std::unique_ptr<juce::TextEditor> chorusStepAmountLabel;
+    std::unique_ptr<juce::ComboBox> chorusRateDropdown;
+    std::unique_ptr<CircularToggleButton> chorusStdToggle;
+    std::unique_ptr<juce::Label> chorusStepTitle;
+    std::unique_ptr<CustomDiceButton> chorusStepDiceButton;
+    std::unique_ptr<juce::DrawableButton> chorusStepPowerButton;
+    bool chorusStepAreaEnabled = true;
+    
+    // Chorus All Steps toggle
+    std::unique_ptr<AllStepsToggleButton> chorusAllStepsToggle;
+    std::unique_ptr<juce::Label> chorusAllStepsLabel;
+    bool chorusAllStepsEnabled = false;
+    
+    // Tab button
+    std::unique_ptr<juce::DrawableButton> tabChorus;
+    
         // Helper methods
         void setupKnobs();
         void setupMasterKnobs();
@@ -397,6 +433,19 @@ public:
         void updateDirtParameterFromKnob(int knobIndex);
         void onDirtStepButtonClicked(int stepIndex);
         void updateDirtSequencerUI();
+        
+        // Chorus page setup methods
+        void setupChorusKnobs();
+        void setupChorusEffectsArea();
+        void setupChorusSequencerArea();
+        void setupChorusAllStepsToggle();
+        void updateChorusFxAreaVisibility();
+        void updateChorusStepAreaVisibility();
+        void randomizeChorusKnobValues();
+        void randomizeIndividualChorusKnob(int knobIndex);
+        void updateChorusParameterFromKnob(int knobIndex);
+        void onChorusStepButtonClicked(int stepIndex);
+        void updateChorusSequencerUI();
         
         void togglePlayback();
         

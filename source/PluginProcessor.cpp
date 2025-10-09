@@ -29,10 +29,17 @@ PluginProcessor::PluginProcessor()
     dirtSeq.divisionIndex.store(5); // 1/8 default (index 5 = item ID 6)
     dirtSeq.playingStep.store(0);
     
+    // Initialize Chorus sequencer state (independent)
+    chorusSeq.enabled.store(false);
+    chorusSeq.stepsUsed.store(16);
+    chorusSeq.divisionIndex.store(5); // 1/8 default (index 5 = item ID 6)
+    chorusSeq.playingStep.store(0);
+    
     // Initialize UI state
     uiSelectedStep.store(0);
     autopanUiSelectedStep.store(0);
     dirtUiSelectedStep.store(0);
+    chorusUiSelectedStep.store(0);
     
     // Initialize transport cache
     transportCache.valid.store(false);
@@ -73,6 +80,19 @@ PluginProcessor::PluginProcessor()
     }
     DBG("[Stepper] Initialized Dirt step snapshots with default values");
     
+    // Initialize Chorus step snapshots with default values
+    for (int i = 0; i < 16; ++i) {
+        chorusStepSnapshots[i].chorus.rate = 1.5f;       // 1.5 Hz
+        chorusStepSnapshots[i].chorus.depth = 40.0f;     // 40%
+        chorusStepSnapshots[i].chorus.voices = 2.0f;     // 2 voices
+        chorusStepSnapshots[i].chorus.delayTime = 20.0f; // 20 ms
+        chorusStepSnapshots[i].chorus.feedback = 20.0f;  // 20%
+        chorusStepSnapshots[i].chorus.width = 100.0f;    // 100%
+        chorusStepSnapshots[i].chorus.tone = 0.0f;       // Neutral
+        chorusStepSnapshots[i].chorus.mix = 50.0f;       // 50%
+    }
+    DBG("[Stepper] Initialized Chorus step snapshots with default values");
+    
     // Verification log
     DBG("[Stepper] Built formats: VST3/AU/Standalone. BundleID=com.glitchcorp.stepper, Code=Stp1");
 }
@@ -111,12 +131,23 @@ juce::AudioProcessorValueTreeState::ParameterLayout PluginProcessor::createParam
     params.push_back(std::make_unique<juce::AudioParameterFloat>("dirtTone", "Dirt Tone", -1.0f, 1.0f, 0.0f)); // post tilt
     params.push_back(std::make_unique<juce::AudioParameterFloat>("dirtMix", "Dirt Mix", 0.0f, 1.0f, 1.0f)); // dry/wet
     
+    // Chorus Parameters
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("chorusRate", "Chorus Rate", 0.1f, 10.0f, 1.5f)); // Hz (will map to sync divisions like AutoPan)
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("chorusDepth", "Chorus Depth", 0.0f, 100.0f, 40.0f)); // %
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("chorusVoices", "Chorus Voices", 1.0f, 4.0f, 2.0f)); // 1-4
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("chorusDelay", "Chorus Delay", 5.0f, 50.0f, 20.0f)); // ms
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("chorusFeedback", "Chorus Feedback", 0.0f, 80.0f, 20.0f)); // %
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("chorusWidth", "Chorus Width", 0.0f, 200.0f, 100.0f)); // %
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("chorusTone", "Chorus Tone", -1.0f, 1.0f, 0.0f)); // -1 to +1
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("chorusMix", "Chorus Mix", 0.0f, 100.0f, 50.0f)); // %
+    
     // Page and effect enable parameters
     params.push_back(std::make_unique<juce::AudioParameterChoice>("currentPage", "Current Page", 
-        juce::StringArray {"SpaceDelay", "AutoPan", "Dirt"}, 0)); // 0 = SpaceDelay, 1 = AutoPan, 2 = Dirt
+        juce::StringArray {"SpaceDelay", "AutoPan", "Dirt", "Chorus"}, 0)); // 0 = SpaceDelay, 1 = AutoPan, 2 = Dirt, 3 = Chorus
     params.push_back(std::make_unique<juce::AudioParameterBool>("autopanEnabled", "AutoPan Enabled", true)); // AutoPan effect enabled - ON by default
     params.push_back(std::make_unique<juce::AudioParameterBool>("autopanTimeSync", "AutoPan Time Sync", true)); // AutoPan sync mode enabled - ON by default
     params.push_back(std::make_unique<juce::AudioParameterBool>("dirtEnabled", "Dirt Enabled", true)); // Dirt effect enabled - ON by default
+    params.push_back(std::make_unique<juce::AudioParameterBool>("chorusEnabled", "Chorus Enabled", true)); // Chorus effect enabled - ON by default
     
     // Master Parameters
     params.push_back(std::make_unique<juce::AudioParameterFloat>("masterInput", "Master Input", 
@@ -197,9 +228,11 @@ void PluginProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
     autoPan.prepare(sampleRate, 30.0); // 30ms smoothing
     autoPan.setVisualState(&panVis);
     dirt.prepare(sampleRate, samplesPerBlock); // Prepare Dirt saturation
+    chorus.prepare(sampleRate, samplesPerBlock); // Prepare Chorus effect
     seq.prepare(sampleRate); // Initialize delay sequencer with sample rate
     autopanSeq.prepare(sampleRate); // Initialize AutoPan sequencer with sample rate
     dirtSeq.prepare(sampleRate); // Initialize Dirt sequencer with sample rate
+    chorusSeq.prepare(sampleRate); // Initialize Chorus sequencer with sample rate
     
     // Prepare output visualizer buffer (store ~1 second of downsampled audio)
     const int bufferSize = (int)(sampleRate / downsampleRate); // ~1 second at downsample rate
@@ -268,6 +301,7 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                 seq.resetPhase();          // visuals/phase reset
                 autopanSeq.resetPhase();   // AutoPan sequencer phase reset
                 dirtSeq.resetPhase();      // Dirt sequencer phase reset
+                chorusSeq.resetPhase();    // Chorus sequencer phase reset
                 
                 // Auto-enable delay sequencer on DAW play (user can still disable with power button)
                 if (followHost.load()) {
@@ -287,6 +321,12 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                 if (dirtSeq.enabled.load()) {
                     dirtSeq.active.store(true);  // Activate Dirt sequencer
                     DBG("[DIRT SEQ] ✓ Activated on play edge");
+                }
+                
+                // Chorus sequencer activates if enabled (independent of followHost)
+                if (chorusSeq.enabled.load()) {
+                    chorusSeq.active.store(true);  // Activate Chorus sequencer
+                    DBG("[CHORUS SEQ] ✓ Activated on play edge");
                 }
                 
                 DBG("[SEQ] Play edge detected");
@@ -316,6 +356,14 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                     dirtSeq.currentStep.store(dirtStep);
                     dirtSeq.playingStep.store(dirtStep);
                     DBG("[DIRT SEQ] Lock-in at PPQ=" << ppq << " -> step " << dirtStep);
+                }
+                
+                // Also lock-in Chorus sequencer if enabled
+                if (chorusSeq.enabled.load()) {
+                    const int chorusStep = chorusSeq.computeStepFromPPQ(ppq);
+                    chorusSeq.currentStep.store(chorusStep);
+                    chorusSeq.playingStep.store(chorusStep);
+                    DBG("[CHORUS SEQ] Lock-in at PPQ=" << ppq << " -> step " << chorusStep);
                 }
                 
                 armPending.store(false);
@@ -359,6 +407,16 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                     dirtSeq.currentStep.store(dirtStep);
                     dirtSeq.playingStep.store(dirtStep);
                     DBG("[DIRT SEQ] ★ Step changed to: " << dirtStep << " PPQ: " << ppq);
+                }
+            }
+            
+            // Chorus sequencer stepping (shares same PPQ/transport, independent timing)
+            if (isPlaying && ppqValid && chorusSeq.active.load()) {
+                const int chorusStep = chorusSeq.computeStepFromPPQ(ppq);
+                if (chorusStep != chorusSeq.currentStep.load()) {
+                    chorusSeq.currentStep.store(chorusStep);
+                    chorusSeq.playingStep.store(chorusStep);
+                    DBG("[CHORUS SEQ] ★ Step changed to: " << chorusStep << " PPQ: " << ppq);
                 }
             }
             
@@ -638,6 +696,45 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
         // Set targets and process
         dirt.setTargets(drive, color, asym, texture, lowCut, highCut, tone, mix);
         dirt.process(buffer);
+    }
+    
+    // === CHORUS (Post-Dirt) ===
+    // Processing order: Delay → Panner → Dirt → Chorus
+    auto* chorusEnabledParam = valueTreeState.getRawParameterValue("chorusEnabled");
+    bool isChorusEnabled = chorusEnabledParam ? (chorusEnabledParam->load() > 0.5f) : false;
+    
+    if (isChorusEnabled) {
+        float rate, depth, voices, delayTime, feedback, width, tone, mix;
+        
+        // Check if Chorus sequencer is enabled AND active
+        if (chorusSeq.enabled.load() && chorusSeq.active.load()) {
+            // Use Chorus sequencer snapshot
+            int chorusStep = chorusSeq.currentStep.load();
+            const auto& snapshot = chorusStepSnapshots[juce::jlimit(0, 15, chorusStep)];
+            
+            rate = snapshot.chorus.rate;
+            depth = snapshot.chorus.depth;
+            voices = snapshot.chorus.voices;
+            delayTime = snapshot.chorus.delayTime;
+            feedback = snapshot.chorus.feedback;
+            width = snapshot.chorus.width;
+            tone = snapshot.chorus.tone;
+            mix = snapshot.chorus.mix;
+        } else {
+            // Use APVTS parameters (manual control)
+            rate = valueTreeState.getRawParameterValue("chorusRate")->load();
+            depth = valueTreeState.getRawParameterValue("chorusDepth")->load();
+            voices = valueTreeState.getRawParameterValue("chorusVoices")->load();
+            delayTime = valueTreeState.getRawParameterValue("chorusDelay")->load();
+            feedback = valueTreeState.getRawParameterValue("chorusFeedback")->load();
+            width = valueTreeState.getRawParameterValue("chorusWidth")->load();
+            tone = valueTreeState.getRawParameterValue("chorusTone")->load();
+            mix = valueTreeState.getRawParameterValue("chorusMix")->load();
+        }
+        
+        // Set targets and process
+        chorus.setTargets(rate, depth, voices, delayTime, feedback, width, tone, mix);
+        chorus.process(buffer);
     }
     
     // Apply master dry/wet mix (post-effects, pre-output)
@@ -945,6 +1042,55 @@ void PluginProcessor::updateDirtCurrentStepSnapshot(int knobIndex, float value)
             break;
         case 7: // Mix
             dirtStepSnapshots[currentStep].dirt.mix = value;
+            break;
+    }
+}
+
+StepSnapshot PluginProcessor::getChorusSafeSnapshot(int step) const
+{
+    if (step >= 0 && step < 16) {
+        return chorusStepSnapshots[step];
+    }
+    return chorusStepSnapshots[0];
+}
+
+void PluginProcessor::setChorusStepSnapshot(int step, const StepSnapshot& snapshot) noexcept
+{
+    if (step >= 0 && step < 16) {
+        chorusStepSnapshots[step] = snapshot;
+    }
+}
+
+void PluginProcessor::updateChorusCurrentStepSnapshot(int knobIndex, float value)
+{
+    int currentStep = chorusUiSelectedStep.load();
+    if (currentStep < 0 || currentStep >= 16) return;
+    
+    // Update the specific Chorus parameter in the snapshot
+    switch (knobIndex) {
+        case 0: // Rate
+            chorusStepSnapshots[currentStep].chorus.rate = value;
+            break;
+        case 1: // Depth
+            chorusStepSnapshots[currentStep].chorus.depth = value;
+            break;
+        case 2: // Voices
+            chorusStepSnapshots[currentStep].chorus.voices = value;
+            break;
+        case 3: // Delay Time
+            chorusStepSnapshots[currentStep].chorus.delayTime = value;
+            break;
+        case 4: // Feedback
+            chorusStepSnapshots[currentStep].chorus.feedback = value;
+            break;
+        case 5: // Width
+            chorusStepSnapshots[currentStep].chorus.width = value;
+            break;
+        case 6: // Tone
+            chorusStepSnapshots[currentStep].chorus.tone = value;
+            break;
+        case 7: // Mix
+            chorusStepSnapshots[currentStep].chorus.mix = value;
             break;
     }
 }

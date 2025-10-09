@@ -101,6 +101,27 @@ PluginEditor::PluginEditor (PluginProcessor& p)
             DBG("[UI] Dirt FX power initialized: " << (dirtFxAreaEnabled ? "ON" : "OFF"));
         }
         
+        // Setup Chorus page components
+        setupChorusKnobs();
+        setupChorusEffectsArea();
+        setupChorusSequencerArea();
+        setupChorusAllStepsToggle();
+        
+        // Sync Chorus sequencer state with processor on startup
+        processorRef.setChorusSequencerEnabled(chorusStepAreaEnabled);
+        DBG("[UI] Initial Chorus sequencer state synced: enabled=" << chorusStepAreaEnabled);
+        
+        // Initialize Chorus FX power button state from parameter
+        auto* chorusEnabledParam = processorRef.getAPVTS().getRawParameterValue("chorusEnabled");
+        if (chorusEnabledParam) {
+            chorusFxAreaEnabled = chorusEnabledParam->load() > 0.5f;
+            if (chorusFxPowerButton) {
+                chorusFxPowerButton->setToggleState(chorusFxAreaEnabled, juce::dontSendNotification);
+            }
+            updateChorusFxAreaVisibility(); // Update UI to reflect initial state
+            DBG("[UI] Chorus FX power initialized: " << (chorusFxAreaEnabled ? "ON" : "OFF"));
+        }
+        
         // Setup tab system
         setupTabSystem();
         
@@ -4177,4 +4198,66 @@ void PluginEditor::updateAutoPanStepAreaVisibility()
     if (autopanStepDiceButton) { autopanStepDiceButton->setAlpha(alpha); autopanStepDiceButton->setEnabled(autopanStepAreaEnabled); }
     if (autopanStepPowerButton) autopanStepPowerButton->setAlpha(autopanStepAreaEnabled ? 1.0f : 0.3f);
     // Note: All Steps toggle/label are NOT controlled here - they're in the effects area
+}
+
+//==============================================================================
+// Chorus Page Setup Methods (TODO: Full implementation coming)
+//==============================================================================
+
+void PluginEditor::setupChorusKnobs()
+{
+    DBG("[UI] Chorus knobs setup - TODO");
+}
+
+void PluginEditor::setupChorusEffectsArea()
+{
+    DBG("[UI] Chorus effects area setup - TODO");
+}
+
+void PluginEditor::setupChorusSequencerArea()
+{
+    DBG("[UI] Chorus sequencer area setup - TODO");
+}
+
+void PluginEditor::setupChorusAllStepsToggle()
+{
+    DBG("[UI] Chorus All Steps toggle setup - TODO");
+}
+
+void PluginEditor::updateChorusFxAreaVisibility()
+{
+    // TODO: Implement
+}
+
+void PluginEditor::updateChorusStepAreaVisibility()
+{
+    // TODO: Implement
+}
+
+void PluginEditor::randomizeChorusKnobValues()
+{
+    // TODO: Implement
+}
+
+void PluginEditor::randomizeIndividualChorusKnob(int knobIndex)
+{
+    juce::ignoreUnused(knobIndex);
+    // TODO: Implement
+}
+
+void PluginEditor::updateChorusParameterFromKnob(int knobIndex)
+{
+    juce::ignoreUnused(knobIndex);
+    // TODO: Implement
+}
+
+void PluginEditor::onChorusStepButtonClicked(int stepIndex)
+{
+    juce::ignoreUnused(stepIndex);
+    // TODO: Implement
+}
+
+void PluginEditor::updateChorusSequencerUI()
+{
+    // TODO: Implement
 }

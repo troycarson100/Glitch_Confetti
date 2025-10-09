@@ -32,4 +32,15 @@ struct StepSnapshot {
         float tone = 0.0f;         // -1 to +1 (post tilt)
         float mix = 1.0f;          // 0-1 (dry/wet)
     } dirt;
+    
+    struct {
+        float rate = 1.5f;         // 0.1-10 Hz
+        float depth = 40.0f;       // 0-100%
+        float voices = 2.0f;       // 1-4
+        float delayTime = 20.0f;   // 5-50 ms
+        float feedback = 20.0f;    // 0-80%
+        float width = 100.0f;      // 0-200%
+        float tone = 0.0f;         // -1 to +1
+        float mix = 50.0f;         // 0-100%
+    } chorus;
 };

@@ -5,6 +5,7 @@
 #include "dsp/FxDelay.h"
 #include "dsp/AutoPan.h"
 #include "dsp/FxDirt.h"
+#include "dsp/FxChorus.h"
 #include "dsp/DspFlags.h"
 #include "StepSnapshot.h"
 #include "MeterTheme.h"
@@ -164,6 +165,20 @@ public:
     void setDirtStepsUsed(int steps) noexcept { dirtSeq.stepsUsed.store(juce::jlimit(1, 16, steps)); }
     void setDirtDivisionIndex(int idx) noexcept { dirtSeq.divisionIndex.store(juce::jlimit(0, 7, idx)); }
     
+    // Chorus sequencer accessors (independent from Delay, AutoPan, and Dirt)
+    const SeqState& getChorusSeqState() const { return chorusSeq; }
+    int getChorusPlayingStep() const noexcept { return chorusSeq.playingStep.load(); }
+    int getChorusCurrentStep() const noexcept { return chorusSeq.currentStep.load(); }
+    void setChorusSelectedStep(int step) noexcept { chorusUiSelectedStep.store(step); }
+    void setChorusSequencerEnabled(bool enabled) noexcept {
+        chorusSeq.enabled.store(enabled);
+        if (enabled) {
+            chorusSeq.active.store(true);
+        }
+    }
+    void setChorusStepsUsed(int steps) noexcept { chorusSeq.stepsUsed.store(juce::jlimit(1, 16, steps)); }
+    void setChorusDivisionIndex(int idx) noexcept { chorusSeq.divisionIndex.store(juce::jlimit(0, 7, idx)); }
+    
     bool getSeqActive() const noexcept { return seq.active.load(); }
     int getSelectedStep() const noexcept { return uiSelectedStep.load(); }
     bool isSequencerEnabled() const noexcept { return seq.enabled.load(); }
@@ -183,6 +198,11 @@ public:
     StepSnapshot getDirtSafeSnapshot(int step) const;
     void setDirtStepSnapshot(int step, const StepSnapshot& snapshot) noexcept;
     void updateDirtCurrentStepSnapshot(int knobIndex, float value);
+    
+    // Chorus snapshot access
+    StepSnapshot getChorusSafeSnapshot(int step) const;
+    void setChorusStepSnapshot(int step, const StepSnapshot& snapshot) noexcept;
+    void updateChorusCurrentStepSnapshot(int knobIndex, float value);
     
     void setSequencerEnabled(bool enabled) noexcept { 
         seq.enabled.store(enabled); 
@@ -245,10 +265,15 @@ private:
     SeqState dirtSeq;
     std::atomic<int> dirtUiSelectedStep { 0 };  // Dirt editor's selected step
     
+    // Chorus Sequencer State (independent from Delay, AutoPan, and Dirt)
+    SeqState chorusSeq;
+    std::atomic<int> chorusUiSelectedStep { 0 };  // Chorus editor's selected step
+    
     // Step snapshots storage (shared structure, independent sequencing)
     std::array<StepSnapshot, 16> stepSnapshots;
     std::array<StepSnapshot, 16> autopanStepSnapshots;
     std::array<StepSnapshot, 16> dirtStepSnapshots;
+    std::array<StepSnapshot, 16> chorusStepSnapshots;
     
     // Level tracking for meters
     std::atomic<float> inputLevel { -60.0f };
@@ -281,6 +306,9 @@ public:
     
     // Dirt DSP Implementation
     FxDirt dirt;
+    
+    // Chorus DSP Implementation
+    FxChorus chorus;
     
     // PanMan-style visualizer clock
     struct PanVisClock {
