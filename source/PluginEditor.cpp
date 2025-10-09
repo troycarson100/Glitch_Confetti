@@ -440,7 +440,8 @@ void PluginEditor::timerCallback()
             // Update indicator bars to show current playing step's snapshot value
             if (autopanIndicatorBars[i] != nullptr)
             {
-                float indicatorValue = autopanKnobs[i]->getValue();
+                float knobValue = autopanKnobs[i]->getValue();
+                float indicatorValue = 0.0f;
                 
                 // If AutoPan sequencer is enabled and running, show the playing step's snapshot value
                 const bool seqEnabled = processorRef.getAutoPanSeqState().enabled.load();
@@ -469,6 +470,34 @@ void PluginEditor::timerCallback()
                             break;
                         case 5: // Amount (0-1)
                             indicatorValue = s.autopan.amount;
+                            break;
+                    }
+                }
+                else
+                {
+                    // Sequencer is off - normalize knob value to 0-1 for indicator
+                    switch (i) {
+                        case 0: // Rate
+                            if (autopanTimeSyncEnabled) {
+                                indicatorValue = knobValue; // Already 0-1 in sync mode
+                            } else {
+                                indicatorValue = (knobValue - 0.05f) / (90.0f - 0.05f); // Normalize 0.05-90 to 0-1
+                            }
+                            break;
+                        case 1: // Phase (0-360)
+                            indicatorValue = knobValue / 360.0f;
+                            break;
+                        case 2: // Wave Type (0-4)
+                            indicatorValue = knobValue / 4.0f;
+                            break;
+                        case 3: // Wave Shape (0-1)
+                            indicatorValue = knobValue;
+                            break;
+                        case 4: // Inverted (0-1)
+                            indicatorValue = knobValue;
+                            break;
+                        case 5: // Amount (0-1)
+                            indicatorValue = knobValue;
                             break;
                     }
                 }
@@ -506,7 +535,8 @@ void PluginEditor::timerCallback()
     {
         if (dirtIndicatorBars[i] != nullptr && dirtKnobs[i] != nullptr)
         {
-            float indicatorValue = dirtKnobs[i]->getValue();
+            float knobValue = dirtKnobs[i]->getValue();
+            float indicatorValue = 0.0f;
             
             // If Dirt sequencer is enabled and running, show the playing step's snapshot value
             const bool seqEnabled = processorRef.getDirtSeqState().enabled.load();
@@ -526,6 +556,36 @@ void PluginEditor::timerCallback()
                     case 5: indicatorValue = (s.dirt.highCut - 3000.0f) / 19000.0f; break; // Normalize 3k-22k to 0-1
                     case 6: indicatorValue = (s.dirt.tone + 1.0f) / 2.0f; break; // Normalize -1..1 to 0-1
                     case 7: indicatorValue = s.dirt.mix; break;
+                }
+            }
+            else
+            {
+                // Sequencer is off - normalize knob value to 0-1 for indicator
+                switch (i) {
+                    case 0: // Drive (0-36 dB)
+                        indicatorValue = knobValue / 36.0f;
+                        break;
+                    case 1: // Color (-1 to +1)
+                        indicatorValue = (knobValue + 1.0f) / 2.0f;
+                        break;
+                    case 2: // Asym (-1 to +1)
+                        indicatorValue = (knobValue + 1.0f) / 2.0f;
+                        break;
+                    case 3: // Texture (0-1)
+                        indicatorValue = knobValue;
+                        break;
+                    case 4: // Low-Cut (20-300 Hz)
+                        indicatorValue = (knobValue - 20.0f) / 280.0f;
+                        break;
+                    case 5: // High-Cut (3000-22000 Hz)
+                        indicatorValue = (knobValue - 3000.0f) / 19000.0f;
+                        break;
+                    case 6: // Tone (-1 to +1)
+                        indicatorValue = (knobValue + 1.0f) / 2.0f;
+                        break;
+                    case 7: // Mix (0-1)
+                        indicatorValue = knobValue;
+                        break;
                 }
             }
             
