@@ -211,6 +211,13 @@ public:
     std::unique_ptr<juce::DrawableButton> tabSpaceDelay;
     std::unique_ptr<juce::DrawableButton> tabPanner;
     std::unique_ptr<juce::DrawableButton> tabDirt;
+    std::unique_ptr<juce::DrawableButton> tabChorus;
+    
+    // Effect selector dropdowns (one per page/slot)
+    std::unique_ptr<juce::ComboBox> effectSelector1;
+    std::unique_ptr<juce::ComboBox> effectSelector2;
+    std::unique_ptr<juce::ComboBox> effectSelector3;
+    std::unique_ptr<juce::ComboBox> effectSelector4;
         
         // Groups: we will only toggle visibility; we DO NOT reparent anything.
         juce::OwnedArray<juce::Component> dummyKeepAlive; // (unused, but handy if Claude tries to delete)
@@ -454,6 +461,12 @@ public:
         void showPage(FxPageID id);
     void drawGridOverlay(juce::Graphics& g);
     void drawMainAreas(juce::Graphics& g);
+    
+    // Effect router UI helpers
+    void onEffectSelectorChanged(int slotIndex);
+    void updateAllEffectSelectors();
+    void updateBackgroundsAfterSwap();
+    juce::ComboBox* getEffectSelectorForSlot(int slotIndex);
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PluginEditor)
 };

@@ -2682,6 +2682,61 @@ void PluginEditor::setupTabSystem()
     DBG("[UI] tabSpaceDelay bounds: " << tabSpaceDelay->getBounds().toString());
     DBG("[UI] tabPanner bounds: " << tabPanner->getBounds().toString());
     
+    // === EFFECT SELECTOR DROPDOWNS ===
+    // Create dropdowns next to each tab button for dynamic effect assignment
+    effectSelector1 = std::make_unique<juce::ComboBox>("EffectSelector1");
+    effectSelector2 = std::make_unique<juce::ComboBox>("EffectSelector2");
+    effectSelector3 = std::make_unique<juce::ComboBox>("EffectSelector3");
+    effectSelector4 = std::make_unique<juce::ComboBox>("EffectSelector4");
+    
+    // Populate dropdown items (1-based IDs for JUCE ComboBox)
+    for (auto* selector : {effectSelector1.get(), effectSelector2.get(), effectSelector3.get(), effectSelector4.get()})
+    {
+        selector->addItem("Space Delay", 1);
+        selector->addItem("Auto Pan", 2);
+        selector->addItem("Dirt", 3);
+        selector->addItem("Chorus", 4);
+        
+        selector->setJustificationType(juce::Justification::centred);
+        selector->setColour(juce::ComboBox::backgroundColourId, juce::Colour(0xFF2A2A2A));
+        selector->setColour(juce::ComboBox::textColourId, juce::Colours::white);
+        selector->setColour(juce::ComboBox::outlineColourId, juce::Colour(0xFF4A4A4A));
+        selector->setColour(juce::ComboBox::buttonColourId, juce::Colour(0xFF3A3A3A));
+        selector->setColour(juce::ComboBox::arrowColourId, juce::Colours::lightgrey);
+    }
+    
+    // Position dropdowns to the right of each tab button (small dropdowns)
+    effectSelector1->setBounds(24 + 120 + 5, 7, 40, 20);    // Right of SpaceDelay tab
+    effectSelector2->setBounds(170 + 120 + 5, 7, 40, 20);   // Right of Panner tab
+    effectSelector3->setBounds(316 + 120 + 5, 7, 40, 20);   // Right of Dirt tab
+    effectSelector4->setBounds(462 + 120 + 5, 7, 40, 20);   // Right of Chorus tab
+    
+    // Set initial selections based on current router assignment
+    auto& router = processorRef.getEffectRouter();
+    effectSelector1->setSelectedId(static_cast<int>(router.getEffectInSlot(SlotID::Slot1)) + 1, juce::dontSendNotification);
+    effectSelector2->setSelectedId(static_cast<int>(router.getEffectInSlot(SlotID::Slot2)) + 1, juce::dontSendNotification);
+    effectSelector3->setSelectedId(static_cast<int>(router.getEffectInSlot(SlotID::Slot3)) + 1, juce::dontSendNotification);
+    effectSelector4->setSelectedId(static_cast<int>(router.getEffectInSlot(SlotID::Slot4)) + 1, juce::dontSendNotification);
+    
+    // Add change listeners (lambda captures slot index)
+    effectSelector1->onChange = [this]() { onEffectSelectorChanged(0); };
+    effectSelector2->onChange = [this]() { onEffectSelectorChanged(1); };
+    effectSelector3->onChange = [this]() { onEffectSelectorChanged(2); };
+    effectSelector4->onChange = [this]() { onEffectSelectorChanged(3); };
+    
+    // Make dropdowns always on top and non-clickable-through
+    effectSelector1->setAlwaysOnTop(true);
+    effectSelector2->setAlwaysOnTop(true);
+    effectSelector3->setAlwaysOnTop(true);
+    effectSelector4->setAlwaysOnTop(true);
+    
+    addAndMakeVisible(*effectSelector1);
+    addAndMakeVisible(*effectSelector2);
+    addAndMakeVisible(*effectSelector3);
+    addAndMakeVisible(*effectSelector4);
+    
+    DBG("[UI] Effect selector dropdowns created and positioned");
+    
     // Collect pointers to existing SpaceDelay UI components
     spaceDelayGroup.clear();
     
@@ -5034,4 +5089,87 @@ void PluginEditor::updateChorusSequencerUI()
         int divisionIndex = processorRef.getChorusSeqState().divisionIndex.load();
         chorusRateDropdown->setSelectedId(divisionIndex + 1);
     }
+}
+
+// ===============================================================================
+// EFFECT ROUTER UI HELPERS
+// ===============================================================================
+
+juce::ComboBox* PluginEditor::getEffectSelectorForSlot(int slotIndex)
+{
+    switch (slotIndex)
+    {
+        case 0: return effectSelector1.get();
+        case 1: return effectSelector2.get();
+        case 2: return effectSelector3.get();
+        case 3: return effectSelector4.get();
+        default: return nullptr;
+    }
+}
+
+void PluginEditor::onEffectSelectorChanged(int slotIndex)
+{
+    DBG("[ROUTER] Effect selector changed for slot " << slotIndex);
+    
+    auto* selector = getEffectSelectorForSlot(slotIndex);
+    if (!selector) return;
+    
+    int selectedEffectID = selector->getSelectedId() - 1; // ComboBox IDs are 1-based
+    if (selectedEffectID < 0 || selectedEffectID > 3) return;
+    
+    auto& router = processorRef.getEffectRouter();
+    EffectID targetEffect = static_cast<EffectID>(selectedEffectID);
+    SlotID targetSlot = static_cast<SlotID>(slotIndex);
+    
+    // Get the effect currently in target slot (before swap)
+    EffectID oldEffect = router.getEffectInSlot(targetSlot);
+    
+    // Check if we're selecting the same effect (no-op)
+    if (targetEffect == oldEffect)
+    {
+        DBG("[ROUTER] No change - same effect selected");
+        return;
+    }
+    
+    // This triggers a swap if the effect is already used elsewhere
+    DBG("[ROUTER] Assigning " << static_cast<int>(targetEffect) << " to slot " << slotIndex);
+    router.assignEffectToSlot(targetEffect, targetSlot);
+    
+    // Update all dropdowns to reflect the swap
+    updateAllEffectSelectors();
+    
+    // Update backgrounds for affected slots
+    updateBackgroundsAfterSwap();
+    
+    // Repaint to show new background
+    repaint();
+    
+    DBG("[ROUTER] Swap complete. Router version: " << router.getRouterVersion());
+}
+
+void PluginEditor::updateAllEffectSelectors()
+{
+    auto& router = processorRef.getEffectRouter();
+    
+    // Update each dropdown to show its current assignment (without triggering onChange)
+    for (int i = 0; i < 4; ++i)
+    {
+        auto* selector = getEffectSelectorForSlot(i);
+        if (selector)
+        {
+            EffectID effect = router.getEffectInSlot(static_cast<SlotID>(i));
+            int comboId = static_cast<int>(effect) + 1; // ComboBox IDs are 1-based
+            selector->setSelectedId(comboId, juce::dontSendNotification);
+        }
+    }
+}
+
+void PluginEditor::updateBackgroundsAfterSwap()
+{
+    // Background update will happen in paint() method
+    // which reads from router dynamically
+    DBG("[ROUTER] Background update triggered (will apply in next paint)");
+    
+    // TODO: When we implement dynamic backgrounds in Phase 2,
+    // this will update the background drawables based on current router assignment
 }
