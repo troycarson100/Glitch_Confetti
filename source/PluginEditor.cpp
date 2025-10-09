@@ -3481,6 +3481,13 @@ void PluginEditor::setupDirtEffectsArea()
     dirtFxPowerButton->onClick = [this]() {
         dirtFxAreaEnabled = dirtFxPowerButton->getToggleState();
         DBG("[UI] Dirt FX power: " << (dirtFxAreaEnabled ? "ON" : "OFF"));
+        
+        // Update processor parameter
+        auto* dirtEnabledParam = processorRef.getAPVTS().getParameter("dirtEnabled");
+        if (dirtEnabledParam) {
+            dirtEnabledParam->setValueNotifyingHost(dirtFxAreaEnabled ? 1.0f : 0.0f);
+        }
+        
         updateDirtFxAreaVisibility();
         repaint();
     };

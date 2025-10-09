@@ -114,8 +114,9 @@ juce::AudioProcessorValueTreeState::ParameterLayout PluginProcessor::createParam
     // Page and effect enable parameters
     params.push_back(std::make_unique<juce::AudioParameterChoice>("currentPage", "Current Page", 
         juce::StringArray {"SpaceDelay", "AutoPan", "Dirt"}, 0)); // 0 = SpaceDelay, 1 = AutoPan, 2 = Dirt
-    params.push_back(std::make_unique<juce::AudioParameterBool>("autopanEnabled", "AutoPan Enabled", false)); // AutoPan effect enabled
+    params.push_back(std::make_unique<juce::AudioParameterBool>("autopanEnabled", "AutoPan Enabled", true)); // AutoPan effect enabled - ON by default
     params.push_back(std::make_unique<juce::AudioParameterBool>("autopanTimeSync", "AutoPan Time Sync", true)); // AutoPan sync mode enabled - ON by default
+    params.push_back(std::make_unique<juce::AudioParameterBool>("dirtEnabled", "Dirt Enabled", true)); // Dirt effect enabled - ON by default
     
     // Master Parameters
     params.push_back(std::make_unique<juce::AudioParameterFloat>("masterInput", "Master Input", 
@@ -527,8 +528,8 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
         int waveTypeIndex;
         bool isInverted;
         
-        // Check if AutoPan sequencer is active
-        if (autopanSeq.active.load()) {
+        // Check if AutoPan sequencer is enabled AND active
+        if (autopanSeq.enabled.load() && autopanSeq.active.load()) {
             // Use AutoPan sequencer snapshot
             int autopanStep = autopanSeq.currentStep.load();
             const auto& snapshot = autopanStepSnapshots[juce::jlimit(0, 15, autopanStep)];
@@ -602,11 +603,14 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
     
     // === DIRT SATURATION (Post-Panner) ===
     // Processing order: Delay → Panner → Dirt
-    {
+    auto* dirtEnabledParam = valueTreeState.getRawParameterValue("dirtEnabled");
+    bool isDirtEnabled = dirtEnabledParam ? (dirtEnabledParam->load() > 0.5f) : false;
+    
+    if (isDirtEnabled) {
         float drive, color, asym, texture, lowCut, highCut, tone, mix;
         
-        // Check if Dirt sequencer is active
-        if (dirtSeq.active.load()) {
+        // Check if Dirt sequencer is enabled AND active
+        if (dirtSeq.enabled.load() && dirtSeq.active.load()) {
             // Use Dirt sequencer snapshot
             int dirtStep = dirtSeq.currentStep.load();
             const auto& snapshot = dirtStepSnapshots[juce::jlimit(0, 15, dirtStep)];
