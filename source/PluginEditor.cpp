@@ -172,6 +172,17 @@ void PluginEditor::paint (juce::Graphics& g)
             // Fallback background
             g.fillAll (juce::Colour(0xff2a2a2a));
         }
+    } else if (currentPage == FxPageID::Chorus) {
+        // Draw the Chorus background SVG
+        if (assets.chorusBackgroundTab4 != nullptr)
+        {
+            assets.chorusBackgroundTab4->drawWithin(g, getLocalBounds().toFloat(), juce::RectanglePlacement::centred, 1.0f);
+        }
+        else
+        {
+            // Fallback background
+            g.fillAll (juce::Colour(0xff2a2a2a));
+        }
     }
     
     // Only draw grid overlay and main areas if UI is visible
@@ -639,6 +650,74 @@ void PluginEditor::timerCallback()
     }
     
     
+    // Update Chorus knob value labels
+    for (int i = 0; i < 8; ++i)
+    {
+        if (chorusKnobs[i] != nullptr && chorusValueLabels[i] != nullptr)
+        {
+            float knobValue = chorusKnobs[i]->getValue();
+            juce::String valueText;
+            
+            switch (i) {
+                case 0: valueText = juce::String(knobValue, 2) + " Hz"; break; // Rate
+                case 1: valueText = juce::String((int)(knobValue)) + "%"; break; // Depth
+                case 2: valueText = juce::String((int)(knobValue)); break; // Voices
+                case 3: valueText = juce::String(knobValue, 1) + " ms"; break; // Delay
+                case 4: valueText = juce::String((int)(knobValue)) + "%"; break; // Feedback
+                case 5: valueText = juce::String((int)(knobValue)) + "%"; break; // Width
+                case 6: valueText = juce::String(knobValue, 2); break; // Tone
+                case 7: valueText = juce::String((int)(knobValue)) + "%"; break; // Mix
+            }
+            
+            chorusValueLabels[i]->setText(valueText, juce::dontSendNotification);
+        }
+    }
+    
+    // Update Chorus knob indicators
+    for (int i = 0; i < 8; ++i)
+    {
+        if (chorusIndicatorBars[i] != nullptr && chorusKnobs[i] != nullptr)
+        {
+            float knobValue = chorusKnobs[i]->getValue();
+            float indicatorValue = 0.0f;
+            
+            const bool seqEnabled = processorRef.getChorusSeqState().enabled.load();
+            const bool seqActive = processorRef.getChorusSeqState().active.load();
+            const int playingStep = processorRef.getChorusPlayingStep();
+            
+            if (seqEnabled && seqActive && playingStep >= 0 && playingStep < 16)
+            {
+                StepSnapshot s = processorRef.getChorusSafeSnapshot(playingStep);
+                
+                switch (i) {
+                    case 0: indicatorValue = (s.chorus.rate - 0.1f) / 9.9f; break; // 0.1-10 Hz
+                    case 1: indicatorValue = s.chorus.depth / 100.0f; break; // 0-100%
+                    case 2: indicatorValue = (s.chorus.voices - 1.0f) / 3.0f; break; // 1-4
+                    case 3: indicatorValue = (s.chorus.delayTime - 5.0f) / 45.0f; break; // 5-50 ms
+                    case 4: indicatorValue = s.chorus.feedback / 80.0f; break; // 0-80%
+                    case 5: indicatorValue = s.chorus.width / 200.0f; break; // 0-200%
+                    case 6: indicatorValue = (s.chorus.tone + 1.0f) / 2.0f; break; // -1 to +1
+                    case 7: indicatorValue = s.chorus.mix / 100.0f; break; // 0-100%
+                }
+            }
+            else
+            {
+                switch (i) {
+                    case 0: indicatorValue = (knobValue - 0.1f) / 9.9f; break; // Rate (0.1-10 Hz)
+                    case 1: indicatorValue = knobValue / 100.0f; break; // Depth (0-100%)
+                    case 2: indicatorValue = (knobValue - 1.0f) / 3.0f; break; // Voices (1-4)
+                    case 3: indicatorValue = (knobValue - 5.0f) / 45.0f; break; // Delay (5-50 ms)
+                    case 4: indicatorValue = knobValue / 80.0f; break; // Feedback (0-80%)
+                    case 5: indicatorValue = knobValue / 200.0f; break; // Width (0-200%)
+                    case 6: indicatorValue = (knobValue + 1.0f) / 2.0f; break; // Tone (-1 to +1)
+                    case 7: indicatorValue = knobValue / 100.0f; break; // Mix (0-100%)
+                }
+            }
+            
+            chorusIndicatorBars[i]->setValue(indicatorValue);
+        }
+    }
+    
     // Update sequencer UI (Delay)
     updateSequencerUI();
     
@@ -647,6 +726,9 @@ void PluginEditor::timerCallback()
     
     // Update Dirt sequencer UI
     updateDirtSequencerUI();
+    
+    // Update Chorus sequencer UI
+    updateChorusSequencerUI();
 }
 
 bool PluginEditor::keyPressed(const juce::KeyPress& key)
@@ -656,6 +738,9 @@ bool PluginEditor::keyPressed(const juce::KeyPress& key)
         return false; // Let the TextEditor handle it
     }
     if (dirtStepAmountLabel && dirtStepAmountLabel->hasKeyboardFocus(true)) {
+        return false; // Let the TextEditor handle it
+    }
+    if (chorusStepAmountLabel && chorusStepAmountLabel->hasKeyboardFocus(true)) {
         return false; // Let the TextEditor handle it
     }
     if (stepAmountLabel && stepAmountLabel->hasKeyboardFocus(true)) {
@@ -2493,6 +2578,7 @@ void PluginEditor::setupTabSystem()
     tabSpaceDelay = std::make_unique<juce::DrawableButton>("tabSpace", juce::DrawableButton::ImageOnButtonBackground);
     tabPanner = std::make_unique<juce::DrawableButton>("tabPanner", juce::DrawableButton::ImageOnButtonBackground);
     tabDirt = std::make_unique<juce::DrawableButton>("tabDirt", juce::DrawableButton::ImageOnButtonBackground);
+    tabChorus = std::make_unique<juce::DrawableButton>("tabChorus", juce::DrawableButton::ImageOnButtonBackground);
     
     // Use the tab SVGs you provided:
     if (assets.tabTitleSpaceDelay) {
@@ -2507,15 +2593,21 @@ void PluginEditor::setupTabSystem()
         tabDirt->setImages(assets.tabDirtIcon->createCopy().release(),
                              nullptr, nullptr, nullptr, nullptr, nullptr);
     }
+    if (assets.tabChorusIcon) { // Using Chorus icon SVG for the fourth tab
+        tabChorus->setImages(assets.tabChorusIcon->createCopy().release(),
+                             nullptr, nullptr, nullptr, nullptr, nullptr);
+    }
     
     // Add bright background colors to make tabs visible for testing
     tabSpaceDelay->setColour(juce::DrawableButton::backgroundColourId, juce::Colour(0xFFFF6600)); // Bright orange
     tabPanner->setColour(juce::DrawableButton::backgroundColourId, juce::Colour(0xFF00FF00)); // Bright green
     tabDirt->setColour(juce::DrawableButton::backgroundColourId, juce::Colour(0xFFFF00FF)); // Bright magenta
+    tabChorus->setColour(juce::DrawableButton::backgroundColourId, juce::Colour(0xFF00FFFF)); // Bright cyan
     
     tabSpaceDelay->setTriggeredOnMouseDown(true);
     tabPanner->setTriggeredOnMouseDown(true);
     tabDirt->setTriggeredOnMouseDown(true);
+    tabChorus->setTriggeredOnMouseDown(true);
     
     // Click handlers
     tabSpaceDelay->onClick = [this]{ 
@@ -2530,20 +2622,27 @@ void PluginEditor::setupTabSystem()
         DBG("[UI] Dirt tab clicked!");
         showPage(FxPageID::Dirt); 
     };
+    tabChorus->onClick = [this]{ 
+        DBG("[UI] Chorus tab clicked!");
+        showPage(FxPageID::Chorus); 
+    };
     
     // Ensure tabs never obstruct the master area clicks; they only sit over the header strip
     tabSpaceDelay->setAlwaysOnTop(true);
     tabPanner->setAlwaysOnTop(true);
     tabDirt->setAlwaysOnTop(true);
+    tabChorus->setAlwaysOnTop(true);
     
     addAndMakeVisible(*tabSpaceDelay);
     addAndMakeVisible(*tabPanner);
     addAndMakeVisible(*tabDirt);
+    addAndMakeVisible(*tabChorus);
     
     // Position tabs immediately after creation - smaller and moved up 10px
     tabSpaceDelay->setBounds(24, 0, 120, 34);
     tabPanner->setBounds(170, 0, 120, 34);
     tabDirt->setBounds(316, 0, 120, 34);
+    tabChorus->setBounds(462, 0, 120, 34);
     
     DBG("[UI] Tab buttons created and added to editor");
     DBG("[UI] tabSpaceDelay bounds: " << tabSpaceDelay->getBounds().toString());
@@ -2656,11 +2755,43 @@ void PluginEditor::setupTabSystem()
     if (dirtStepDiceButton) dirtGroup.push_back(dirtStepDiceButton.get());
     if (dirtStepPowerButton) dirtGroup.push_back(dirtStepPowerButton.get());
     
+    // Populate Chorus group
+    chorusGroup.clear();
+    
+    // Add Chorus knobs and related components
+    for (int i = 0; i < 8; ++i) {
+        if (chorusKnobs[i]) chorusGroup.push_back(chorusKnobs[i].get());
+        if (chorusKnobLabels[i]) chorusGroup.push_back(chorusKnobLabels[i].get());
+        if (chorusValueLabels[i]) chorusGroup.push_back(chorusValueLabels[i].get());
+        if (chorusIndicatorBars[i]) chorusGroup.push_back(chorusIndicatorBars[i].get());
+        if (chorusLockButtons[i]) chorusGroup.push_back(chorusLockButtons[i].get());
+    }
+    
+    // Add Chorus effects area components
+    if (chorusEffectsTitle) chorusGroup.push_back(chorusEffectsTitle.get());
+    if (chorusDiceButton) chorusGroup.push_back(chorusDiceButton.get());
+    if (chorusFxPowerButton) chorusGroup.push_back(chorusFxPowerButton.get());
+    
+    // Add Chorus sequencer components
+    if (chorusAllStepsToggle) chorusGroup.push_back(chorusAllStepsToggle.get());
+    if (chorusAllStepsLabel) chorusGroup.push_back(chorusAllStepsLabel.get());
+    for (int i = 0; i < 16; ++i) {
+        if (chorusStepButtons[i]) chorusGroup.push_back(chorusStepButtons[i].get());
+    }
+    if (chorusStepAmountLabel) chorusGroup.push_back(chorusStepAmountLabel.get());
+    if (chorusRateDropdown) chorusGroup.push_back(chorusRateDropdown.get());
+    if (chorusStdToggle) chorusGroup.push_back(chorusStdToggle.get());
+    if (chorusStepTitle) chorusGroup.push_back(chorusStepTitle.get());
+    if (chorusStepDiceButton) chorusGroup.push_back(chorusStepDiceButton.get());
+    if (chorusStepPowerButton) chorusGroup.push_back(chorusStepPowerButton.get());
+    
     // Initialize with SpaceDelay page visible
     showPage(FxPageID::SpaceDelay);
     
     DBG("[UI] Tab system setup complete. SpaceDelay components: " << spaceDelayGroup.size());
     DBG("[UI] AutoPan components: " << pannerGroup.size());
+    DBG("[UI] Dirt components: " << dirtGroup.size());
+    DBG("[UI] Chorus components: " << chorusGroup.size());
 }
 
 void PluginEditor::showPage(FxPageID id)
@@ -2668,12 +2799,13 @@ void PluginEditor::showPage(FxPageID id)
     if (currentPage == id) return;
     currentPage = id;
 
-    // Update processor parameters (0 = SpaceDelay, 1 = AutoPan, 2 = Dirt)
+    // Update processor parameters (0 = SpaceDelay, 1 = AutoPan, 2 = Dirt, 3 = Chorus)
     auto* currentPageParam = processorRef.getAPVTS().getParameter("currentPage");
     if (currentPageParam) {
         float pageValue = 0.0f;
         if (id == FxPageID::Panner) pageValue = 1.0f;
         else if (id == FxPageID::Dirt) pageValue = 2.0f;
+        else if (id == FxPageID::Chorus) pageValue = 3.0f;
         currentPageParam->setValueNotifyingHost(pageValue);
     }
     
@@ -2700,6 +2832,18 @@ void PluginEditor::showPage(FxPageID id)
         }
         updateDirtFxAreaVisibility();
     }
+    
+    // Update Chorus UI to reflect current parameter state (don't force it on)
+    if (id == FxPageID::Chorus) {
+        auto* chorusEnabledParam = processorRef.getAPVTS().getRawParameterValue("chorusEnabled");
+        if (chorusEnabledParam) {
+            chorusFxAreaEnabled = chorusEnabledParam->load() > 0.5f;
+            if (chorusFxPowerButton) {
+                chorusFxPowerButton->setToggleState(chorusFxAreaEnabled, juce::dontSendNotification);
+            }
+        }
+        updateChorusFxAreaVisibility();
+    }
 
     // Show/Hide without touching parents or bounds
     auto setVisibleVec = [](const std::vector<juce::Component*>& v, bool vis)
@@ -2710,11 +2854,13 @@ void PluginEditor::showPage(FxPageID id)
     setVisibleVec(spaceDelayGroup, id == FxPageID::SpaceDelay);
     setVisibleVec(pannerGroup, id == FxPageID::Panner);
     setVisibleVec(dirtGroup, id == FxPageID::Dirt);
+    setVisibleVec(chorusGroup, id == FxPageID::Chorus);
 
     // Raise the active tab to front
     if (id == FxPageID::SpaceDelay && tabSpaceDelay) tabSpaceDelay->toFront(false);
     else if (id == FxPageID::Panner && tabPanner) tabPanner->toFront(false);
     else if (id == FxPageID::Dirt && tabDirt) tabDirt->toFront(false);
+    else if (id == FxPageID::Chorus && tabChorus) tabChorus->toFront(false);
     
     // Bring step amount editors to front when page is shown
     if (id == FxPageID::Panner && autopanStepAmountLabel) {
@@ -2724,6 +2870,10 @@ void PluginEditor::showPage(FxPageID id)
     else if (id == FxPageID::Dirt && dirtStepAmountLabel) {
         dirtStepAmountLabel->toFront(true);
         dirtStepAmountLabel->setWantsKeyboardFocus(true);
+    }
+    else if (id == FxPageID::Chorus && chorusStepAmountLabel) {
+        chorusStepAmountLabel->toFront(true);
+        chorusStepAmountLabel->setWantsKeyboardFocus(true);
     }
 
     repaint();
@@ -4206,58 +4356,608 @@ void PluginEditor::updateAutoPanStepAreaVisibility()
 
 void PluginEditor::setupChorusKnobs()
 {
-    DBG("[UI] Chorus knobs setup - TODO");
+    DBG("[UI] Setting up Chorus knobs...");
+
+    // Chorus knob names (8 knobs)
+    std::vector<juce::String> chorusKnobNames = {
+        "Rate", "Depth", "Voices", "Delay", "Feedback", "Width", "Tone", "Mix"
+    };
+
+    // Effect area bounds (EXACT same as Dirt page)
+    auto effectArea = juce::Rectangle<int>(25, 54, 413, 296);
+    const int knobSize = 80;
+    const int knobSpacing = 20;
+    const int startX = effectArea.getX() + 15;
+    const int startY = effectArea.getY() + effectArea.getHeight() - 210;
+
+    for (int i = 0; i < 8; ++i)
+    {
+        chorusKnobs[i] = std::make_unique<CustomKnob>();
+        addAndMakeVisible(chorusKnobs[i].get());
+        chorusKnobs[i]->setVisible(false);
+
+        // Set parameter ranges based on knob index
+        switch (i) {
+            case 0: // Rate (Hz)
+                chorusKnobs[i]->setRange(0.1, 10.0, 0.01);
+                chorusKnobs[i]->setValue(1.5);
+                break;
+            case 1: // Depth (%)
+                chorusKnobs[i]->setRange(0.0, 100.0, 0.1);
+                chorusKnobs[i]->setValue(40.0);
+                break;
+            case 2: // Voices (1-4)
+                chorusKnobs[i]->setRange(1.0, 4.0, 1.0);
+                chorusKnobs[i]->setValue(2.0);
+                break;
+            case 3: // Delay Time (ms)
+                chorusKnobs[i]->setRange(5.0, 50.0, 0.1);
+                chorusKnobs[i]->setValue(20.0);
+                break;
+            case 4: // Feedback (%)
+                chorusKnobs[i]->setRange(0.0, 80.0, 0.1);
+                chorusKnobs[i]->setValue(20.0);
+                break;
+            case 5: // Width (%)
+                chorusKnobs[i]->setRange(0.0, 200.0, 1.0);
+                chorusKnobs[i]->setValue(100.0);
+                break;
+            case 6: // Tone (-1 to +1)
+                chorusKnobs[i]->setRange(-1.0, 1.0, 0.01);
+                chorusKnobs[i]->setValue(0.0);
+                break;
+            case 7: // Mix (%)
+                chorusKnobs[i]->setRange(0.0, 100.0, 0.1);
+                chorusKnobs[i]->setValue(50.0);
+                break;
+        }
+
+        chorusKnobs[i]->onValueChange = [this, i]() {
+            if (chorusKnobs[i] != nullptr) {
+                updateChorusParameterFromKnob(i);
+
+                if (chorusAllStepsEnabled) {
+                    for (int step = 0; step < 16; ++step) {
+                        auto snapshot = processorRef.getChorusSafeSnapshot(step);
+                        float value = chorusKnobs[i]->getValue();
+                        switch (i) {
+                            case 0: snapshot.chorus.rate = value; break;
+                            case 1: snapshot.chorus.depth = value; break;
+                            case 2: snapshot.chorus.voices = value; break;
+                            case 3: snapshot.chorus.delayTime = value; break;
+                            case 4: snapshot.chorus.feedback = value; break;
+                            case 5: snapshot.chorus.width = value; break;
+                            case 6: snapshot.chorus.tone = value; break;
+                            case 7: snapshot.chorus.mix = value; break;
+                        }
+                        processorRef.setChorusStepSnapshot(step, snapshot);
+                    }
+                }
+            }
+        };
+
+        if (assets.knobRing != nullptr)
+            chorusKnobs[i]->setRingImage(assets.knobRing->createCopy());
+        if (assets.knobInside != nullptr)
+            chorusKnobs[i]->setInnerImage(assets.knobInside->createCopy());
+
+        int x = startX + (i % 4) * (knobSize + knobSpacing);
+        int y = startY + (i / 4) * (knobSize + 20);
+
+        if (i < 4)
+            y -= 23;
+        else
+            y -= 1;
+
+        chorusKnobs[i]->setBounds(x, y, knobSize, knobSize);
+
+        // Create label
+        chorusKnobLabels[i] = std::make_unique<juce::Label>();
+        chorusKnobLabels[i]->setText(chorusKnobNames[i], juce::dontSendNotification);
+        chorusKnobLabels[i]->setFont(juce::Font(12.0f, juce::Font::bold));
+        chorusKnobLabels[i]->setColour(juce::Label::textColourId, juce::Colours::white);
+        chorusKnobLabels[i]->setJustificationType(juce::Justification::centred);
+        addAndMakeVisible(chorusKnobLabels[i].get());
+        chorusKnobLabels[i]->setVisible(false);
+        chorusKnobLabels[i]->setBounds(x, y - 15, knobSize, 20);
+
+        // Create value label
+        chorusValueLabels[i] = std::make_unique<juce::Label>();
+        chorusValueLabels[i]->setText("0", juce::dontSendNotification);
+        chorusValueLabels[i]->setFont(juce::Font(10.0f, juce::Font::plain));
+        chorusValueLabels[i]->setColour(juce::Label::textColourId, juce::Colours::white);
+        chorusValueLabels[i]->setJustificationType(juce::Justification::centred);
+        addAndMakeVisible(chorusValueLabels[i].get());
+        chorusValueLabels[i]->setVisible(false);
+        chorusValueLabels[i]->setBounds(x, y + knobSize - 10, knobSize, 15);
+
+        // Create indicator bar
+        chorusIndicatorBars[i] = std::make_unique<IndicatorBar>();
+        addAndMakeVisible(chorusIndicatorBars[i].get());
+        chorusIndicatorBars[i]->setVisible(false);
+        chorusIndicatorBars[i]->setBounds(x + 10, y + knobSize + 8, knobSize - 20, 13);
+        chorusIndicatorBars[i]->setValue(0.5f);
+
+        // Create dice button (hidden like Dirt page)
+        chorusDiceButtons[i] = std::make_unique<CustomDiceButton>();
+        chorusDiceButtons[i]->onClick = [this, i]() { randomizeIndividualChorusKnob(i); };
+
+        // Create lock button
+        chorusLockButtons[i] = std::make_unique<LockButton>();
+        addAndMakeVisible(chorusLockButtons[i].get());
+        chorusLockButtons[i]->setVisible(false);
+        chorusLockButtons[i]->setBounds(x + knobSize - 8, y - 8, 16, 16);
+        chorusLockButtons[i]->setClickingTogglesState(true);
+        chorusLockButtons[i]->onClick = [this, i]() {
+            chorusKnobLocked[i] = chorusLockButtons[i]->getToggleState();
+            DBG("[UI] Chorus knob " << i << " lock: " << (chorusKnobLocked[i] ? "LOCKED" : "UNLOCKED"));
+        };
+    }
+
+    DBG("[UI] Chorus knobs setup complete");
 }
 
 void PluginEditor::setupChorusEffectsArea()
 {
-    DBG("[UI] Chorus effects area setup - TODO");
+    DBG("[UI] Setting up Chorus effects area...");
+    
+    auto effectArea = juce::Rectangle<int>(25, 54, 413, 296);
+    
+    // Create "EFFECT" title
+    chorusEffectsTitle = std::make_unique<juce::Label>();
+    chorusEffectsTitle->setText("EFFECT", juce::dontSendNotification);
+    chorusEffectsTitle->setFont(juce::Font(27.648f, juce::Font::bold));
+    chorusEffectsTitle->setColour(juce::Label::textColourId, juce::Colours::white);
+    chorusEffectsTitle->setJustificationType(juce::Justification::centredLeft);
+    addAndMakeVisible(chorusEffectsTitle.get());
+    chorusEffectsTitle->setVisible(false);
+    chorusEffectsTitle->setBounds(effectArea.getX() + 10, effectArea.getY() + 5, 100, 30);
+    
+    // Create dice button
+    chorusDiceButton = std::make_unique<CustomDiceButton>();
+    addAndMakeVisible(chorusDiceButton.get());
+    chorusDiceButton->setVisible(false);
+    
+    const int diceSize = 32;
+    chorusDiceButton->setBounds(effectArea.getX() + 130, effectArea.getY() + 5, diceSize, diceSize);
+    
+    if (assets.diceLarge != nullptr)
+    {
+        chorusDiceButton->setDiceImage(assets.diceLarge->createCopy());
+    }
+    
+    chorusDiceButton->onClick = [this]() { randomizeChorusKnobValues(); };
+    
+    // Create FX power button
+    chorusFxPowerButton = std::make_unique<juce::DrawableButton>("chorusFxPower", juce::DrawableButton::ButtonStyle::ImageFitted);
+    addAndMakeVisible(chorusFxPowerButton.get());
+    chorusFxPowerButton->setVisible(false);
+
+    const int buttonSize = 46;
+    chorusFxPowerButton->setBounds(effectArea.getX() + effectArea.getWidth() - buttonSize - 8 + 8 + 3, 
+                                 effectArea.getY() + 6 - 20 + 4, buttonSize, buttonSize);
+
+    chorusFxPowerButton->setColour(juce::DrawableButton::backgroundColourId, juce::Colours::transparentBlack);
+    chorusFxPowerButton->setColour(juce::DrawableButton::backgroundOnColourId, juce::Colours::transparentBlack);
+
+    if (assets.fxPowerOn != nullptr)
+    {
+        chorusFxPowerButton->setImages(assets.fxPowerOn->createCopy().get());
+    }
+
+    chorusFxPowerButton->setClickingTogglesState(true);
+    chorusFxPowerButton->setToggleState(chorusFxAreaEnabled, juce::dontSendNotification);
+    chorusFxPowerButton->onClick = [this]() {
+        chorusFxAreaEnabled = chorusFxPowerButton->getToggleState();
+        DBG("[UI] Chorus FX power: " << (chorusFxAreaEnabled ? "ON" : "OFF"));
+        
+        auto* chorusEnabledParam = processorRef.getAPVTS().getParameter("chorusEnabled");
+        if (chorusEnabledParam) {
+            chorusEnabledParam->setValueNotifyingHost(chorusFxAreaEnabled ? 1.0f : 0.0f);
+        }
+        
+        updateChorusFxAreaVisibility();
+        repaint();
+    };
+    
+    DBG("[UI] Chorus effects area setup complete");
 }
 
 void PluginEditor::setupChorusSequencerArea()
 {
-    DBG("[UI] Chorus sequencer area setup - TODO");
+    DBG("[UI] Setting up Chorus sequencer area...");
+    
+    auto sequencerArea = juce::Rectangle<int>(25, 374, 413, 140);
+    
+    // Create step title
+    chorusStepTitle = std::make_unique<juce::Label>();
+    chorusStepTitle->setText("STEP", juce::dontSendNotification);
+    chorusStepTitle->setFont(juce::Font(22.118f, juce::Font::bold));
+    chorusStepTitle->setColour(juce::Label::textColourId, juce::Colours::white);
+    chorusStepTitle->setJustificationType(juce::Justification::centredLeft);
+    addAndMakeVisible(chorusStepTitle.get());
+    chorusStepTitle->setVisible(false);
+    chorusStepTitle->setBounds(sequencerArea.getX() + 10, sequencerArea.getY(), 80, 30);
+    
+    // Create step buttons (2 rows of 8)
+    const int buttonSize = 40;
+    const int buttonSpacing = 8;
+    const int startX = sequencerArea.getX() + 20;
+    const int startY = sequencerArea.getY() + 35;
+    
+    for (int i = 0; i < 16; ++i) {
+        chorusStepButtons[i] = std::make_unique<StepButton>(i);
+        addAndMakeVisible(chorusStepButtons[i].get());
+        chorusStepButtons[i]->setVisible(false);
+        
+        int x = startX + (i % 8) * (buttonSize + buttonSpacing);
+        int y = startY + (i / 8) * (buttonSize + buttonSpacing);
+        
+        chorusStepButtons[i]->setBounds(x, y, buttonSize, buttonSize);
+        
+        if (assets.stepActive) {
+            chorusStepButtons[i]->setActiveImage(assets.stepActive->createCopy());
+        }
+        if (assets.stepInactive) {
+            chorusStepButtons[i]->setInactiveImage(assets.stepInactive->createCopy());
+        }
+        
+        chorusStepButtons[i]->onClick = [this, i]() { onChorusStepButtonClicked(i); };
+    }
+    
+    // Create step amount editor
+    struct ChorusDebugTextEditor : public juce::TextEditor {
+        void mouseDown(const juce::MouseEvent& e) override {
+            DBG("[UI] Chorus step amount mouseDown detected!");
+            juce::TextEditor::mouseDown(e);
+        }
+        void focusGained(FocusChangeType cause) override {
+            DBG("[UI] Chorus step amount focusGained!");
+            juce::TextEditor::focusGained(cause);
+        }
+    };
+    chorusStepAmountLabel = std::make_unique<ChorusDebugTextEditor>();
+    chorusStepAmountLabel->setText("16");
+    chorusStepAmountLabel->setFont(juce::Font(16.0f, juce::Font::bold));
+    chorusStepAmountLabel->setColour(juce::TextEditor::textColourId, juce::Colours::white);
+    chorusStepAmountLabel->setColour(juce::TextEditor::backgroundColourId, juce::Colours::transparentBlack);
+    chorusStepAmountLabel->setColour(juce::TextEditor::outlineColourId, juce::Colours::white);
+    chorusStepAmountLabel->setColour(juce::TextEditor::focusedOutlineColourId, juce::Colours::white);
+    chorusStepAmountLabel->setJustification(juce::Justification::centred);
+    chorusStepAmountLabel->setBorder(juce::BorderSize<int>(2));
+    chorusStepAmountLabel->setIndents(0, 0);
+    chorusStepAmountLabel->setInputRestrictions(2, "0123456789");
+    chorusStepAmountLabel->setWantsKeyboardFocus(true);
+    chorusStepAmountLabel->setMouseClickGrabsKeyboardFocus(true);
+    chorusStepAmountLabel->setCaretVisible(true);
+    chorusStepAmountLabel->setPopupMenuEnabled(false);
+    chorusStepAmountLabel->setScrollbarsShown(false);
+    chorusStepAmountLabel->setMultiLine(false);
+    chorusStepAmountLabel->setReturnKeyStartsNewLine(false);
+    chorusStepAmountLabel->setInterceptsMouseClicks(true, false);
+    chorusStepAmountLabel->setAlwaysOnTop(true);
+    chorusStepAmountLabel->onTextChange = [this]() {
+        DBG("[UI] Chorus step amount text changed to: " << chorusStepAmountLabel->getText());
+    };
+    chorusStepAmountLabel->onReturnKey = [this]() {
+        DBG("[UI] Chorus step amount Return key pressed");
+        if (chorusStepAmountLabel != nullptr) {
+            int value = juce::jlimit(1, 16, chorusStepAmountLabel->getText().getIntValue());
+            processorRef.setChorusStepsUsed(value);
+            chorusStepAmountLabel->setText(juce::String(value), false);
+            updateChorusSequencerUI();
+            chorusStepAmountLabel->giveAwayKeyboardFocus();
+        }
+    };
+    chorusStepAmountLabel->onFocusLost = [this]() {
+        if (chorusStepAmountLabel != nullptr) {
+            int value = juce::jlimit(1, 16, chorusStepAmountLabel->getText().getIntValue());
+            processorRef.setChorusStepsUsed(value);
+            chorusStepAmountLabel->setText(juce::String(value), false);
+            updateChorusSequencerUI();
+        }
+    };
+    addAndMakeVisible(chorusStepAmountLabel.get());
+    chorusStepAmountLabel->setVisible(false);
+    chorusStepAmountLabel->setBounds(sequencerArea.getX() + 180, sequencerArea.getY() - 10, 30, 25);
+    chorusStepAmountLabel->setAlwaysOnTop(true);
+    
+    // Create rate dropdown
+    chorusRateDropdown = std::make_unique<juce::ComboBox>();
+    chorusRateDropdown->addItem("4", 1);
+    chorusRateDropdown->addItem("2", 2);
+    chorusRateDropdown->addItem("1", 3);
+    chorusRateDropdown->addItem("1/2", 4);
+    chorusRateDropdown->addItem("1/4", 5);
+    chorusRateDropdown->addItem("1/8", 6);
+    chorusRateDropdown->addItem("1/16", 7);
+    chorusRateDropdown->addItem("1/32", 8);
+    chorusRateDropdown->setSelectedId(6);
+    
+    const int processorDivIdx = processorRef.getChorusSeqState().divisionIndex.load();
+    chorusRateDropdown->setSelectedId(processorDivIdx + 1);
+    
+    chorusRateDropdown->setColour(juce::ComboBox::backgroundColourId, juce::Colours::transparentBlack);
+    chorusRateDropdown->setColour(juce::ComboBox::outlineColourId, juce::Colours::transparentBlack);
+    chorusRateDropdown->setColour(juce::ComboBox::buttonColourId, juce::Colours::transparentBlack);
+    chorusRateDropdown->setColour(juce::ComboBox::textColourId, juce::Colours::white);
+    chorusRateDropdown->setColour(juce::ComboBox::arrowColourId, juce::Colours::white);
+    chorusRateDropdown->onChange = [this]() {
+        if (chorusRateDropdown != nullptr) {
+            const int selected = chorusRateDropdown->getSelectedId();
+            if (selected >= 1 && selected <= 8) {
+                const int newDivisionIndex = juce::jlimit(0, 7, selected - 1);
+                processorRef.setChorusDivisionIndex(newDivisionIndex);
+                updateChorusSequencerUI();
+            }
+        }
+    };
+    addAndMakeVisible(chorusRateDropdown.get());
+    chorusRateDropdown->setVisible(false);
+    chorusRateDropdown->setBounds(sequencerArea.getX() + 220, sequencerArea.getY() - 10, 74, 25);
+    
+    // Create STD toggle
+    chorusStdToggle = std::make_unique<CircularToggleButton>();
+    chorusStdToggle->setButtonText("-");
+    addAndMakeVisible(chorusStdToggle.get());
+    chorusStdToggle->setVisible(false);
+    chorusStdToggle->setBounds(sequencerArea.getX() + 288, sequencerArea.getY() - 14, 30, 30);
+    
+    chorusStdToggle->onClick = [this]() {
+        static int stdState = 0;
+        stdState = (stdState + 1) % 3;
+        
+        switch (stdState) {
+            case 0: chorusStdToggle->setButtonText("-"); break;
+            case 1: chorusStdToggle->setButtonText("t"); break;
+            case 2: chorusStdToggle->setButtonText("."); break;
+        }
+    };
+    
+    // Create step dice button
+    chorusStepDiceButton = std::make_unique<CustomDiceButton>();
+    addAndMakeVisible(chorusStepDiceButton.get());
+    chorusStepDiceButton->setVisible(false);
+    int chorusStepDiceSize = static_cast<int>(35 * 0.7);
+    chorusStepDiceButton->setBounds(sequencerArea.getX() + 75, sequencerArea.getY() + 5, chorusStepDiceSize, chorusStepDiceSize);
+    
+    if (assets.diceLarge != nullptr) {
+        chorusStepDiceButton->setDiceImage(assets.diceLarge->createCopy());
+    }
+    
+    chorusStepDiceButton->onClick = [this]() {
+        DBG("[UI] Chorus step dice button clicked - randomizing all step snapshots");
+        
+        for (int step = 0; step < 16; ++step) {
+            auto snapshot = processorRef.getChorusSafeSnapshot(step);
+            
+            if (!chorusKnobLocked[0]) snapshot.chorus.rate = 0.1f + juce::Random::getSystemRandom().nextFloat() * 9.9f;
+            if (!chorusKnobLocked[1]) snapshot.chorus.depth = juce::Random::getSystemRandom().nextFloat() * 100.0f;
+            if (!chorusKnobLocked[2]) snapshot.chorus.voices = 1.0f + juce::Random::getSystemRandom().nextFloat() * 3.0f;
+            if (!chorusKnobLocked[3]) snapshot.chorus.delayTime = 5.0f + juce::Random::getSystemRandom().nextFloat() * 45.0f;
+            if (!chorusKnobLocked[4]) snapshot.chorus.feedback = juce::Random::getSystemRandom().nextFloat() * 80.0f;
+            if (!chorusKnobLocked[5]) snapshot.chorus.width = juce::Random::getSystemRandom().nextFloat() * 200.0f;
+            if (!chorusKnobLocked[6]) snapshot.chorus.tone = juce::Random::getSystemRandom().nextFloat() * 2.0f - 1.0f;
+            if (!chorusKnobLocked[7]) snapshot.chorus.mix = juce::Random::getSystemRandom().nextFloat() * 100.0f;
+            
+            processorRef.setChorusStepSnapshot(step, snapshot);
+        }
+        
+        int currentStep = processorRef.getChorusCurrentStep();
+        StepSnapshot currentSnapshot = processorRef.getChorusSafeSnapshot(currentStep);
+        if (chorusKnobs[0]) chorusKnobs[0]->setValue(currentSnapshot.chorus.rate, juce::sendNotification);
+        if (chorusKnobs[1]) chorusKnobs[1]->setValue(currentSnapshot.chorus.depth, juce::sendNotification);
+        if (chorusKnobs[2]) chorusKnobs[2]->setValue(currentSnapshot.chorus.voices, juce::sendNotification);
+        if (chorusKnobs[3]) chorusKnobs[3]->setValue(currentSnapshot.chorus.delayTime, juce::sendNotification);
+        if (chorusKnobs[4]) chorusKnobs[4]->setValue(currentSnapshot.chorus.feedback, juce::sendNotification);
+        if (chorusKnobs[5]) chorusKnobs[5]->setValue(currentSnapshot.chorus.width, juce::sendNotification);
+        if (chorusKnobs[6]) chorusKnobs[6]->setValue(currentSnapshot.chorus.tone, juce::sendNotification);
+        if (chorusKnobs[7]) chorusKnobs[7]->setValue(currentSnapshot.chorus.mix, juce::sendNotification);
+    };
+    
+    // Create step power button
+    chorusStepPowerButton = std::make_unique<juce::DrawableButton>("chorusStepPower", juce::DrawableButton::ButtonStyle::ImageFitted);
+    addAndMakeVisible(chorusStepPowerButton.get());
+    chorusStepPowerButton->setVisible(false);
+    
+    const int powerButtonSize = 40;
+    chorusStepPowerButton->setBounds(sequencerArea.getX() + sequencerArea.getWidth() - powerButtonSize - 5 + 15 - 5 - 1, 
+                                   sequencerArea.getY() - 5 - 40 + 25 + 5, powerButtonSize, powerButtonSize);
+    
+    chorusStepPowerButton->setColour(juce::DrawableButton::backgroundColourId, juce::Colours::transparentBlack);
+    chorusStepPowerButton->setColour(juce::DrawableButton::backgroundOnColourId, juce::Colours::transparentBlack);
+    
+    if (assets.stepPowerOn != nullptr) {
+        chorusStepPowerButton->setImages(assets.stepPowerOn->createCopy().get());
+    }
+    
+    chorusStepPowerButton->setClickingTogglesState(true);
+    chorusStepPowerButton->setToggleState(chorusStepAreaEnabled, juce::dontSendNotification);
+    chorusStepPowerButton->onClick = [this]() {
+        chorusStepAreaEnabled = chorusStepPowerButton->getToggleState();
+        DBG("[UI] Chorus step area power: " << (chorusStepAreaEnabled ? "ON" : "OFF"));
+        
+        if (!chorusStepAreaEnabled) {
+            processorRef.setChorusSequencerEnabled(false);
+        } else {
+            processorRef.setChorusSequencerEnabled(true);
+        }
+        
+        updateChorusStepAreaVisibility();
+        repaint();
+    };
+    
+    DBG("[UI] Chorus sequencer area setup complete");
 }
 
 void PluginEditor::setupChorusAllStepsToggle()
 {
-    DBG("[UI] Chorus All Steps toggle setup - TODO");
+    DBG("[UI] Setting up Chorus All Steps toggle...");
+    
+    auto effectArea = juce::Rectangle<int>(25, 54, 413, 296);
+    
+    chorusAllStepsToggle = std::make_unique<AllStepsToggleButton>();
+    addAndMakeVisible(chorusAllStepsToggle.get());
+    chorusAllStepsToggle->setVisible(false);
+    chorusAllStepsToggle->setBounds(effectArea.getX() + effectArea.getWidth() - 70, effectArea.getY() + effectArea.getHeight() - 35, 24, 24);
+    
+    chorusAllStepsToggle->onClick = [this]() {
+        chorusAllStepsEnabled = chorusAllStepsToggle->getToggleState();
+        DBG("[UI] Chorus All Steps: " << (chorusAllStepsEnabled ? "ON" : "OFF"));
+    };
+    
+    chorusAllStepsLabel = std::make_unique<juce::Label>();
+    chorusAllStepsLabel->setText("All Steps", juce::dontSendNotification);
+    chorusAllStepsLabel->setFont(juce::Font(11.0f, juce::Font::bold));
+    chorusAllStepsLabel->setColour(juce::Label::textColourId, juce::Colours::white);
+    chorusAllStepsLabel->setJustificationType(juce::Justification::centredRight);
+    addAndMakeVisible(chorusAllStepsLabel.get());
+    chorusAllStepsLabel->setVisible(false);
+    chorusAllStepsLabel->setBounds(effectArea.getX() + effectArea.getWidth() - 140, effectArea.getY() + effectArea.getHeight() - 35, 65, 24);
+    
+    DBG("[UI] Chorus All Steps toggle setup complete");
 }
 
 void PluginEditor::updateChorusFxAreaVisibility()
 {
-    // TODO: Implement
+    float alpha = chorusFxAreaEnabled ? 1.0f : 0.3f;
+
+    if (chorusEffectsTitle) chorusEffectsTitle->setAlpha(alpha);
+    if (chorusDiceButton) { chorusDiceButton->setAlpha(alpha); chorusDiceButton->setEnabled(chorusFxAreaEnabled); }
+
+    for (int i = 0; i < 8; ++i) {
+        if (chorusKnobs[i]) { chorusKnobs[i]->setAlpha(alpha); chorusKnobs[i]->setEnabled(chorusFxAreaEnabled); }
+        if (chorusKnobLabels[i]) chorusKnobLabels[i]->setAlpha(alpha);
+        if (chorusValueLabels[i]) chorusValueLabels[i]->setAlpha(alpha);
+        if (chorusIndicatorBars[i]) chorusIndicatorBars[i]->setAlpha(alpha);
+        if (chorusLockButtons[i]) { 
+            chorusLockButtons[i]->setEnabled(chorusFxAreaEnabled);
+            chorusLockButtons[i]->setAlpha(alpha);
+        }
+    }
+
+    if (chorusAllStepsToggle) { chorusAllStepsToggle->setAlpha(alpha); chorusAllStepsToggle->setEnabled(chorusFxAreaEnabled); }
+    if (chorusAllStepsLabel) chorusAllStepsLabel->setAlpha(alpha);
+
+    if (chorusFxPowerButton) chorusFxPowerButton->setAlpha(chorusFxAreaEnabled ? 1.0f : 0.3f);
 }
 
 void PluginEditor::updateChorusStepAreaVisibility()
 {
-    // TODO: Implement
+    float alpha = chorusStepAreaEnabled ? 1.0f : 0.3f;
+    
+    for (int i = 0; i < 16; ++i)
+    {
+        if (chorusStepButtons[i]) { 
+            chorusStepButtons[i]->setAlpha(alpha); 
+            chorusStepButtons[i]->setEnabled(chorusStepAreaEnabled);
+        }
+    }
+    
+    if (chorusStepTitle) chorusStepTitle->setAlpha(alpha);
+    if (chorusStepAmountLabel) chorusStepAmountLabel->setAlpha(alpha);
+    if (chorusRateDropdown) { chorusRateDropdown->setAlpha(alpha); chorusRateDropdown->setEnabled(chorusStepAreaEnabled); }
+    if (chorusStdToggle) { chorusStdToggle->setAlpha(alpha); chorusStdToggle->setEnabled(chorusStepAreaEnabled); }
+    if (chorusStepDiceButton) { chorusStepDiceButton->setAlpha(alpha); chorusStepDiceButton->setEnabled(chorusStepAreaEnabled); }
+    if (chorusStepPowerButton) chorusStepPowerButton->setAlpha(chorusStepAreaEnabled ? 1.0f : 0.3f);
 }
 
 void PluginEditor::randomizeChorusKnobValues()
 {
-    // TODO: Implement
+    for (int i = 0; i < 8; ++i) {
+        if (!chorusKnobLocked[i] && chorusKnobs[i] != nullptr) {
+            randomizeIndividualChorusKnob(i);
+        }
+    }
 }
 
 void PluginEditor::randomizeIndividualChorusKnob(int knobIndex)
 {
-    juce::ignoreUnused(knobIndex);
-    // TODO: Implement
+    if (knobIndex < 0 || knobIndex >= 8 || chorusKnobs[knobIndex] == nullptr) return;
+    if (chorusKnobLocked[knobIndex]) return;
+    
+    float randomValue = 0.0f;
+    switch (knobIndex) {
+        case 0: randomValue = 0.1f + juce::Random::getSystemRandom().nextFloat() * 9.9f; break;
+        case 1: randomValue = juce::Random::getSystemRandom().nextFloat() * 100.0f; break;
+        case 2: randomValue = 1.0f + juce::Random::getSystemRandom().nextFloat() * 3.0f; break;
+        case 3: randomValue = 5.0f + juce::Random::getSystemRandom().nextFloat() * 45.0f; break;
+        case 4: randomValue = juce::Random::getSystemRandom().nextFloat() * 80.0f; break;
+        case 5: randomValue = juce::Random::getSystemRandom().nextFloat() * 200.0f; break;
+        case 6: randomValue = juce::Random::getSystemRandom().nextFloat() * 2.0f - 1.0f; break;
+        case 7: randomValue = juce::Random::getSystemRandom().nextFloat() * 100.0f; break;
+    }
+    
+    chorusKnobs[knobIndex]->setValue(randomValue, juce::sendNotification);
 }
 
 void PluginEditor::updateChorusParameterFromKnob(int knobIndex)
 {
-    juce::ignoreUnused(knobIndex);
-    // TODO: Implement
+    if (knobIndex < 0 || knobIndex >= 8 || chorusKnobs[knobIndex] == nullptr) return;
+    
+    float value = chorusKnobs[knobIndex]->getValue();
+    processorRef.updateChorusCurrentStepSnapshot(knobIndex, value);
 }
 
 void PluginEditor::onChorusStepButtonClicked(int stepIndex)
 {
-    juce::ignoreUnused(stepIndex);
-    // TODO: Implement
+    DBG("[UI] Chorus step button " << stepIndex << " clicked");
+    
+    int currentStep = chorusUiSelectedStep;
+    if (currentStep >= 0 && currentStep < 16) {
+        StepSnapshot currentSnapshot;
+        if (chorusKnobs[0]) currentSnapshot.chorus.rate = chorusKnobs[0]->getValue();
+        if (chorusKnobs[1]) currentSnapshot.chorus.depth = chorusKnobs[1]->getValue();
+        if (chorusKnobs[2]) currentSnapshot.chorus.voices = chorusKnobs[2]->getValue();
+        if (chorusKnobs[3]) currentSnapshot.chorus.delayTime = chorusKnobs[3]->getValue();
+        if (chorusKnobs[4]) currentSnapshot.chorus.feedback = chorusKnobs[4]->getValue();
+        if (chorusKnobs[5]) currentSnapshot.chorus.width = chorusKnobs[5]->getValue();
+        if (chorusKnobs[6]) currentSnapshot.chorus.tone = chorusKnobs[6]->getValue();
+        if (chorusKnobs[7]) currentSnapshot.chorus.mix = chorusKnobs[7]->getValue();
+        
+        processorRef.setChorusStepSnapshot(currentStep, currentSnapshot);
+    }
+    
+    chorusUiSelectedStep = stepIndex;
+    processorRef.setChorusSelectedStep(stepIndex);
+    
+    StepSnapshot newSnapshot = processorRef.getChorusSafeSnapshot(stepIndex);
+    if (chorusKnobs[0]) chorusKnobs[0]->setValue(newSnapshot.chorus.rate, juce::sendNotification);
+    if (chorusKnobs[1]) chorusKnobs[1]->setValue(newSnapshot.chorus.depth, juce::sendNotification);
+    if (chorusKnobs[2]) chorusKnobs[2]->setValue(newSnapshot.chorus.voices, juce::sendNotification);
+    if (chorusKnobs[3]) chorusKnobs[3]->setValue(newSnapshot.chorus.delayTime, juce::sendNotification);
+    if (chorusKnobs[4]) chorusKnobs[4]->setValue(newSnapshot.chorus.feedback, juce::sendNotification);
+    if (chorusKnobs[5]) chorusKnobs[5]->setValue(newSnapshot.chorus.width, juce::sendNotification);
+    if (chorusKnobs[6]) chorusKnobs[6]->setValue(newSnapshot.chorus.tone, juce::sendNotification);
+    if (chorusKnobs[7]) chorusKnobs[7]->setValue(newSnapshot.chorus.mix, juce::sendNotification);
+    
+    updateChorusSequencerUI();
+    
+    DBG("[UI] Switched to Chorus step " << stepIndex);
 }
 
 void PluginEditor::updateChorusSequencerUI()
 {
-    // TODO: Implement
+    int selectedStep = chorusUiSelectedStep;
+    int playingStep = processorRef.getChorusPlayingStep();
+    const int stepsUsed = processorRef.getChorusSeqState().stepsUsed.load();
+    
+    for (int i = 0; i < 16; ++i) {
+        if (chorusStepButtons[i] != nullptr) {
+            chorusStepButtons[i]->setSelected(i == selectedStep);
+            bool sequencerEnabled = processorRef.getChorusSeqState().enabled.load();
+            chorusStepButtons[i]->setPlaying(sequencerEnabled && (i == playingStep) && (i != selectedStep));
+            bool shouldBeEnabled = i < stepsUsed;
+            chorusStepButtons[i]->setEnabledStep(shouldBeEnabled);
+        }
+    }
+    
+    if (chorusStepAmountLabel != nullptr && !chorusStepAmountLabel->hasKeyboardFocus(true)) {
+        chorusStepAmountLabel->setText(juce::String(stepsUsed), false);
+    }
+    
+    if (chorusRateDropdown != nullptr) {
+        int divisionIndex = processorRef.getChorusSeqState().divisionIndex.load();
+        chorusRateDropdown->setSelectedId(divisionIndex + 1);
+    }
 }
