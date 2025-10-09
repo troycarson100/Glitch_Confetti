@@ -1541,7 +1541,7 @@ void PluginEditor::setupKnobs()
         const int vizX = startX - meterSpacing - meterWidth + 10;
         const int vizY = panBarY + 24 + 10; // Below PanManBar + 10px gap
         const int vizWidth = (meterWidth * 2 + meterSpacing + totalKnobWidth - 20) - 90;
-        const int vizHeight = 160; // 2x taller for better visibility
+        const int vizHeight = 120; // 25% reduction from 160px for more compact appearance
         outputVisualizer->setBounds(vizX, vizY, vizWidth, vizHeight);
         
         DBG("[UI] Master knobs and stereo meters setup complete");
