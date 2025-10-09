@@ -2661,12 +2661,14 @@ void PluginEditor::showPage(FxPageID id)
     else if (id == FxPageID::Panner && tabPanner) tabPanner->toFront(false);
     else if (id == FxPageID::Dirt && tabDirt) tabDirt->toFront(false);
     
-    // Bring step amount labels to front when page is shown (they're already configured with setAlwaysOnTop)
+    // Bring step amount editors to front when page is shown
     if (id == FxPageID::Panner && autopanStepAmountLabel) {
-        autopanStepAmountLabel->toFront(true); // true = exclusive, brings to absolute front
+        autopanStepAmountLabel->toFront(true);
+        autopanStepAmountLabel->setWantsKeyboardFocus(true);
     }
     else if (id == FxPageID::Dirt && dirtStepAmountLabel) {
-        dirtStepAmountLabel->toFront(true); // true = exclusive, brings to absolute front
+        dirtStepAmountLabel->toFront(true);
+        dirtStepAmountLabel->setWantsKeyboardFocus(true);
     }
 
     repaint();
@@ -3048,31 +3050,47 @@ void PluginEditor::setupAutoPanSequencerArea()
         autopanStepButtons[i]->onClick = [this, i]() { onAutoPanStepButtonClicked(i); };
     }
     
-    // Create step amount label (EXACT same positioning as delay page)
-    autopanStepAmountLabel = std::make_unique<juce::Label>();
-    autopanStepAmountLabel->setText("16", juce::dontSendNotification);
+    // Create step amount editor (using TextEditor for proper keyboard input)
+    autopanStepAmountLabel = std::make_unique<juce::TextEditor>();
+    autopanStepAmountLabel->setText("16");
     autopanStepAmountLabel->setFont(juce::Font(16.0f, juce::Font::bold));
-    autopanStepAmountLabel->setColour(juce::Label::textColourId, juce::Colours::white);
-    autopanStepAmountLabel->setColour(juce::Label::backgroundColourId, juce::Colours::transparentBlack);
-    autopanStepAmountLabel->setColour(juce::Label::outlineColourId, juce::Colours::white);
-    autopanStepAmountLabel->setJustificationType(juce::Justification::centred);
-    autopanStepAmountLabel->setBorderSize(juce::BorderSize<int>(2));
-    autopanStepAmountLabel->setEditable(true, true, false);
-    autopanStepAmountLabel->setInterceptsMouseClicks(true, false); // Ensure it receives mouse clicks
-    autopanStepAmountLabel->setWantsKeyboardFocus(true); // Ensure it can receive keyboard focus
-    autopanStepAmountLabel->onEditorHide = [this]() {
+    autopanStepAmountLabel->setColour(juce::TextEditor::textColourId, juce::Colours::white);
+    autopanStepAmountLabel->setColour(juce::TextEditor::backgroundColourId, juce::Colours::transparentBlack);
+    autopanStepAmountLabel->setColour(juce::TextEditor::outlineColourId, juce::Colours::white);
+    autopanStepAmountLabel->setColour(juce::TextEditor::focusedOutlineColourId, juce::Colours::white);
+    autopanStepAmountLabel->setJustification(juce::Justification::centred);
+    autopanStepAmountLabel->setBorder(juce::BorderSize<int>(2));
+    autopanStepAmountLabel->setInputRestrictions(2, "0123456789"); // Only allow 1-2 digit numbers
+    autopanStepAmountLabel->setWantsKeyboardFocus(true);
+    autopanStepAmountLabel->setMouseClickGrabsKeyboardFocus(true);
+    autopanStepAmountLabel->setCaretVisible(true);
+    autopanStepAmountLabel->setPopupMenuEnabled(false);
+    autopanStepAmountLabel->setScrollbarsShown(false);
+    autopanStepAmountLabel->setInterceptsMouseClicks(true, false);
+    autopanStepAmountLabel->onReturnKey = [this]() {
         if (autopanStepAmountLabel != nullptr) {
             int value = autopanStepAmountLabel->getText().getIntValue();
-            value = juce::jlimit(1, 16, value);
+            if (value < 1 || value > 16) value = juce::jlimit(1, 16, value);
             processorRef.setAutoPanStepsUsed(value);
-            autopanStepAmountLabel->setText(juce::String(value), juce::dontSendNotification);
+            autopanStepAmountLabel->setText(juce::String(value), false);
+            updateAutoPanSequencerUI();
+            autopanStepAmountLabel->moveCaretToEnd();
+        }
+    };
+    autopanStepAmountLabel->onFocusLost = [this]() {
+        if (autopanStepAmountLabel != nullptr) {
+            int value = autopanStepAmountLabel->getText().getIntValue();
+            if (value < 1) value = 1;
+            if (value > 16) value = 16;
+            processorRef.setAutoPanStepsUsed(value);
+            autopanStepAmountLabel->setText(juce::String(value), false);
             updateAutoPanSequencerUI();
         }
     };
     addAndMakeVisible(autopanStepAmountLabel.get());
     autopanStepAmountLabel->setVisible(false); // Initially hidden until AutoPan page is selected
     autopanStepAmountLabel->setBounds(sequencerArea.getX() + 180, sequencerArea.getY() - 10, 30, 25);
-    autopanStepAmountLabel->setAlwaysOnTop(true); // Keep on top of other components
+    autopanStepAmountLabel->setAlwaysOnTop(true);
     
     // Create rate dropdown (EXACT same positioning as delay page)
     autopanRateDropdown = std::make_unique<juce::ComboBox>();
@@ -3572,31 +3590,47 @@ void PluginEditor::setupDirtSequencerArea()
         dirtStepButtons[i]->onClick = [this, i]() { onDirtStepButtonClicked(i); };
     }
     
-    // Create step amount label (EXACT same as AutoPan)
-    dirtStepAmountLabel = std::make_unique<juce::Label>();
-    dirtStepAmountLabel->setText("16", juce::dontSendNotification);
+    // Create step amount editor (using TextEditor for proper keyboard input)
+    dirtStepAmountLabel = std::make_unique<juce::TextEditor>();
+    dirtStepAmountLabel->setText("16");
     dirtStepAmountLabel->setFont(juce::Font(16.0f, juce::Font::bold));
-    dirtStepAmountLabel->setColour(juce::Label::textColourId, juce::Colours::white);
-    dirtStepAmountLabel->setColour(juce::Label::backgroundColourId, juce::Colours::transparentBlack);
-    dirtStepAmountLabel->setColour(juce::Label::outlineColourId, juce::Colours::white);
-    dirtStepAmountLabel->setJustificationType(juce::Justification::centred);
-    dirtStepAmountLabel->setBorderSize(juce::BorderSize<int>(2));
-    dirtStepAmountLabel->setEditable(true, true, false);
-    dirtStepAmountLabel->setInterceptsMouseClicks(true, false); // Ensure it receives mouse clicks
-    dirtStepAmountLabel->setWantsKeyboardFocus(true); // Ensure it can receive keyboard focus
-    dirtStepAmountLabel->onEditorHide = [this]() {
+    dirtStepAmountLabel->setColour(juce::TextEditor::textColourId, juce::Colours::white);
+    dirtStepAmountLabel->setColour(juce::TextEditor::backgroundColourId, juce::Colours::transparentBlack);
+    dirtStepAmountLabel->setColour(juce::TextEditor::outlineColourId, juce::Colours::white);
+    dirtStepAmountLabel->setColour(juce::TextEditor::focusedOutlineColourId, juce::Colours::white);
+    dirtStepAmountLabel->setJustification(juce::Justification::centred);
+    dirtStepAmountLabel->setBorder(juce::BorderSize<int>(2));
+    dirtStepAmountLabel->setInputRestrictions(2, "0123456789"); // Only allow 1-2 digit numbers
+    dirtStepAmountLabel->setWantsKeyboardFocus(true);
+    dirtStepAmountLabel->setMouseClickGrabsKeyboardFocus(true);
+    dirtStepAmountLabel->setCaretVisible(true);
+    dirtStepAmountLabel->setPopupMenuEnabled(false);
+    dirtStepAmountLabel->setScrollbarsShown(false);
+    dirtStepAmountLabel->setInterceptsMouseClicks(true, false);
+    dirtStepAmountLabel->onReturnKey = [this]() {
         if (dirtStepAmountLabel != nullptr) {
             int value = dirtStepAmountLabel->getText().getIntValue();
-            value = juce::jlimit(1, 16, value);
+            if (value < 1 || value > 16) value = juce::jlimit(1, 16, value);
             processorRef.setDirtStepsUsed(value);
-            dirtStepAmountLabel->setText(juce::String(value), juce::dontSendNotification);
+            dirtStepAmountLabel->setText(juce::String(value), false);
+            updateDirtSequencerUI();
+            dirtStepAmountLabel->moveCaretToEnd();
+        }
+    };
+    dirtStepAmountLabel->onFocusLost = [this]() {
+        if (dirtStepAmountLabel != nullptr) {
+            int value = dirtStepAmountLabel->getText().getIntValue();
+            if (value < 1) value = 1;
+            if (value > 16) value = 16;
+            processorRef.setDirtStepsUsed(value);
+            dirtStepAmountLabel->setText(juce::String(value), false);
             updateDirtSequencerUI();
         }
     };
     addAndMakeVisible(dirtStepAmountLabel.get());
     dirtStepAmountLabel->setVisible(false);
     dirtStepAmountLabel->setBounds(sequencerArea.getX() + 180, sequencerArea.getY() - 10, 30, 25);
-    dirtStepAmountLabel->setAlwaysOnTop(true); // Keep on top of other components
+    dirtStepAmountLabel->setAlwaysOnTop(true);
     
     // Create rate dropdown (EXACT same as AutoPan)
     dirtRateDropdown = std::make_unique<juce::ComboBox>();
@@ -4007,7 +4041,7 @@ void PluginEditor::updateDirtSequencerUI()
     }
     
     if (dirtStepAmountLabel != nullptr) {
-        dirtStepAmountLabel->setText(juce::String(stepsUsed), juce::dontSendNotification);
+        dirtStepAmountLabel->setText(juce::String(stepsUsed), false); // TextEditor uses bool, not notification enum
     }
     
     if (dirtRateDropdown != nullptr) {
@@ -4044,7 +4078,7 @@ void PluginEditor::updateAutoPanSequencerUI()
     
     // Update step amount display
     if (autopanStepAmountLabel != nullptr) {
-        autopanStepAmountLabel->setText(juce::String(stepsUsed), juce::dontSendNotification);
+        autopanStepAmountLabel->setText(juce::String(stepsUsed), false); // TextEditor uses bool, not notification enum
     }
     
     // Update rate dropdown

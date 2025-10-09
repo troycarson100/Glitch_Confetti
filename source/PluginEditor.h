@@ -299,7 +299,7 @@ public:
     // AutoPan sequencer components (independent from delay page)
     std::array<std::unique_ptr<StepButton>, 16> autopanStepButtons;
     int autopanUiSelectedStep = 0;  // UI selected step for editing (0-15)
-    std::unique_ptr<juce::Label> autopanStepAmountLabel;
+    std::unique_ptr<juce::TextEditor> autopanStepAmountLabel;
     std::unique_ptr<juce::ComboBox> autopanRateDropdown;
     std::unique_ptr<CircularToggleButton> autopanStdToggle;
     std::unique_ptr<juce::Label> autopanStepTitle;
@@ -331,7 +331,7 @@ public:
     // Dirt sequencer components (independent sequencer)
     std::array<std::unique_ptr<StepButton>, 16> dirtStepButtons;
     int dirtUiSelectedStep = 0;
-    std::unique_ptr<juce::Label> dirtStepAmountLabel;
+    std::unique_ptr<juce::TextEditor> dirtStepAmountLabel;
     std::unique_ptr<juce::ComboBox> dirtRateDropdown;
     std::unique_ptr<CircularToggleButton> dirtStdToggle;
     std::unique_ptr<juce::Label> dirtStepTitle;
