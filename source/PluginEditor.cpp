@@ -5921,7 +5921,7 @@ void PluginEditor::onEffectSelectorChanged(int slotIndex)
     if (!selector) return;
     
     int selectedEffectID = selector->getSelectedId() - 1; // ComboBox IDs are 1-based
-    if (selectedEffectID < 0 || selectedEffectID > 3) return;
+    if (selectedEffectID < 0 || selectedEffectID > 4) return; // Now supports 5 effects (0-4)
     
     auto& router = processorRef.getEffectRouter();
     EffectID targetEffect = static_cast<EffectID>(selectedEffectID);
@@ -5958,6 +5958,7 @@ void PluginEditor::onEffectSelectorChanged(int slotIndex)
     setVisibleVec(pannerGroup, false);
     setVisibleVec(dirtGroup, false);
     setVisibleVec(chorusGroup, false);
+    setVisibleVec(reverbGroup, false);
     
     // Show the correct effect for the current page based on new assignment
     EffectID newAssignment = router.getEffectInSlot(static_cast<SlotID>(static_cast<int>(currentPage)));
