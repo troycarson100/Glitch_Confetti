@@ -140,33 +140,35 @@ void PluginEditor::paint (juce::Graphics& g)
 {
     // === ROUTER-AWARE BACKGROUNDS ===
     // Get the effect assigned to current slot and draw its background for this tab position
+    // Formula: {EffectName}_Background_Tab{SlotIndex+1}.svg
     auto& router = processorRef.getEffectRouter();
     int slotIndex = static_cast<int>(currentPage);  // Page maps to slot (0-3)
     EffectID assignedEffect = router.getEffectInSlot(static_cast<SlotID>(slotIndex));
     
     // Get the appropriate background based on (effect × slot)
+    // Slot index determines Tab number (0→Tab1, 1→Tab2, 2→Tab3, 3→Tab4)
     juce::Drawable* background = nullptr;
     
     switch (assignedEffect)
     {
         case EffectID::SpaceDelay:
-            // SpaceDelay backgrounds for each tab position
+            // SpaceDelay_Background_Tab{1,2,3,4}.svg based on slot
             if (slotIndex == 0) background = assets.spaceDelayBackgroundTab1.get();
-            else if (slotIndex == 1) background = assets.spaceDelayBackgroundTab1.get(); // TODO: Tab2
+            else if (slotIndex == 1) background = assets.spaceDelayBackgroundTab2.get();
             else if (slotIndex == 2) background = assets.spaceDelayBackgroundTab3.get();
             else if (slotIndex == 3) background = assets.spaceDelayBackgroundTab4.get();
             break;
             
         case EffectID::AutoPan:
-            // AutoPan backgrounds for each tab position
-            if (slotIndex == 0) background = assets.pannerBackgroundTab2.get(); // TODO: Tab1
+            // Panner_Background_Tab{1,2,3,4}.svg based on slot
+            if (slotIndex == 0) background = assets.pannerBackgroundTab1.get();
             else if (slotIndex == 1) background = assets.pannerBackgroundTab2.get();
             else if (slotIndex == 2) background = assets.pannerBackgroundTab3.get();
             else if (slotIndex == 3) background = assets.pannerBackgroundTab4.get();
             break;
             
         case EffectID::Dirt:
-            // Dirt backgrounds for each tab position
+            // Dirt_Background_Tab{1,2,3,4}.svg based on slot
             if (slotIndex == 0) background = assets.dirtBackgroundTab1.get();
             else if (slotIndex == 1) background = assets.dirtBackgroundTab2.get();
             else if (slotIndex == 2) background = assets.dirtBackgroundTab3.get();
@@ -174,11 +176,11 @@ void PluginEditor::paint (juce::Graphics& g)
             break;
             
         case EffectID::Chorus:
-            // Chorus backgrounds for each tab position
+            // Chorus_Background_Tab{1,2,3,4}.svg based on slot
             if (slotIndex == 0) background = assets.chorusBackgroundTab1.get();
             else if (slotIndex == 1) background = assets.chorusBackgroundTab2.get();
             else if (slotIndex == 2) background = assets.chorusBackgroundTab3.get();
-            else if (slotIndex == 3) background = assets.chorusBackgroundTab4.get(); // TODO: Tab4
+            else if (slotIndex == 3) background = assets.chorusBackgroundTab4.get();
             break;
     }
     
