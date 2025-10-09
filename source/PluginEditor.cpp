@@ -246,23 +246,6 @@ void PluginEditor::paint (juce::Graphics& g)
             }
         }
     }
-    else if (currentPage == FxPageID::Chorus)
-    {
-        for (int i = 0; i < 8; ++i)
-        {
-            if (chorusLockButtons[i] != nullptr)
-            {
-                auto b = chorusLockButtons[i]->getBounds().toFloat();
-                if (chorusKnobLocked[i]) {
-                    if (assets.lockedIcon != nullptr)
-                        assets.lockedIcon->drawWithin(g, b, juce::RectanglePlacement::centred, 1.0f);
-                } else {
-                    if (assets.unlockedIcon != nullptr)
-                        assets.unlockedIcon->drawWithin(g, b, juce::RectanglePlacement::centred, 1.0f);
-                }
-            }
-        }
-    }
 }
 
 void PluginEditor::resized()
@@ -4539,6 +4522,15 @@ void PluginEditor::setupChorusKnobs()
         chorusLockButtons[i]->setVisible(false);
         chorusLockButtons[i]->setBounds(x + knobSize - 8, y - 8, 16, 16);
         chorusLockButtons[i]->setClickingTogglesState(true);
+        
+        // Set lock button images
+        if (assets.unlockedIcon && assets.lockedIcon) {
+            auto imgUnlocked = assets.unlockedIcon->createCopy();
+            auto imgLocked = assets.lockedIcon->createCopy();
+            chorusLockButtons[i]->setImages(std::move(imgUnlocked), std::move(imgLocked));
+        }
+        
+        chorusLockButtons[i]->setToggleState(chorusKnobLocked[i], juce::dontSendNotification);
         chorusLockButtons[i]->onClick = [this, i]() {
             chorusKnobLocked[i] = chorusLockButtons[i]->getToggleState();
             DBG("[UI] Chorus knob " << i << " lock: " << (chorusKnobLocked[i] ? "LOCKED" : "UNLOCKED"));
