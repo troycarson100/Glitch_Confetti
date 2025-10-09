@@ -5598,11 +5598,15 @@ void PluginEditor::setupReverbEffectsArea()
     reverbFxPowerButton->setVisible(false);
     reverbFxPowerButton->setClickingTogglesState(true);
     
-    const int powerSize = 16;
-    reverbFxPowerButton->setBounds(effectArea.getX() + 170, effectArea.getY() + 13, powerSize, powerSize);
+    const int powerSize = 40;
+    // Position it to the right of the dice button
+    reverbFxPowerButton->setBounds(effectArea.getX() + 170, effectArea.getY() - 5, powerSize, powerSize);
+    
+    reverbFxPowerButton->setColour(juce::DrawableButton::backgroundColourId, juce::Colours::transparentBlack);
+    reverbFxPowerButton->setColour(juce::DrawableButton::backgroundOnColourId, juce::Colours::transparentBlack);
     
     if (assets.fxPowerOn != nullptr) {
-        reverbFxPowerButton->setImages(assets.fxPowerOn.get());
+        reverbFxPowerButton->setImages(assets.fxPowerOn->createCopy().get());
     }
     
     auto* verbEnabledParam = processorRef.getAPVTS().getRawParameterValue("verbEnabled");
@@ -5630,23 +5634,24 @@ void PluginEditor::setupReverbSequencerArea()
 {
     DBG("[UI] Setting up Reverb sequencer area...");
     
-    auto stepArea = juce::Rectangle<int>(451, 54, 350, 296);
+    // Use EXACT same bounds as Dirt/Chorus sequencer (bottom area)
+    auto sequencerArea = juce::Rectangle<int>(25, 374, 413, 140);
     
-    // "SEQUENCER" title (20% smaller)
+    // Create step title
     reverbStepTitle = std::make_unique<juce::Label>();
-    reverbStepTitle->setText("SEQUENCER", juce::dontSendNotification);
+    reverbStepTitle->setText("STEP", juce::dontSendNotification);
     reverbStepTitle->setFont(juce::Font(22.118f, juce::Font::bold));
     reverbStepTitle->setColour(juce::Label::textColourId, juce::Colours::white);
     reverbStepTitle->setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(reverbStepTitle.get());
     reverbStepTitle->setVisible(false);
-    reverbStepTitle->setBounds(stepArea.getX() + 10, stepArea.getY() + 5, 150, 30);
+    reverbStepTitle->setBounds(sequencerArea.getX() + 10, sequencerArea.getY(), 80, 30);
     
-    // Create 16 step buttons
+    // Create step buttons (2 rows of 8)
     const int buttonSize = 40;
-    const int buttonSpacing = 10;
-    const int startX = stepArea.getX() + 15;
-    const int startY = stepArea.getY() + 110;
+    const int buttonSpacing = 8;
+    const int startX = sequencerArea.getX() + 20;
+    const int startY = sequencerArea.getY() + 35;
     
     for (int i = 0; i < 16; ++i)
     {
@@ -5654,8 +5659,9 @@ void PluginEditor::setupReverbSequencerArea()
         addAndMakeVisible(reverbStepButtons[i].get());
         reverbStepButtons[i]->setVisible(false);
         
-        int x = startX + (i % 4) * (buttonSize + buttonSpacing);
-        int y = startY + (i / 4) * (buttonSize + buttonSpacing);
+        // 2 rows of 8 buttons (same as Dirt/Chorus)
+        int x = startX + (i % 8) * (buttonSize + buttonSpacing);
+        int y = startY + (i / 8) * (buttonSize + buttonSpacing);
         
         reverbStepButtons[i]->setBounds(x, y, buttonSize, buttonSize);
         
@@ -5712,11 +5718,10 @@ void PluginEditor::setupReverbSequencerArea()
     
     addAndMakeVisible(reverbStepAmountLabel.get());
     reverbStepAmountLabel->setVisible(false);
-    const int stepLabelX = stepArea.getX() + 235;
-    const int stepLabelY = stepArea.getY() + 58;
-    reverbStepAmountLabel->setBounds(stepLabelX, stepLabelY, 30, 22);
+    reverbStepAmountLabel->setBounds(sequencerArea.getX() + 180, sequencerArea.getY() - 10, 30, 25);
+    reverbStepAmountLabel->setAlwaysOnTop(true);
     
-    // Rate dropdown
+    // Rate dropdown (EXACT same as Dirt)
     reverbRateDropdown = std::make_unique<juce::ComboBox>();
     addAndMakeVisible(reverbRateDropdown.get());
     reverbRateDropdown->setVisible(false);
@@ -5737,35 +5742,37 @@ void PluginEditor::setupReverbSequencerArea()
         DBG("[UI] Reverb rate changed to index: " << selectedIndex);
     };
     
-    const int rateX = stepArea.getX() + 120;
-    const int rateY = stepArea.getY() + 58;
-    reverbRateDropdown->setBounds(rateX, rateY, 60, 22);
+    reverbRateDropdown->setBounds(sequencerArea.getX() + 220, sequencerArea.getY() - 10, 74, 25);
     
-    // STD toggle
+    // STD toggle (EXACT same positioning as Dirt)
     reverbStdToggle = std::make_unique<CircularToggleButton>();
+    reverbStdToggle->setButtonText("-");
     addAndMakeVisible(reverbStdToggle.get());
     reverbStdToggle->setVisible(false);
-    reverbStdToggle->setClickingTogglesState(true);
-    
-    const int stdSize = 20;
-    const int stdX = stepArea.getX() + 185;
-    const int stdY = stepArea.getY() + 59;
-    reverbStdToggle->setBounds(stdX, stdY, stdSize, stdSize);
+    reverbStdToggle->setBounds(sequencerArea.getX() + 288, sequencerArea.getY() - 14, 30, 30);
     
     reverbStdToggle->onClick = [this]() {
-        int currentMode = processorRef.getReverbSeqState().stdMode.load();
-        int nextMode = (currentMode + 1) % 3;
+        // Cycle through -/t/. states
+        static int stdState = 0; // 0=-, 1=t, 2=.
+        stdState = (stdState + 1) % 3;
+        
+        switch (stdState) {
+            case 0: reverbStdToggle->setButtonText("-"); break;
+            case 1: reverbStdToggle->setButtonText("t"); break;
+            case 2: reverbStdToggle->setButtonText("."); break;
+        }
+        
+        int nextMode = (stdState) % 3;
         processorRef.setReverbStdMode(nextMode);
         DBG("[UI] Reverb STD mode: " << nextMode);
     };
     
-    // Step dice button
+    // Step dice button (EXACT same positioning as Dirt)
     reverbStepDiceButton = std::make_unique<CustomDiceButton>();
     addAndMakeVisible(reverbStepDiceButton.get());
     reverbStepDiceButton->setVisible(false);
-    
-    const int stepDiceSize = 32;
-    reverbStepDiceButton->setBounds(stepArea.getX() + 280, stepArea.getY() + 5, stepDiceSize, stepDiceSize);
+    int reverbStepDiceSize = static_cast<int>(35 * 0.7); // 30% smaller than 35px = ~24px
+    reverbStepDiceButton->setBounds(sequencerArea.getX() + 75, sequencerArea.getY() + 5, reverbStepDiceSize, reverbStepDiceSize);
     
     if (assets.diceLarge != nullptr) {
         reverbStepDiceButton->setDiceImage(assets.diceLarge->createCopy());
@@ -5776,19 +5783,23 @@ void PluginEditor::setupReverbSequencerArea()
         randomizeReverbKnobValues();
     };
     
-    // Step power button
-    reverbStepPowerButton = std::make_unique<juce::DrawableButton>("reverbStepPower", juce::DrawableButton::ImageFitted);
+    // Step power button (EXACT same positioning as Dirt)
+    reverbStepPowerButton = std::make_unique<juce::DrawableButton>("reverbStepPower", juce::DrawableButton::ButtonStyle::ImageFitted);
     addAndMakeVisible(reverbStepPowerButton.get());
     reverbStepPowerButton->setVisible(false);
-    reverbStepPowerButton->setClickingTogglesState(true);
     
-    const int stepPowerSize = 16;
-    reverbStepPowerButton->setBounds(stepArea.getX() + 320, stepArea.getY() + 13, stepPowerSize, stepPowerSize);
+    const int powerButtonSize = 40;
+    reverbStepPowerButton->setBounds(sequencerArea.getX() + sequencerArea.getWidth() - powerButtonSize - 5 + 15 - 5 - 1, 
+                                   sequencerArea.getY() - 5 - 40 + 25 + 5, powerButtonSize, powerButtonSize);
+    
+    reverbStepPowerButton->setColour(juce::DrawableButton::backgroundColourId, juce::Colours::transparentBlack);
+    reverbStepPowerButton->setColour(juce::DrawableButton::backgroundOnColourId, juce::Colours::transparentBlack);
     
     if (assets.stepPowerOn != nullptr) {
-        reverbStepPowerButton->setImages(assets.stepPowerOn.get());
+        reverbStepPowerButton->setImages(assets.stepPowerOn->createCopy().get());
     }
     
+    reverbStepPowerButton->setClickingTogglesState(true);
     reverbStepAreaEnabled = processorRef.getReverbSeqState().enabled.load();
     reverbStepPowerButton->setToggleState(reverbStepAreaEnabled, juce::dontSendNotification);
     
@@ -5811,20 +5822,27 @@ void PluginEditor::setupReverbAllStepsToggle()
     reverbAllStepsToggle = std::make_unique<AllStepsToggleButton>();
     addAndMakeVisible(reverbAllStepsToggle.get());
     reverbAllStepsToggle->setVisible(false);
-    reverbAllStepsToggle->setClickingTogglesState(true);
     
-    const int toggleSize = 28;
-    const int toggleX = effectArea.getX() + 200;
-    const int toggleY = effectArea.getY() + 8;
-    reverbAllStepsToggle->setBounds(toggleX, toggleY, toggleSize, toggleSize);
+    // Match Dirt's exact positioning and size
+    const int buttonSize = 29;
+    reverbAllStepsToggle->setBounds(effectArea.getX() + effectArea.getWidth()/2 - buttonSize/2 + 30, 
+                                  effectArea.getY() - 1, buttonSize, buttonSize);
     
+    // Set the toggle images (stepTopInactive/stepTopActive)
+    if (assets.stepTopInactive != nullptr && assets.stepTopActive != nullptr) {
+        static_cast<AllStepsToggleButton*>(reverbAllStepsToggle.get())->setImages(
+            assets.stepTopInactive->createCopy(),
+            assets.stepTopActive->createCopy()
+        );
+    }
+    
+    reverbAllStepsToggle->setToggleState(false, juce::dontSendNotification);
     reverbAllStepsToggle->onClick = [this]() {
         reverbAllStepsEnabled = reverbAllStepsToggle->getToggleState();
-        DBG("[UI] Reverb All Steps: " << (reverbAllStepsEnabled ? "ON" : "OFF"));
-        reverbAllStepsLabel->setAlpha(reverbAllStepsEnabled ? 1.0f : 0.5f);
+        DBG("[UI] Reverb All Steps toggle: " << (reverbAllStepsEnabled ? "ON" : "OFF"));
     };
     
-    // Label
+    // Label - match Dirt's exact positioning
     reverbAllStepsLabel = std::make_unique<juce::Label>();
     reverbAllStepsLabel->setText("All Steps", juce::dontSendNotification);
     reverbAllStepsLabel->setFont(juce::Font(14.4f, juce::Font::bold));
@@ -5832,8 +5850,8 @@ void PluginEditor::setupReverbAllStepsToggle()
     reverbAllStepsLabel->setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(reverbAllStepsLabel.get());
     reverbAllStepsLabel->setVisible(false);
-    reverbAllStepsLabel->setAlpha(0.5f);
-    reverbAllStepsLabel->setBounds(toggleX + toggleSize + 5, toggleY + 5, 80, 20);
+    reverbAllStepsLabel->setBounds(effectArea.getX() + effectArea.getWidth()/2 + buttonSize/2 + 5 + 30, 
+                                effectArea.getY() + 1, 80, 24);
     
     DBG("[UI] Reverb All Steps toggle setup complete");
 }
