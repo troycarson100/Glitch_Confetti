@@ -179,6 +179,13 @@ void PluginEditor::paint (juce::Graphics& g)
                 else if (tabNumber == 3) return assets.chorusBackgroundTab3.get();
                 else if (tabNumber == 4) return assets.chorusBackgroundTab4.get();
                 break;
+                
+            case EffectID::Reverb:
+                if (tabNumber == 1) return assets.reverbBackgroundTab1.get();
+                else if (tabNumber == 2) return assets.reverbBackgroundTab2.get();
+                else if (tabNumber == 3) return assets.reverbBackgroundTab3.get();
+                else if (tabNumber == 4) return assets.reverbBackgroundTab4.get();
+                break;
         }
         return nullptr;
     };
@@ -2766,6 +2773,7 @@ void PluginEditor::setupTabSystem()
         selector->addItem("Auto Pan", 2);
         selector->addItem("Dirt", 3);
         selector->addItem("Chorus", 4);
+        selector->addItem("Reverb", 5);
         
         // Hide text when closed - just show carrot icon
         selector->setTextWhenNothingSelected("");
@@ -5336,6 +5344,7 @@ void PluginEditor::updateTabButtonImages()
             case EffectID::AutoPan:    return assets.tabTitleAutoPan.get();
             case EffectID::Dirt:       return assets.tabDirtIcon.get();
             case EffectID::Chorus:     return assets.tabChorusIcon.get();
+            case EffectID::Reverb:     return assets.tabVerbIcon.get();
         }
         return nullptr;
     };

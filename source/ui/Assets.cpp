@@ -41,6 +41,11 @@ bool UiAssets::loadAll()
     chorusBackgroundTab3 = loadSVG (Chorus_Background_Tab3_svg, Chorus_Background_Tab3_svgSize);
     chorusBackgroundTab4 = loadSVG (Chorus_Background_Tab4_svg, Chorus_Background_Tab4_svgSize);
     
+    reverbBackgroundTab1 = loadSVG (Reverb1_Background_Tab1_svg, Reverb1_Background_Tab1_svgSize);
+    reverbBackgroundTab2 = loadSVG (Reverb1_Background_Tab2_svg, Reverb1_Background_Tab2_svgSize);
+    reverbBackgroundTab3 = loadSVG (Reverb1_Background_Tab3_svg, Reverb1_Background_Tab3_svgSize);
+    reverbBackgroundTab4 = loadSVG (Reverb1_Background_Tab4_svg, Reverb1_Background_Tab4_svgSize);
+    
     effectPlate       = loadSVG (Effect_Background_Plate_svg, Effect_Background_Plate_svgSize);
     stepActive        = loadSVG (Step_Active_svg, Step_Active_svgSize);
     stepInactive      = loadSVG (Step_Inactive_svg, Step_Inactive_svgSize);
@@ -54,6 +59,7 @@ bool UiAssets::loadAll()
     tabTitleAutoPan   = loadSVG (Tab_Title_AutoPan_svg, Tab_Title_AutoPan_svgSize);
     tabDirtIcon       = loadSVG (Dirt_Icon_svg, Dirt_Icon_svgSize);
     tabChorusIcon     = loadSVG (Chorus_Icon_svg, Chorus_Icon_svgSize);
+    tabVerbIcon       = loadSVG (Verb_Icon_svg, Verb_Icon_svgSize);
     fxPowerOn         = loadSVG (FX_Power_On_svg, FX_Power_On_svgSize);
     stepPowerOn       = loadSVG (Step_Power_On_svg, Step_Power_On_svgSize);
     knobDice          = loadSVG (Knob_Basic_Dice_svg, Knob_Basic_Dice_svgSize);
