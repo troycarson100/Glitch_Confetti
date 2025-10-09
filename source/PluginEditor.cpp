@@ -5182,8 +5182,35 @@ void PluginEditor::onEffectSelectorChanged(int slotIndex)
     // Update backgrounds for affected slots
     updateBackgroundsAfterSwap();
     
-    // Refresh the current page to show the new effect UI
-    showPage(currentPage);
+    // Force refresh the UI visibility (bypass the early return in showPage)
+    // Hide all groups first
+    auto setVisibleVec = [](const std::vector<juce::Component*>& v, bool vis)
+    {
+        for (auto* c : v) if (c) c->setVisible(vis);
+    };
+    
+    setVisibleVec(spaceDelayGroup, false);
+    setVisibleVec(pannerGroup, false);
+    setVisibleVec(dirtGroup, false);
+    setVisibleVec(chorusGroup, false);
+    
+    // Show the correct effect for the current page based on new assignment
+    EffectID newAssignment = router.getEffectInSlot(static_cast<SlotID>(static_cast<int>(currentPage)));
+    switch (newAssignment)
+    {
+        case EffectID::SpaceDelay:
+            setVisibleVec(spaceDelayGroup, true);
+            break;
+        case EffectID::AutoPan:
+            setVisibleVec(pannerGroup, true);
+            break;
+        case EffectID::Dirt:
+            setVisibleVec(dirtGroup, true);
+            break;
+        case EffectID::Chorus:
+            setVisibleVec(chorusGroup, true);
+            break;
+    }
     
     // Repaint to show new background
     repaint();

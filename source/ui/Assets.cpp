@@ -26,8 +26,8 @@ bool UiAssets::loadAll()
     spaceDelayBackgroundTab3 = loadSVG (SpaceDelay_Background_Tab3_svg, SpaceDelay_Background_Tab3_svgSize);
     spaceDelayBackgroundTab4 = loadSVG (SpaceDelay_Background_Tab4_svg, SpaceDelay_Background_Tab4_svgSize);
     
+    pannerBackgroundTab1 = loadSVG (Panner_Background_Tab1_svg, Panner_Background_Tab1_svgSize);
     pannerBackgroundTab2 = loadSVG (Panner_Background_Tab2_svg, Panner_Background_Tab2_svgSize);
-    pannerBackgroundTab1 = pannerBackgroundTab2 ? pannerBackgroundTab2->createCopy() : nullptr; // TODO: Create Tab1 variant
     pannerBackgroundTab3 = loadSVG (Panner_Background_Tab3_svg, Panner_Background_Tab3_svgSize);
     pannerBackgroundTab4 = loadSVG (Panner_Background_Tab4_svg, Panner_Background_Tab4_svgSize);
     
