@@ -2660,6 +2660,14 @@ void PluginEditor::showPage(FxPageID id)
     if (id == FxPageID::SpaceDelay && tabSpaceDelay) tabSpaceDelay->toFront(false);
     else if (id == FxPageID::Panner && tabPanner) tabPanner->toFront(false);
     else if (id == FxPageID::Dirt && tabDirt) tabDirt->toFront(false);
+    
+    // Bring editable labels to front to ensure they can receive mouse clicks
+    if (id == FxPageID::Panner && autopanStepAmountLabel) {
+        autopanStepAmountLabel->toFront(false);
+    }
+    else if (id == FxPageID::Dirt && dirtStepAmountLabel) {
+        dirtStepAmountLabel->toFront(false);
+    }
 
     repaint();
 }
