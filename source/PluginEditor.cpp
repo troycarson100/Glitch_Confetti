@@ -1747,7 +1747,7 @@ void PluginEditor::updateDirtStepAreaVisibility()
     }
     
     if (dirtStepTitle) dirtStepTitle->setAlpha(alpha);
-    if (dirtStepAmountLabel) { dirtStepAmountLabel->setAlpha(alpha); dirtStepAmountLabel->setEnabled(dirtStepAreaEnabled); }
+    if (dirtStepAmountLabel) dirtStepAmountLabel->setAlpha(alpha); // Keep enabled for editing even when sequencer is off
     if (dirtRateDropdown) { dirtRateDropdown->setAlpha(alpha); dirtRateDropdown->setEnabled(dirtStepAreaEnabled); }
     if (dirtStdToggle) { dirtStdToggle->setAlpha(alpha); dirtStdToggle->setEnabled(dirtStepAreaEnabled); }
     if (dirtStepDiceButton) { dirtStepDiceButton->setAlpha(alpha); dirtStepDiceButton->setEnabled(dirtStepAreaEnabled); }
@@ -4054,7 +4054,7 @@ void PluginEditor::updateAutoPanStepAreaVisibility()
     }
     
     if (autopanStepTitle) autopanStepTitle->setAlpha(alpha);
-    if (autopanStepAmountLabel) { autopanStepAmountLabel->setAlpha(alpha); autopanStepAmountLabel->setEnabled(autopanStepAreaEnabled); }
+    if (autopanStepAmountLabel) autopanStepAmountLabel->setAlpha(alpha); // Keep enabled for editing even when sequencer is off
     if (autopanRateDropdown) { autopanRateDropdown->setAlpha(alpha); autopanRateDropdown->setEnabled(autopanStepAreaEnabled); }
     if (autopanStdToggle) { autopanStdToggle->setAlpha(alpha); autopanStdToggle->setEnabled(autopanStepAreaEnabled); }
     if (autopanStepDiceButton) { autopanStepDiceButton->setAlpha(alpha); autopanStepDiceButton->setEnabled(autopanStepAreaEnabled); }
