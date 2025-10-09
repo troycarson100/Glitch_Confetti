@@ -374,6 +374,7 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                 autopanSeq.resetPhase();   // AutoPan sequencer phase reset
                 dirtSeq.resetPhase();      // Dirt sequencer phase reset
                 chorusSeq.resetPhase();    // Chorus sequencer phase reset
+                reverbSeq.resetPhase();    // Reverb sequencer phase reset
                 
                 // Auto-enable delay sequencer on DAW play (user can still disable with power button)
                 if (followHost.load()) {
@@ -399,6 +400,12 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                 if (chorusSeq.enabled.load()) {
                     chorusSeq.active.store(true);  // Activate Chorus sequencer
                     DBG("[CHORUS SEQ] ✓ Activated on play edge");
+                }
+                
+                // Reverb sequencer activates if enabled (independent of followHost)
+                if (reverbSeq.enabled.load()) {
+                    reverbSeq.active.store(true);  // Activate Reverb sequencer
+                    DBG("[REVERB SEQ] ✓ Activated on play edge");
                 }
                 
                 DBG("[SEQ] Play edge detected");
@@ -436,6 +443,14 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                     chorusSeq.currentStep.store(chorusStep);
                     chorusSeq.playingStep.store(chorusStep);
                     DBG("[CHORUS SEQ] Lock-in at PPQ=" << ppq << " -> step " << chorusStep);
+                }
+                
+                // Also lock-in Reverb sequencer if enabled
+                if (reverbSeq.enabled.load()) {
+                    const int reverbStep = reverbSeq.computeStepFromPPQ(ppq);
+                    reverbSeq.currentStep.store(reverbStep);
+                    reverbSeq.playingStep.store(reverbStep);
+                    DBG("[REVERB SEQ] Lock-in at PPQ=" << ppq << " -> step " << reverbStep);
                 }
                 
                 armPending.store(false);
@@ -489,6 +504,16 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                     chorusSeq.currentStep.store(chorusStep);
                     chorusSeq.playingStep.store(chorusStep);
                     DBG("[CHORUS SEQ] ★ Step changed to: " << chorusStep << " PPQ: " << ppq);
+                }
+            }
+            
+            // Reverb sequencer stepping (shares same PPQ/transport, independent timing)
+            if (isPlaying && ppqValid && reverbSeq.active.load()) {
+                const int reverbStep = reverbSeq.computeStepFromPPQ(ppq);
+                if (reverbStep != reverbSeq.currentStep.load()) {
+                    reverbSeq.currentStep.store(reverbStep);
+                    reverbSeq.playingStep.store(reverbStep);
+                    DBG("[REVERB SEQ] ★ Step changed to: " << reverbStep << " PPQ: " << ppq);
                 }
             }
             
@@ -676,15 +701,34 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                 
                 if (isVerbEnabled && buffer.getNumChannels() > 0 && buffer.getNumSamples() > 0)
                 {
-                    // Read reverb parameters
-                    const float type      = valueTreeState.getRawParameterValue("verbType")->load();
-                    const float size      = valueTreeState.getRawParameterValue("verbSize")->load();
-                    const float predelay  = valueTreeState.getRawParameterValue("verbPredelayMs")->load();
-                    const float dampHz    = valueTreeState.getRawParameterValue("verbDampHz")->load();
-                    const float diffusion = valueTreeState.getRawParameterValue("verbDiffusion")->load();
-                    const float early     = valueTreeState.getRawParameterValue("verbEarlyLevel")->load();
-                    const float shimmer   = valueTreeState.getRawParameterValue("verbShimmerAmt")->load();
-                    const float mix       = valueTreeState.getRawParameterValue("verbMix")->load();
+                    // Read reverb parameters (from sequencer snapshot or APVTS)
+                    float type, size, predelay, dampHz, diffusion, early, shimmer, mix;
+                    
+                    // Check if Reverb sequencer is enabled AND active
+                    if (reverbSeq.enabled.load() && reverbSeq.active.load()) {
+                        // Use Reverb sequencer snapshot
+                        int reverbStep = reverbSeq.currentStep.load();
+                        const auto& snapshot = reverbStepSnapshots[juce::jlimit(0, 15, reverbStep)];
+                        
+                        type      = snapshot.reverb.type;
+                        size      = snapshot.reverb.size;
+                        predelay  = snapshot.reverb.predelayMs;
+                        dampHz    = snapshot.reverb.dampHz;
+                        diffusion = snapshot.reverb.diffusion;
+                        early     = snapshot.reverb.early;
+                        shimmer   = snapshot.reverb.shimmer;
+                        mix       = snapshot.reverb.mix;
+                    } else {
+                        // Use APVTS parameters (manual control)
+                        type      = valueTreeState.getRawParameterValue("verbType")->load();
+                        size      = valueTreeState.getRawParameterValue("verbSize")->load();
+                        predelay  = valueTreeState.getRawParameterValue("verbPredelayMs")->load();
+                        dampHz    = valueTreeState.getRawParameterValue("verbDampHz")->load();
+                        diffusion = valueTreeState.getRawParameterValue("verbDiffusion")->load();
+                        early     = valueTreeState.getRawParameterValue("verbEarlyLevel")->load();
+                        shimmer   = valueTreeState.getRawParameterValue("verbShimmerAmt")->load();
+                        mix       = valueTreeState.getRawParameterValue("verbMix")->load();
+                    }
                     
                     // Update reverb targets (smoothed internally)
                     reverb.setParams(type, size, predelay, dampHz, diffusion, early, shimmer, mix);
