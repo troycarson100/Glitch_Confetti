@@ -2941,10 +2941,38 @@ void PluginEditor::showPage(FxPageID id)
         for (auto* c : v) if (c) c->setVisible(vis);
     };
 
-    setVisibleVec(spaceDelayGroup, id == FxPageID::SpaceDelay);
-    setVisibleVec(pannerGroup, id == FxPageID::Panner);
-    setVisibleVec(dirtGroup, id == FxPageID::Dirt);
-    setVisibleVec(chorusGroup, id == FxPageID::Chorus);
+    // === ROUTER-AWARE VISIBILITY ===
+    // Show the effect assigned to the current slot, not hardcoded by page
+    auto& router = processorRef.getEffectRouter();
+    int slotIndex = static_cast<int>(id);  // Page maps to slot (0=Slot1, 1=Slot2, etc.)
+    EffectID assignedEffect = router.getEffectInSlot(static_cast<SlotID>(slotIndex));
+    
+    // Hide all groups first
+    setVisibleVec(spaceDelayGroup, false);
+    setVisibleVec(pannerGroup, false);
+    setVisibleVec(dirtGroup, false);
+    setVisibleVec(chorusGroup, false);
+    
+    // Show only the group for the effect assigned to this slot
+    switch (assignedEffect)
+    {
+        case EffectID::SpaceDelay:
+            setVisibleVec(spaceDelayGroup, true);
+            DBG("[ROUTER] Showing SpaceDelay UI for slot " << slotIndex);
+            break;
+        case EffectID::AutoPan:
+            setVisibleVec(pannerGroup, true);
+            DBG("[ROUTER] Showing AutoPan UI for slot " << slotIndex);
+            break;
+        case EffectID::Dirt:
+            setVisibleVec(dirtGroup, true);
+            DBG("[ROUTER] Showing Dirt UI for slot " << slotIndex);
+            break;
+        case EffectID::Chorus:
+            setVisibleVec(chorusGroup, true);
+            DBG("[ROUTER] Showing Chorus UI for slot " << slotIndex);
+            break;
+    }
 
     // Raise the active tab to front
     if (id == FxPageID::SpaceDelay && tabSpaceDelay) tabSpaceDelay->toFront(false);
@@ -5141,6 +5169,9 @@ void PluginEditor::onEffectSelectorChanged(int slotIndex)
     
     // Update backgrounds for affected slots
     updateBackgroundsAfterSwap();
+    
+    // Refresh the current page to show the new effect UI
+    showPage(currentPage);
     
     // Repaint to show new background
     repaint();
