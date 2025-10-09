@@ -192,10 +192,10 @@ void PluginEditor::paint (juce::Graphics& g)
                 break;
                 
             case EffectID::Reverb:
-                if (tabNumber == 1) return assets.reverbBackgroundTab1.get();
-                else if (tabNumber == 2) return assets.reverbBackgroundTab2.get();
-                else if (tabNumber == 3) return assets.reverbBackgroundTab3.get();
-                else if (tabNumber == 4) return assets.reverbBackgroundTab4.get();
+                if (tabNumber == 1 && assets.reverbBackgroundTab1) return assets.reverbBackgroundTab1.get();
+                else if (tabNumber == 2 && assets.reverbBackgroundTab2) return assets.reverbBackgroundTab2.get();
+                else if (tabNumber == 3 && assets.reverbBackgroundTab3) return assets.reverbBackgroundTab3.get();
+                else if (tabNumber == 4 && assets.reverbBackgroundTab4) return assets.reverbBackgroundTab4.get();
                 break;
         }
         return nullptr;
@@ -870,6 +870,79 @@ void PluginEditor::timerCallback()
     
     // Update Chorus sequencer UI
     updateChorusSequencerUI();
+    
+    // Update Reverb knob value labels
+    for (int i = 0; i < 8; ++i)
+    {
+        if (reverbKnobs[i] != nullptr && reverbValueLabels[i] != nullptr)
+        {
+            float knobValue = reverbKnobs[i]->getValue();
+            juce::String valueText;
+            
+            switch (i) {
+                case 0: // Type (0-2: Hall/Room/Shimmer)
+                    if (knobValue < 0.5f) valueText = "Hall";
+                    else if (knobValue < 1.5f) valueText = "Room";
+                    else valueText = "Shimmer";
+                    break;
+                case 1: valueText = juce::String(knobValue, 2); break; // Size (0.1-1.5)
+                case 2: valueText = juce::String(knobValue, 0) + " ms"; break; // Predelay (0-200ms)
+                case 3: valueText = juce::String(knobValue, 0) + " Hz"; break; // Damping (1k-20k Hz)
+                case 4: valueText = juce::String(knobValue * 100.0f, 0) + "%"; break; // Diffusion (0-1)
+                case 5: valueText = juce::String(knobValue * 100.0f, 0) + "%"; break; // Early (0-1)
+                case 6: valueText = juce::String(knobValue * 100.0f, 0) + "%"; break; // Shimmer (0-1)
+                case 7: valueText = juce::String(knobValue * 100.0f, 0) + "%"; break; // Mix (0-1)
+            }
+            
+            reverbValueLabels[i]->setText(valueText, juce::dontSendNotification);
+        }
+    }
+    
+    // Update Reverb knob indicators
+    for (int i = 0; i < 8; ++i)
+    {
+        if (reverbIndicatorBars[i] != nullptr && reverbKnobs[i] != nullptr)
+        {
+            float knobValue = reverbKnobs[i]->getValue();
+            float indicatorValue = 0.0f;
+            
+            const bool seqEnabled = processorRef.getReverbSeqState().enabled.load();
+            const bool seqActive = processorRef.getReverbSeqState().active.load();
+            const int playingStep = processorRef.getReverbPlayingStep();
+            
+            if (seqEnabled && seqActive && playingStep >= 0 && playingStep < 16)
+            {
+                StepSnapshot s = processorRef.getReverbSafeSnapshot(playingStep);
+                
+                switch (i) {
+                    case 0: indicatorValue = s.reverb.type / 2.0f; break; // Type (0-2)
+                    case 1: indicatorValue = (s.reverb.size - 0.1f) / 1.4f; break; // Size (0.1-1.5)
+                    case 2: indicatorValue = s.reverb.predelayMs / 200.0f; break; // Predelay (0-200ms)
+                    case 3: indicatorValue = (s.reverb.dampHz - 1000.0f) / 19000.0f; break; // Damping (1k-20k)
+                    case 4: indicatorValue = s.reverb.diffusion; break; // Diffusion (0-1)
+                    case 5: indicatorValue = s.reverb.early; break; // Early (0-1)
+                    case 6: indicatorValue = s.reverb.shimmer; break; // Shimmer (0-1)
+                    case 7: indicatorValue = s.reverb.mix; break; // Mix (0-1)
+                }
+            }
+            else
+            {
+                // Show current knob position normalized to 0-1
+                switch (i) {
+                    case 0: indicatorValue = knobValue / 2.0f; break; // Type (0-2)
+                    case 1: indicatorValue = (knobValue - 0.1f) / 1.4f; break; // Size (0.1-1.5)
+                    case 2: indicatorValue = knobValue / 200.0f; break; // Predelay (0-200ms)
+                    case 3: indicatorValue = (knobValue - 1000.0f) / 19000.0f; break; // Damping (1k-20k)
+                    case 4: indicatorValue = knobValue; break; // Diffusion (0-1)
+                    case 5: indicatorValue = knobValue; break; // Early (0-1)
+                    case 6: indicatorValue = knobValue; break; // Shimmer (0-1)
+                    case 7: indicatorValue = knobValue; break; // Mix (0-1)
+                }
+            }
+            
+            reverbIndicatorBars[i]->setValue(indicatorValue);
+        }
+    }
     
     // Update Reverb sequencer UI
     updateReverbSequencerUI();
@@ -5935,13 +6008,21 @@ juce::ComboBox* PluginEditor::getEffectSelectorForSlot(int slotIndex)
 
 void PluginEditor::onEffectSelectorChanged(int slotIndex)
 {
-    DBG("[ROUTER] Effect selector changed for slot " << slotIndex);
+    DBG("[ROUTER] ========== Effect selector changed for slot " << slotIndex << " ==========");
     
     auto* selector = getEffectSelectorForSlot(slotIndex);
-    if (!selector) return;
+    if (!selector) {
+        DBG("[ROUTER] ERROR: Null selector for slot " << slotIndex);
+        return;
+    }
     
     int selectedEffectID = selector->getSelectedId() - 1; // ComboBox IDs are 1-based
-    if (selectedEffectID < 0 || selectedEffectID > 4) return; // Now supports 5 effects (0-4)
+    DBG("[ROUTER] Selected effect ID: " << selectedEffectID);
+    
+    if (selectedEffectID < 0 || selectedEffectID > 4) {
+        DBG("[ROUTER] ERROR: Invalid effect ID " << selectedEffectID);
+        return;
+    }
     
     auto& router = processorRef.getEffectRouter();
     EffectID targetEffect = static_cast<EffectID>(selectedEffectID);
@@ -5949,6 +6030,7 @@ void PluginEditor::onEffectSelectorChanged(int slotIndex)
     
     // Get the effect currently in target slot (before swap)
     EffectID oldEffect = router.getEffectInSlot(targetSlot);
+    DBG("[ROUTER] Old effect in slot: " << static_cast<int>(oldEffect));
     
     // Check if we're selecting the same effect (no-op)
     if (targetEffect == oldEffect)
@@ -5957,18 +6039,76 @@ void PluginEditor::onEffectSelectorChanged(int slotIndex)
         return;
     }
     
+    // ===== PREFLIGHT CHECKS FOR REVERB =====
+    if (targetEffect == EffectID::Reverb)
+    {
+        DBG("[ROUTER] Reverb selected - running preflight checks...");
+        
+        // Check APVTS parameters
+        if (!processorRef.getAPVTS().getParameter("verbType") ||
+            !processorRef.getAPVTS().getParameter("verbSize") ||
+            !processorRef.getAPVTS().getParameter("verbPredelayMs") ||
+            !processorRef.getAPVTS().getParameter("verbDampHz") ||
+            !processorRef.getAPVTS().getParameter("verbDiffusion") ||
+            !processorRef.getAPVTS().getParameter("verbEarlyLevel") ||
+            !processorRef.getAPVTS().getParameter("verbShimmerAmt") ||
+            !processorRef.getAPVTS().getParameter("verbMix") ||
+            !processorRef.getAPVTS().getParameter("verbEnabled"))
+        {
+            DBG("[ROUTER] ERROR: Missing Reverb APVTS parameters! Cannot assign.");
+            jassertfalse;
+            return;
+        }
+        DBG("[ROUTER] ✓ All Reverb APVTS parameters exist");
+        
+        // Check background assets for this slot
+        int tabNum = slotIndex + 1;
+        juce::Drawable* testBg = nullptr;
+        if (tabNum == 1) testBg = assets.reverbBackgroundTab1.get();
+        else if (tabNum == 2) testBg = assets.reverbBackgroundTab2.get();
+        else if (tabNum == 3) testBg = assets.reverbBackgroundTab3.get();
+        else if (tabNum == 4) testBg = assets.reverbBackgroundTab4.get();
+        
+        if (!testBg) {
+            DBG("[ROUTER] ERROR: Missing Reverb background asset for tab " << tabNum);
+            jassertfalse;
+            return;
+        }
+        DBG("[ROUTER] ✓ Reverb background asset exists for tab " << tabNum);
+        
+        // Check if Reverb knobs exist
+        bool allKnobsExist = true;
+        for (int i = 0; i < 8; ++i) {
+            if (!reverbKnobs[i]) {
+                DBG("[ROUTER] ERROR: Reverb knob " << i << " is null!");
+                allKnobsExist = false;
+            }
+        }
+        if (!allKnobsExist) {
+            DBG("[ROUTER] ERROR: Some Reverb knobs are null! Cannot assign.");
+            jassertfalse;
+            return;
+        }
+        DBG("[ROUTER] ✓ All 8 Reverb knobs exist");
+    }
+    
     // This triggers a swap if the effect is already used elsewhere
-    DBG("[ROUTER] Assigning " << static_cast<int>(targetEffect) << " to slot " << slotIndex);
+    DBG("[ROUTER] Assigning effect " << static_cast<int>(targetEffect) << " to slot " << slotIndex);
     router.assignEffectToSlot(targetEffect, targetSlot);
+    DBG("[ROUTER] ✓ Router assignment complete");
     
     // Update all dropdowns to reflect the swap
     updateAllEffectSelectors();
+    DBG("[ROUTER] ✓ Dropdowns updated");
     
     // Update backgrounds for affected slots
+    DBG("[ROUTER] Updating backgrounds...");
     updateBackgroundsAfterSwap();
+    DBG("[ROUTER] ✓ Backgrounds updated");
     
     // Force refresh the UI visibility (bypass the early return in showPage)
     // Hide all groups first
+    DBG("[ROUTER] Hiding all groups...");
     auto setVisibleVec = [](const std::vector<juce::Component*>& v, bool vis)
     {
         for (auto* c : v) if (c) c->setVisible(vis);
@@ -5979,32 +6119,44 @@ void PluginEditor::onEffectSelectorChanged(int slotIndex)
     setVisibleVec(dirtGroup, false);
     setVisibleVec(chorusGroup, false);
     setVisibleVec(reverbGroup, false);
+    DBG("[ROUTER] ✓ All groups hidden");
     
     // Show the correct effect for the current page based on new assignment
     EffectID newAssignment = router.getEffectInSlot(static_cast<SlotID>(static_cast<int>(currentPage)));
+    DBG("[ROUTER] New assignment for current page: " << static_cast<int>(newAssignment));
+    DBG("[ROUTER] reverbGroup size: " << reverbGroup.size());
+    
     switch (newAssignment)
     {
         case EffectID::SpaceDelay:
+            DBG("[ROUTER] Showing SpaceDelay group");
             setVisibleVec(spaceDelayGroup, true);
             break;
         case EffectID::AutoPan:
+            DBG("[ROUTER] Showing AutoPan group");
             setVisibleVec(pannerGroup, true);
             break;
         case EffectID::Dirt:
+            DBG("[ROUTER] Showing Dirt group");
             setVisibleVec(dirtGroup, true);
             break;
         case EffectID::Chorus:
+            DBG("[ROUTER] Showing Chorus group");
             setVisibleVec(chorusGroup, true);
             break;
         case EffectID::Reverb:
+            DBG("[ROUTER] Showing Reverb group (" << reverbGroup.size() << " components)");
             setVisibleVec(reverbGroup, true);
+            DBG("[ROUTER] ✓ Reverb group shown");
             break;
     }
     
     // Repaint to show new background
+    DBG("[ROUTER] Calling repaint...");
     repaint();
+    DBG("[ROUTER] ✓ Repaint complete");
     
-    DBG("[ROUTER] Swap complete. Router version: " << router.getRouterVersion());
+    DBG("[ROUTER] ========== Swap complete. Router version: " << router.getRouterVersion() << " ==========");
 }
 
 void PluginEditor::updateAllEffectSelectors()

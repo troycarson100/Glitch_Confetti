@@ -695,11 +695,20 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                 
             case EffectID::Reverb:
             {
-                // Process Reverb effect
+                // Process Reverb effect with safety guards
                 auto* verbEnabledParam = valueTreeState.getRawParameterValue("verbEnabled");
                 bool isVerbEnabled = verbEnabledParam ? (verbEnabledParam->load() > 0.5f) : false;
                 
-                if (isVerbEnabled && buffer.getNumChannels() > 0 && buffer.getNumSamples() > 0)
+                if (!isVerbEnabled) {
+                    break; // Early out if disabled
+                }
+                
+                if (buffer.getNumChannels() == 0 || buffer.getNumSamples() == 0) {
+                    DBG("[REVERB] WARNING: Invalid buffer dimensions");
+                    break;
+                }
+                
+                if (true) // Scoped block for local variables
                 {
                     // Read reverb parameters (from sequencer snapshot or APVTS)
                     float type, size, predelay, dampHz, diffusion, early, shimmer, mix;
