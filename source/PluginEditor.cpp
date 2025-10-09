@@ -194,7 +194,7 @@ void PluginEditor::paint (juce::Graphics& g)
     drawMainAreas(g);
     }
 
-    // Draw knob lock icons on top of UI (only on SpaceDelay page)
+    // Draw knob lock icons on top of UI for all pages
     if (currentPage == FxPageID::SpaceDelay)
     {
         for (int i = 0; i < 8; ++i)
@@ -203,6 +203,57 @@ void PluginEditor::paint (juce::Graphics& g)
             {
                 auto b = knobLockButtons[i]->getBounds().toFloat();
                 if (knobLocked[i]) {
+                    if (assets.lockedIcon != nullptr)
+                        assets.lockedIcon->drawWithin(g, b, juce::RectanglePlacement::centred, 1.0f);
+                } else {
+                    if (assets.unlockedIcon != nullptr)
+                        assets.unlockedIcon->drawWithin(g, b, juce::RectanglePlacement::centred, 1.0f);
+                }
+            }
+        }
+    }
+    else if (currentPage == FxPageID::Panner)
+    {
+        for (int i = 0; i < 6; ++i) // AutoPan has 6 knobs
+        {
+            if (autopanLockButtons[i] != nullptr)
+            {
+                auto b = autopanLockButtons[i]->getBounds().toFloat();
+                if (autopanKnobLocked[i]) {
+                    if (assets.lockedIcon != nullptr)
+                        assets.lockedIcon->drawWithin(g, b, juce::RectanglePlacement::centred, 1.0f);
+                } else {
+                    if (assets.unlockedIcon != nullptr)
+                        assets.unlockedIcon->drawWithin(g, b, juce::RectanglePlacement::centred, 1.0f);
+                }
+            }
+        }
+    }
+    else if (currentPage == FxPageID::Dirt)
+    {
+        for (int i = 0; i < 8; ++i)
+        {
+            if (dirtLockButtons[i] != nullptr)
+            {
+                auto b = dirtLockButtons[i]->getBounds().toFloat();
+                if (dirtKnobLocked[i]) {
+                    if (assets.lockedIcon != nullptr)
+                        assets.lockedIcon->drawWithin(g, b, juce::RectanglePlacement::centred, 1.0f);
+                } else {
+                    if (assets.unlockedIcon != nullptr)
+                        assets.unlockedIcon->drawWithin(g, b, juce::RectanglePlacement::centred, 1.0f);
+                }
+            }
+        }
+    }
+    else if (currentPage == FxPageID::Chorus)
+    {
+        for (int i = 0; i < 8; ++i)
+        {
+            if (chorusLockButtons[i] != nullptr)
+            {
+                auto b = chorusLockButtons[i]->getBounds().toFloat();
+                if (chorusKnobLocked[i]) {
                     if (assets.lockedIcon != nullptr)
                         assets.lockedIcon->drawWithin(g, b, juce::RectanglePlacement::centred, 1.0f);
                 } else {
