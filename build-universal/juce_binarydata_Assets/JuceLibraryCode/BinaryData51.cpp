@@ -26,8 +26,9 @@ static const unsigned char temp_binary_data_50[] =
 "<circle cx=\"24.1867\" cy=\"25.0999\" r=\"15.7981\" transform=\"rotate(90 24.1867 25.0999)\" stroke=\"white\" stroke-width=\"4\"/>\n"
 "<circle cx=\"24.1867\" cy=\"25.1005\" r=\"9.40905\" transform=\"rotate(90 24.1867 25.1005)\" stroke=\"white\" stroke-width=\"4\"/>\n"
 "<circle cx=\"24.1866\" cy=\"25.1001\" r=\"5.01998\" transform=\"rotate(90 24.1866 25.1001)\" fill=\"white\"/>\n"
-"<!-- DEBUG: Added number \"1\" to identify this SVG usage -->\n"
-"<text x=\"200\" y=\"15\" fill=\"red\" font-size=\"20\" font-weight=\"bold\">1</text>\n"
+"<!-- DEBUG: Added BIG number \"1\" to identify this SVG usage -->\n"
+"<rect x=\"180\" y=\"5\" width=\"30\" height=\"25\" fill=\"red\" stroke=\"yellow\" stroke-width=\"3\"/>\n"
+"<text x=\"195\" y=\"22\" fill=\"white\" font-size=\"18\" font-weight=\"bold\" text-anchor=\"middle\">1</text>\n"
 "</svg>\n";
 
 const char* Tab_Title_Space_Delay_svg = (const char*) temp_binary_data_50;

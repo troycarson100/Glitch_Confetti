@@ -321,7 +321,7 @@ const char* getNamedResource (const char* resourceNameUTF8, int& numBytes)
         case 0xca2a7f23:  numBytes = 218; return Step_Inactive_svg;
         case 0x98f47731:  numBytes = 1586; return Step_Power_On_svg;
         case 0x67059122:  numBytes = 3313; return Tab_Title_AutoPan_svg;
-        case 0x07054c1e:  numBytes = 3249; return Tab_Title_Space_Delay_svg;
+        case 0x07054c1e:  numBytes = 3133; return Tab_Title_Space_Delay_svg;
         case 0xe7471f6d:  numBytes = 2998; return Tab_Title_Space_Delay_backup_svg;
         case 0x880d7612:  numBytes = 13971; return Time_svg;
         case 0xdb3f4328:  numBytes = 412; return Unlocked_svg;

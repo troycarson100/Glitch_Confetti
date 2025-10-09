@@ -159,7 +159,7 @@ namespace BinaryData
     const int            Tab_Title_AutoPan_svgSize = 3313;
 
     extern const char*   Tab_Title_Space_Delay_svg;
-    const int            Tab_Title_Space_Delay_svgSize = 3133;
+    const int            Tab_Title_Space_Delay_svgSize = 3249;
 
     extern const char*   Tab_Title_Space_Delay_backup_svg;
     const int            Tab_Title_Space_Delay_backup_svgSize = 2998;
