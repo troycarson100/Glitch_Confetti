@@ -19,10 +19,28 @@ bool UiAssets::loadAll()
 #if UI_USE_EMBEDDED_SVGS
     using namespace BinaryData; // ensure svgs added to Projucer/CMake resources
     backgroundMustard = loadSVG (Background_Mustard_svg, Background_Mustard_svgSize);
+    
+    // Load all background variants (effect × tab position)
     spaceDelayBackgroundTab1 = loadSVG (SpaceDelay_Background_Tab1_svg, SpaceDelay_Background_Tab1_svgSize);
+    spaceDelayBackgroundTab2 = spaceDelayBackgroundTab1 ? spaceDelayBackgroundTab1->createCopy() : nullptr; // TODO: Create Tab2 variant
+    spaceDelayBackgroundTab3 = loadSVG (SpaceDelay_Background_Tab3_svg, SpaceDelay_Background_Tab3_svgSize);
+    spaceDelayBackgroundTab4 = loadSVG (SpaceDelay_Background_Tab4_svg, SpaceDelay_Background_Tab4_svgSize);
+    
     pannerBackgroundTab2 = loadSVG (Panner_Background_Tab2_svg, Panner_Background_Tab2_svgSize);
+    pannerBackgroundTab1 = pannerBackgroundTab2 ? pannerBackgroundTab2->createCopy() : nullptr; // TODO: Create Tab1 variant
+    pannerBackgroundTab3 = loadSVG (Panner_Background_Tab3_svg, Panner_Background_Tab3_svgSize);
+    pannerBackgroundTab4 = loadSVG (Panner_Background_Tab4_svg, Panner_Background_Tab4_svgSize);
+    
+    dirtBackgroundTab1 = loadSVG (Dirt_Background_Tab1_svg, Dirt_Background_Tab1_svgSize);
+    dirtBackgroundTab2 = loadSVG (Dirt_Background_Tab2_svg, Dirt_Background_Tab2_svgSize);
     dirtBackgroundTab3 = loadSVG (Dirt_Background_Tab3_svg, Dirt_Background_Tab3_svgSize);
-    chorusBackgroundTab4 = loadSVG (Chorus_Background_Tab4_svg, Chorus_Background_Tab4_svgSize);
+    dirtBackgroundTab4 = loadSVG (Dirt_Background_Tab4_svg, Dirt_Background_Tab4_svgSize);
+    
+    chorusBackgroundTab1 = loadSVG (Chorus_Background_Tab1_svg, Chorus_Background_Tab1_svgSize);
+    chorusBackgroundTab2 = loadSVG (Chorus_Background_Tab2_svg, Chorus_Background_Tab2_svgSize);
+    chorusBackgroundTab3 = loadSVG (Chorus_Background_Tab3_svg, Chorus_Background_Tab3_svgSize);
+    chorusBackgroundTab4 = chorusBackgroundTab3 ? chorusBackgroundTab3->createCopy() : nullptr; // TODO: Create Tab4 variant
+    
     effectPlate       = loadSVG (Effect_Background_Plate_svg, Effect_Background_Plate_svgSize);
     stepActive        = loadSVG (Step_Active_svg, Step_Active_svgSize);
     stepInactive      = loadSVG (Step_Inactive_svg, Step_Inactive_svgSize);

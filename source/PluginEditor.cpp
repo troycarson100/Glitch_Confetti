@@ -138,51 +138,61 @@ PluginEditor::~PluginEditor()
 
 void PluginEditor::paint (juce::Graphics& g)
 {
-    // Draw the appropriate background based on current page
-    if (currentPage == FxPageID::SpaceDelay) {
-        // Draw the SpaceDelay background SVG
-        if (assets.spaceDelayBackgroundTab1 != nullptr)
-        {
-            assets.spaceDelayBackgroundTab1->drawWithin(g, getLocalBounds().toFloat(), juce::RectanglePlacement::centred, 1.0f);
-        }
-        else
-        {
-            // Fallback background
-            g.fillAll (juce::Colour(0xff2a2a2a));
-        }
-    } else if (currentPage == FxPageID::Panner) {
-        // Draw the Panner background SVG
-        if (assets.pannerBackgroundTab2 != nullptr)
-        {
-            assets.pannerBackgroundTab2->drawWithin(g, getLocalBounds().toFloat(), juce::RectanglePlacement::centred, 1.0f);
-        }
-        else
-        {
-            // Fallback background
-            g.fillAll (juce::Colour(0xff2a2a2a));
-        }
-    } else if (currentPage == FxPageID::Dirt) {
-        // Draw the Dirt background SVG
-        if (assets.dirtBackgroundTab3 != nullptr)
-        {
-            assets.dirtBackgroundTab3->drawWithin(g, getLocalBounds().toFloat(), juce::RectanglePlacement::centred, 1.0f);
-        }
-        else
-        {
-            // Fallback background
-            g.fillAll (juce::Colour(0xff2a2a2a));
-        }
-    } else if (currentPage == FxPageID::Chorus) {
-        // Draw the Chorus background SVG
-        if (assets.chorusBackgroundTab4 != nullptr)
-        {
-            assets.chorusBackgroundTab4->drawWithin(g, getLocalBounds().toFloat(), juce::RectanglePlacement::centred, 1.0f);
-        }
-        else
-        {
-            // Fallback background
-            g.fillAll (juce::Colour(0xff2a2a2a));
-        }
+    // === ROUTER-AWARE BACKGROUNDS ===
+    // Get the effect assigned to current slot and draw its background for this tab position
+    auto& router = processorRef.getEffectRouter();
+    int slotIndex = static_cast<int>(currentPage);  // Page maps to slot (0-3)
+    EffectID assignedEffect = router.getEffectInSlot(static_cast<SlotID>(slotIndex));
+    
+    // Get the appropriate background based on (effect × slot)
+    juce::Drawable* background = nullptr;
+    
+    switch (assignedEffect)
+    {
+        case EffectID::SpaceDelay:
+            // SpaceDelay backgrounds for each tab position
+            if (slotIndex == 0) background = assets.spaceDelayBackgroundTab1.get();
+            else if (slotIndex == 1) background = assets.spaceDelayBackgroundTab1.get(); // TODO: Tab2
+            else if (slotIndex == 2) background = assets.spaceDelayBackgroundTab3.get();
+            else if (slotIndex == 3) background = assets.spaceDelayBackgroundTab4.get();
+            break;
+            
+        case EffectID::AutoPan:
+            // AutoPan backgrounds for each tab position
+            if (slotIndex == 0) background = assets.pannerBackgroundTab2.get(); // TODO: Tab1
+            else if (slotIndex == 1) background = assets.pannerBackgroundTab2.get();
+            else if (slotIndex == 2) background = assets.pannerBackgroundTab3.get();
+            else if (slotIndex == 3) background = assets.pannerBackgroundTab4.get();
+            break;
+            
+        case EffectID::Dirt:
+            // Dirt backgrounds for each tab position
+            if (slotIndex == 0) background = assets.dirtBackgroundTab1.get();
+            else if (slotIndex == 1) background = assets.dirtBackgroundTab2.get();
+            else if (slotIndex == 2) background = assets.dirtBackgroundTab3.get();
+            else if (slotIndex == 3) background = assets.dirtBackgroundTab4.get();
+            break;
+            
+        case EffectID::Chorus:
+            // Chorus backgrounds for each tab position
+            if (slotIndex == 0) background = assets.chorusBackgroundTab1.get();
+            else if (slotIndex == 1) background = assets.chorusBackgroundTab2.get();
+            else if (slotIndex == 2) background = assets.chorusBackgroundTab3.get();
+            else if (slotIndex == 3) background = assets.chorusBackgroundTab4.get(); // TODO: Tab4
+            break;
+    }
+    
+    // Draw the background or fallback
+    if (background != nullptr)
+    {
+        background->drawWithin(g, getLocalBounds().toFloat(), juce::RectanglePlacement::centred, 1.0f);
+    }
+    else
+    {
+        // Fallback background
+        g.fillAll(juce::Colour(0xff2a2a2a));
+        DBG("[ROUTER] No background found for effect " << static_cast<int>(assignedEffect) 
+            << " in slot " << slotIndex);
     }
     
     // Only draw grid overlay and main areas if UI is visible
