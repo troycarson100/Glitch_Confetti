@@ -24,6 +24,9 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     // Lock the size - no resizing
     setResizable (false, false);
     
+    // Ensure editor allows child components to receive mouse clicks
+    setInterceptsMouseClicks(true, true);
+    
     // Load all UI assets
     if (!assets.loadAll()) {
         DBG("[UI] Failed to load UI assets!");
@@ -1961,6 +1964,9 @@ void PluginEditor::setupSequencerArea()
     stepAmountLabel->setBorderSize(juce::BorderSize<int>(2));
     // Allow direct editing for step count (1..16)
     stepAmountLabel->setEditable(true, true, false);
+    stepAmountLabel->setWantsKeyboardFocus(true);
+    stepAmountLabel->setInterceptsMouseClicks(true, false);
+    stepAmountLabel->setMouseClickGrabsKeyboardFocus(true);
     stepAmountLabel->onEditorHide = [this]() {
         if (stepAmountLabel != nullptr)
         {
@@ -2663,14 +2669,18 @@ void PluginEditor::showPage(FxPageID id)
     
     // Ensure editable labels can receive mouse clicks after visibility toggle
     if (id == FxPageID::Panner && autopanStepAmountLabel) {
-        autopanStepAmountLabel->toFront(false);
-        autopanStepAmountLabel->setEditable(true, true, false); // Re-enable editing after visibility toggle
-        autopanStepAmountLabel->setInterceptsMouseClicks(true, false); // Ensure it receives mouse clicks
+        autopanStepAmountLabel->toFront(true); // Bring to absolute front
+        autopanStepAmountLabel->setEditable(true, true, false);
+        autopanStepAmountLabel->setInterceptsMouseClicks(true, false);
+        autopanStepAmountLabel->setWantsKeyboardFocus(true);
+        autopanStepAmountLabel->setMouseClickGrabsKeyboardFocus(true);
     }
     else if (id == FxPageID::Dirt && dirtStepAmountLabel) {
-        dirtStepAmountLabel->toFront(false);
-        dirtStepAmountLabel->setEditable(true, true, false); // Re-enable editing after visibility toggle
-        dirtStepAmountLabel->setInterceptsMouseClicks(true, false); // Ensure it receives mouse clicks
+        dirtStepAmountLabel->toFront(true); // Bring to absolute front
+        dirtStepAmountLabel->setEditable(true, true, false);
+        dirtStepAmountLabel->setInterceptsMouseClicks(true, false);
+        dirtStepAmountLabel->setWantsKeyboardFocus(true);
+        dirtStepAmountLabel->setMouseClickGrabsKeyboardFocus(true);
     }
 
     repaint();
@@ -3062,6 +3072,9 @@ void PluginEditor::setupAutoPanSequencerArea()
     autopanStepAmountLabel->setJustificationType(juce::Justification::centred);
     autopanStepAmountLabel->setBorderSize(juce::BorderSize<int>(2));
     autopanStepAmountLabel->setEditable(true, true, false);
+    autopanStepAmountLabel->setWantsKeyboardFocus(true);
+    autopanStepAmountLabel->setInterceptsMouseClicks(true, false);
+    autopanStepAmountLabel->setMouseClickGrabsKeyboardFocus(true);
     autopanStepAmountLabel->onEditorHide = [this]() {
         if (autopanStepAmountLabel != nullptr) {
             int value = autopanStepAmountLabel->getText().getIntValue();
@@ -3583,6 +3596,9 @@ void PluginEditor::setupDirtSequencerArea()
     dirtStepAmountLabel->setJustificationType(juce::Justification::centred);
     dirtStepAmountLabel->setBorderSize(juce::BorderSize<int>(2));
     dirtStepAmountLabel->setEditable(true, true, false);
+    dirtStepAmountLabel->setWantsKeyboardFocus(true);
+    dirtStepAmountLabel->setInterceptsMouseClicks(true, false);
+    dirtStepAmountLabel->setMouseClickGrabsKeyboardFocus(true);
     dirtStepAmountLabel->onEditorHide = [this]() {
         if (dirtStepAmountLabel != nullptr) {
             int value = dirtStepAmountLabel->getText().getIntValue();
