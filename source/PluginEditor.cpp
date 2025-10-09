@@ -77,6 +77,27 @@ PluginEditor::PluginEditor (PluginProcessor& p)
         processorRef.setDirtSequencerEnabled(dirtStepAreaEnabled);
         DBG("[UI] Initial Dirt sequencer state synced: enabled=" << dirtStepAreaEnabled);
         
+        // Initialize FX power button states from parameters
+        auto* autopanEnabledParam = processorRef.getAPVTS().getRawParameterValue("autopanEnabled");
+        if (autopanEnabledParam) {
+            autopanFxAreaEnabled = autopanEnabledParam->load() > 0.5f;
+            if (autopanFxPowerButton) {
+                autopanFxPowerButton->setToggleState(autopanFxAreaEnabled, juce::dontSendNotification);
+            }
+            updateAutoPanFxAreaVisibility(); // Update UI to reflect initial state
+            DBG("[UI] AutoPan FX power initialized: " << (autopanFxAreaEnabled ? "ON" : "OFF"));
+        }
+        
+        auto* dirtEnabledParam = processorRef.getAPVTS().getRawParameterValue("dirtEnabled");
+        if (dirtEnabledParam) {
+            dirtFxAreaEnabled = dirtEnabledParam->load() > 0.5f;
+            if (dirtFxPowerButton) {
+                dirtFxPowerButton->setToggleState(dirtFxAreaEnabled, juce::dontSendNotification);
+            }
+            updateDirtFxAreaVisibility(); // Update UI to reflect initial state
+            DBG("[UI] Dirt FX power initialized: " << (dirtFxAreaEnabled ? "ON" : "OFF"));
+        }
+        
         // Setup tab system
         setupTabSystem();
         
