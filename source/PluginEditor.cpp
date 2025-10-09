@@ -327,6 +327,23 @@ void PluginEditor::paint (juce::Graphics& g)
                 }
             }
             break;
+            
+        case EffectID::Reverb:
+            for (int i = 0; i < 8; ++i)
+            {
+                if (reverbLockButtons[i] != nullptr)
+                {
+                    auto b = reverbLockButtons[i]->getBounds().toFloat();
+                    if (reverbKnobLocked[i]) {
+                        if (assets.lockedIcon != nullptr)
+                            assets.lockedIcon->drawWithin(g, b, juce::RectanglePlacement::centred, 1.0f);
+                    } else {
+                        if (assets.unlockedIcon != nullptr)
+                            assets.unlockedIcon->drawWithin(g, b, juce::RectanglePlacement::centred, 1.0f);
+                    }
+                }
+            }
+            break;
     }
     
     // Draw carrot icons on dropdowns (FX_Type_Carrot_Inactive.svg)
@@ -868,6 +885,9 @@ bool PluginEditor::keyPressed(const juce::KeyPress& key)
         return false; // Let the TextEditor handle it
     }
     if (chorusStepAmountLabel && chorusStepAmountLabel->hasKeyboardFocus(true)) {
+        return false; // Let the TextEditor handle it
+    }
+    if (reverbStepAmountLabel && reverbStepAmountLabel->hasKeyboardFocus(true)) {
         return false; // Let the TextEditor handle it
     }
     if (stepAmountLabel && stepAmountLabel->hasKeyboardFocus(true)) {
