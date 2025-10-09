@@ -80,6 +80,7 @@ struct HallReverb
         }
         dampLpf.prepare (sr); dampLpf.setCutoff (8000.0f);
         setSize (0.7f); setDiffusion (0.7f);
+        setDecayFromSize(); // CRITICAL: Initialize delay times and feedback values
     }
 
     void setSize (float s)      { size = juce::jlimit (0.1f, 1.5f, s); }
@@ -175,6 +176,9 @@ struct RoomReverb
         int maxMs = 120;
         earlyBuf.setSize (2, (int) std::ceil (sr * maxMs / 1000.0) + 4); earlyBuf.clear(); widx = 0;
 
+        // Prepare predelay buffer
+        predelay.prepare(sr, 200); // 200ms max predelay
+        
         // Tail: reuse a compact Hall tank with smaller sizes
         hall.prepare (sr, 120);
         setParams (0.7f, 8000.0f, 0.7f, 0.35f, 20.0f);
