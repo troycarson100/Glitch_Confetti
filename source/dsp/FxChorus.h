@@ -90,19 +90,16 @@ struct ChorusEngine
             const float wid    = width .getNextValue();
             const float shp    = shape .getNextValue();
 
-            // Smoothly transition voice count to avoid clicks (glide over ~200ms)
-            if (numVoices != targetVoices)
-            {
-                const float glideSpeed = 0.002f; // ~200ms transition at 44.1kHz
-                if (numVoices < targetVoices)
-                    smoothVoices = std::min(smoothVoices + glideSpeed, (float)targetVoices);
-                else
-                    smoothVoices = std::max(smoothVoices - glideSpeed, (float)targetVoices);
-                
-                // Update actual voice count when we're close enough
-                if (std::abs(smoothVoices - (float)targetVoices) < 0.01f)
-                    numVoices = targetVoices;
-            }
+            // Smoothly transition voice count to avoid clicks (glide over ~500ms for very smooth transitions)
+            const float glideSpeed = 0.0008f; // ~500ms transition at 44.1kHz (slower = smoother)
+            if (smoothVoices < (float)targetVoices)
+                smoothVoices = std::min(smoothVoices + glideSpeed, (float)targetVoices);
+            else if (smoothVoices > (float)targetVoices)
+                smoothVoices = std::max(smoothVoices - glideSpeed, (float)targetVoices);
+            
+            // Update discrete voice count when we're very close
+            if (std::abs(smoothVoices - (float)targetVoices) < 0.001f)
+                numVoices = targetVoices;
 
             // Always use kMaxVoices in the loop, but apply smooth gain to voices
             for (int v = 0; v < kMaxVoices; ++v)
@@ -111,13 +108,15 @@ struct ChorusEngine
                 float voiceGain = 1.0f;
                 if (v >= (int)smoothVoices)
                 {
-                    // Voice is beyond current count - fade it out
+                    // Voice is beyond current count - fade it out with smooth curve
                     const float frac = smoothVoices - (float)v;
-                    voiceGain = juce::jlimit(0.0f, 1.0f, frac);
+                    const float linearGain = juce::jlimit(0.0f, 1.0f, frac);
+                    // Use squared curve for smoother fade (exponential-like)
+                    voiceGain = linearGain * linearGain;
                 }
                 
                 // Skip completely silent voices for efficiency
-                if (voiceGain < 0.001f)
+                if (voiceGain < 0.0001f)
                     continue;
 
                 // LFO with soft shape: sin -> tri -> soft-square
