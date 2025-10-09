@@ -139,72 +139,93 @@ PluginEditor::~PluginEditor()
 
 void PluginEditor::paint (juce::Graphics& g)
 {
-    // === ROUTER-AWARE BACKGROUNDS ===
-    // CORRECT LOGIC: Tab number ALWAYS matches the current page/slot position
-    // Dropdown 1 (Page 1) → *_Tab1.svg backgrounds
-    // Dropdown 2 (Page 2) → *_Tab2.svg backgrounds
-    // Dropdown 3 (Page 3) → *_Tab3.svg backgrounds
-    // Dropdown 4 (Page 4) → *_Tab4.svg backgrounds
-    // Effect determines WHICH background family, Slot determines WHICH variant
+    // === LAYERED TAB BACKGROUNDS ===
+    // Draw ALL tab backgrounds in order (Tab1, Tab2, Tab3, Tab4)
+    // This creates a layered effect where inactive tabs peek out behind the active one
     auto& router = processorRef.getEffectRouter();
-    int slotIndex = static_cast<int>(currentPage);  // Page maps to slot (0-3)
-    EffectID assignedEffect = router.getEffectInSlot(static_cast<SlotID>(slotIndex));
+    int currentSlotIndex = static_cast<int>(currentPage);
     
-    // Tab number = slot position + 1 (Slot0→Tab1, Slot1→Tab2, etc.)
-    int tabNumber = slotIndex + 1;
+    // Helper lambda to get background for a given slot
+    auto getBackgroundForSlot = [&](int slotIndex) -> juce::Drawable* {
+        EffectID effect = router.getEffectInSlot(static_cast<SlotID>(slotIndex));
+        int tabNumber = slotIndex + 1;
+        
+        switch (effect)
+        {
+            case EffectID::SpaceDelay:
+                if (tabNumber == 1) return assets.spaceDelayBackgroundTab1.get();
+                else if (tabNumber == 2) return assets.spaceDelayBackgroundTab2.get();
+                else if (tabNumber == 3) return assets.spaceDelayBackgroundTab3.get();
+                else if (tabNumber == 4) return assets.spaceDelayBackgroundTab4.get();
+                break;
+                
+            case EffectID::AutoPan:
+                if (tabNumber == 1) return assets.pannerBackgroundTab1.get();
+                else if (tabNumber == 2) return assets.pannerBackgroundTab2.get();
+                else if (tabNumber == 3) return assets.pannerBackgroundTab3.get();
+                else if (tabNumber == 4) return assets.pannerBackgroundTab4.get();
+                break;
+                
+            case EffectID::Dirt:
+                if (tabNumber == 1) return assets.dirtBackgroundTab1.get();
+                else if (tabNumber == 2) return assets.dirtBackgroundTab2.get();
+                else if (tabNumber == 3) return assets.dirtBackgroundTab3.get();
+                else if (tabNumber == 4) return assets.dirtBackgroundTab4.get();
+                break;
+                
+            case EffectID::Chorus:
+                if (tabNumber == 1) return assets.chorusBackgroundTab1.get();
+                else if (tabNumber == 2) return assets.chorusBackgroundTab2.get();
+                else if (tabNumber == 3) return assets.chorusBackgroundTab3.get();
+                else if (tabNumber == 4) return assets.chorusBackgroundTab4.get();
+                break;
+        }
+        return nullptr;
+    };
     
-    // Get the background: {Effect}_Background_Tab{SlotPosition}.svg
-    juce::Drawable* background = nullptr;
+    // Draw all tab backgrounds cascading outward from the selected tab
+    // The selected tab is drawn LAST (on top), with others cascading behind it
+    // This creates a visual effect where the selected tab is most visible
+    auto bounds = getLocalBounds().toFloat();
+    bool hasBackground = false;
     
-    switch (assignedEffect)
+    // Build the drawing order based on selected tab
+    // Last drawn = on top, so selected tab must be drawn LAST
+    std::vector<int> drawOrder;
+    
+    if (currentSlotIndex == 0) // Tab 1 selected
     {
-        case EffectID::SpaceDelay:
-            if (tabNumber == 1) background = assets.spaceDelayBackgroundTab1.get();
-            else if (tabNumber == 2) background = assets.spaceDelayBackgroundTab2.get();
-            else if (tabNumber == 3) background = assets.spaceDelayBackgroundTab3.get();
-            else if (tabNumber == 4) background = assets.spaceDelayBackgroundTab4.get();
-            DBG("[ROUTER] SpaceDelay slot=" << slotIndex << " tabNumber=" << tabNumber 
-                << " Tab1ptr=" << (void*)assets.spaceDelayBackgroundTab1.get()
-                << " Tab2ptr=" << (void*)assets.spaceDelayBackgroundTab2.get()
-                << " selectedPtr=" << (void*)background);
-            break;
-            
-        case EffectID::AutoPan:
-            if (tabNumber == 1) background = assets.pannerBackgroundTab1.get();
-            else if (tabNumber == 2) background = assets.pannerBackgroundTab2.get();
-            else if (tabNumber == 3) background = assets.pannerBackgroundTab3.get();
-            else if (tabNumber == 4) background = assets.pannerBackgroundTab4.get();
-            DBG("[ROUTER] Showing Panner_Background_Tab" << tabNumber << " for slot " << slotIndex);
-            break;
-            
-        case EffectID::Dirt:
-            if (tabNumber == 1) background = assets.dirtBackgroundTab1.get();
-            else if (tabNumber == 2) background = assets.dirtBackgroundTab2.get();
-            else if (tabNumber == 3) background = assets.dirtBackgroundTab3.get();
-            else if (tabNumber == 4) background = assets.dirtBackgroundTab4.get();
-            DBG("[ROUTER] Showing Dirt_Background_Tab" << tabNumber << " for slot " << slotIndex);
-            break;
-            
-        case EffectID::Chorus:
-            if (tabNumber == 1) background = assets.chorusBackgroundTab1.get();
-            else if (tabNumber == 2) background = assets.chorusBackgroundTab2.get();
-            else if (tabNumber == 3) background = assets.chorusBackgroundTab3.get();
-            else if (tabNumber == 4) background = assets.chorusBackgroundTab4.get();
-            DBG("[ROUTER] Showing Chorus_Background_Tab" << tabNumber << " for slot " << slotIndex);
-            break;
+        drawOrder = {3, 2, 1, 0}; // Cascade from right to left, ending with selected tab 1 on top
+    }
+    else if (currentSlotIndex == 1) // Tab 2 selected
+    {
+        drawOrder = {3, 0, 2, 1}; // Cascade outward from tab 2, ending with selected tab 2 on top
+    }
+    else if (currentSlotIndex == 2) // Tab 3 selected
+    {
+        drawOrder = {0, 3, 1, 2}; // Cascade outward from tab 3, ending with selected tab 3 on top
+    }
+    else // Tab 4 selected (currentSlotIndex == 3)
+    {
+        drawOrder = {0, 1, 2, 3}; // Cascade from left to right, ending with selected tab 4 on top
     }
     
-    // Draw the background or fallback
-    if (background != nullptr)
+    // Draw backgrounds in the specified order
+    for (int slot : drawOrder)
     {
-        background->drawWithin(g, getLocalBounds().toFloat(), juce::RectanglePlacement::centred, 1.0f);
-        }
-        else
+        juce::Drawable* bg = getBackgroundForSlot(slot);
+        if (bg != nullptr)
         {
-            // Fallback background
+            bg->drawWithin(g, bounds, juce::RectanglePlacement::centred, 1.0f);
+            hasBackground = true;
+        }
+    }
+    
+    // Fallback background if no backgrounds loaded
+    if (!hasBackground)
+    {
         g.fillAll(juce::Colour(0xff2a2a2a));
-        DBG("[ROUTER] No background found for effect " << static_cast<int>(assignedEffect) 
-            << " in slot " << slotIndex);
+        DBG("[ROUTER] No backgrounds found");
     }
     
     // Only draw grid overlay and main areas if UI is visible
@@ -217,7 +238,8 @@ void PluginEditor::paint (juce::Graphics& g)
     }
 
     // Draw knob lock icons on top of UI - ROUTER-AWARE
-    // Draw icons for the effect currently assigned to this slot
+    // Draw icons for the effect currently assigned to the current slot
+    EffectID assignedEffect = router.getEffectInSlot(static_cast<SlotID>(currentSlotIndex));
     switch (assignedEffect)
     {
         case EffectID::SpaceDelay:
@@ -2924,17 +2946,22 @@ void PluginEditor::setupTabSystem()
 
 void PluginEditor::showPage(FxPageID id)
 {
-    if (currentPage == id) return;
+    // Always allow the function to continue (for repaint and cascading backgrounds)
+    // even if the same page is selected
+    bool pageChanged = (currentPage != id);
     currentPage = id;
 
-    // Update processor parameters (0 = SpaceDelay, 1 = AutoPan, 2 = Dirt, 3 = Chorus)
-    auto* currentPageParam = processorRef.getAPVTS().getParameter("currentPage");
-    if (currentPageParam) {
-        float pageValue = 0.0f;
-        if (id == FxPageID::Panner) pageValue = 1.0f;
-        else if (id == FxPageID::Dirt) pageValue = 2.0f;
-        else if (id == FxPageID::Chorus) pageValue = 3.0f;
-        currentPageParam->setValueNotifyingHost(pageValue);
+    // Update processor parameters only if page actually changed
+    if (pageChanged)
+    {
+        auto* currentPageParam = processorRef.getAPVTS().getParameter("currentPage");
+        if (currentPageParam) {
+            float pageValue = 0.0f;
+            if (id == FxPageID::Panner) pageValue = 1.0f;
+            else if (id == FxPageID::Dirt) pageValue = 2.0f;
+            else if (id == FxPageID::Chorus) pageValue = 3.0f;
+            currentPageParam->setValueNotifyingHost(pageValue);
+        }
     }
     
     // Update AutoPan UI to reflect current parameter state (don't force it on)
