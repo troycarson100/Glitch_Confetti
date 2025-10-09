@@ -2631,11 +2631,11 @@ void PluginEditor::setupTabSystem()
     DBG("[UI] Setting up tab system...");
     
     // === CREATE TAB BUTTONS WITH DYNAMIC EFFECT TITLE SVGs ===
-    // Use ImageOnButtonBackground to constrain SVG to button bounds
-    tabSpaceDelay = std::make_unique<juce::DrawableButton>("tabSlot1", juce::DrawableButton::ImageOnButtonBackground);
-    tabPanner = std::make_unique<juce::DrawableButton>("tabSlot2", juce::DrawableButton::ImageOnButtonBackground);
-    tabDirt = std::make_unique<juce::DrawableButton>("tabSlot3", juce::DrawableButton::ImageOnButtonBackground);
-    tabChorus = std::make_unique<juce::DrawableButton>("tabSlot4", juce::DrawableButton::ImageOnButtonBackground);
+    // Use ImageFitted to remove any background and fit SVG to button bounds
+    tabSpaceDelay = std::make_unique<juce::DrawableButton>("tabSlot1", juce::DrawableButton::ImageFitted);
+    tabPanner = std::make_unique<juce::DrawableButton>("tabSlot2", juce::DrawableButton::ImageFitted);
+    tabDirt = std::make_unique<juce::DrawableButton>("tabSlot3", juce::DrawableButton::ImageFitted);
+    tabChorus = std::make_unique<juce::DrawableButton>("tabSlot4", juce::DrawableButton::ImageFitted);
     
     // Set initial tab images based on router assignment (will update dynamically)
     updateTabButtonImages();
@@ -2681,13 +2681,15 @@ void PluginEditor::setupTabSystem()
     addAndMakeVisible(*tabDirt);
     addAndMakeVisible(*tabChorus);
     
-    // Position tabs - 25% smaller than original (120→90, 34→26)
-    const int tabW = 90;  // 25% smaller
-    const int tabH = 26;  // 25% smaller
-    tabSpaceDelay->setBounds(24, 0, tabW, tabH);
-    tabPanner->setBounds(170, 0, tabW, tabH);
-    tabDirt->setBounds(316, 0, tabW, tabH);
-    tabChorus->setBounds(462, 0, tabW, tabH);
+    // Position tabs - 20% smaller than current size (113→90, 33→26)
+    const int tabW = 90;   // 20% smaller than current 113px
+    const int tabH = 26;   // 20% smaller than current 33px
+    // Custom spacing: 3rd moved left 16px, 4th moved left 24px
+    // Moved down 5px: Y=0→5
+    tabSpaceDelay->setBounds(12, 5, tabW, tabH);
+    tabPanner->setBounds(148, 5, tabW, tabH);
+    tabDirt->setBounds(268, 5, tabW, tabH);     // 284-16 = 268
+    tabChorus->setBounds(396, 5, tabW, tabH);   // 420-24 = 396
     
     // Force tab buttons to clip their content to their bounds
     for (auto* tab : {tabSpaceDelay.get(), tabPanner.get(), tabDirt.get(), tabChorus.get()})
@@ -2739,12 +2741,14 @@ void PluginEditor::setupTabSystem()
     }
     
     // Position dropdowns as small carrot buttons (40% smaller = 12x12px)
+    // Gap reduced by 20px (from 5px to 0px)
     const int carrotSize = 12;  // 40% smaller than 20px
-    const int carrotY = 7;
-    effectSelector1->setBounds(24 + tabW + 5, carrotY, carrotSize, carrotSize);
-    effectSelector2->setBounds(170 + tabW + 5, carrotY, carrotSize, carrotSize);
-    effectSelector3->setBounds(316 + tabW + 5, carrotY, carrotSize, carrotSize);
-    effectSelector4->setBounds(462 + tabW + 5, carrotY, carrotSize, carrotSize);
+    const int carrotY = 12;  // Moved down 5px: 7→12
+    // Updated positions to match new tab positions (custom spacing)
+    effectSelector1->setBounds(12 + tabW + 0, carrotY, carrotSize, carrotSize);
+    effectSelector2->setBounds(148 + tabW + 0, carrotY, carrotSize, carrotSize);
+    effectSelector3->setBounds(268 + tabW + 0, carrotY, carrotSize, carrotSize);  // 284-16 = 268
+    effectSelector4->setBounds(396 + tabW + 0, carrotY, carrotSize, carrotSize);  // 420-24 = 396
     
     // Set initial selections based on current router assignment
     auto& router = processorRef.getEffectRouter();
