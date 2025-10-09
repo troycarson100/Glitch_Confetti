@@ -104,16 +104,21 @@ struct ChorusEngine
             // Always use kMaxVoices in the loop, but apply smooth gain to voices
             for (int v = 0; v < kMaxVoices; ++v)
             {
-                // Calculate smooth voice gain (fade in/out based on smoothVoices)
-                float voiceGain = 1.0f;
+                // Calculate target voice gain (fade in/out based on smoothVoices)
+                float targetGain = 1.0f;
                 if (v >= (int)smoothVoices)
                 {
                     // Voice is beyond current count - fade it out with smooth curve
                     const float frac = smoothVoices - (float)v;
                     const float linearGain = juce::jlimit(0.0f, 1.0f, frac);
                     // Use squared curve for smoother fade (exponential-like)
-                    voiceGain = linearGain * linearGain;
+                    targetGain = linearGain * linearGain;
                 }
+                
+                // Smooth the gain per-voice to avoid any clicks (very fast attack, slower release)
+                const float smoothSpeed = (targetGain > voiceGainSmooth[v]) ? 0.01f : 0.001f; // Fast attack, slow release
+                voiceGainSmooth[v] += (targetGain - voiceGainSmooth[v]) * smoothSpeed;
+                const float voiceGain = voiceGainSmooth[v];
                 
                 // Skip completely silent voices for efficiency
                 if (voiceGain < 0.0001f)
@@ -133,8 +138,9 @@ struct ChorusEngine
 
                 // stereo spread: equal-power pan across left/right
                 // distribute voices evenly across stereo with 'wid'
-                const int activeVoices = (int)std::ceil(smoothVoices);
-                const float pan   = (activeVoices == 1 ? 0.5f : (float)v / (float)(activeVoices - 1)); // 0..1
+                // Use smoothVoices directly (not ceil) for gradual pan position changes
+                const float activeVoices = juce::jmax(1.0f, smoothVoices);
+                const float pan   = (activeVoices <= 1.0f ? 0.5f : (float)v / (activeVoices - 1.0f)); // 0..1
                 const float panW  = 0.5f + (pan - 0.5f) * wid; // collapse toward center when width<1
                 const float gL    = std::cos(panW * juce::MathConstants<float>::halfPi);
                 const float gR    = std::sin(panW * juce::MathConstants<float>::halfPi);
@@ -239,6 +245,7 @@ private:
     float voicePhase[kMaxVoices] {};
     float driftPhase[kMaxVoices] {};
     float driftValue[kMaxVoices] {};
+    float voiceGainSmooth[kMaxVoices] { 1.0f, 1.0f, 1.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f }; // Per-voice smoothed gains
 
     // smoothed params
     juce::SmoothedValue<float> baseMs, rateHz, depthMs, width, feedback, mix, shape;
