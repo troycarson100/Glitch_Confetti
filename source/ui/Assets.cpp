@@ -51,6 +51,7 @@ bool UiAssets::loadAll()
     knobMasterRing    = loadSVG (Knob_Master_Ring_svg, Knob_Master_Ring_svgSize);
     knobMasterInside  = loadSVG (Knob_Master_Inside_svg, Knob_Master_Inside_svgSize);
     tabTitleSpaceDelay= loadSVG (Tab_Title_Space_Delay_svg, Tab_Title_Space_Delay_svgSize);
+    // DEBUG: Added "1" to identify this usage - Assets.cpp loading
     tabTitleAutoPan   = loadSVG (Tab_Title_AutoPan_svg, Tab_Title_AutoPan_svgSize);
     tabDirtIcon       = loadSVG (Dirt_Icon_svg, Dirt_Icon_svgSize);
     tabChorusIcon     = loadSVG (Chorus_Icon_svg, Chorus_Icon_svgSize);

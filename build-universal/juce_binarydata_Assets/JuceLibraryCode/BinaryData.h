@@ -159,7 +159,10 @@ namespace BinaryData
     const int            Tab_Title_AutoPan_svgSize = 3313;
 
     extern const char*   Tab_Title_Space_Delay_svg;
-    const int            Tab_Title_Space_Delay_svgSize = 2998;
+    const int            Tab_Title_Space_Delay_svgSize = 3133;
+
+    extern const char*   Tab_Title_Space_Delay_backup_svg;
+    const int            Tab_Title_Space_Delay_backup_svgSize = 2998;
 
     extern const char*   Time_svg;
     const int            Time_svgSize = 13971;
@@ -183,7 +186,7 @@ namespace BinaryData
     const int            AlteHaasGroteskRegular_ttfSize = 143896;
 
     // Number of elements in the namedResourceList and originalFileNames arrays.
-    const int namedResourceListSize = 58;
+    const int namedResourceListSize = 59;
 
     // Points to the start of a list of resource names.
     extern const char* namedResourceList[];

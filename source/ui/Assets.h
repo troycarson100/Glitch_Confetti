@@ -30,7 +30,7 @@ struct UiAssets {
     std::unique_ptr<juce::Drawable> stepActive, stepInactive, stepTopActive, stepTopInactive;
     std::unique_ptr<juce::Drawable> buttonStepTopActive, buttonStepTopInactive;
     std::unique_ptr<juce::Drawable> knobRing, knobInside, knobMasterRing, knobMasterInside;
-    std::unique_ptr<juce::Drawable> tabTitleSpaceDelay;
+    std::unique_ptr<juce::Drawable> tabTitleSpaceDelay; // DEBUG: Declaration "3" - Assets.h
     std::unique_ptr<juce::Drawable> tabTitleAutoPan;
     std::unique_ptr<juce::Drawable> tabDirtIcon;
     std::unique_ptr<juce::Drawable> tabChorusIcon;

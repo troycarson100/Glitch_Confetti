@@ -5275,7 +5275,7 @@ void PluginEditor::updateTabButtonImages()
     auto getEffectTitleSVG = [this](EffectID effect) -> juce::Drawable* {
         switch (effect)
         {
-            case EffectID::SpaceDelay: return assets.tabTitleSpaceDelay.get();
+            case EffectID::SpaceDelay: return assets.tabTitleSpaceDelay.get(); // DEBUG: Usage "2" - PluginEditor getEffectTitleSVG
             case EffectID::AutoPan:    return assets.tabTitleAutoPan.get();
             case EffectID::Dirt:       return assets.tabDirtIcon.get();
             case EffectID::Chorus:     return assets.tabChorusIcon.get();
