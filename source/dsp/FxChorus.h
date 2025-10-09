@@ -47,7 +47,7 @@ struct ChorusEngine
                     float baseDelayMs, float rateHzTarget, float depthMsTarget,
                     float width01, float feedback01, float shape01, float mix01)
     {
-        numVoices = juce::jlimit(2, kMaxVoices, voices);
+        targetVoices = juce::jlimit(2, kMaxVoices, voices);
         baseMs   .setTargetValue(juce::jlimit(5.0f, kMaxDelayMs-5.0f, baseDelayMs));
         rateHz   .setTargetValue(juce::jlimit(0.01f, 12.0f, rateHzTarget));
         depthMs  .setTargetValue(juce::jlimit(0.0f,  15.0f, depthMsTarget));
@@ -90,8 +90,36 @@ struct ChorusEngine
             const float wid    = width .getNextValue();
             const float shp    = shape .getNextValue();
 
-            for (int v = 0; v < numVoices; ++v)
+            // Smoothly transition voice count to avoid clicks (glide over ~200ms)
+            if (numVoices != targetVoices)
             {
+                const float glideSpeed = 0.002f; // ~200ms transition at 44.1kHz
+                if (numVoices < targetVoices)
+                    smoothVoices = std::min(smoothVoices + glideSpeed, (float)targetVoices);
+                else
+                    smoothVoices = std::max(smoothVoices - glideSpeed, (float)targetVoices);
+                
+                // Update actual voice count when we're close enough
+                if (std::abs(smoothVoices - (float)targetVoices) < 0.01f)
+                    numVoices = targetVoices;
+            }
+
+            // Always use kMaxVoices in the loop, but apply smooth gain to voices
+            for (int v = 0; v < kMaxVoices; ++v)
+            {
+                // Calculate smooth voice gain (fade in/out based on smoothVoices)
+                float voiceGain = 1.0f;
+                if (v >= (int)smoothVoices)
+                {
+                    // Voice is beyond current count - fade it out
+                    const float frac = smoothVoices - (float)v;
+                    voiceGain = juce::jlimit(0.0f, 1.0f, frac);
+                }
+                
+                // Skip completely silent voices for efficiency
+                if (voiceGain < 0.001f)
+                    continue;
+
                 // LFO with soft shape: sin -> tri -> soft-square
                 lfoPhaseAdvance(v, rate);
                 const float lfo = shapedLFO(voicePhase[v], shp); // [-1,1]
@@ -106,7 +134,8 @@ struct ChorusEngine
 
                 // stereo spread: equal-power pan across left/right
                 // distribute voices evenly across stereo with 'wid'
-                const float pan   = (numVoices == 1 ? 0.5f : (float)v / (float)(numVoices - 1)); // 0..1
+                const int activeVoices = (int)std::ceil(smoothVoices);
+                const float pan   = (activeVoices == 1 ? 0.5f : (float)v / (float)(activeVoices - 1)); // 0..1
                 const float panW  = 0.5f + (pan - 0.5f) * wid; // collapse toward center when width<1
                 const float gL    = std::cos(panW * juce::MathConstants<float>::halfPi);
                 const float gR    = std::sin(panW * juce::MathConstants<float>::halfPi);
@@ -116,13 +145,14 @@ struct ChorusEngine
                 const float vR = readHermite(delayBuf[1], writeIndex[1], dSamp);
 
                 // sum: take mono voice content then distribute by pan gains (stable)
-                const float monoV = 0.5f * (vL + vR);
+                // Apply voiceGain to fade voices in/out smoothly
+                const float monoV = 0.5f * (vL + vR) * voiceGain;
                 wetL += monoV * gL;
                 wetR += monoV * gR;
             }
 
-            // average voices to keep level sensible
-            if (numVoices > 0) { wetL /= (float) numVoices; wetR /= (float) numVoices; }
+            // average voices to keep level sensible (use smoothVoices for fractional division)
+            if (smoothVoices > 0.0f) { wetL /= smoothVoices; wetR /= smoothVoices; }
 
             // store for feedback sweetener
             fbAccum[0] = wetL; fbAccum[1] = wetR;
@@ -205,6 +235,8 @@ private:
     float fbLpState[kMaxChannels]{ 0.0f, 0.0f };
 
     int   numVoices { 4 };
+    int   targetVoices { 4 };
+    float smoothVoices { 4.0f };
     float voicePhase[kMaxVoices] {};
     float driftPhase[kMaxVoices] {};
     float driftValue[kMaxVoices] {};
