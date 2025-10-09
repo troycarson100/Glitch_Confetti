@@ -24,6 +24,9 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     // Lock the size - no resizing
     setResizable (false, false);
     
+    // Allow children to receive mouse clicks and keyboard focus
+    setInterceptsMouseClicks(true, true); // (for this component, for children)
+    
     // Load all UI assets
     if (!assets.loadAll()) {
         DBG("[UI] Failed to load UI assets!");
@@ -3068,7 +3071,17 @@ void PluginEditor::setupAutoPanSequencerArea()
     }
     
     // Create step amount editor (using TextEditor for proper keyboard input)
-    autopanStepAmountLabel = std::make_unique<juce::TextEditor>();
+    struct DebugTextEditor : public juce::TextEditor {
+        void mouseDown(const juce::MouseEvent& e) override {
+            DBG("[UI] AutoPan step amount mouseDown detected!");
+            juce::TextEditor::mouseDown(e);
+        }
+        void focusGained(FocusChangeType cause) override {
+            DBG("[UI] AutoPan step amount focusGained!");
+            juce::TextEditor::focusGained(cause);
+        }
+    };
+    autopanStepAmountLabel = std::make_unique<DebugTextEditor>();
     autopanStepAmountLabel->setText("16");
     autopanStepAmountLabel->setFont(juce::Font(16.0f, juce::Font::bold));
     autopanStepAmountLabel->setColour(juce::TextEditor::textColourId, juce::Colours::white);
@@ -3083,8 +3096,14 @@ void PluginEditor::setupAutoPanSequencerArea()
     autopanStepAmountLabel->setCaretVisible(true);
     autopanStepAmountLabel->setPopupMenuEnabled(false);
     autopanStepAmountLabel->setScrollbarsShown(false);
+    autopanStepAmountLabel->setMultiLine(false); // Single line only
+    autopanStepAmountLabel->setReturnKeyStartsNewLine(false); // Return commits instead of new line
     autopanStepAmountLabel->setInterceptsMouseClicks(true, false);
+    autopanStepAmountLabel->onTextChange = [this]() {
+        DBG("[UI] AutoPan step amount text changed to: " << autopanStepAmountLabel->getText());
+    };
     autopanStepAmountLabel->onReturnKey = [this]() {
+        DBG("[UI] AutoPan step amount Return key pressed");
         if (autopanStepAmountLabel != nullptr) {
             int value = autopanStepAmountLabel->getText().getIntValue();
             if (value < 1 || value > 16) value = juce::jlimit(1, 16, value);
@@ -3608,7 +3627,17 @@ void PluginEditor::setupDirtSequencerArea()
     }
     
     // Create step amount editor (using TextEditor for proper keyboard input)
-    dirtStepAmountLabel = std::make_unique<juce::TextEditor>();
+    struct DirtDebugTextEditor : public juce::TextEditor {
+        void mouseDown(const juce::MouseEvent& e) override {
+            DBG("[UI] Dirt step amount mouseDown detected!");
+            juce::TextEditor::mouseDown(e);
+        }
+        void focusGained(FocusChangeType cause) override {
+            DBG("[UI] Dirt step amount focusGained!");
+            juce::TextEditor::focusGained(cause);
+        }
+    };
+    dirtStepAmountLabel = std::make_unique<DirtDebugTextEditor>();
     dirtStepAmountLabel->setText("16");
     dirtStepAmountLabel->setFont(juce::Font(16.0f, juce::Font::bold));
     dirtStepAmountLabel->setColour(juce::TextEditor::textColourId, juce::Colours::white);
@@ -3623,8 +3652,14 @@ void PluginEditor::setupDirtSequencerArea()
     dirtStepAmountLabel->setCaretVisible(true);
     dirtStepAmountLabel->setPopupMenuEnabled(false);
     dirtStepAmountLabel->setScrollbarsShown(false);
+    dirtStepAmountLabel->setMultiLine(false); // Single line only
+    dirtStepAmountLabel->setReturnKeyStartsNewLine(false); // Return commits instead of new line
     dirtStepAmountLabel->setInterceptsMouseClicks(true, false);
+    dirtStepAmountLabel->onTextChange = [this]() {
+        DBG("[UI] Dirt step amount text changed to: " << dirtStepAmountLabel->getText());
+    };
     dirtStepAmountLabel->onReturnKey = [this]() {
+        DBG("[UI] Dirt step amount Return key pressed");
         if (dirtStepAmountLabel != nullptr) {
             int value = dirtStepAmountLabel->getText().getIntValue();
             if (value < 1 || value > 16) value = juce::jlimit(1, 16, value);
