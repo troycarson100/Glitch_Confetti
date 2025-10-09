@@ -1765,19 +1765,7 @@ void PluginEditor::setupSpaceDelayUI()
     // Effect area bounds
     auto effectArea = juce::Rectangle<int>(25, 54, 413, 296);
     
-    // Create "Space Delay" title using SVG
-    spaceDelayTitle = std::make_unique<juce::DrawableButton>("spaceDelayTitle", juce::DrawableButton::ButtonStyle::ImageFitted);
-    addAndMakeVisible(spaceDelayTitle.get());
-    spaceDelayTitle->setBounds(effectArea.getX() - 40, effectArea.getY() - 45, 138, 29); // Moved up 5px more and made 15% larger (120*1.15=138, 25*1.15=29)
-    
-    // Load the Space Delay SVG
-    if (assets.tabTitleSpaceDelay != nullptr) {
-        spaceDelayTitle->setImages(assets.tabTitleSpaceDelay->createCopy().get());
-    }
-    
-    // Make it non-interactive but enabled for display
-    spaceDelayTitle->setClickingTogglesState(false);
-    spaceDelayTitle->setEnabled(true); // Enable it so it's not greyed out
+    // OLD spaceDelayTitle removed - replaced by dynamic tab button titles in router system
     
     // Create effect type dropdown (DEPRECATED - replaced by router dropdowns)
     effectTypeDropdown = std::make_unique<juce::ComboBox>();
@@ -1860,9 +1848,8 @@ void PluginEditor::updateFxAreaVisibility()
 {
     float alpha = fxAreaEnabled ? 1.0f : 0.3f;
 
-    // Grey title, space delay title, effect dropdown and dice
+    // Grey title, effect dropdown and dice
     if (effectsTitle) effectsTitle->setAlpha(alpha);
-    if (spaceDelayTitle) spaceDelayTitle->setAlpha(alpha); // Don't disable, just change alpha
     if (effectTypeDropdown) { effectTypeDropdown->setAlpha(alpha); effectTypeDropdown->setEnabled(fxAreaEnabled); }
     if (diceButton) { diceButton->setAlpha(alpha); diceButton->setEnabled(fxAreaEnabled); }
 

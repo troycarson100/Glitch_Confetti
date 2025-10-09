@@ -255,7 +255,6 @@ public:
     
     // Effects area components
     std::unique_ptr<juce::Label> effectsTitle;
-    std::unique_ptr<juce::DrawableButton> spaceDelayTitle;
     std::unique_ptr<juce::ComboBox> effectTypeDropdown;
     std::unique_ptr<BigComboWithSvgLNF> fxComboLNF;
     std::unique_ptr<class RouterComboLookAndFeel> routerComboLNF;
