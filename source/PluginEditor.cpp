@@ -693,14 +693,14 @@ void PluginEditor::timerCallback()
             juce::String valueText;
             
             switch (i) {
-                case 0: valueText = juce::String(knobValue, 2) + " Hz"; break; // Rate
-                case 1: valueText = juce::String((int)(knobValue)) + "%"; break; // Depth
-                case 2: valueText = juce::String((int)(knobValue)); break; // Voices
-                case 3: valueText = juce::String(knobValue, 1) + " ms"; break; // Delay
-                case 4: valueText = juce::String((int)(knobValue)) + "%"; break; // Feedback
-                case 5: valueText = juce::String((int)(knobValue)) + "%"; break; // Width
-                case 6: valueText = juce::String(knobValue, 2); break; // Tone
-                case 7: valueText = juce::String((int)(knobValue)) + "%"; break; // Mix
+                case 0: valueText = juce::String(knobValue, 1) + " ms"; break; // Delay (5-50ms)
+                case 1: valueText = juce::String(knobValue, 2) + " Hz"; break; // Rate (0.02-8Hz)
+                case 2: valueText = juce::String(knobValue, 1) + " ms"; break; // Depth (0-12ms)
+                case 3: valueText = juce::String(knobValue * 100.0f, 0) + "%"; break; // Feedback (0-0.9 → 0-90%)
+                case 4: valueText = juce::String((int)(knobValue)); break; // Voices (2-8)
+                case 5: valueText = juce::String(knobValue * 100.0f, 0) + "%"; break; // Width (0-1 → 0-100%)
+                case 6: valueText = juce::String(knobValue * 100.0f, 0) + "%"; break; // Shape (0-1 → 0-100%)
+                case 7: valueText = juce::String(knobValue * 100.0f, 0) + "%"; break; // Mix (0-1 → 0-100%)
             }
             
             chorusValueLabels[i]->setText(valueText, juce::dontSendNotification);
@@ -724,27 +724,27 @@ void PluginEditor::timerCallback()
                 StepSnapshot s = processorRef.getChorusSafeSnapshot(playingStep);
                 
                 switch (i) {
-                    case 0: indicatorValue = (s.chorus.rate - 0.1f) / 9.9f; break; // 0.1-10 Hz
-                    case 1: indicatorValue = s.chorus.depth / 100.0f; break; // 0-100%
-                    case 2: indicatorValue = (s.chorus.voices - 1.0f) / 3.0f; break; // 1-4
-                    case 3: indicatorValue = (s.chorus.delayTime - 5.0f) / 45.0f; break; // 5-50 ms
-                    case 4: indicatorValue = s.chorus.feedback / 80.0f; break; // 0-80%
-                    case 5: indicatorValue = s.chorus.width / 200.0f; break; // 0-200%
-                    case 6: indicatorValue = (s.chorus.tone + 1.0f) / 2.0f; break; // -1 to +1
-                    case 7: indicatorValue = s.chorus.mix / 100.0f; break; // 0-100%
+                    case 0: indicatorValue = (s.chorus.delayTime - 5.0f) / 45.0f; break; // Delay (5-50ms)
+                    case 1: indicatorValue = (s.chorus.rate - 0.02f) / 7.98f; break; // Rate (0.02-8Hz)
+                    case 2: indicatorValue = s.chorus.depth / 12.0f; break; // Depth (0-12ms)
+                    case 3: indicatorValue = s.chorus.feedback / 0.9f; break; // Feedback (0-0.9)
+                    case 4: indicatorValue = (s.chorus.voices - 2.0f) / 6.0f; break; // Voices (2-8)
+                    case 5: indicatorValue = s.chorus.width; break; // Width (0-1)
+                    case 6: indicatorValue = s.chorus.tone; break; // Shape (0-1)
+                    case 7: indicatorValue = s.chorus.mix; break; // Mix (0-1)
                 }
             }
             else
             {
                 switch (i) {
-                    case 0: indicatorValue = (knobValue - 0.1f) / 9.9f; break; // Rate (0.1-10 Hz)
-                    case 1: indicatorValue = knobValue / 100.0f; break; // Depth (0-100%)
-                    case 2: indicatorValue = (knobValue - 1.0f) / 3.0f; break; // Voices (1-4)
-                    case 3: indicatorValue = (knobValue - 5.0f) / 45.0f; break; // Delay (5-50 ms)
-                    case 4: indicatorValue = knobValue / 80.0f; break; // Feedback (0-80%)
-                    case 5: indicatorValue = knobValue / 200.0f; break; // Width (0-200%)
-                    case 6: indicatorValue = (knobValue + 1.0f) / 2.0f; break; // Tone (-1 to +1)
-                    case 7: indicatorValue = knobValue / 100.0f; break; // Mix (0-100%)
+                    case 0: indicatorValue = (knobValue - 5.0f) / 45.0f; break; // Delay (5-50ms)
+                    case 1: indicatorValue = (knobValue - 0.02f) / 7.98f; break; // Rate (0.02-8Hz)
+                    case 2: indicatorValue = knobValue / 12.0f; break; // Depth (0-12ms)
+                    case 3: indicatorValue = knobValue / 0.9f; break; // Feedback (0-0.9)
+                    case 4: indicatorValue = (knobValue - 2.0f) / 6.0f; break; // Voices (2-8)
+                    case 5: indicatorValue = knobValue; break; // Width (0-1)
+                    case 6: indicatorValue = knobValue; break; // Shape (0-1)
+                    case 7: indicatorValue = knobValue; break; // Mix (0-1)
                 }
             }
             
