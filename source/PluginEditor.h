@@ -194,6 +194,9 @@ public:
     void paint (juce::Graphics&) override;
     void resized() override;
     void timerCallback() override;
+    
+    // Allow step amount TextEditors to receive keyboard input
+    bool keyPressed(const juce::KeyPress& key) override;
 
     private:
         PluginProcessor& processorRef;

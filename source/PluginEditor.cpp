@@ -625,6 +625,23 @@ void PluginEditor::timerCallback()
     updateDirtSequencerUI();
 }
 
+bool PluginEditor::keyPressed(const juce::KeyPress& key)
+{
+    // If any step amount TextEditor has focus, let it handle the keypress
+    if (autopanStepAmountLabel && autopanStepAmountLabel->hasKeyboardFocus(true)) {
+        return false; // Let the TextEditor handle it
+    }
+    if (dirtStepAmountLabel && dirtStepAmountLabel->hasKeyboardFocus(true)) {
+        return false; // Let the TextEditor handle it
+    }
+    if (stepAmountLabel && stepAmountLabel->hasKeyboardFocus(true)) {
+        return false; // Let the TextEditor handle it (if we convert Delay page too)
+    }
+    
+    // Otherwise, let the parent class handle it
+    return false; // Don't consume the key, pass it up the chain
+}
+
 //==============================================================================
 // AllStepsToggleButton Implementation
 //==============================================================================
