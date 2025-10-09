@@ -819,10 +819,57 @@ juce::AudioProcessorEditor* PluginProcessor::createEditor()
 //==============================================================================
 void PluginProcessor::getStateInformation (juce::MemoryBlock& destData)
 {
+    // Create a ValueTree to hold all state
+    juce::ValueTree state("PluginState");
+    
+    // Save APVTS parameters
+    auto apvtsState = valueTreeState.copyState();
+    state.addChild(apvtsState, -1, nullptr);
+    
+    // Save EffectRouter assignment
+    auto routerState = effectRouter.toValueTree();
+    state.addChild(routerState, -1, nullptr);
+    
+    // TODO: Save per-effect instance state (sequencer patterns, etc.)
+    // This will be added as we refactor effect instances
+    
+    // Serialize to MemoryBlock
+    juce::MemoryOutputStream stream(destData, false);
+    state.writeToStream(stream);
 }
 
 void PluginProcessor::setStateInformation (const void* data, int sizeInBytes)
 {
+    // Parse ValueTree from MemoryBlock
+    auto tree = juce::ValueTree::readFromData(data, static_cast<size_t>(sizeInBytes));
+    
+    if (tree.isValid() && tree.hasType("PluginState"))
+    {
+        // Restore APVTS parameters
+        auto apvtsState = tree.getChildWithName(valueTreeState.state.getType());
+        if (apvtsState.isValid())
+        {
+            valueTreeState.replaceState(apvtsState);
+        }
+        
+        // Restore EffectRouter assignment
+        auto routerState = tree.getChildWithName("EffectRouter");
+        if (routerState.isValid())
+        {
+            effectRouter.fromValueTree(routerState);
+            
+            // Validate router assignment
+            if (!effectRouter.isValid())
+            {
+                // Restore default if invalid
+                DBG("[State] Invalid router assignment detected, restoring defaults");
+                effectRouter = EffectRouter(); // Reset to defaults
+            }
+        }
+        
+        // TODO: Restore per-effect instance state
+        // This will be added as we refactor effect instances
+    }
 }
 
 //==============================================================================

@@ -10,6 +10,7 @@
 #include "StepSnapshot.h"
 #include "MeterTheme.h"
 #include "ui/AudioRingBuffer.h"
+#include "EffectRouter.h"
 
 // Real-time safe level tracking for meters
 struct MeterState {
@@ -132,6 +133,9 @@ public:
     bool isTransportPlaying() const noexcept { return wasPlaying.load(); }
     void getTransportSnapshot(TransportCache& dest) const noexcept;
     const SeqState& getSeqState() const { return seq; }
+    
+    // Effect router access
+    EffectRouter& getEffectRouter() { return effectRouter; }
     
     // Sequencer state access for editor (Delay)
     int getPlayingStep() const noexcept { return seq.playingStep.load(); }
@@ -354,6 +358,10 @@ public:
     }
            
            double dspSampleRate = 44100.0;
+           
+           // Effect Router - manages dynamic page-effect assignments
+           EffectRouter effectRouter;
+           int lastRouterVersion = 0;  // Cached version to detect routing changes
            
            // FX routing
            FxType currentFx = FxType::Delay;
