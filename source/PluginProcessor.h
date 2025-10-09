@@ -367,6 +367,12 @@ public:
            FxType currentFx = FxType::Delay;
     
     // Helper functions - simplified
+    
+    // Effect processing helpers (for dynamic routing)
+    void processDelayEffect(juce::AudioBuffer<float>& buffer);
+    void processAutoPanEffect(juce::AudioBuffer<float>& buffer);
+    void processDirtEffect(juce::AudioBuffer<float>& buffer);
+    void processChorusEffect(juce::AudioBuffer<float>& buffer);
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PluginProcessor)
 };
