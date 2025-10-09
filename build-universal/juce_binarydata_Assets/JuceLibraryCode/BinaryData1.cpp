@@ -321,8 +321,7 @@ const char* getNamedResource (const char* resourceNameUTF8, int& numBytes)
         case 0xca2a7f23:  numBytes = 218; return Step_Inactive_svg;
         case 0x98f47731:  numBytes = 1586; return Step_Power_On_svg;
         case 0x67059122:  numBytes = 3313; return Tab_Title_AutoPan_svg;
-        case 0x07054c1e:  numBytes = 3249; return Tab_Title_Space_Delay_svg;
-        case 0xe7471f6d:  numBytes = 2998; return Tab_Title_Space_Delay_backup_svg;
+        case 0x7e84025a:  numBytes = 2998; return Tab_Title_Space_Delayv2_svg;
         case 0x880d7612:  numBytes = 13971; return Time_svg;
         case 0xdb3f4328:  numBytes = 412; return Unlocked_svg;
         case 0x90b4bb08:  numBytes = 41683; return Wow_Depth_svg;
@@ -389,8 +388,7 @@ const char* namedResourceList[] =
     "Step_Inactive_svg",
     "Step_Power_On_svg",
     "Tab_Title_AutoPan_svg",
-    "Tab_Title_Space_Delay_svg",
-    "Tab_Title_Space_Delay_backup_svg",
+    "Tab_Title_Space_Delayv2_svg",
     "Time_svg",
     "Unlocked_svg",
     "Wow_Depth_svg",
@@ -452,8 +450,7 @@ const char* originalFilenames[] =
     "Step_Inactive.svg",
     "Step_Power_On.svg",
     "Tab_Title_AutoPan.svg",
-    "Tab_Title_Space_Delay.svg",
-    "Tab_Title_Space_Delay_backup.svg",
+    "Tab_Title_Space_Delay-v2.svg",
     "Time.svg",
     "Unlocked.svg",
     "Wow Depth.svg",

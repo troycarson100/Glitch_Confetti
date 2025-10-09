@@ -198,10 +198,10 @@ void PluginEditor::paint (juce::Graphics& g)
     if (background != nullptr)
     {
         background->drawWithin(g, getLocalBounds().toFloat(), juce::RectanglePlacement::centred, 1.0f);
-    }
-    else
-    {
-        // Fallback background
+        }
+        else
+        {
+            // Fallback background
         g.fillAll(juce::Colour(0xff2a2a2a));
         DBG("[ROUTER] No background found for effect " << static_cast<int>(assignedEffect) 
             << " in slot " << slotIndex);
@@ -221,20 +221,20 @@ void PluginEditor::paint (juce::Graphics& g)
     switch (assignedEffect)
     {
         case EffectID::SpaceDelay:
-            for (int i = 0; i < 8; ++i)
+        for (int i = 0; i < 8; ++i)
+        {
+            if (knobLockButtons[i] != nullptr)
             {
-                if (knobLockButtons[i] != nullptr)
-                {
-                    auto b = knobLockButtons[i]->getBounds().toFloat();
-                    if (knobLocked[i]) {
-                        if (assets.lockedIcon != nullptr)
-                            assets.lockedIcon->drawWithin(g, b, juce::RectanglePlacement::centred, 1.0f);
-                    } else {
-                        if (assets.unlockedIcon != nullptr)
-                            assets.unlockedIcon->drawWithin(g, b, juce::RectanglePlacement::centred, 1.0f);
-                    }
+                auto b = knobLockButtons[i]->getBounds().toFloat();
+                if (knobLocked[i]) {
+                    if (assets.lockedIcon != nullptr)
+                        assets.lockedIcon->drawWithin(g, b, juce::RectanglePlacement::centred, 1.0f);
+                } else {
+                    if (assets.unlockedIcon != nullptr)
+                        assets.unlockedIcon->drawWithin(g, b, juce::RectanglePlacement::centred, 1.0f);
                 }
             }
+        }
             break;
             
         case EffectID::AutoPan:
@@ -5275,26 +5275,7 @@ void PluginEditor::updateTabButtonImages()
     auto getEffectTitleSVG = [this](EffectID effect) -> juce::Drawable* {
         switch (effect)
         {
-            case EffectID::SpaceDelay: {
-                auto* drawable = assets.tabTitleSpaceDelay.get();
-                // DEBUG: Create a custom drawable with number "2" for Space Delay
-                if (drawable) {
-                    auto composite = std::make_unique<juce::DrawableComposite>();
-                    composite->addAndMakeVisible(drawable->createCopy().release());
-                    
-                    // Add a big red "2" on top
-                    auto textDrawable = std::make_unique<juce::DrawableText>();
-                    textDrawable->setText("2");
-                    juce::Font font(24.0f);
-                    textDrawable->setFont(font, true);
-                    textDrawable->setColour(juce::Colours::red);
-                    textDrawable->setBounds(180, 5, 30, 25);
-                    composite->addAndMakeVisible(textDrawable.release());
-                    
-                    return composite.release();
-                }
-                return drawable;
-            }
+            case EffectID::SpaceDelay: return assets.tabTitleSpaceDelay.get();
             case EffectID::AutoPan:    return assets.tabTitleAutoPan.get();
             case EffectID::Dirt:       return assets.tabDirtIcon.get();
             case EffectID::Chorus:     return assets.tabChorusIcon.get();

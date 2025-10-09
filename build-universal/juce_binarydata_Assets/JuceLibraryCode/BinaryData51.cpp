@@ -9,7 +9,7 @@
 namespace BinaryData
 {
 
-//================== Tab_Title_Space_Delay.svg ==================
+//================== Tab_Title_Space_Delay-v2.svg ==================
 static const unsigned char temp_binary_data_50[] =
 "<svg width=\"212\" height=\"55\" viewBox=\"0 0 212 55\" fill=\"none\" xmlns=\"http://www.w3.org/2000/svg\">\n"
 "<path d=\"M71.6652 9.52263C71.6652 10.3388 73.92 10.4494 76.8387 10.5878C82.0261 10.8506 89.3161 11.2103 89.3023 15.872C89.3023 21.1839 83.2157 22.4427 76.6866 22.4427C70.1712 22.4288 64.7625 21.6403 64.0709 15.872H71.6652C72.4952 17.3106 74.4179 17."
@@ -26,10 +26,7 @@ static const unsigned char temp_binary_data_50[] =
 "<circle cx=\"24.1867\" cy=\"25.0999\" r=\"15.7981\" transform=\"rotate(90 24.1867 25.0999)\" stroke=\"white\" stroke-width=\"4\"/>\n"
 "<circle cx=\"24.1867\" cy=\"25.1005\" r=\"9.40905\" transform=\"rotate(90 24.1867 25.1005)\" stroke=\"white\" stroke-width=\"4\"/>\n"
 "<circle cx=\"24.1866\" cy=\"25.1001\" r=\"5.01998\" transform=\"rotate(90 24.1866 25.1001)\" fill=\"white\"/>\n"
-"<!-- DEBUG: Added BIG number \"1\" to identify this SVG usage -->\n"
-"<rect x=\"180\" y=\"5\" width=\"30\" height=\"25\" fill=\"red\" stroke=\"yellow\" stroke-width=\"3\"/>\n"
-"<text x=\"195\" y=\"22\" fill=\"white\" font-size=\"18\" font-weight=\"bold\" text-anchor=\"middle\">1</text>\n"
 "</svg>\n";
 
-const char* Tab_Title_Space_Delay_svg = (const char*) temp_binary_data_50;
+const char* Tab_Title_Space_Delayv2_svg = (const char*) temp_binary_data_50;
 }
