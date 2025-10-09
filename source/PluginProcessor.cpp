@@ -1,6 +1,7 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 #include "dsp/DspFlags.h"
+#include "dsp/PanSync.h"
 #include <chrono>
 
 //==============================================================================
@@ -569,6 +570,37 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
     juce::AudioBuffer<float> dryBuffer;
     dryBuffer.makeCopyOf(buffer);
     
+    // === DYNAMIC EFFECT ROUTING ===
+    // Process effects in page order (Slot1 → Slot2 → Slot3 → Slot4)
+    // Routing order = page order (left to right)
+    auto routingOrder = effectRouter.getRoutingOrder();
+    
+    for (int i = 0; i < 4; ++i)
+    {
+        EffectID effect = routingOrder[i];
+        
+        switch (effect)
+        {
+            case EffectID::SpaceDelay:
+                processDelayEffect(buffer);
+                break;
+                
+            case EffectID::AutoPan:
+                processAutoPanEffect(buffer);
+                break;
+                
+            case EffectID::Dirt:
+                processDirtEffect(buffer);
+                break;
+                
+            case EffectID::Chorus:
+                processChorusEffect(buffer);
+                break;
+        }
+    }
+    
+    // Skip old hardcoded effect processing (now done via router above)
+    #if 0
     // Process delay effect
     if (buffer.getNumChannels() > 0 && buffer.getNumSamples() > 0) {
         if (fxEnabled.load())
@@ -737,6 +769,7 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
         chorus.setParams(voices, baseDelayMs, rateHz, depthMs, width, feedback, shape, mix);
         chorus.process(buffer);
     }
+    #endif // End of old hardcoded effect processing (replaced by router above)
     
     // Apply master dry/wet mix (post-effects, pre-output)
     auto* masterDryWetParam = valueTreeState.getRawParameterValue("masterDryWet");
@@ -1344,6 +1377,178 @@ double PluginProcessor::divisionToBeats(int divIdx)
 
 
 
+
+// ===============================================================================
+// DYNAMIC EFFECT PROCESSING (For Router-based Routing)
+// ===============================================================================
+
+void PluginProcessor::processDelayEffect(juce::AudioBuffer<float>& buffer)
+{
+    // Process delay effect (original SpaceDelay processing)
+    if (buffer.getNumChannels() > 0 && buffer.getNumSamples() > 0) {
+        if (fxEnabled.load())
+            spaceDelay.process(buffer, buffer.getNumSamples());
+    }
+}
+
+void PluginProcessor::processAutoPanEffect(juce::AudioBuffer<float>& buffer)
+{
+    // Process AutoPan effect
+    auto* autopanEnabledParam = valueTreeState.getRawParameterValue("autopanEnabled");
+    bool isAutoPanEnabled = autopanEnabledParam ? (autopanEnabledParam->load() > 0.5f) : false;
+    
+    if (!isAutoPanEnabled) return;
+    
+    // Apply AutoPan parameters (from sequencer snapshot or APVTS)
+    float rate, depth, waveShape, phaseOffset;
+    int waveTypeIndex;
+    bool isInverted;
+    
+    // Check if AutoPan sequencer is enabled AND active
+    if (autopanSeq.enabled.load() && autopanSeq.active.load()) {
+        // Use AutoPan sequencer snapshot
+        int autopanStep = autopanSeq.currentStep.load();
+        const auto& snapshot = autopanStepSnapshots[juce::jlimit(0, 15, autopanStep)];
+        
+        rate = snapshot.autopan.rate;
+        depth = snapshot.autopan.amount;
+        waveShape = snapshot.autopan.waveShape;
+        phaseOffset = snapshot.autopan.phase;
+        waveTypeIndex = snapshot.autopan.waveType;
+        isInverted = snapshot.autopan.inverted;
+    } else {
+        // Use APVTS parameters (manual control)
+        rate = valueTreeState.getRawParameterValue("autopanRate")->load();
+        depth = valueTreeState.getRawParameterValue("autopanAmount")->load();
+        waveShape = valueTreeState.getRawParameterValue("autopanWaveShape")->load();
+        phaseOffset = valueTreeState.getRawParameterValue("autopanPhase")->load();
+        waveTypeIndex = (int)valueTreeState.getRawParameterValue("autopanWaveType")->load();
+        isInverted = valueTreeState.getRawParameterValue("autopanInverted")->load() > 0.5f;
+    }
+    
+    // Check if sync mode is enabled
+    auto* syncParam = valueTreeState.getRawParameterValue("autopanTimeSync");
+    if (syncParam && syncParam->load() > 0.5f) {
+        // Sync mode: convert 0-1 to musical division Hz
+        float knobValue = juce::jlimit(0.0f, 1.0f, rate);
+        const int numDivisions = 16;
+        static const Div allDivisions[] = {
+            Div::Bars4, Div::Bars2, Div::Bar, Div::DottedHalf, Div::Half, Div::DottedQuarter,
+            Div::Quarter, Div::TripletQuarter, Div::Eighth, Div::DottedEighth, Div::TripletEighth,
+            Div::Sixteenth, Div::DottedSixteenth, Div::TripletSixteenth, Div::ThirtySecond, Div::SixtyFourth
+        };
+        int divIndex = juce::jlimit(0, numDivisions - 1, (int)(knobValue * (numDivisions - 1)));
+        Div div = allDivisions[divIndex];
+        const double bpm = getBpmOrDefault(120.0);
+        rate = syncedHz((float)bpm, div) * 0.5f;
+    } else {
+        // Free mode: map 0-1 to Hz range
+        rate = 0.05f + rate * (90.0f - 0.05f);
+    }
+    
+    // Set AutoPan parameters
+    const float width = 1.0f;
+    const float mix = 1.0f;
+    const WaveType wType = static_cast<WaveType>(juce::jlimit(0, 4, waveTypeIndex));
+
+    autoPan.setTargets(rate, depth, width, mix, waveShape, phaseOffset, wType, isInverted);
+    
+    // Process AutoPan effect
+    if (buffer.getNumChannels() >= 2 && buffer.getNumSamples() > 0) {
+        bool syncToTransport = (syncParam && syncParam->load() > 0.5f);
+        bool isPlaying = syncToTransport ? wasPlaying.load() : true;
+        
+        if (syncToTransport) {
+            double bpm = getBpmOrDefault(120.0);
+            double ppqPosition = transportCache.ppq.load();
+            autoPan.process(buffer, isPlaying, syncToTransport, bpm, ppqPosition);
+        } else {
+            autoPan.process(buffer, isPlaying, syncToTransport);
+        }
+        
+        // Publish clock data for PanManBar visualizer
+        panClock.phase01.store(autoPan.phase, std::memory_order_release);
+        panClock.incPerSample.store(autoPan.phaseIncSmooth.getCurrentValue(), std::memory_order_release);
+        panClock.sampleRate.store(autoPan.sampleRate, std::memory_order_release);
+    }
+}
+
+void PluginProcessor::processDirtEffect(juce::AudioBuffer<float>& buffer)
+{
+    // Process Dirt saturation effect
+    auto* dirtEnabledParam = valueTreeState.getRawParameterValue("dirtEnabled");
+    bool isDirtEnabled = dirtEnabledParam ? (dirtEnabledParam->load() > 0.5f) : false;
+    
+    if (!isDirtEnabled) return;
+    
+    float drive, color, asym, texture, lowCut, highCut, tone, mix;
+    
+    // Check if Dirt sequencer is enabled AND active
+    if (dirtSeq.enabled.load() && dirtSeq.active.load()) {
+        int dirtStep = dirtSeq.currentStep.load();
+        const auto& snapshot = dirtStepSnapshots[juce::jlimit(0, 15, dirtStep)];
+        
+        drive = snapshot.dirt.drive;
+        color = snapshot.dirt.color;
+        asym = snapshot.dirt.asym;
+        texture = snapshot.dirt.texture;
+        lowCut = snapshot.dirt.lowCut;
+        highCut = snapshot.dirt.highCut;
+        tone = snapshot.dirt.tone;
+        mix = snapshot.dirt.mix;
+    } else {
+        drive = valueTreeState.getRawParameterValue("dirtDrive")->load();
+        color = valueTreeState.getRawParameterValue("dirtColor")->load();
+        asym = valueTreeState.getRawParameterValue("dirtAsym")->load();
+        texture = valueTreeState.getRawParameterValue("dirtTexture")->load();
+        lowCut = valueTreeState.getRawParameterValue("dirtLowCut")->load();
+        highCut = valueTreeState.getRawParameterValue("dirtHighCut")->load();
+        tone = valueTreeState.getRawParameterValue("dirtTone")->load();
+        mix = valueTreeState.getRawParameterValue("dirtMix")->load();
+    }
+    
+    dirt.setTargets(drive, color, asym, texture, lowCut, highCut, tone, mix);
+    dirt.process(buffer);
+}
+
+void PluginProcessor::processChorusEffect(juce::AudioBuffer<float>& buffer)
+{
+    // Process Chorus effect
+    auto* chorusEnabledParam = valueTreeState.getRawParameterValue("chorusEnabled");
+    bool isChorusEnabled = chorusEnabledParam ? (chorusEnabledParam->load() > 0.5f) : false;
+    
+    if (!isChorusEnabled) return;
+    
+    int voices;
+    float baseDelayMs, rateHz, depthMs, width, feedback, shape, mix;
+    
+    // Check if Chorus sequencer is enabled AND active
+    if (chorusSeq.enabled.load() && chorusSeq.active.load()) {
+        int chorusStep = chorusSeq.currentStep.load();
+        const auto& snapshot = chorusStepSnapshots[juce::jlimit(0, 15, chorusStep)];
+        
+        baseDelayMs = snapshot.chorus.delayTime;
+        rateHz = snapshot.chorus.rate;
+        depthMs = snapshot.chorus.depth;
+        voices = (int)snapshot.chorus.voices;
+        width = snapshot.chorus.width;
+        feedback = snapshot.chorus.feedback;
+        shape = snapshot.chorus.tone;
+        mix = snapshot.chorus.mix;
+    } else {
+        baseDelayMs = valueTreeState.getRawParameterValue("chorusDelayMs")->load();
+        rateHz = valueTreeState.getRawParameterValue("chorusRateHz")->load();
+        depthMs = valueTreeState.getRawParameterValue("chorusDepthMs")->load();
+        voices = (int)valueTreeState.getRawParameterValue("chorusVoices")->load();
+        width = valueTreeState.getRawParameterValue("chorusWidth")->load();
+        feedback = valueTreeState.getRawParameterValue("chorusFeedback")->load();
+        shape = valueTreeState.getRawParameterValue("chorusShape")->load();
+        mix = valueTreeState.getRawParameterValue("chorusMix")->load();
+    }
+    
+    chorus.setParams(voices, baseDelayMs, rateHz, depthMs, width, feedback, shape, mix);
+    chorus.process(buffer);
+}
 
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
 {
