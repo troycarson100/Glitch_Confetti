@@ -770,42 +770,9 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
             
             case EffectID::Granular:
             {
-                // Process Granular effect
-                auto* granEnabledParam = valueTreeState.getRawParameterValue("granEnabled");
-                bool isGranEnabled = granEnabledParam ? (granEnabledParam->load() > 0.5f) : false;
-                
-                if (!isGranEnabled || buffer.getNumChannels() == 0 || buffer.getNumSamples() == 0) {
-                    break;
-                }
-                
-                // Read granular parameters with null checks
-                auto* sizeParam     = valueTreeState.getRawParameterValue("granSizeMs");
-                auto* densityParam  = valueTreeState.getRawParameterValue("granDensityHz");
-                auto* positionParam = valueTreeState.getRawParameterValue("granPosition");
-                auto* sprayParam    = valueTreeState.getRawParameterValue("granSprayMs");
-                auto* pitchParam    = valueTreeState.getRawParameterValue("granPitchSemi");
-                auto* randomParam   = valueTreeState.getRawParameterValue("granRandom");
-                auto* textureParam  = valueTreeState.getRawParameterValue("granTexture");
-                auto* mixParam      = valueTreeState.getRawParameterValue("granMix");
-                
-                if (!sizeParam || !densityParam || !positionParam || !sprayParam || 
-                    !pitchParam || !randomParam || !textureParam || !mixParam) {
-                    DBG("[GRANULAR] ERROR: Missing parameter!");
-                    break;
-                }
-                
-                float sizeMs     = sizeParam->load();
-                float densityHz  = densityParam->load();
-                float position   = positionParam->load();
-                float sprayMs    = sprayParam->load();
-                float pitchSemi  = pitchParam->load();
-                float randomAmt  = randomParam->load();
-                float texture    = textureParam->load();
-                float mix        = mixParam->load();
-                
-                // Set parameters and process
-                granular.setParameters(sizeMs, densityHz, position, sprayMs, pitchSemi, randomAmt, texture, mix);
-                granular.process(buffer);
+                // TEMPORARILY DISABLED - Granular causes too much CPU load
+                // TODO: Reimplement with lighter algorithm
+                DBG("[GRANULAR] Skipped - disabled for performance");
                 break;
             }
         }
