@@ -94,12 +94,16 @@ struct HallReverb
 
     void setSize (float s)      { size = juce::jlimit (0.1f, 1.5f, s); }
     void setDiffusion (float d) { diffusion = juce::jlimit (0.0f, 1.0f, d); }
-    void setDampHz (float hz)   { dampLpf.setCutoff (hz); }
+    void setDampHz (float hz)   { 
+        dampHz_ = hz;
+        dampLpf.setCutoff (hz); 
+    }
 
     // True RT60 mapping: g = exp(-ln(1000) * D / T) = exp(-6.907755 * D / T)
     void setDecayAndSize (float decaySec, float size)
     {
         size = juce::jlimit(0.1f, 1.5f, size);
+        currentDecaySec = juce::jmax(0.2f, decaySec); // Store for damping adjustment
 
         // base delays (ms) scaled by size
         static constexpr float baseMs[N] = { 37.1f, 53.3f, 61.7f, 73.0f };
@@ -110,7 +114,7 @@ struct HallReverb
         for (int i = 0; i < N; ++i)
         {
             const float D = delayMs[i] * 0.001f; // seconds
-            float g = std::exp(-6.907755f * (D / juce::jmax(0.2f, decaySec)));
+            float g = std::exp(-6.907755f * (D / currentDecaySec));
             fb[i] = juce::jlimit(0.2f, 0.9995f, g);
             
             // Update smoothed delay target for click-free morphing
@@ -165,7 +169,11 @@ struct HallReverb
             float apIn = del;
             y[i] = ap[i].processSample (apIn + 0.0005f * lfo * apIn); // tiny mod
 
-            y[i] = dampLpf.process (y[i]); // HF damping
+            // Apply damping with strength inversely proportional to desired RT60
+            // For long RT60, use less damping to preserve energy
+            float dampAmount = juce::jmap(currentDecaySec, 0.2f, 20.0f, 1.0f, 0.3f); // 100% to 30% damping
+            float damped = dampLpf.process (y[i]);
+            y[i] = y[i] + dampAmount * (damped - y[i]); // Blend: full signal + dampAmount * (filtered - signal)
         }
 
         // 4×4 Hadamard mix (orthogonal)
@@ -195,6 +203,8 @@ struct HallReverb
     juce::dsp::IIR::Filter<float> ap[N]; float lfoPhase[N] {};
     dspx::OnePoleLPF dampLpf;
     float wetTrim { 1.68f }; // +4.5 dB wet makeup
+    float currentDecaySec { 4.0f }; // Current RT60 for damping adjustment
+    float dampHz_ { 8000.0f }; // Current damping frequency
     juce::SmoothedValue<float> delayMsSmooth[N]; // for click-free size morph
 };
 
