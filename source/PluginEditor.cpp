@@ -25,120 +25,21 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     
     // Set callback to reload APVTS parameters when randomization completes
     randomizationManager->onRandomizationComplete = [this]() {
-        DBG("[UI] Randomization complete - ALL 4 effect pages randomized, updating current step APVTS");
+        DBG("[UI] Randomization complete - ALL 4 effect pages randomized");
         
         // ALL step snapshots for ALL 4 effects have been randomized
-        // Now we just need to load the current step's snapshot into APVTS for the currently visible page
-        // When the user switches pages/steps, they'll see the randomized values
+        // DO NOT update APVTS here - it triggers onValueChange which overwrites the snapshots!
+        // Instead, the randomized values will show when:
+        // 1. User switches to a different step (loads snapshot into APVTS)
+        // 2. Timer updates knobs from snapshots
+        // 3. Audio thread uses snapshots directly (not APVTS)
         
-        // Determine which effect page is currently visible
-        auto& router = processorRef.getEffectRouter();
-        EffectID currentEffect = router.getEffectInSlot(static_cast<SlotID>(currentPage));
+        // Just force a repaint so indicator bars/value labels update
+        repaint();
         
-        // Load the current step's randomized snapshot into APVTS for the visible effect
-        switch (currentEffect)
-        {
-            case EffectID::SpaceDelay:
-            {
-                int delayStep = processorRef.getSelectedStep();
-                if (delayStep >= 0 && delayStep < 16) {
-                    auto snapshot = processorRef.getSafeSnapshot(delayStep);
-                    auto& apvts = processorRef.getAPVTS();
-                    
-                    if (auto* p = apvts.getParameter("timeMs")) p->setValueNotifyingHost(p->convertTo0to1(snapshot.delay.timeMs));
-                    if (auto* p = apvts.getParameter("feedback")) p->setValueNotifyingHost(p->convertTo0to1(snapshot.delay.feedback / 100.0f));
-                    if (auto* p = apvts.getParameter("wowDepth")) p->setValueNotifyingHost(p->convertTo0to1(snapshot.delay.wowDepth / 100.0f));
-                    if (auto* p = apvts.getParameter("wowRate")) p->setValueNotifyingHost(p->convertTo0to1(snapshot.delay.wowRate));
-                    if (auto* p = apvts.getParameter("drive")) p->setValueNotifyingHost(p->convertTo0to1(snapshot.delay.saturation / 100.0f));
-                    if (auto* p = apvts.getParameter("hiCut")) p->setValueNotifyingHost(p->convertTo0to1(snapshot.delay.highCut));
-                    if (auto* p = apvts.getParameter("lowCut")) p->setValueNotifyingHost(p->convertTo0to1(snapshot.delay.lowCut));
-                    if (auto* p = apvts.getParameter("mix")) p->setValueNotifyingHost(p->convertTo0to1(snapshot.delay.mix / 100.0f));
-                }
-                break;
-            }
-            
-            case EffectID::AutoPan:
-            {
-                int autopanStep = autopanUiSelectedStep;
-                DBG("[UI] AutoPan callback: updating APVTS for step " + juce::String(autopanStep));
-                if (autopanStep >= 0 && autopanStep < 16) {
-                    auto snapshot = processorRef.getAutoPanSafeSnapshot(autopanStep);
-                    DBG("[UI]   AutoPan step " + juce::String(autopanStep) + " snapshot rate=" + juce::String(snapshot.autopan.rate));
-                    auto& apvts = processorRef.getAPVTS();
-                    
-                    if (auto* p = apvts.getParameter("panRate")) p->setValueNotifyingHost(p->convertTo0to1(snapshot.autopan.rate));
-                    if (auto* p = apvts.getParameter("panPhase")) p->setValueNotifyingHost(p->convertTo0to1(snapshot.autopan.phase));
-                    if (auto* p = apvts.getParameter("panWaveType")) p->setValueNotifyingHost(p->convertTo0to1((float)snapshot.autopan.waveType));
-                    if (auto* p = apvts.getParameter("panWaveShape")) p->setValueNotifyingHost(p->convertTo0to1(snapshot.autopan.waveShape));
-                    if (auto* p = apvts.getParameter("panInvert")) p->setValueNotifyingHost(p->convertTo0to1(snapshot.autopan.inverted ? 1.0f : 0.0f));
-                    if (auto* p = apvts.getParameter("panAmount")) p->setValueNotifyingHost(p->convertTo0to1(snapshot.autopan.amount));
-                }
-                break;
-            }
-            
-            case EffectID::Dirt:
-            {
-                int dirtStep = dirtUiSelectedStep;
-                if (dirtStep >= 0 && dirtStep < 16) {
-                    auto snapshot = processorRef.getDirtSafeSnapshot(dirtStep);
-                    auto& apvts = processorRef.getAPVTS();
-                    
-                    if (auto* p = apvts.getParameter("dirtDrive")) p->setValueNotifyingHost(p->convertTo0to1(snapshot.dirt.drive));
-                    if (auto* p = apvts.getParameter("dirtColor")) p->setValueNotifyingHost(p->convertTo0to1(snapshot.dirt.color));
-                    if (auto* p = apvts.getParameter("dirtAsym")) p->setValueNotifyingHost(p->convertTo0to1(snapshot.dirt.asym));
-                    if (auto* p = apvts.getParameter("dirtTexture")) p->setValueNotifyingHost(p->convertTo0to1(snapshot.dirt.texture));
-                    if (auto* p = apvts.getParameter("dirtLowCut")) p->setValueNotifyingHost(p->convertTo0to1(snapshot.dirt.lowCut));
-                    if (auto* p = apvts.getParameter("dirtHighCut")) p->setValueNotifyingHost(p->convertTo0to1(snapshot.dirt.highCut));
-                    if (auto* p = apvts.getParameter("dirtTone")) p->setValueNotifyingHost(p->convertTo0to1(snapshot.dirt.tone));
-                    if (auto* p = apvts.getParameter("dirtMix")) p->setValueNotifyingHost(p->convertTo0to1(snapshot.dirt.mix));
-                }
-                break;
-            }
-            
-            case EffectID::Chorus:
-            {
-                int chorusStep = chorusUiSelectedStep;
-                if (chorusStep >= 0 && chorusStep < 16) {
-                    auto snapshot = processorRef.getChorusSafeSnapshot(chorusStep);
-                    auto& apvts = processorRef.getAPVTS();
-                    
-                    if (auto* p = apvts.getParameter("chorusDelay")) p->setValueNotifyingHost(p->convertTo0to1(snapshot.chorus.delayTime));
-                    if (auto* p = apvts.getParameter("chorusRate")) p->setValueNotifyingHost(p->convertTo0to1(snapshot.chorus.rate));
-                    if (auto* p = apvts.getParameter("chorusDepth")) p->setValueNotifyingHost(p->convertTo0to1(snapshot.chorus.depth));
-                    if (auto* p = apvts.getParameter("chorusFeedback")) p->setValueNotifyingHost(p->convertTo0to1(snapshot.chorus.feedback));
-                    if (auto* p = apvts.getParameter("chorusVoices")) p->setValueNotifyingHost(p->convertTo0to1(snapshot.chorus.voices));
-                    if (auto* p = apvts.getParameter("chorusWidth")) p->setValueNotifyingHost(p->convertTo0to1(snapshot.chorus.width));
-                    if (auto* p = apvts.getParameter("chorusTone")) p->setValueNotifyingHost(p->convertTo0to1(snapshot.chorus.tone));
-                    if (auto* p = apvts.getParameter("chorusMix")) p->setValueNotifyingHost(p->convertTo0to1(snapshot.chorus.mix));
-                }
-                break;
-            }
-            
-            case EffectID::Reverb:
-            {
-                int reverbStep = reverbUiSelectedStep;
-                if (reverbStep >= 0 && reverbStep < 16) {
-                    auto snapshot = processorRef.getReverbSafeSnapshot(reverbStep);
-                    auto& apvts = processorRef.getAPVTS();
-                    
-                    if (auto* p = apvts.getParameter("verbWidth")) p->setValueNotifyingHost(p->convertTo0to1(snapshot.reverb.type)); // type field holds width
-                    if (auto* p = apvts.getParameter("verbSize")) p->setValueNotifyingHost(p->convertTo0to1(snapshot.reverb.size));
-                    if (auto* p = apvts.getParameter("verbPredelayMs")) p->setValueNotifyingHost(p->convertTo0to1(snapshot.reverb.predelayMs));
-                    if (auto* p = apvts.getParameter("verbDampHz")) p->setValueNotifyingHost(p->convertTo0to1(snapshot.reverb.dampHz));
-                    if (auto* p = apvts.getParameter("verbDiffusion")) p->setValueNotifyingHost(p->convertTo0to1(snapshot.reverb.diffusion));
-                    if (auto* p = apvts.getParameter("verbEarlyLevel")) p->setValueNotifyingHost(p->convertTo0to1(snapshot.reverb.early));
-                    if (auto* p = apvts.getParameter("verbDecaySec")) p->setValueNotifyingHost(p->convertTo0to1(snapshot.reverb.decaySec));
-                    if (auto* p = apvts.getParameter("verbMix")) p->setValueNotifyingHost(p->convertTo0to1(snapshot.reverb.mix));
-                }
-                break;
-            }
-            
-            default:
-                break;
-        }
-        
-        DBG("[UI] APVTS updated for currently visible page - all other pages will show randomized values when you switch to them");
+        DBG("[UI] All pages randomized - switch steps/pages to see new values");
     };
+    
     
     // Set the size to match our desired dimensions
     setSize (974, 532);
