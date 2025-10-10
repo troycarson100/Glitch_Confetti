@@ -1,0 +1,131 @@
+#include "PageTargetRegistry.h"
+#include "PluginProcessor.h"
+
+PageTargetRegistry::PageTargetRegistry()
+{
+    buildRegistry();
+}
+
+void PageTargetRegistry::buildRegistry()
+{
+    // Space Delay Page
+    {
+        PageTargets targets;
+        targets.pageId = "SpaceDelay";
+        targets.knobParamIds = {
+            "timeMs",      // Knob 0: Time
+            "feedback",    // Knob 1: Feedback
+            "wowDepth",    // Knob 2: Wow Depth
+            "wowRate",     // Knob 3: Wow Rate
+            "drive",       // Knob 4: Saturation/Drive
+            "hiCut",       // Knob 5: High Cut
+            "lowCut",      // Knob 6: Low Cut
+            "mix"          // Knob 7: Mix
+        };
+        targets.sequencerStepsUsedKey = "delayStepsUsed";
+        targets.maxSteps = 16;
+        registry[EffectID::SpaceDelay] = targets;
+    }
+    
+    // AutoPan Page
+    {
+        PageTargets targets;
+        targets.pageId = "AutoPan";
+        targets.knobParamIds = {
+            "panRate",      // Knob 0: Rate
+            "panPhase",     // Knob 1: Phase
+            "panWaveType",  // Knob 2: Wave Type
+            "panWaveShape", // Knob 3: Wave Shape
+            "panInvert",    // Knob 4: Invert
+            "panAmount"     // Knob 5: Amount
+            // Note: AutoPan only has 6 knobs
+        };
+        targets.sequencerStepsUsedKey = "autopanStepsUsed";
+        targets.maxSteps = 16;
+        registry[EffectID::AutoPan] = targets;
+    }
+    
+    // Dirt Page
+    {
+        PageTargets targets;
+        targets.pageId = "Dirt";
+        targets.knobParamIds = {
+            "dirtDrive",    // Knob 0: Drive
+            "dirtColor",    // Knob 1: Color
+            "dirtAsym",     // Knob 2: Asym
+            "dirtTexture",  // Knob 3: Texture
+            "dirtLowCut",   // Knob 4: Low Cut
+            "dirtHighCut",  // Knob 5: High Cut
+            "dirtTone",     // Knob 6: Tone
+            "dirtMix"       // Knob 7: Mix
+        };
+        targets.sequencerStepsUsedKey = "dirtStepsUsed";
+        targets.maxSteps = 16;
+        registry[EffectID::Dirt] = targets;
+    }
+    
+    // Chorus Page
+    {
+        PageTargets targets;
+        targets.pageId = "Chorus";
+        targets.knobParamIds = {
+            "chorusDelay",    // Knob 0: Delay
+            "chorusRate",     // Knob 1: Rate
+            "chorusDepth",    // Knob 2: Depth
+            "chorusFeedback", // Knob 3: Feedback
+            "chorusVoices",   // Knob 4: Voices
+            "chorusWidth",    // Knob 5: Width
+            "chorusTone",     // Knob 6: Tone
+            "chorusMix"       // Knob 7: Mix
+        };
+        targets.sequencerStepsUsedKey = "chorusStepsUsed";
+        targets.maxSteps = 16;
+        registry[EffectID::Chorus] = targets;
+    }
+    
+    // Reverb Page
+    {
+        PageTargets targets;
+        targets.pageId = "Reverb";
+        targets.knobParamIds = {
+            "verbWidth",      // Knob 0: Width
+            "verbSize",       // Knob 1: Size
+            "verbPredelayMs", // Knob 2: Predelay
+            "verbDampHz",     // Knob 3: Damping
+            "verbDiffusion",  // Knob 4: Diffusion
+            "verbEarlyLevel", // Knob 5: Early
+            "verbDecaySec",   // Knob 6: Decay
+            "verbMix"         // Knob 7: Mix
+        };
+        targets.sequencerStepsUsedKey = "reverbStepsUsed";
+        targets.maxSteps = 16;
+        registry[EffectID::Reverb] = targets;
+    }
+}
+
+std::array<PageTargets, 4> PageTargetRegistry::getActivePages(
+    const PluginProcessor& proc,
+    const juce::AudioProcessorValueTreeState& apvts) const
+{
+    std::array<PageTargets, 4> result;
+    const auto& router = const_cast<PluginProcessor&>(proc).getEffectRouter();
+    
+    for (int slot = 0; slot < 4; ++slot)
+    {
+        EffectID effect = router.getEffectInSlot(static_cast<SlotID>(slot));
+        result[slot] = getTargetsForEffect(effect);
+    }
+    
+    return result;
+}
+
+PageTargets PageTargetRegistry::getTargetsForEffect(EffectID effect) const
+{
+    auto it = registry.find(effect);
+    if (it != registry.end())
+        return it->second;
+    
+    // Return empty targets if not found
+    return PageTargets();
+}
+

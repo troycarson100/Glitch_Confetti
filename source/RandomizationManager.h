@@ -3,15 +3,17 @@
 #include <juce_audio_processors/juce_audio_processors.h>
 #include "PluginProcessor.h"
 #include "EffectRouter.h"
+#include "PageTargetRegistry.h"
 
 /**
  * Thread-safe randomization manager for the Dice button.
  * All mutations happen on the message thread via AsyncUpdater.
- * Prevents crashes from threading issues, re-entrancy, and ValueTree storms.
+ * Complete coverage of all knobs and steps across all 4 active pages.
  */
-struct RandomizationManager : private juce::AsyncUpdater
+class RandomizationManager : private juce::AsyncUpdater
 {
-    RandomizationManager(PluginProcessor& proc, juce::AudioProcessorValueTreeState& apvts);
+public:
+    RandomizationManager(PluginProcessor& proc, juce::AudioProcessorValueTreeState& apvts, class PluginEditor* editor);
     
     // Called by the dice button (message thread). Never does work inline; just queues.
     void requestRandomizeAllActivePages();
@@ -19,44 +21,55 @@ struct RandomizationManager : private juce::AsyncUpdater
     // Optional: block re-entry
     bool isBusy() const noexcept { return busy.load(); }
     
-    // Callback when randomization is complete (called on message thread)
-    std::function<void()> onRandomizationComplete;
-    
 private:
     void handleAsyncUpdate() override; // does the work on the message thread
     void randomizeAll();               // transactional randomization
     
-    // helpers
-    void collectTargets();  // gather unlocked parameters & step data for the 4 active pages
-    void applyParamChanges();  // beginGesture, setValueNotifyingHost (normalized), endGesture (batched)
-    void applyStepDataChanges(); // ValueTree transaction for sequencers (all steps)
-    void notifyUI(); // minimal repaint/refresh
+    // Pipeline steps
+    void collectTargets();       // gather all params + steps for 4 active pages
+    void applyParamChanges();    // randomize all knob parameters
+    void applyStepChanges();     // randomize all step snapshots
+    void verifyAndReport();      // log coverage report
     
     PluginProcessor& processor;
     juce::AudioProcessorValueTreeState& apvts;
+    PluginEditor* editor; // For accessing lock states
+    PageTargetRegistry registry;
     
     std::atomic<bool> busy { false };
     
-    // Collected work sets (filled in collectTargets)
-    struct TargetParam { 
-        juce::RangedAudioParameter* p = nullptr; 
-        float normTarget = 0.f; 
+    // Collected targets (filled in collectTargets)
+    struct ParamTarget {
+        juce::RangedAudioParameter* param = nullptr;
+        juce::String paramId;
+        float currentNorm = 0.5f;
+        bool locked = false;
     };
-    std::vector<TargetParam> paramTargets;
+    std::vector<ParamTarget> paramTargets;
     
-    struct StepEdit { 
-        juce::ValueTree node; 
-        juce::Identifier key; 
-        float newValue; 
+    struct StepTarget {
+        EffectID effect;
+        int stepIndex;
+        bool locked = false;
     };
-    std::vector<StepEdit> stepTargets;
+    std::vector<StepTarget> stepTargets;
+    
+    // Statistics for verification
+    struct Stats {
+        int paramsExpected = 0;
+        int paramsRandomized = 0;
+        int paramsLocked = 0;
+        int stepsExpected = 0;
+        int stepsRandomized = 0;
+        int stepsLocked = 0;
+        int activeStepsIncluded = 0;
+    } stats;
     
     // PRNG
     uint32_t rngState = 0x1234567u;
-    float rand01(); // fast xorshift
+    float rand01();
     
-    // Lock state helpers
-    bool isParamLocked(const juce::String& paramID);
-    bool isStepLocked(int step, EffectID effect);
+    // Lock checking
+    bool isParamLocked(const juce::String& paramId) const;
+    bool isStepLocked(EffectID effect, int step) const;
 };
-

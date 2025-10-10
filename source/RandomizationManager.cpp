@@ -1,11 +1,12 @@
 #include "RandomizationManager.h"
+#include "PluginEditor.h"
 
-RandomizationManager::RandomizationManager(PluginProcessor& proc, juce::AudioProcessorValueTreeState& tree)
-    : processor(proc), apvts(tree)
+RandomizationManager::RandomizationManager(PluginProcessor& proc, juce::AudioProcessorValueTreeState& tree, PluginEditor* ed)
+    : processor(proc), apvts(tree), editor(ed)
 {
     // Reserve space to avoid allocations during randomization
-    paramTargets.reserve(64); // 4 pages * 8 knobs + some headroom
-    stepTargets.reserve(256); // 4 pages * 16 steps * 8 params worst case
+    paramTargets.reserve(40); // 4 pages * ~8 knobs + margin
+    stepTargets.reserve(64); // 4 pages * 16 steps
     
     // Seed PRNG
     rngState = static_cast<uint32_t>(juce::Time::currentTimeMillis());
@@ -27,61 +28,90 @@ void RandomizationManager::handleAsyncUpdate()
 {
     jassert(juce::MessageManager::getInstance()->isThisTheMessageThread());
     
-    DBG("[RAND] Async update starting on message thread");
+    DBG("[RAND] ═══════════════════════════════════════════");
+    DBG("[RAND] Starting randomization on message thread");
     randomizeAll();
     busy.store(false);
-    DBG("[RAND] Async update complete");
+    DBG("[RAND] ═══════════════════════════════════════════");
 }
 
 void RandomizationManager::randomizeAll()
 {
-    // RAII guard to ensure processor state is restored even if exception
-    struct ProcessGuard {
-        PluginProcessor& p;
-        ProcessGuard(PluginProcessor& proc) : p(proc) { p.suspendProcessing(true); }
-        ~ProcessGuard() { p.suspendProcessing(false); }
-    } guard(processor);
+    // Suspend processing briefly
+    processor.suspendProcessing(true);
     
-    // Collect all targets (parameters + step data)
+    // Clear previous stats
+    stats = Stats();
     paramTargets.clear();
     stepTargets.clear();
+    
+    // Collect all targets
     collectTargets();
     
-    DBG("[RAND] Collected " << paramTargets.size() << " params and " << stepTargets.size() << " step edits");
-    
-    // Apply changes transactionally
+    // Apply changes
     applyParamChanges();
-    applyStepDataChanges();
+    applyStepChanges();
     
-    // Notify UI
-    notifyUI();
+    // Verify and report
+    verifyAndReport();
+    
+    // Resume processing
+    processor.suspendProcessing(false);
 }
 
 void RandomizationManager::collectTargets()
 {
-    auto& router = processor.getEffectRouter();
+    DBG("[RAND] Collecting targets...");
     
-    // Iterate through all 4 active effect slots
+    // Get the 4 active pages
+    auto activePages = registry.getActivePages(processor, apvts);
+    
     for (int slot = 0; slot < 4; ++slot)
     {
-        EffectID effect = router.getEffectInSlot(static_cast<SlotID>(slot));
+        const auto& page = activePages[slot];
+        DBG("[RAND] Page " + juce::String(slot) + ": " + page.pageId);
         
-        // Note: For now, we're only randomizing step data since parameter locking
-        // is tracked per-page. We could extend this to randomize APVTS parameters too.
-        
-        // Collect step data for all 16 steps
-        for (int step = 0; step < 16; ++step)
+        // Collect knob parameters
+        for (const auto& paramId : page.knobParamIds)
         {
-            // Check if step is locked (implementation depends on your lock system)
-            if (isStepLocked(step, effect))
+            auto* param = apvts.getParameter(paramId);
+            if (!param) {
+                DBG("[RAND]   WARNING: Parameter '" + paramId + "' not found!");
                 continue;
+            }
             
-            // For each effect, randomize its step snapshot parameters
-            // The actual randomization values will be computed in applyStepDataChanges
-            // For now, just mark that this step needs randomization
-            // (We'll do the actual randomization inline during apply)
+            ParamTarget target;
+            target.param = param;
+            target.paramId = paramId;
+            target.currentNorm = param->getValue();
+            target.locked = isParamLocked(paramId);
+            
+            paramTargets.push_back(target);
+            stats.paramsExpected++;
+            
+            if (target.locked)
+                stats.paramsLocked++;
+        }
+        
+        // Collect step targets (all 16 steps)
+        EffectID effect = processor.getEffectRouter().getEffectInSlot(static_cast<SlotID>(slot));
+        for (int step = 0; step < page.maxSteps; ++step)
+        {
+            StepTarget target;
+            target.effect = effect;
+            target.stepIndex = step;
+            target.locked = isStepLocked(effect, step);
+            
+            stepTargets.push_back(target);
+            stats.stepsExpected++;
+            
+            if (target.locked)
+                stats.stepsLocked++;
         }
     }
+    
+    DBG("[RAND] Collected " + juce::String(paramTargets.size()) + " params, " 
+        + juce::String(stepTargets.size()) + " steps");
 }
 
 void RandomizationManager::applyParamChanges()
@@ -89,143 +119,149 @@ void RandomizationManager::applyParamChanges()
     if (paramTargets.empty())
         return;
     
-    // Start undo transaction
+    DBG("[RAND] Applying parameter changes...");
+    
+    // Start single undo transaction
     auto* um = apvts.undoManager;
     if (um)
         um->beginNewTransaction("Dice Randomize");
     
-    // Apply each parameter change with proper gestures
-    for (const auto& target : paramTargets)
+    // Randomize each parameter
+    for (auto& target : paramTargets)
     {
-        if (!target.p)
+        if (!target.param || target.locked)
             continue;
         
-        target.p->beginChangeGesture();
-        target.p->setValueNotifyingHost(target.normTarget);
-        target.p->endChangeGesture();
-    }
-}
-
-void RandomizationManager::applyStepDataChanges()
-{
-    // For now, we directly update the processor's step snapshots
-    // This avoids ValueTree complexity and uses the existing system
-    
-    auto& router = processor.getEffectRouter();
-    
-    for (int slot = 0; slot < 4; ++slot)
-    {
-        EffectID effect = router.getEffectInSlot(static_cast<SlotID>(slot));
-        DBG("[RAND] Randomizing slot " + juce::String(slot) + " effect " + juce::String((int)effect));
+        // Bias toward current value (70% current + 30% random)
+        float randNorm = rand01();
+        float normTarget = juce::jlimit(0.0f, 1.0f, 0.7f * target.currentNorm + 0.3f * randNorm);
         
-        for (int step = 0; step < 16; ++step)
-        {
-            // Skip locked steps
-            if (isStepLocked(step, effect))
-                continue;
-            
-            if (step == 0) {
-                DBG("[RAND]   Step 0 for effect " + juce::String((int)effect) + " slot " + juce::String(slot));
-            }
-            
-            // Randomize based on effect type
-            switch (effect)
-            {
-                case EffectID::SpaceDelay:
-                {
-                    auto snapshot = processor.getSafeSnapshot(step);
-                    snapshot.delay.timeMs = 50.0f + rand01() * 950.0f;
-                    snapshot.delay.feedback = rand01() * 95.0f;
-                    snapshot.delay.wowDepth = rand01();
-                    snapshot.delay.wowRate = rand01() * 10.0f;
-                    snapshot.delay.saturation = rand01();
-                    snapshot.delay.lowCut = 20.0f + rand01() * 19980.0f;
-                    snapshot.delay.highCut = 20.0f + rand01() * 19980.0f;
-                    snapshot.delay.mix = rand01() * 100.0f;
-                    processor.setStepSnapshot(step, snapshot);
-                    break;
-                }
-                
-                case EffectID::AutoPan:
-                {
-                    auto snapshot = processor.getAutoPanSafeSnapshot(step);
-                    float newRate = 0.01f + rand01() * 9.99f;
-                    snapshot.autopan.rate = newRate;
-                    snapshot.autopan.amount = rand01();
-                    snapshot.autopan.waveShape = rand01();
-                    snapshot.autopan.phase = rand01() * 360.0f;
-                    snapshot.autopan.waveType = static_cast<int>(rand01() * 4.999f);
-                    snapshot.autopan.inverted = rand01() > 0.5f;
-                    processor.setAutoPanStepSnapshot(step, snapshot);
-                    if (step == 0) {
-                        DBG("[RAND]     AutoPan step 0 randomized: rate=" + juce::String(newRate));
-                    }
-                    break;
-                }
-                
-                case EffectID::Dirt:
-                {
-                    auto snapshot = processor.getDirtSafeSnapshot(step);
-                    snapshot.dirt.drive = rand01() * 36.0f;
-                    snapshot.dirt.color = -1.0f + rand01() * 2.0f;
-                    snapshot.dirt.asym = -1.0f + rand01() * 2.0f;
-                    snapshot.dirt.texture = rand01();
-                    snapshot.dirt.lowCut = 20.0f + rand01() * 280.0f;
-                    snapshot.dirt.highCut = 3000.0f + rand01() * 19000.0f;
-                    snapshot.dirt.tone = -1.0f + rand01() * 2.0f;
-                    snapshot.dirt.mix = rand01();
-                    processor.setDirtStepSnapshot(step, snapshot);
-                    break;
-                }
-                
-                case EffectID::Chorus:
-                {
-                    auto snapshot = processor.getChorusSafeSnapshot(step);
-                    float newDelay = 5.0f + rand01() * 45.0f;
-                    snapshot.chorus.delayTime = newDelay;
-                    snapshot.chorus.rate = 0.02f + rand01() * 7.98f;
-                    snapshot.chorus.depth = rand01() * 12.0f;
-                    snapshot.chorus.feedback = rand01() * 0.9f;
-                    snapshot.chorus.voices = 2.0f + rand01() * 6.0f;
-                    snapshot.chorus.width = rand01();
-                    snapshot.chorus.tone = rand01();
-                    snapshot.chorus.mix = rand01();
-                    processor.setChorusStepSnapshot(step, snapshot);
-                    if (step == 0) {
-                        DBG("[RAND]     Chorus step 0 randomized: delayTime=" + juce::String(newDelay));
-                    }
-                    break;
-                }
-                
-                case EffectID::Reverb:
-                {
-                    auto snapshot = processor.getReverbSafeSnapshot(step);
-                    snapshot.reverb.type = rand01();
-                    snapshot.reverb.size = 0.1f + rand01() * 1.4f;
-                    snapshot.reverb.predelayMs = rand01() * 200.0f;
-                    snapshot.reverb.dampHz = 1000.0f + rand01() * 19000.0f;
-                    snapshot.reverb.diffusion = rand01();
-                    snapshot.reverb.early = rand01();
-                    snapshot.reverb.decaySec = 0.2f + rand01() * 19.8f;
-                    snapshot.reverb.mix = rand01();
-                    processor.setReverbStepSnapshot(step, snapshot);
-                    break;
-                }
-                
-                default:
-                    break;
-            }
-        }
+        // Apply with gesture
+        target.param->beginChangeGesture();
+        target.param->setValueNotifyingHost(normTarget);
+        target.param->endChangeGesture();
+        
+        stats.paramsRandomized++;
     }
+    
+    DBG("[RAND] Randomized " + juce::String(stats.paramsRandomized) + " parameters");
 }
 
-void RandomizationManager::notifyUI()
+void RandomizationManager::applyStepChanges()
 {
-    // Call the completion callback if set (PluginEditor uses this to reload knobs)
-    if (onRandomizationComplete)
-        onRandomizationComplete();
+    if (stepTargets.empty())
+        return;
     
-    DBG("[RAND] Randomization complete - UI callback invoked");
+    DBG("[RAND] Applying step changes...");
+    
+    // Randomize each step's snapshot
+    for (const auto& target : stepTargets)
+    {
+        if (target.locked)
+            continue;
+        
+        // Randomize based on effect type
+        switch (target.effect)
+        {
+            case EffectID::SpaceDelay:
+            {
+                auto snapshot = processor.getSafeSnapshot(target.stepIndex);
+                snapshot.delay.timeMs = 50.0f + rand01() * 950.0f;
+                snapshot.delay.feedback = rand01() * 95.0f;
+                snapshot.delay.wowDepth = rand01() * 100.0f;
+                snapshot.delay.wowRate = 0.1f + rand01() * 7.9f;
+                snapshot.delay.saturation = rand01() * 100.0f;
+                snapshot.delay.highCut = 1000.0f + rand01() * 19000.0f;
+                snapshot.delay.lowCut = 20.0f + rand01() * 1980.0f;
+                snapshot.delay.mix = rand01() * 100.0f;
+                processor.setStepSnapshot(target.stepIndex, snapshot);
+                break;
+            }
+            
+            case EffectID::AutoPan:
+            {
+                auto snapshot = processor.getAutoPanSafeSnapshot(target.stepIndex);
+                snapshot.autopan.rate = 0.01f + rand01() * 9.99f;
+                snapshot.autopan.phase = rand01() * 360.0f;
+                snapshot.autopan.waveType = static_cast<int>(rand01() * 4.999f);
+                snapshot.autopan.waveShape = rand01();
+                snapshot.autopan.inverted = rand01() > 0.5f;
+                snapshot.autopan.amount = rand01();
+                processor.setAutoPanStepSnapshot(target.stepIndex, snapshot);
+                break;
+            }
+            
+            case EffectID::Dirt:
+            {
+                auto snapshot = processor.getDirtSafeSnapshot(target.stepIndex);
+                snapshot.dirt.drive = rand01() * 36.0f;
+                snapshot.dirt.color = -1.0f + rand01() * 2.0f;
+                snapshot.dirt.asym = -1.0f + rand01() * 2.0f;
+                snapshot.dirt.texture = rand01();
+                snapshot.dirt.lowCut = 20.0f + rand01() * 280.0f;
+                snapshot.dirt.highCut = 3000.0f + rand01() * 19000.0f;
+                snapshot.dirt.tone = -1.0f + rand01() * 2.0f;
+                snapshot.dirt.mix = rand01();
+                processor.setDirtStepSnapshot(target.stepIndex, snapshot);
+                break;
+            }
+            
+            case EffectID::Chorus:
+            {
+                auto snapshot = processor.getChorusSafeSnapshot(target.stepIndex);
+                snapshot.chorus.delayTime = 5.0f + rand01() * 45.0f;
+                snapshot.chorus.rate = 0.02f + rand01() * 7.98f;
+                snapshot.chorus.depth = rand01() * 12.0f;
+                snapshot.chorus.feedback = rand01() * 0.9f;
+                snapshot.chorus.voices = 2.0f + rand01() * 6.0f;
+                snapshot.chorus.width = rand01();
+                snapshot.chorus.tone = rand01();
+                snapshot.chorus.mix = rand01();
+                processor.setChorusStepSnapshot(target.stepIndex, snapshot);
+                break;
+            }
+            
+            case EffectID::Reverb:
+            {
+                auto snapshot = processor.getReverbSafeSnapshot(target.stepIndex);
+                snapshot.reverb.type = rand01(); // Width
+                snapshot.reverb.size = 0.1f + rand01() * 1.4f;
+                snapshot.reverb.predelayMs = rand01() * 200.0f;
+                snapshot.reverb.dampHz = 1000.0f + rand01() * 19000.0f;
+                snapshot.reverb.diffusion = rand01();
+                snapshot.reverb.early = rand01();
+                snapshot.reverb.decaySec = 0.2f + rand01() * 19.8f;
+                snapshot.reverb.mix = rand01();
+                processor.setReverbStepSnapshot(target.stepIndex, snapshot);
+                break;
+            }
+            
+            default:
+                break;
+        }
+        
+        stats.stepsRandomized++;
+    }
+    
+    DBG("[RAND] Randomized " + juce::String(stats.stepsRandomized) + " steps");
+}
+
+void RandomizationManager::verifyAndReport()
+{
+    DBG("[RAND] ══════════ RANDOMIZATION REPORT ══════════");
+    DBG("[RAND] Pages: 4 active");
+    DBG("[RAND] Knobs: " + juce::String(stats.paramsRandomized) + "/" + juce::String(stats.paramsExpected) 
+        + " (" + juce::String(stats.paramsLocked) + " locked)");
+    DBG("[RAND] Steps: " + juce::String(stats.stepsRandomized) + "/" + juce::String(stats.stepsExpected)
+        + " (" + juce::String(stats.stepsLocked) + " locked)");
+    
+    // Verify non-zero coverage
+    if (stats.paramsRandomized == 0 && stats.paramsExpected > 0)
+        DBG("[RAND] ERROR: No parameters randomized!");
+    if (stats.stepsRandomized == 0 && stats.stepsExpected > 0)
+        DBG("[RAND] ERROR: No steps randomized!");
+    
+    DBG("[RAND] ═══════════════════════════════════════════");
 }
 
 float RandomizationManager::rand01()
@@ -237,17 +273,16 @@ float RandomizationManager::rand01()
     return static_cast<float>(rngState) / static_cast<float>(0xFFFFFFFFu);
 }
 
-bool RandomizationManager::isParamLocked(const juce::String& paramID)
+bool RandomizationManager::isParamLocked(const juce::String& paramId) const
 {
-    // TODO: Implement based on your lock system
+    // TODO: Check if parameter is locked
     // For now, return false (nothing locked)
     return false;
 }
 
-bool RandomizationManager::isStepLocked(int step, EffectID effect)
+bool RandomizationManager::isStepLocked(EffectID effect, int step) const
 {
-    // TODO: Implement based on your lock system  
+    // TODO: Check if step is locked
     // For now, return false (nothing locked)
     return false;
 }
-

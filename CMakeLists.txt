@@ -38,6 +38,8 @@ set(SourceFiles
     ${CMAKE_CURRENT_SOURCE_DIR}/source/StepSnapshot.h
     ${CMAKE_CURRENT_SOURCE_DIR}/source/RandomizationManager.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/source/RandomizationManager.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/source/PageTargetRegistry.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/source/PageTargetRegistry.h
     ${CMAKE_CURRENT_SOURCE_DIR}/source/FontManager.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/source/FontManager.h
     ${CMAKE_CURRENT_SOURCE_DIR}/source/dsp/FxDelay.cpp
