@@ -402,16 +402,11 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                     DBG("[CHORUS SEQ] ✓ Activated on play edge");
                 }
                 
-                // Reverb sequencer activates if enabled (independent of followHost)
-                if (reverbSeq.enabled.load()) {
-                    reverbSeq.active.store(true);  // Activate Reverb sequencer
-                    DBG("[REVERB SEQ] ✓ Activated on play edge");
-                } else {
-                    // Auto-enable Reverb sequencer on first play (like delay sequencer)
-                    reverbSeq.enabled.store(true);
-                    reverbSeq.active.store(true);
-                    DBG("[REVERB SEQ] ✓ Auto-enabled and activated on play edge");
-                }
+                // Auto-enable and activate Reverb sequencer on play (like delay sequencer)
+                // User can disable with power button, but it will re-enable on next play
+                reverbSeq.enabled.store(true);
+                reverbSeq.active.store(true);
+                DBG("[REVERB SEQ] ✓ Auto-enabled and activated on play edge");
                 
                 DBG("[SEQ] Play edge detected");
                 DBG("[SEQ] Delay: enabled=" << (bool)seq.enabled.load() << " active=" << (bool)seq.active.load());
@@ -450,8 +445,8 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                     DBG("[CHORUS SEQ] Lock-in at PPQ=" << ppq << " -> step " << chorusStep);
                 }
                 
-                // Also lock-in Reverb sequencer if enabled
-                if (reverbSeq.enabled.load()) {
+                // Also lock-in Reverb sequencer if enabled AND active
+                if (reverbSeq.enabled.load() && reverbSeq.active.load()) {
                     const int reverbStep = reverbSeq.computeStepFromPPQ(ppq);
                     reverbSeq.currentStep.store(reverbStep);
                     reverbSeq.playingStep.store(reverbStep);
