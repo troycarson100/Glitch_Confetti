@@ -13,6 +13,9 @@
 #include "ui/OutputSpectrumView.h"
 #include "ui/SpectrumFilterSlider.h"
 
+// Forward declaration
+struct RandomizationManager;
+
 // Tab system enum
 enum class FxPageID { SpaceDelay, Panner, Dirt, Chorus, Reverb };
 
@@ -202,6 +205,9 @@ public:
 
     private:
         PluginProcessor& processorRef;
+        
+        // Randomization manager (thread-safe)
+        std::unique_ptr<RandomizationManager> randomizationManager;
         
         // UI Assets
         UiAssets assets;
@@ -442,8 +448,6 @@ public:
         void randomizeKnobValues();
         void randomizeIndividualKnob(int knobIndex);
         void updateParameterFromKnob(int knobIndex);
-        void randomizeAllEffectsAllSteps(); // Master dice: randomize all unlocked knobs on all steps for all 4 active effects
-        void randomizeEffectStep(EffectID effect, int step, juce::Random& rng); // Helper to randomize a single step
         void updateAllStepSnapshots(int knobIndex);
         void onStepButtonClicked(int stepIndex);
         void updateSequencerUI();

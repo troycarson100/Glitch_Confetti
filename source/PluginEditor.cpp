@@ -3,6 +3,7 @@
 #include "BinaryData.h"
 #include "ui/PanIndicator.h"
 #include "ui/RouterComboLookAndFeel.h"
+#include "RandomizationManager.h"
 
 //==============================================================================
 // CustomEffectDropdown Implementation
@@ -18,6 +19,9 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     : AudioProcessorEditor (p), processorRef (p)
 {
     DBG("[UI] PluginEditor constructor starting...");
+    
+    // Initialize randomization manager (thread-safe)
+    randomizationManager = std::make_unique<RandomizationManager>(processorRef, processorRef.getAPVTS());
     
     // Set the size to match our desired dimensions
     setSize (974, 532);
@@ -1585,14 +1589,14 @@ void PluginEditor::setupKnobs()
         // Master area bounds (positioned in master area)
         auto masterArea = juce::Rectangle<int>(453, 54, 413, 296);
         
-        // Create "MASTER" title in master area (top-left corner)
+        // Create "MASTER" title in master area (top-left corner, 5px right)
         masterTitle = std::make_unique<juce::Label>();
         masterTitle->setText("MASTER", juce::dontSendNotification);
         masterTitle->setFont(juce::Font(27.648f, juce::Font::bold)); // Same as EFFECT title
         masterTitle->setColour(juce::Label::textColourId, juce::Colours::white);
         masterTitle->setJustificationType(juce::Justification::centredLeft);
         addAndMakeVisible(masterTitle.get());
-        masterTitle->setBounds(masterArea.getX() + 10, masterArea.getY() + 5, 150, 30); // Top-left of master area
+        masterTitle->setBounds(masterArea.getX() + 15, masterArea.getY() + 5, 150, 30); // 5px more right (was 10)
         masterTitle->toFront(false);
         
         // Create Master Dice Button (randomizes all effects, all steps) 
@@ -1604,26 +1608,16 @@ void PluginEditor::setupKnobs()
         }
         
         masterDiceButton->onClick = [this]() {
-            DBG("[UI] Master dice clicked - randomizing ALL effects, ALL steps");
-            
-            // Do NOT call UI updates here - just randomize the data
-            auto& router = processorRef.getEffectRouter();
-            juce::Random& rng = juce::Random::getSystemRandom();
-            
-            for (int slot = 0; slot < 4; ++slot) {
-                EffectID effect = router.getEffectInSlot(static_cast<SlotID>(slot));
-                for (int step = 0; step < 16; ++step) {
-                    randomizeEffectStep(effect, step, rng);
-                }
+            DBG("[UI] Master dice clicked");
+            if (randomizationManager) {
+                randomizationManager->requestRandomizeAllActivePages();
             }
-            
-            DBG("[UI] Randomization complete - UI will update via timer");
         };
         
-        // Position dice button to the right of MASTER title
+        // Position dice button 20px left from before (was 160, now 140)
         const int diceSizeMaster = 32;
         masterDiceButton->setBounds(
-            masterArea.getX() + 160,  // Right after MASTER title
+            masterArea.getX() + 140,  // 20px left from before
             masterArea.getY() + 6,    // Aligned with MASTER title
             diceSizeMaster, diceSizeMaster
         );
@@ -6041,111 +6035,6 @@ void PluginEditor::updateReverbParameterFromKnob(int knobIndex)
     }
 }
 
-void PluginEditor::randomizeEffectStep(EffectID effect, int step, juce::Random& rng)
-{
-    switch (effect)
-            {
-                case EffectID::SpaceDelay:
-                {
-                    auto snapshot = processorRef.getSafeSnapshot(step);
-                    if (!knobLocked[0]) snapshot.delay.timeMs = 50.0f + rng.nextFloat() * 950.0f; // 50-1000ms
-                    if (!knobLocked[1]) snapshot.delay.feedback = rng.nextFloat() * 95.0f; // 0-95%
-                    if (!knobLocked[2]) snapshot.delay.wowDepth = rng.nextFloat(); // 0-1
-                    if (!knobLocked[3]) snapshot.delay.wowRate = rng.nextFloat() * 10.0f; // 0-10Hz
-                    if (!knobLocked[4]) snapshot.delay.saturation = rng.nextFloat(); // 0-1
-                    if (!knobLocked[5]) snapshot.delay.lowCut = 20.0f + rng.nextFloat() * 19980.0f; // 20-20kHz
-                    if (!knobLocked[6]) snapshot.delay.highCut = 20.0f + rng.nextFloat() * 19980.0f; // 20-20kHz
-                    if (!knobLocked[7]) snapshot.delay.mix = rng.nextFloat() * 100.0f; // 0-100%
-                    processorRef.setStepSnapshot(step, snapshot);
-                    break;
-                }
-                
-                case EffectID::AutoPan:
-                {
-                    auto snapshot = processorRef.getAutoPanSafeSnapshot(step);
-                    if (!autopanKnobLocked[0]) snapshot.autopan.rate = 0.01f + rng.nextFloat() * 9.99f;
-                    if (!autopanKnobLocked[1]) snapshot.autopan.amount = rng.nextFloat();
-                    if (!autopanKnobLocked[2]) snapshot.autopan.waveShape = rng.nextFloat();
-                    if (!autopanKnobLocked[3]) snapshot.autopan.phase = rng.nextFloat() * 360.0f;
-                    if (!autopanKnobLocked[4]) snapshot.autopan.waveType = (int)(rng.nextFloat() * 4.999f); // 0-4
-                    if (!autopanKnobLocked[5]) snapshot.autopan.inverted = rng.nextBool();
-                    if (!autopanKnobLocked[6]) snapshot.autopan.inverted = rng.nextBool(); // Note: 6 and 7 don't exist for autopan
-                    if (!autopanKnobLocked[7]) snapshot.autopan.inverted = rng.nextBool();
-                    processorRef.setAutoPanStepSnapshot(step, snapshot);
-                    break;
-                }
-                
-                case EffectID::Dirt:
-                {
-                    auto snapshot = processorRef.getDirtSafeSnapshot(step);
-                    if (!dirtKnobLocked[0]) snapshot.dirt.drive = rng.nextFloat() * 36.0f; // 0-36 dB
-                    if (!dirtKnobLocked[1]) snapshot.dirt.color = -1.0f + rng.nextFloat() * 2.0f; // -1 to +1
-                    if (!dirtKnobLocked[2]) snapshot.dirt.asym = -1.0f + rng.nextFloat() * 2.0f; // -1 to +1
-                    if (!dirtKnobLocked[3]) snapshot.dirt.texture = rng.nextFloat(); // 0-1
-                    if (!dirtKnobLocked[4]) snapshot.dirt.lowCut = 20.0f + rng.nextFloat() * 280.0f; // 20-300 Hz
-                    if (!dirtKnobLocked[5]) snapshot.dirt.highCut = 3000.0f + rng.nextFloat() * 19000.0f; // 3k-22k Hz
-                    if (!dirtKnobLocked[6]) snapshot.dirt.tone = -1.0f + rng.nextFloat() * 2.0f; // -1 to +1
-                    if (!dirtKnobLocked[7]) snapshot.dirt.mix = rng.nextFloat(); // 0-1
-                    processorRef.setDirtStepSnapshot(step, snapshot);
-                    break;
-                }
-                
-                case EffectID::Chorus:
-                {
-                    auto snapshot = processorRef.getChorusSafeSnapshot(step);
-                    if (!chorusKnobLocked[0]) snapshot.chorus.delayTime = 5.0f + rng.nextFloat() * 45.0f;
-                    if (!chorusKnobLocked[1]) snapshot.chorus.rate = 0.02f + rng.nextFloat() * 7.98f;
-                    if (!chorusKnobLocked[2]) snapshot.chorus.depth = rng.nextFloat() * 12.0f;
-                    if (!chorusKnobLocked[3]) snapshot.chorus.feedback = rng.nextFloat() * 0.9f;
-                    if (!chorusKnobLocked[4]) snapshot.chorus.voices = 2.0f + rng.nextFloat() * 6.0f;
-                    if (!chorusKnobLocked[5]) snapshot.chorus.width = rng.nextFloat();
-                    if (!chorusKnobLocked[6]) snapshot.chorus.tone = rng.nextFloat();
-                    if (!chorusKnobLocked[7]) snapshot.chorus.mix = rng.nextFloat();
-                    processorRef.setChorusStepSnapshot(step, snapshot);
-                    break;
-                }
-                
-                case EffectID::Reverb:
-                {
-                    auto snapshot = processorRef.getReverbSafeSnapshot(step);
-                    if (!reverbKnobLocked[0]) snapshot.reverb.type = rng.nextFloat(); // Width 0-1
-                    if (!reverbKnobLocked[1]) snapshot.reverb.size = 0.1f + rng.nextFloat() * 1.4f;
-                    if (!reverbKnobLocked[2]) snapshot.reverb.predelayMs = rng.nextFloat() * 200.0f;
-                    if (!reverbKnobLocked[3]) snapshot.reverb.dampHz = 1000.0f + rng.nextFloat() * 19000.0f;
-                    if (!reverbKnobLocked[4]) snapshot.reverb.diffusion = rng.nextFloat();
-                    if (!reverbKnobLocked[5]) snapshot.reverb.early = rng.nextFloat();
-                    if (!reverbKnobLocked[6]) snapshot.reverb.decaySec = 0.2f + rng.nextFloat() * 19.8f;
-                    if (!reverbKnobLocked[7]) snapshot.reverb.mix = rng.nextFloat();
-                    processorRef.setReverbStepSnapshot(step, snapshot);
-                    break;
-                }
-                
-                default:
-                    break;
-            }
-}
-
-void PluginEditor::randomizeAllEffectsAllSteps()
-{
-    DBG("[UI] Randomizing ALL effects, ALL steps (respecting locks)");
-    
-    auto& router = processorRef.getEffectRouter();
-    juce::Random& rng = juce::Random::getSystemRandom();
-    
-    // Randomize all 4 active effect slots
-    for (int slot = 0; slot < 4; ++slot)
-    {
-        EffectID effect = router.getEffectInSlot(static_cast<SlotID>(slot));
-        
-        // Randomize all 16 steps for this effect
-        for (int step = 0; step < 16; ++step)
-        {
-            randomizeEffectStep(effect, step, rng);
-        }
-    }
-    
-    DBG("[UI] Randomization complete - UI will update via timer");
-}
 
 void PluginEditor::onReverbStepButtonClicked(int stepIndex)
 {
