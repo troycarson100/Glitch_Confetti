@@ -23,79 +23,122 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     // Initialize randomization manager (thread-safe)
     randomizationManager = std::make_unique<RandomizationManager>(processorRef, processorRef.getAPVTS());
     
-    // Set callback to reload knobs when randomization completes
+    // Set callback to reload APVTS parameters when randomization completes
     randomizationManager->onRandomizationComplete = [this]() {
-        DBG("[UI] Randomization complete - reloading current step knobs");
+        DBG("[UI] Randomization complete - updating APVTS parameters for current steps");
         
-        // Reload current step's snapshot into knobs for each effect
-        // This simulates clicking the current step button again
+        // Update APVTS parameters from the randomized snapshots for currently selected steps
+        // The knobs will then follow via their attachments
         
-        // Space Delay
+        // Space Delay - update APVTS from snapshot
         int delayStep = processorRef.getSelectedStep();
         if (delayStep >= 0 && delayStep < 16) {
             auto snapshot = processorRef.getSafeSnapshot(delayStep);
-            if (knobs[0]) knobs[0]->setValue((snapshot.delay.timeMs - 10.0f) / (2000.0f - 10.0f), juce::dontSendNotification);
-            if (knobs[1]) knobs[1]->setValue(snapshot.delay.feedback / 100.0f, juce::dontSendNotification);
-            if (knobs[2]) knobs[2]->setValue(snapshot.delay.wowDepth / 100.0f, juce::dontSendNotification);
-            if (knobs[3]) knobs[3]->setValue((snapshot.delay.wowRate - 0.1f) / (8.0f - 0.1f), juce::dontSendNotification);
-            if (knobs[4]) knobs[4]->setValue(snapshot.delay.saturation / 100.0f, juce::dontSendNotification);
-            if (knobs[5]) knobs[5]->setValue((snapshot.delay.highCut - 1000.0f) / (20000.0f - 1000.0f), juce::dontSendNotification);
-            if (knobs[6]) knobs[6]->setValue((snapshot.delay.lowCut - 20.0f) / (2000.0f - 20.0f), juce::dontSendNotification);
-            if (knobs[7]) knobs[7]->setValue(snapshot.delay.mix / 100.0f, juce::dontSendNotification);
+            auto* timeMs = processorRef.getAPVTS().getParameter("timeMs");
+            auto* feedback = processorRef.getAPVTS().getParameter("feedback");
+            auto* wowDepth = processorRef.getAPVTS().getParameter("wowDepth");
+            auto* wowRate = processorRef.getAPVTS().getParameter("wowRate");
+            auto* drive = processorRef.getAPVTS().getParameter("drive");
+            auto* hiCut = processorRef.getAPVTS().getParameter("hiCut");
+            auto* lowCut = processorRef.getAPVTS().getParameter("lowCut");
+            auto* mix = processorRef.getAPVTS().getParameter("mix");
+            
+            if (timeMs) timeMs->setValueNotifyingHost(timeMs->convertTo0to1(snapshot.delay.timeMs));
+            if (feedback) feedback->setValueNotifyingHost(feedback->convertTo0to1(snapshot.delay.feedback / 100.0f));
+            if (wowDepth) wowDepth->setValueNotifyingHost(wowDepth->convertTo0to1(snapshot.delay.wowDepth / 100.0f));
+            if (wowRate) wowRate->setValueNotifyingHost(wowRate->convertTo0to1(snapshot.delay.wowRate));
+            if (drive) drive->setValueNotifyingHost(drive->convertTo0to1(snapshot.delay.saturation / 100.0f));
+            if (hiCut) hiCut->setValueNotifyingHost(hiCut->convertTo0to1(snapshot.delay.highCut));
+            if (lowCut) lowCut->setValueNotifyingHost(lowCut->convertTo0to1(snapshot.delay.lowCut));
+            if (mix) mix->setValueNotifyingHost(mix->convertTo0to1(snapshot.delay.mix / 100.0f));
         }
         
-        // AutoPan
+        // AutoPan - update APVTS from snapshot
         int autopanStep = autopanUiSelectedStep;
         if (autopanStep >= 0 && autopanStep < 16) {
             auto snapshot = processorRef.getAutoPanSafeSnapshot(autopanStep);
-            if (autopanKnobs[0]) autopanKnobs[0]->setValue(snapshot.autopan.rate, juce::dontSendNotification);
-            if (autopanKnobs[1]) autopanKnobs[1]->setValue(snapshot.autopan.phase, juce::dontSendNotification);
-            if (autopanKnobs[2]) autopanKnobs[2]->setValue((float)snapshot.autopan.waveType, juce::dontSendNotification);
-            if (autopanKnobs[3]) autopanKnobs[3]->setValue(snapshot.autopan.waveShape, juce::dontSendNotification);
-            if (autopanKnobs[4]) autopanKnobs[4]->setValue(snapshot.autopan.inverted ? 1.0f : 0.0f, juce::dontSendNotification);
-            if (autopanKnobs[5]) autopanKnobs[5]->setValue(snapshot.autopan.amount, juce::dontSendNotification);
+            auto* panRate = processorRef.getAPVTS().getParameter("panRate");
+            auto* panPhase = processorRef.getAPVTS().getParameter("panPhase");
+            auto* panWaveType = processorRef.getAPVTS().getParameter("panWaveType");
+            auto* panWaveShape = processorRef.getAPVTS().getParameter("panWaveShape");
+            auto* panInvert = processorRef.getAPVTS().getParameter("panInvert");
+            auto* panAmount = processorRef.getAPVTS().getParameter("panAmount");
+            
+            if (panRate) panRate->setValueNotifyingHost(panRate->convertTo0to1(snapshot.autopan.rate));
+            if (panPhase) panPhase->setValueNotifyingHost(panPhase->convertTo0to1(snapshot.autopan.phase));
+            if (panWaveType) panWaveType->setValueNotifyingHost(panWaveType->convertTo0to1((float)snapshot.autopan.waveType));
+            if (panWaveShape) panWaveShape->setValueNotifyingHost(panWaveShape->convertTo0to1(snapshot.autopan.waveShape));
+            if (panInvert) panInvert->setValueNotifyingHost(panInvert->convertTo0to1(snapshot.autopan.inverted ? 1.0f : 0.0f));
+            if (panAmount) panAmount->setValueNotifyingHost(panAmount->convertTo0to1(snapshot.autopan.amount));
         }
         
-        // Dirt
+        // Dirt - update APVTS from snapshot
         int dirtStep = dirtUiSelectedStep;
         if (dirtStep >= 0 && dirtStep < 16) {
             auto snapshot = processorRef.getDirtSafeSnapshot(dirtStep);
-            if (dirtKnobs[0]) dirtKnobs[0]->setValue(snapshot.dirt.drive, juce::dontSendNotification);
-            if (dirtKnobs[1]) dirtKnobs[1]->setValue(snapshot.dirt.color, juce::dontSendNotification);
-            if (dirtKnobs[2]) dirtKnobs[2]->setValue(snapshot.dirt.asym, juce::dontSendNotification);
-            if (dirtKnobs[3]) dirtKnobs[3]->setValue(snapshot.dirt.texture, juce::dontSendNotification);
-            if (dirtKnobs[4]) dirtKnobs[4]->setValue(snapshot.dirt.lowCut, juce::dontSendNotification);
-            if (dirtKnobs[5]) dirtKnobs[5]->setValue(snapshot.dirt.highCut, juce::dontSendNotification);
-            if (dirtKnobs[6]) dirtKnobs[6]->setValue(snapshot.dirt.tone, juce::dontSendNotification);
-            if (dirtKnobs[7]) dirtKnobs[7]->setValue(snapshot.dirt.mix, juce::dontSendNotification);
+            auto* dirtDrive = processorRef.getAPVTS().getParameter("dirtDrive");
+            auto* dirtColor = processorRef.getAPVTS().getParameter("dirtColor");
+            auto* dirtAsym = processorRef.getAPVTS().getParameter("dirtAsym");
+            auto* dirtTexture = processorRef.getAPVTS().getParameter("dirtTexture");
+            auto* dirtLowCut = processorRef.getAPVTS().getParameter("dirtLowCut");
+            auto* dirtHighCut = processorRef.getAPVTS().getParameter("dirtHighCut");
+            auto* dirtTone = processorRef.getAPVTS().getParameter("dirtTone");
+            auto* dirtMix = processorRef.getAPVTS().getParameter("dirtMix");
+            
+            if (dirtDrive) dirtDrive->setValueNotifyingHost(dirtDrive->convertTo0to1(snapshot.dirt.drive));
+            if (dirtColor) dirtColor->setValueNotifyingHost(dirtColor->convertTo0to1(snapshot.dirt.color));
+            if (dirtAsym) dirtAsym->setValueNotifyingHost(dirtAsym->convertTo0to1(snapshot.dirt.asym));
+            if (dirtTexture) dirtTexture->setValueNotifyingHost(dirtTexture->convertTo0to1(snapshot.dirt.texture));
+            if (dirtLowCut) dirtLowCut->setValueNotifyingHost(dirtLowCut->convertTo0to1(snapshot.dirt.lowCut));
+            if (dirtHighCut) dirtHighCut->setValueNotifyingHost(dirtHighCut->convertTo0to1(snapshot.dirt.highCut));
+            if (dirtTone) dirtTone->setValueNotifyingHost(dirtTone->convertTo0to1(snapshot.dirt.tone));
+            if (dirtMix) dirtMix->setValueNotifyingHost(dirtMix->convertTo0to1(snapshot.dirt.mix));
         }
         
         // Chorus
         int chorusStep = chorusUiSelectedStep;
         if (chorusStep >= 0 && chorusStep < 16) {
             auto snapshot = processorRef.getChorusSafeSnapshot(chorusStep);
-            if (chorusKnobs[0]) chorusKnobs[0]->setValue(snapshot.chorus.delayTime, juce::dontSendNotification);
-            if (chorusKnobs[1]) chorusKnobs[1]->setValue(snapshot.chorus.rate, juce::dontSendNotification);
-            if (chorusKnobs[2]) chorusKnobs[2]->setValue(snapshot.chorus.depth, juce::dontSendNotification);
-            if (chorusKnobs[3]) chorusKnobs[3]->setValue(snapshot.chorus.feedback, juce::dontSendNotification);
-            if (chorusKnobs[4]) chorusKnobs[4]->setValue(snapshot.chorus.voices, juce::dontSendNotification);
-            if (chorusKnobs[5]) chorusKnobs[5]->setValue(snapshot.chorus.width, juce::dontSendNotification);
-            if (chorusKnobs[6]) chorusKnobs[6]->setValue(snapshot.chorus.tone, juce::dontSendNotification);
-            if (chorusKnobs[7]) chorusKnobs[7]->setValue(snapshot.chorus.mix, juce::dontSendNotification);
+            auto* chorusDelay = processorRef.getAPVTS().getParameter("chorusDelay");
+            auto* chorusRate = processorRef.getAPVTS().getParameter("chorusRate");
+            auto* chorusDepth = processorRef.getAPVTS().getParameter("chorusDepth");
+            auto* chorusFeedback = processorRef.getAPVTS().getParameter("chorusFeedback");
+            auto* chorusVoices = processorRef.getAPVTS().getParameter("chorusVoices");
+            auto* chorusWidth = processorRef.getAPVTS().getParameter("chorusWidth");
+            auto* chorusTone = processorRef.getAPVTS().getParameter("chorusTone");
+            auto* chorusMix = processorRef.getAPVTS().getParameter("chorusMix");
+            
+            if (chorusDelay) chorusDelay->setValueNotifyingHost(chorusDelay->convertTo0to1(snapshot.chorus.delayTime));
+            if (chorusRate) chorusRate->setValueNotifyingHost(chorusRate->convertTo0to1(snapshot.chorus.rate));
+            if (chorusDepth) chorusDepth->setValueNotifyingHost(chorusDepth->convertTo0to1(snapshot.chorus.depth));
+            if (chorusFeedback) chorusFeedback->setValueNotifyingHost(chorusFeedback->convertTo0to1(snapshot.chorus.feedback));
+            if (chorusVoices) chorusVoices->setValueNotifyingHost(chorusVoices->convertTo0to1(snapshot.chorus.voices));
+            if (chorusWidth) chorusWidth->setValueNotifyingHost(chorusWidth->convertTo0to1(snapshot.chorus.width));
+            if (chorusTone) chorusTone->setValueNotifyingHost(chorusTone->convertTo0to1(snapshot.chorus.tone));
+            if (chorusMix) chorusMix->setValueNotifyingHost(chorusMix->convertTo0to1(snapshot.chorus.mix));
         }
         
         // Reverb
         int reverbStep = reverbUiSelectedStep;
         if (reverbStep >= 0 && reverbStep < 16) {
             auto snapshot = processorRef.getReverbSafeSnapshot(reverbStep);
-            if (reverbKnobs[0]) reverbKnobs[0]->setValue(snapshot.reverb.type, juce::dontSendNotification); // Width
-            if (reverbKnobs[1]) reverbKnobs[1]->setValue(snapshot.reverb.size, juce::dontSendNotification);
-            if (reverbKnobs[2]) reverbKnobs[2]->setValue(snapshot.reverb.predelayMs, juce::dontSendNotification);
-            if (reverbKnobs[3]) reverbKnobs[3]->setValue(snapshot.reverb.dampHz, juce::dontSendNotification);
-            if (reverbKnobs[4]) reverbKnobs[4]->setValue(snapshot.reverb.diffusion, juce::dontSendNotification);
-            if (reverbKnobs[5]) reverbKnobs[5]->setValue(snapshot.reverb.early, juce::dontSendNotification);
-            if (reverbKnobs[6]) reverbKnobs[6]->setValue(snapshot.reverb.decaySec, juce::dontSendNotification);
-            if (reverbKnobs[7]) reverbKnobs[7]->setValue(snapshot.reverb.mix, juce::dontSendNotification);
+            auto* verbWidth = processorRef.getAPVTS().getParameter("verbWidth");
+            auto* verbSize = processorRef.getAPVTS().getParameter("verbSize");
+            auto* verbPredelayMs = processorRef.getAPVTS().getParameter("verbPredelayMs");
+            auto* verbDampHz = processorRef.getAPVTS().getParameter("verbDampHz");
+            auto* verbDiffusion = processorRef.getAPVTS().getParameter("verbDiffusion");
+            auto* verbEarlyLevel = processorRef.getAPVTS().getParameter("verbEarlyLevel");
+            auto* verbDecaySec = processorRef.getAPVTS().getParameter("verbDecaySec");
+            auto* verbMix = processorRef.getAPVTS().getParameter("verbMix");
+            
+            if (verbWidth) verbWidth->setValueNotifyingHost(verbWidth->convertTo0to1(snapshot.reverb.type)); // type field holds width
+            if (verbSize) verbSize->setValueNotifyingHost(verbSize->convertTo0to1(snapshot.reverb.size));
+            if (verbPredelayMs) verbPredelayMs->setValueNotifyingHost(verbPredelayMs->convertTo0to1(snapshot.reverb.predelayMs));
+            if (verbDampHz) verbDampHz->setValueNotifyingHost(verbDampHz->convertTo0to1(snapshot.reverb.dampHz));
+            if (verbDiffusion) verbDiffusion->setValueNotifyingHost(verbDiffusion->convertTo0to1(snapshot.reverb.diffusion));
+            if (verbEarlyLevel) verbEarlyLevel->setValueNotifyingHost(verbEarlyLevel->convertTo0to1(snapshot.reverb.early));
+            if (verbDecaySec) verbDecaySec->setValueNotifyingHost(verbDecaySec->convertTo0to1(snapshot.reverb.decaySec));
+            if (verbMix) verbMix->setValueNotifyingHost(verbMix->convertTo0to1(snapshot.reverb.mix));
         }
     };
     
