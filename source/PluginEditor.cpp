@@ -7008,6 +7008,10 @@ void PluginEditor::setupGranularAllStepsToggle()
     granularAllStepsLabel->setBounds(effectArea.getX() + effectArea.getWidth()/2 + buttonSize/2 + 5 + 30, 
                                 effectArea.getY() + 1, 80, 24);
     
+    // Add to granularGroup
+    granularGroup.push_back(granularAllStepsToggle.get());
+    granularGroup.push_back(granularAllStepsLabel.get());
+    
     DBG("[UI] Granular All Steps toggle setup complete");
 }
 
