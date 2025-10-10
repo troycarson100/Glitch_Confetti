@@ -9,6 +9,7 @@
 #include "ui/BigComboWithSvgLNF.h"
 #include "DualBarMeter.h"
 #include "ui/PanManBar.h"
+#include "EffectRouter.h"
 #include "ui/OutputSpectrumView.h"
 #include "ui/SpectrumFilterSlider.h"
 
@@ -442,6 +443,7 @@ public:
         void randomizeIndividualKnob(int knobIndex);
         void updateParameterFromKnob(int knobIndex);
         void randomizeAllEffectsAllSteps(); // Master dice: randomize all unlocked knobs on all steps for all 4 active effects
+        void randomizeEffectStep(EffectID effect, int step, juce::Random& rng); // Helper to randomize a single step
         void updateAllStepSnapshots(int knobIndex);
         void onStepButtonClicked(int stepIndex);
         void updateSequencerUI();

@@ -1585,6 +1585,49 @@ void PluginEditor::setupKnobs()
         // Master area bounds (positioned in master area)
         auto masterArea = juce::Rectangle<int>(453, 54, 413, 296);
         
+        // Create "MASTER" title in master area (top-left corner)
+        masterTitle = std::make_unique<juce::Label>();
+        masterTitle->setText("MASTER", juce::dontSendNotification);
+        masterTitle->setFont(juce::Font(27.648f, juce::Font::bold)); // Same as EFFECT title
+        masterTitle->setColour(juce::Label::textColourId, juce::Colours::white);
+        masterTitle->setJustificationType(juce::Justification::centredLeft);
+        addAndMakeVisible(masterTitle.get());
+        masterTitle->setBounds(masterArea.getX() + 10, masterArea.getY() + 5, 150, 30); // Top-left of master area
+        masterTitle->toFront(false);
+        
+        // Create Master Dice Button (randomizes all effects, all steps) 
+        masterDiceButton = std::make_unique<CustomDiceButton>();
+        addAndMakeVisible(masterDiceButton.get());
+        
+        if (assets.diceLarge) {
+            masterDiceButton->setDiceImage(assets.diceLarge->createCopy());
+        }
+        
+        masterDiceButton->onClick = [this]() {
+            DBG("[UI] Master dice clicked - randomizing ALL effects, ALL steps");
+            
+            // Do NOT call UI updates here - just randomize the data
+            auto& router = processorRef.getEffectRouter();
+            juce::Random& rng = juce::Random::getSystemRandom();
+            
+            for (int slot = 0; slot < 4; ++slot) {
+                EffectID effect = router.getEffectInSlot(static_cast<SlotID>(slot));
+                for (int step = 0; step < 16; ++step) {
+                    randomizeEffectStep(effect, step, rng);
+                }
+            }
+            
+            DBG("[UI] Randomization complete - UI will update via timer");
+        };
+        
+        // Position dice button to the right of MASTER title
+        const int diceSizeMaster = 32;
+        masterDiceButton->setBounds(
+            masterArea.getX() + 160,  // Right after MASTER title
+            masterArea.getY() + 6,    // Aligned with MASTER title
+            diceSizeMaster, diceSizeMaster
+        );
+        
         // Position master knobs horizontally in master area (centered and moved down 20px more)
         const int knobSize = 109; // 30% bigger: 84 * 1.3 = 109
         const int spacing = 129; // knobSize + 20px padding: 109 + 20 = 129
@@ -1845,44 +1888,6 @@ void PluginEditor::setupKnobs()
         effectsTitle->setJustificationType(juce::Justification::centredLeft);
         addAndMakeVisible(effectsTitle.get());
         effectsTitle->setBounds(effectArea.getX() + 10, effectArea.getY() + 5, 100, 30); // Moved left 10px and down 5px
-        
-        // Create "MASTER" title (global randomizer label) - matching EFFECT style
-        masterTitle = std::make_unique<juce::Label>();
-        masterTitle->setText("MASTER", juce::dontSendNotification);
-        masterTitle->setFont(juce::Font(27.648f, juce::Font::bold)); // Same as EFFECT title
-        masterTitle->setColour(juce::Label::textColourId, juce::Colours::white);
-        masterTitle->setColour(juce::Label::backgroundColourId, juce::Colours::transparentBlack);
-        masterTitle->setJustificationType(juce::Justification::centredLeft);
-        addAndMakeVisible(masterTitle.get());
-        masterTitle->setBounds(effectArea.getX() + 200, effectArea.getY() + 5, 120, 30); // 200px from left, same Y as EFFECT
-        masterTitle->toFront(false); // Ensure it's on top
-        
-        // Create Master Dice Button (randomizes all effects, all steps)
-        masterDiceButton = std::make_unique<CustomDiceButton>();
-        addAndMakeVisible(masterDiceButton.get());
-        
-        if (assets.diceLarge) {
-            masterDiceButton->setDiceImage(assets.diceLarge->createCopy());
-        }
-        
-        masterDiceButton->onClick = [this]() {
-            DBG("[UI] Master dice clicked - randomizing ALL effects, ALL steps");
-            try {
-                randomizeAllEffectsAllSteps();
-            } catch (const std::exception& e) {
-                DBG("[UI] Error in randomizeAllEffectsAllSteps: " + juce::String(e.what()));
-            } catch (...) {
-                DBG("[UI] Unknown error in randomizeAllEffectsAllSteps");
-            }
-        };
-        
-        // Position dice button 250px from the left edge
-        const int diceSizeMaster = 24;
-        masterDiceButton->setBounds(
-            effectArea.getX() + 250,  // 250px from left edge
-            effectArea.getY() + 6,    // Aligned with EFFECT title
-            diceSizeMaster, diceSizeMaster
-        );
         
         // Create dice button
         diceButton = std::make_unique<CustomDiceButton>();
@@ -6036,23 +6041,9 @@ void PluginEditor::updateReverbParameterFromKnob(int knobIndex)
     }
 }
 
-void PluginEditor::randomizeAllEffectsAllSteps()
+void PluginEditor::randomizeEffectStep(EffectID effect, int step, juce::Random& rng)
 {
-    DBG("[UI] Randomizing ALL effects, ALL steps (respecting locks)");
-    
-    try {
-        auto& router = processorRef.getEffectRouter();
-        juce::Random& rng = juce::Random::getSystemRandom();
-        
-        // Randomize all 4 active effect slots
-        for (int slot = 0; slot < 4; ++slot)
-    {
-        EffectID effect = router.getEffectInSlot(static_cast<SlotID>(slot));
-        
-        // Randomize all 16 steps for this effect
-        for (int step = 0; step < 16; ++step)
-        {
-            switch (effect)
+    switch (effect)
             {
                 case EffectID::SpaceDelay:
                 {
@@ -6132,27 +6123,28 @@ void PluginEditor::randomizeAllEffectsAllSteps()
                 default:
                     break;
             }
+}
+
+void PluginEditor::randomizeAllEffectsAllSteps()
+{
+    DBG("[UI] Randomizing ALL effects, ALL steps (respecting locks)");
+    
+    auto& router = processorRef.getEffectRouter();
+    juce::Random& rng = juce::Random::getSystemRandom();
+    
+    // Randomize all 4 active effect slots
+    for (int slot = 0; slot < 4; ++slot)
+    {
+        EffectID effect = router.getEffectInSlot(static_cast<SlotID>(slot));
+        
+        // Randomize all 16 steps for this effect
+        for (int step = 0; step < 16; ++step)
+        {
+            randomizeEffectStep(effect, step, rng);
         }
     }
     
-        // Update the UI for the currently visible effect (on message thread for safety)
-        auto safeThis = juce::Component::SafePointer<PluginEditor>(this);
-        juce::MessageManager::callAsync([safeThis]() {
-            if (safeThis) {
-                safeThis->updateSequencerUI();
-                safeThis->updateAutoPanSequencerUI();
-                safeThis->updateDirtSequencerUI();
-                safeThis->updateChorusSequencerUI();
-                safeThis->updateReverbSequencerUI();
-            }
-        });
-        
-        DBG("[UI] Randomization complete!");
-    } catch (const std::exception& e) {
-        DBG("[UI] Error in randomization: " + juce::String(e.what()));
-    } catch (...) {
-        DBG("[UI] Unknown error during randomization");
-    }
+    DBG("[UI] Randomization complete - UI will update via timer");
 }
 
 void PluginEditor::onReverbStepButtonClicked(int stepIndex)
