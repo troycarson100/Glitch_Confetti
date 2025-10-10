@@ -6343,6 +6343,7 @@ void PluginEditor::updateTabButtonImages()
             case EffectID::Dirt:       return assets.tabDirtIcon.get();
             case EffectID::Chorus:     return assets.tabChorusIcon.get();
             case EffectID::Reverb:     return assets.tabVerbIcon.get();
+            case EffectID::Granular:   return assets.tabGranularIcon.get();
         }
         return nullptr;
     };
@@ -6372,54 +6373,79 @@ void PluginEditor::setupGranularKnobs()
 {
     DBG("[UI] Setting up Granular knobs...");
 
-    // Granular knob names
+    // Granular knob names (8 knobs)
     std::vector<juce::String> granularKnobNames = {
         "Size", "Density", "Position", "Spray", "Pitch", "Random", "Texture", "Mix"
     };
-    
-    // Granular parameter IDs
-    std::vector<juce::String> granularParamIds = {
-        "granSizeMs", "granDensityHz", "granPosition", "granSprayMs",
-        "granPitchSemi", "granRandom", "granTexture", "granMix"
-    };
-    
+
+    // Effect area bounds (EXACT same as Reverb page)
     auto effectArea = juce::Rectangle<int>(25, 54, 413, 296);
     const int knobSize = 80;
-    
-    // Position knobs in 2 rows of 4
-    for (int i = 0; i < 8; ++i) {
+    const int knobSpacing = 20;
+    const int startX = effectArea.getX() + 15;
+    const int startY = effectArea.getY() + effectArea.getHeight() - 210;
+
+    for (int i = 0; i < 8; ++i)
+    {
         granularKnobs[i] = std::make_unique<CustomKnob>();
         addAndMakeVisible(granularKnobs[i].get());
+        granularKnobs[i]->setVisible(false);
         
-        // Set knob images
-        if (assets.knobRing != nullptr && assets.knobInside != nullptr) {
-            granularKnobs[i]->setRingImage(assets.knobRing->createCopy());
-            granularKnobs[i]->setInnerImage(assets.knobInside->createCopy());
-        }
-        
-        // Set ranges based on parameter
+        granularKnobs[i]->setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
+        granularKnobs[i]->setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
+
+        // Set parameter ranges based on knob index
         switch (i) {
-            case 0: granularKnobs[i]->setRange(5.0, 200.0, 0.1); granularKnobs[i]->setValue(40.0); break; // Size
-            case 1: granularKnobs[i]->setRange(1.0, 80.0, 0.1); granularKnobs[i]->setValue(20.0); break; // Density
-            case 2: granularKnobs[i]->setRange(0.0, 1.0, 0.01); granularKnobs[i]->setValue(1.0); break; // Position
-            case 3: granularKnobs[i]->setRange(0.0, 200.0, 0.1); granularKnobs[i]->setValue(35.0); break; // Spray
-            case 4: granularKnobs[i]->setRange(-24.0, 24.0, 0.01); granularKnobs[i]->setValue(0.0); break; // Pitch
-            case 5: granularKnobs[i]->setRange(0.0, 1.0, 0.01); granularKnobs[i]->setValue(0.25); break; // Random
-            case 6: granularKnobs[i]->setRange(0.0, 1.0, 0.01); granularKnobs[i]->setValue(0.3); break; // Texture
-            case 7: granularKnobs[i]->setRange(0.0, 1.0, 0.01); granularKnobs[i]->setValue(0.5); break; // Mix
+            case 0: // Size (5-200ms)
+                granularKnobs[i]->setRange(5.0, 200.0, 0.1);
+                granularKnobs[i]->setValue(40.0, juce::dontSendNotification);
+                break;
+            case 1: // Density (1-80 Hz)
+                granularKnobs[i]->setRange(1.0, 80.0, 0.1);
+                granularKnobs[i]->setValue(20.0, juce::dontSendNotification);
+                break;
+            case 2: // Position (0-1)
+                granularKnobs[i]->setRange(0.0, 1.0, 0.01);
+                granularKnobs[i]->setValue(1.0, juce::dontSendNotification);
+                break;
+            case 3: // Spray (0-200ms)
+                granularKnobs[i]->setRange(0.0, 200.0, 0.1);
+                granularKnobs[i]->setValue(35.0, juce::dontSendNotification);
+                break;
+            case 4: // Pitch (-24 to +24 semitones)
+                granularKnobs[i]->setRange(-24.0, 24.0, 0.01);
+                granularKnobs[i]->setValue(0.0, juce::dontSendNotification);
+                break;
+            case 5: // Random (0-1)
+                granularKnobs[i]->setRange(0.0, 1.0, 0.01);
+                granularKnobs[i]->setValue(0.25, juce::dontSendNotification);
+                break;
+            case 6: // Texture (0-1)
+                granularKnobs[i]->setRange(0.0, 1.0, 0.01);
+                granularKnobs[i]->setValue(0.3, juce::dontSendNotification);
+                break;
+            case 7: // Mix (0-1)
+                granularKnobs[i]->setRange(0.0, 1.0, 0.01);
+                granularKnobs[i]->setValue(0.5, juce::dontSendNotification);
+                break;
         }
-        
-        // Create APVTS attachment
-        granularAttachments[i] = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
-            processorRef.getAPVTS(), granularParamIds[i], *granularKnobs[i]);
-        
-        // Position in grid (2 rows x 4 columns)
-        int row = i / 4;
-        int col = i % 4;
-        int x = effectArea.getX() + 15 + col * 100;
-        int y = effectArea.getY() + 85 + row * 110;
+
+        // Set knob images
+        if (assets.knobRing != nullptr)
+            granularKnobs[i]->setRingImage(assets.knobRing->createCopy());
+        if (assets.knobInside != nullptr)
+            granularKnobs[i]->setInnerImage(assets.knobInside->createCopy());
+
+        int x = startX + (i % 4) * (knobSize + knobSpacing);
+        int y = startY + (i / 4) * (knobSize + 20);
+
+        if (i < 4)
+            y -= 23;
+        else
+            y -= 1;
+
         granularKnobs[i]->setBounds(x, y, knobSize, knobSize);
-        
+
         // Create label
         granularKnobLabels[i] = std::make_unique<juce::Label>();
         granularKnobLabels[i]->setText(granularKnobNames[i], juce::dontSendNotification);
@@ -6427,47 +6453,76 @@ void PluginEditor::setupGranularKnobs()
         granularKnobLabels[i]->setColour(juce::Label::textColourId, juce::Colours::white);
         granularKnobLabels[i]->setJustificationType(juce::Justification::centred);
         addAndMakeVisible(granularKnobLabels[i].get());
-        granularKnobLabels[i]->setBounds(x, y - 20, knobSize, 15);
-        
+        granularKnobLabels[i]->setVisible(false);
+        granularKnobLabels[i]->setBounds(x, y - 15, knobSize, 20);
+
         // Create value label
         granularValueLabels[i] = std::make_unique<juce::Label>();
+        granularValueLabels[i]->setText("0", juce::dontSendNotification);
         granularValueLabels[i]->setFont(juce::Font(10.0f, juce::Font::plain));
         granularValueLabels[i]->setColour(juce::Label::textColourId, juce::Colours::white);
         granularValueLabels[i]->setJustificationType(juce::Justification::centred);
         addAndMakeVisible(granularValueLabels[i].get());
+        granularValueLabels[i]->setVisible(false);
         granularValueLabels[i]->setBounds(x, y + knobSize - 10, knobSize, 15);
-        
+
         // Create indicator bar
         granularIndicatorBars[i] = std::make_unique<IndicatorBar>();
         addAndMakeVisible(granularIndicatorBars[i].get());
-        granularIndicatorBars[i]->setBounds(x + knobSize + 5, y + 20, 8, 40);
-        
-        // Create dice button (hidden)
+        granularIndicatorBars[i]->setVisible(false);
+        granularIndicatorBars[i]->setBounds(x + 10, y + knobSize + 8, knobSize - 20, 13);
+        granularIndicatorBars[i]->setValue(0.5f);
+
+        // Create dice button
         granularDiceButtons[i] = std::make_unique<CustomDiceButton>();
-        granularDiceButtons[i]->setVisible(false);
-        addAndMakeVisible(granularDiceButtons[i].get());
-        
+        granularDiceButtons[i]->onClick = [this, i]() { randomizeIndividualGranularKnob(i); };
+
         // Create lock button
         granularLockButtons[i] = std::make_unique<LockButton>();
         addAndMakeVisible(granularLockButtons[i].get());
-        if (assets.lockedIcon && assets.unlockedIcon) {
-            granularLockButtons[i]->setImages(assets.unlockedIcon->createCopy(), assets.lockedIcon->createCopy());
+        granularLockButtons[i]->setVisible(false);
+        
+        const int diceSize = 10;
+        const int diceSpacing = 5;
+        
+        juce::Font labelFont(12.0f, juce::Font::bold);
+        int textWidth = labelFont.getStringWidth(granularKnobNames[i]);
+        
+        int lockX = x + (knobSize / 2) + (textWidth / 2) + diceSpacing;
+        int lockY = y - 10;
+        
+        granularLockButtons[i]->setBounds(lockX, lockY, diceSize, diceSize);
+        
+        if (assets.unlockedIcon && assets.lockedIcon) {
+            auto imgUnlocked = assets.unlockedIcon->createCopy();
+            auto imgLocked = assets.lockedIcon->createCopy();
+            granularLockButtons[i]->setImages(std::move(imgUnlocked), std::move(imgLocked));
         }
-        granularLockButtons[i]->setBounds(x + knobSize - 20, y + knobSize - 20, 16, 16);
-        granularLockButtons[i]->setToggleState(false, juce::dontSendNotification);
+        
+        granularLockButtons[i]->setToggleState(granularKnobLocked[i], juce::dontSendNotification);
         granularLockButtons[i]->onClick = [this, i]() {
             granularKnobLocked[i] = granularLockButtons[i]->getToggleState();
+            DBG("[UI] Granular knob " << i << " lock: " << (granularKnobLocked[i] ? "LOCKED" : "UNLOCKED"));
         };
     }
-    
-    // Populate granularGroup for visibility toggling
-    for (int i = 0; i < 8; ++i) {
-        if (granularKnobs[i]) granularGroup.push_back(granularKnobs[i].get());
-        if (granularKnobLabels[i]) granularGroup.push_back(granularKnobLabels[i].get());
-        if (granularValueLabels[i]) granularGroup.push_back(granularValueLabels[i].get());
-        if (granularIndicatorBars[i]) granularGroup.push_back(granularIndicatorBars[i].get());
-        if (granularDiceButtons[i]) granularGroup.push_back(granularDiceButtons[i].get());
-        if (granularLockButtons[i]) granularGroup.push_back(granularLockButtons[i].get());
+
+    // Create parameter attachments to connect knobs to APVTS
+    std::vector<juce::String> granularParamIds = {
+        "granSizeMs", "granDensityHz", "granPosition", "granSprayMs",
+        "granPitchSemi", "granRandom", "granTexture", "granMix"
+    };
+
+    for (int i = 0; i < 8; ++i)
+    {
+        granularAttachments[i] = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+            processorRef.getAPVTS(), granularParamIds[i], *granularKnobs[i]);
+        
+        // Add to granularGroup for visibility toggling
+        granularGroup.push_back(granularKnobs[i].get());
+        granularGroup.push_back(granularKnobLabels[i].get());
+        granularGroup.push_back(granularValueLabels[i].get());
+        granularGroup.push_back(granularIndicatorBars[i].get());
+        granularGroup.push_back(granularLockButtons[i].get());
     }
     
     DBG("[UI] Granular knobs setup complete");
@@ -6486,60 +6541,70 @@ void PluginEditor::setupGranularEffectsArea()
     granularEffectsTitle->setColour(juce::Label::textColourId, juce::Colours::white);
     granularEffectsTitle->setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(granularEffectsTitle.get());
+    granularEffectsTitle->setVisible(false);
     granularEffectsTitle->setBounds(effectArea.getX() + 10, effectArea.getY() + 5, 100, 30);
     
     // Create dice button
     granularDiceButton = std::make_unique<CustomDiceButton>();
     addAndMakeVisible(granularDiceButton.get());
-    if (assets.diceLarge) {
+    granularDiceButton->setVisible(false);
+    
+    const int diceSize = 32;
+    granularDiceButton->setBounds(effectArea.getX() + 130, effectArea.getY() + 5, diceSize, diceSize);
+    
+    if (assets.diceLarge != nullptr)
+    {
         granularDiceButton->setDiceImage(assets.diceLarge->createCopy());
     }
+    
     granularDiceButton->onClick = [this]() {
+        DBG("[UI] Granular dice button clicked - randomizing all knobs");
         randomizeGranularKnobValues();
     };
-    const int diceSize = 32;
-    granularDiceButton->setBounds(
-        effectArea.getX() + effectArea.getWidth() - diceSize - 10,
-        effectArea.getY() + 6,
-        diceSize, diceSize
-    );
     
-    // Create FX power button
-    granularFxPowerButton = std::make_unique<juce::DrawableButton>("granularFxPower", juce::DrawableButton::ImageFitted);
+    // Create FX power button (EXACT same as Reverb)
+    granularFxPowerButton = std::make_unique<juce::DrawableButton>("granularFxPower", juce::DrawableButton::ButtonStyle::ImageFitted);
     addAndMakeVisible(granularFxPowerButton.get());
+    granularFxPowerButton->setVisible(false);
+
+    const int buttonSize = 46;
+    granularFxPowerButton->setBounds(effectArea.getX() + effectArea.getWidth() - buttonSize - 8 + 8 + 3, 
+                                 effectArea.getY() + 6 - 20 + 4, buttonSize, buttonSize);
+
+    granularFxPowerButton->setColour(juce::DrawableButton::backgroundColourId, juce::Colours::transparentBlack);
+    granularFxPowerButton->setColour(juce::DrawableButton::backgroundOnColourId, juce::Colours::transparentBlack);
     
-    if (assets.fxPowerOn) {
+    if (assets.fxPowerOn != nullptr) {
         granularFxPowerButton->setImages(assets.fxPowerOn->createCopy().get());
     }
     
     granularFxPowerButton->setClickingTogglesState(true);
-    granularFxPowerButton->setToggleState(true, juce::dontSendNotification);
-    granularFxPowerButton->setColour(juce::DrawableButton::backgroundColourId, juce::Colours::transparentBlack);
-    granularFxPowerButton->setColour(juce::DrawableButton::backgroundOnColourId, juce::Colours::transparentBlack);
     
-    const int buttonSize = 24;
-    granularFxPowerButton->setBounds(
-        effectArea.getX() + effectArea.getWidth() - buttonSize - 8 + 8 + 3,
-        effectArea.getY() + 6 - 20 + 4,
-        buttonSize, buttonSize
-    );
+    auto* granEnabledParam = processorRef.getAPVTS().getRawParameterValue("granEnabled");
+    if (granEnabledParam) {
+        granularFxAreaEnabled = granEnabledParam->load() > 0.5f;
+        granularFxPowerButton->setToggleState(granularFxAreaEnabled, juce::dontSendNotification);
+    }
     
     granularFxPowerButton->onClick = [this]() {
         granularFxAreaEnabled = granularFxPowerButton->getToggleState();
+        DBG("[UI] Granular FX power: " << (granularFxAreaEnabled ? "ON" : "OFF"));
         
         auto* param = processorRef.getAPVTS().getParameter("granEnabled");
         if (param) {
+            param->beginChangeGesture();
             param->setValueNotifyingHost(granularFxAreaEnabled ? 1.0f : 0.0f);
+            param->endChangeGesture();
         }
         
         updateGranularFxAreaVisibility();
         repaint();
     };
     
-    // Add effects area components to granularGroup
-    if (granularEffectsTitle) granularGroup.push_back(granularEffectsTitle.get());
-    if (granularDiceButton) granularGroup.push_back(granularDiceButton.get());
-    if (granularFxPowerButton) granularGroup.push_back(granularFxPowerButton.get());
+    // Add to granularGroup
+    granularGroup.push_back(granularEffectsTitle.get());
+    granularGroup.push_back(granularDiceButton.get());
+    granularGroup.push_back(granularFxPowerButton.get());
     
     DBG("[UI] Granular effects area setup complete");
 }

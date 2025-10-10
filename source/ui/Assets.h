@@ -40,6 +40,7 @@ struct UiAssets {
     std::unique_ptr<juce::Drawable> tabDirtIcon;
     std::unique_ptr<juce::Drawable> tabChorusIcon;
     std::unique_ptr<juce::Drawable> tabVerbIcon;
+    std::unique_ptr<juce::Drawable> tabGranularIcon;
     std::unique_ptr<juce::Drawable> fxPowerOn, stepPowerOn, knobDice, diceLarge, macroAssign;
     std::unique_ptr<juce::Drawable> macro1AssignButton, macro2AssignButton;
     std::unique_ptr<juce::Drawable> lockedIcon, unlockedIcon;

@@ -60,6 +60,7 @@ bool UiAssets::loadAll()
     tabDirtIcon       = loadSVG (Dirt_Icon_svg, Dirt_Icon_svgSize);
     tabChorusIcon     = loadSVG (Chorus_Icon_svg, Chorus_Icon_svgSize);
     tabVerbIcon       = loadSVG (Verb_Icon_svg, Verb_Icon_svgSize);
+    tabGranularIcon   = loadSVG (Granular_Icon_svg, Granular_Icon_svgSize);
     fxPowerOn         = loadSVG (FX_Power_On_svg, FX_Power_On_svgSize);
     stepPowerOn       = loadSVG (Step_Power_On_svg, Step_Power_On_svgSize);
     knobDice          = loadSVG (Knob_Basic_Dice_svg, Knob_Basic_Dice_svgSize);
