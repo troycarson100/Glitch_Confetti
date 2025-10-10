@@ -217,9 +217,7 @@ public:
     void setReverbSelectedStep(int step) noexcept { reverbUiSelectedStep.store(step); }
     void setReverbSequencerEnabled(bool enabled) noexcept {
         reverbSeq.enabled.store(enabled);
-        if (enabled) {
-            reverbSeq.active.store(true);
-        }
+        reverbSeq.active.store(enabled); // Active follows enabled state
     }
     void setReverbStepsUsed(int steps) noexcept { reverbSeq.stepsUsed.store(juce::jlimit(1, 16, steps)); }
     void setReverbDivisionIndex(int index) noexcept { reverbSeq.divisionIndex.store(juce::jlimit(0, 7, index)); }
