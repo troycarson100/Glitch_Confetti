@@ -6277,6 +6277,7 @@ void PluginEditor::onEffectSelectorChanged(int slotIndex)
     setVisibleVec(dirtGroup, false);
     setVisibleVec(chorusGroup, false);
     setVisibleVec(reverbGroup, false);
+    setVisibleVec(granularGroup, false);
     DBG("[ROUTER] ✓ All groups hidden");
     
     // Show the correct effect for the current page based on new assignment
@@ -6306,6 +6307,11 @@ void PluginEditor::onEffectSelectorChanged(int slotIndex)
             DBG("[ROUTER] Showing Reverb group (" << reverbGroup.size() << " components)");
             setVisibleVec(reverbGroup, true);
             DBG("[ROUTER] ✓ Reverb group shown");
+            break;
+        case EffectID::Granular:
+            DBG("[ROUTER] Showing Granular group (" << granularGroup.size() << " components)");
+            setVisibleVec(granularGroup, true);
+            DBG("[ROUTER] ✓ Granular group shown");
             break;
     }
     
