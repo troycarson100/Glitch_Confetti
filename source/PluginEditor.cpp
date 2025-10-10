@@ -261,7 +261,22 @@ void PluginEditor::paint (juce::Graphics& g)
         drawOrder = {0, 1, 2, 3}; // Cascade from left to right, ending with selected tab 4 on top
     }
     
-    // Draw backgrounds in the specified order
+    // Helper lambda to get effect icon for a given slot
+    auto getEffectIconForSlot = [&](int slotIndex) -> juce::Drawable* {
+        EffectID effect = router.getEffectInSlot(static_cast<SlotID>(slotIndex));
+        switch (effect)
+        {
+            case EffectID::SpaceDelay: return assets.tabTitleSpaceDelay.get();
+            case EffectID::AutoPan:    return assets.tabTitleAutoPan.get();
+            case EffectID::Dirt:       return assets.tabDirtIcon.get();
+            case EffectID::Chorus:     return assets.tabChorusIcon.get();
+            case EffectID::Reverb:     return assets.tabVerbIcon.get();
+            case EffectID::Granular:   return assets.tabGranularIcon.get();
+        }
+        return nullptr;
+    };
+    
+    // Draw backgrounds and icons in the specified order
     for (int slot : drawOrder)
     {
         juce::Drawable* bg = getBackgroundForSlot(slot);
@@ -269,6 +284,46 @@ void PluginEditor::paint (juce::Graphics& g)
         {
             bg->drawWithin(g, bounds, juce::RectanglePlacement::centred, 1.0f);
             hasBackground = true;
+        }
+        
+        // Draw the effect icon on top of its background
+        juce::Drawable* icon = getEffectIconForSlot(slot);
+        if (icon != nullptr)
+        {
+            // Position icon to match the actual tab button positions
+            float tabIconX, tabIconY, tabW, tabH;
+            switch (slot)
+            {
+                case 0: // Tab 1 (SpaceDelay)
+                    tabIconX = 12.0f;
+                    tabIconY = 5.0f;
+                    tabW = 120.0f;
+                    tabH = 44.0f;
+                    break;
+                case 1: // Tab 2 (Panner)
+                    tabIconX = 148.0f;
+                    tabIconY = 5.0f;
+                    tabW = 120.0f;
+                    tabH = 44.0f;
+                    break;
+                case 2: // Tab 3 (Dirt)
+                    tabIconX = 268.0f;
+                    tabIconY = 5.0f;
+                    tabW = 120.0f;
+                    tabH = 44.0f;
+                    break;
+                case 3: // Tab 4 (Chorus)
+                    tabIconX = 396.0f;
+                    tabIconY = 5.0f;
+                    tabW = 120.0f;
+                    tabH = 44.0f;
+                    break;
+                default:
+                    continue; // Skip invalid slots
+            }
+            
+            auto iconBounds = juce::Rectangle<float>(tabIconX, tabIconY, tabW, tabH);
+            icon->drawWithin(g, iconBounds, juce::RectanglePlacement::centred, 1.0f);
         }
     }
     
@@ -6444,38 +6499,11 @@ void PluginEditor::updateBackgroundsAfterSwap()
 
 void PluginEditor::updateTabButtonImages()
 {
-    auto& router = processorRef.getEffectRouter();
+    // Icons are now drawn as part of the cascading background system
+    // Tab buttons no longer need individual icons since they're "glued" to their backgrounds
+    // This function is kept for potential future use but currently does nothing
     
-    // Helper to get effect title SVG
-    auto getEffectTitleSVG = [this](EffectID effect) -> juce::Drawable* {
-        switch (effect)
-        {
-            case EffectID::SpaceDelay: return assets.tabTitleSpaceDelay.get();
-            case EffectID::AutoPan:    return assets.tabTitleAutoPan.get();
-            case EffectID::Dirt:       return assets.tabDirtIcon.get();
-            case EffectID::Chorus:     return assets.tabChorusIcon.get();
-            case EffectID::Reverb:     return assets.tabVerbIcon.get();
-            case EffectID::Granular:   return assets.tabGranularIcon.get();
-        }
-        return nullptr;
-    };
-    
-    // Update each tab button to show its assigned effect's title
-    EffectID effect1 = router.getEffectInSlot(SlotID::Slot1);
-    EffectID effect2 = router.getEffectInSlot(SlotID::Slot2);
-    EffectID effect3 = router.getEffectInSlot(SlotID::Slot3);
-    EffectID effect4 = router.getEffectInSlot(SlotID::Slot4);
-    
-    if (auto* svg = getEffectTitleSVG(effect1))
-        tabSpaceDelay->setImages(svg->createCopy().release());
-    if (auto* svg = getEffectTitleSVG(effect2))
-        tabPanner->setImages(svg->createCopy().release());
-    if (auto* svg = getEffectTitleSVG(effect3))
-        tabDirt->setImages(svg->createCopy().release());
-    if (auto* svg = getEffectTitleSVG(effect4))
-        tabChorus->setImages(svg->createCopy().release());
-    
-    DBG("[ROUTER] Tab button images updated");
+    DBG("[ROUTER] Tab button images updated (icons now drawn in cascading backgrounds)");
 }
 //==============================================================================
 // Granular Page Implementation
