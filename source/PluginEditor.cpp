@@ -127,6 +127,22 @@ PluginEditor::PluginEditor (PluginProcessor& p)
         processorRef.setReverbSequencerEnabled(reverbStepAreaEnabled);
         DBG("[UI] Initial Reverb sequencer state synced: enabled=" + juce::String(reverbStepAreaEnabled ? 1 : 0));
         
+        // Setup Granular page (no sequencer - live input only)
+        DBG("[UI] Setting up Granular page...");
+        setupGranularKnobs();
+        setupGranularEffectsArea();
+        
+        // Initialize Granular FX power button state from parameter
+        auto* granEnabledParam = processorRef.getAPVTS().getRawParameterValue("granEnabled");
+        if (granEnabledParam) {
+            granularFxAreaEnabled = granEnabledParam->load() > 0.5f;
+            if (granularFxPowerButton) {
+                granularFxPowerButton->setToggleState(granularFxAreaEnabled, juce::dontSendNotification);
+            }
+            updateGranularFxAreaVisibility();
+            DBG("[UI] Granular FX power initialized: " + juce::String(granularFxAreaEnabled ? "ON" : "OFF"));
+        }
+        
         // Initialize Chorus FX power button state from parameter
         auto* chorusEnabledParam = processorRef.getAPVTS().getRawParameterValue("chorusEnabled");
         if (chorusEnabledParam) {
@@ -2916,6 +2932,7 @@ void PluginEditor::setupTabSystem()
         selector->addItem("Dirt", 3);
         selector->addItem("Chorus", 4);
         selector->addItem("Reverb", 5);
+        selector->addItem("Granular", 6);
         
         // Hide text when closed - just show carrot icon
         selector->setTextWhenNothingSelected("");
@@ -3168,6 +3185,7 @@ void PluginEditor::showPage(FxPageID id)
             else if (id == FxPageID::Dirt) pageValue = 2.0f;
             else if (id == FxPageID::Chorus) pageValue = 3.0f;
             else if (id == FxPageID::Reverb) pageValue = 4.0f;
+            else if (id == FxPageID::Granular) pageValue = 5.0f;
             currentPageParam->setValueNotifyingHost(pageValue);
         }
     }
@@ -3219,6 +3237,18 @@ void PluginEditor::showPage(FxPageID id)
         }
         updateReverbFxAreaVisibility();
     }
+    
+    // Update Granular UI to reflect current parameter state (don't force it on)
+    if (id == FxPageID::Granular) {
+        auto* granEnabledParam = processorRef.getAPVTS().getRawParameterValue("granEnabled");
+        if (granEnabledParam) {
+            granularFxAreaEnabled = granEnabledParam->load() > 0.5f;
+            if (granularFxPowerButton) {
+                granularFxPowerButton->setToggleState(granularFxAreaEnabled, juce::dontSendNotification);
+            }
+        }
+        updateGranularFxAreaVisibility();
+    }
 
     // Show/Hide without touching parents or bounds
     auto setVisibleVec = [](const std::vector<juce::Component*>& v, bool vis)
@@ -3238,6 +3268,7 @@ void PluginEditor::showPage(FxPageID id)
     setVisibleVec(dirtGroup, false);
     setVisibleVec(chorusGroup, false);
     setVisibleVec(reverbGroup, false);
+    setVisibleVec(granularGroup, false);
     
     // Show only the group for the effect assigned to this slot
     switch (assignedEffect)
@@ -3261,6 +3292,10 @@ void PluginEditor::showPage(FxPageID id)
         case EffectID::Reverb:
             setVisibleVec(reverbGroup, true);
             DBG("[ROUTER] Showing Reverb UI for slot " << slotIndex);
+            break;
+        case EffectID::Granular:
+            setVisibleVec(granularGroup, true);
+            DBG("[ROUTER] Showing Granular UI for slot " << slotIndex);
             break;
     }
 
@@ -6128,7 +6163,7 @@ void PluginEditor::onEffectSelectorChanged(int slotIndex)
     int selectedEffectID = selector->getSelectedId() - 1; // ComboBox IDs are 1-based
     DBG("[ROUTER] Selected effect ID: " << selectedEffectID);
     
-    if (selectedEffectID < 0 || selectedEffectID > 4) {
+    if (selectedEffectID < 0 || selectedEffectID > 5) {
         DBG("[ROUTER] ERROR: Invalid effect ID " << selectedEffectID);
         return;
     }
@@ -6329,3 +6364,232 @@ void PluginEditor::updateTabButtonImages()
     
     DBG("[ROUTER] Tab button images updated");
 }
+//==============================================================================
+// Granular Page Implementation
+//==============================================================================
+
+void PluginEditor::setupGranularKnobs()
+{
+    DBG("[UI] Setting up Granular knobs...");
+
+    // Granular knob names
+    std::vector<juce::String> granularKnobNames = {
+        "Size", "Density", "Position", "Spray", "Pitch", "Random", "Texture", "Mix"
+    };
+    
+    // Granular parameter IDs
+    std::vector<juce::String> granularParamIds = {
+        "granSizeMs", "granDensityHz", "granPosition", "granSprayMs",
+        "granPitchSemi", "granRandom", "granTexture", "granMix"
+    };
+    
+    auto effectArea = juce::Rectangle<int>(25, 54, 413, 296);
+    const int knobSize = 80;
+    
+    // Position knobs in 2 rows of 4
+    for (int i = 0; i < 8; ++i) {
+        granularKnobs[i] = std::make_unique<CustomKnob>();
+        addAndMakeVisible(granularKnobs[i].get());
+        
+        // Set knob images
+        if (assets.knobRing != nullptr && assets.knobInside != nullptr) {
+            granularKnobs[i]->setRingImage(assets.knobRing->createCopy());
+            granularKnobs[i]->setInnerImage(assets.knobInside->createCopy());
+        }
+        
+        // Set ranges based on parameter
+        switch (i) {
+            case 0: granularKnobs[i]->setRange(5.0, 200.0, 0.1); granularKnobs[i]->setValue(40.0); break; // Size
+            case 1: granularKnobs[i]->setRange(1.0, 80.0, 0.1); granularKnobs[i]->setValue(20.0); break; // Density
+            case 2: granularKnobs[i]->setRange(0.0, 1.0, 0.01); granularKnobs[i]->setValue(1.0); break; // Position
+            case 3: granularKnobs[i]->setRange(0.0, 200.0, 0.1); granularKnobs[i]->setValue(35.0); break; // Spray
+            case 4: granularKnobs[i]->setRange(-24.0, 24.0, 0.01); granularKnobs[i]->setValue(0.0); break; // Pitch
+            case 5: granularKnobs[i]->setRange(0.0, 1.0, 0.01); granularKnobs[i]->setValue(0.25); break; // Random
+            case 6: granularKnobs[i]->setRange(0.0, 1.0, 0.01); granularKnobs[i]->setValue(0.3); break; // Texture
+            case 7: granularKnobs[i]->setRange(0.0, 1.0, 0.01); granularKnobs[i]->setValue(0.5); break; // Mix
+        }
+        
+        // Create APVTS attachment
+        granularAttachments[i] = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+            processorRef.getAPVTS(), granularParamIds[i], *granularKnobs[i]);
+        
+        // Position in grid (2 rows x 4 columns)
+        int row = i / 4;
+        int col = i % 4;
+        int x = effectArea.getX() + 15 + col * 100;
+        int y = effectArea.getY() + 85 + row * 110;
+        granularKnobs[i]->setBounds(x, y, knobSize, knobSize);
+        
+        // Create label
+        granularKnobLabels[i] = std::make_unique<juce::Label>();
+        granularKnobLabels[i]->setText(granularKnobNames[i], juce::dontSendNotification);
+        granularKnobLabels[i]->setFont(juce::Font(12.0f, juce::Font::bold));
+        granularKnobLabels[i]->setColour(juce::Label::textColourId, juce::Colours::white);
+        granularKnobLabels[i]->setJustificationType(juce::Justification::centred);
+        addAndMakeVisible(granularKnobLabels[i].get());
+        granularKnobLabels[i]->setBounds(x, y - 20, knobSize, 15);
+        
+        // Create value label
+        granularValueLabels[i] = std::make_unique<juce::Label>();
+        granularValueLabels[i]->setFont(juce::Font(10.0f, juce::Font::plain));
+        granularValueLabels[i]->setColour(juce::Label::textColourId, juce::Colours::white);
+        granularValueLabels[i]->setJustificationType(juce::Justification::centred);
+        addAndMakeVisible(granularValueLabels[i].get());
+        granularValueLabels[i]->setBounds(x, y + knobSize - 10, knobSize, 15);
+        
+        // Create indicator bar
+        granularIndicatorBars[i] = std::make_unique<IndicatorBar>();
+        addAndMakeVisible(granularIndicatorBars[i].get());
+        granularIndicatorBars[i]->setBounds(x + knobSize + 5, y + 20, 8, 40);
+        
+        // Create dice button (hidden)
+        granularDiceButtons[i] = std::make_unique<CustomDiceButton>();
+        granularDiceButtons[i]->setVisible(false);
+        addAndMakeVisible(granularDiceButtons[i].get());
+        
+        // Create lock button
+        granularLockButtons[i] = std::make_unique<LockButton>();
+        addAndMakeVisible(granularLockButtons[i].get());
+        if (assets.lockedIcon && assets.unlockedIcon) {
+            granularLockButtons[i]->setImages(assets.unlockedIcon->createCopy(), assets.lockedIcon->createCopy());
+        }
+        granularLockButtons[i]->setBounds(x + knobSize - 20, y + knobSize - 20, 16, 16);
+        granularLockButtons[i]->setToggleState(false, juce::dontSendNotification);
+        granularLockButtons[i]->onClick = [this, i]() {
+            granularKnobLocked[i] = granularLockButtons[i]->getToggleState();
+        };
+    }
+    
+    // Populate granularGroup for visibility toggling
+    for (int i = 0; i < 8; ++i) {
+        if (granularKnobs[i]) granularGroup.push_back(granularKnobs[i].get());
+        if (granularKnobLabels[i]) granularGroup.push_back(granularKnobLabels[i].get());
+        if (granularValueLabels[i]) granularGroup.push_back(granularValueLabels[i].get());
+        if (granularIndicatorBars[i]) granularGroup.push_back(granularIndicatorBars[i].get());
+        if (granularDiceButtons[i]) granularGroup.push_back(granularDiceButtons[i].get());
+        if (granularLockButtons[i]) granularGroup.push_back(granularLockButtons[i].get());
+    }
+    
+    DBG("[UI] Granular knobs setup complete");
+}
+
+void PluginEditor::setupGranularEffectsArea()
+{
+    DBG("[UI] Setting up Granular effects area...");
+    
+    auto effectArea = juce::Rectangle<int>(25, 54, 413, 296);
+    
+    // Create "EFFECT" title
+    granularEffectsTitle = std::make_unique<juce::Label>();
+    granularEffectsTitle->setText("EFFECT", juce::dontSendNotification);
+    granularEffectsTitle->setFont(juce::Font(27.648f, juce::Font::bold));
+    granularEffectsTitle->setColour(juce::Label::textColourId, juce::Colours::white);
+    granularEffectsTitle->setJustificationType(juce::Justification::centredLeft);
+    addAndMakeVisible(granularEffectsTitle.get());
+    granularEffectsTitle->setBounds(effectArea.getX() + 10, effectArea.getY() + 5, 100, 30);
+    
+    // Create dice button
+    granularDiceButton = std::make_unique<CustomDiceButton>();
+    addAndMakeVisible(granularDiceButton.get());
+    if (assets.diceLarge) {
+        granularDiceButton->setDiceImage(assets.diceLarge->createCopy());
+    }
+    granularDiceButton->onClick = [this]() {
+        randomizeGranularKnobValues();
+    };
+    const int diceSize = 32;
+    granularDiceButton->setBounds(
+        effectArea.getX() + effectArea.getWidth() - diceSize - 10,
+        effectArea.getY() + 6,
+        diceSize, diceSize
+    );
+    
+    // Create FX power button
+    granularFxPowerButton = std::make_unique<juce::DrawableButton>("granularFxPower", juce::DrawableButton::ImageFitted);
+    addAndMakeVisible(granularFxPowerButton.get());
+    
+    if (assets.fxPowerOn) {
+        granularFxPowerButton->setImages(assets.fxPowerOn->createCopy().get());
+    }
+    
+    granularFxPowerButton->setClickingTogglesState(true);
+    granularFxPowerButton->setToggleState(true, juce::dontSendNotification);
+    granularFxPowerButton->setColour(juce::DrawableButton::backgroundColourId, juce::Colours::transparentBlack);
+    granularFxPowerButton->setColour(juce::DrawableButton::backgroundOnColourId, juce::Colours::transparentBlack);
+    
+    const int buttonSize = 24;
+    granularFxPowerButton->setBounds(
+        effectArea.getX() + effectArea.getWidth() - buttonSize - 8 + 8 + 3,
+        effectArea.getY() + 6 - 20 + 4,
+        buttonSize, buttonSize
+    );
+    
+    granularFxPowerButton->onClick = [this]() {
+        granularFxAreaEnabled = granularFxPowerButton->getToggleState();
+        
+        auto* param = processorRef.getAPVTS().getParameter("granEnabled");
+        if (param) {
+            param->setValueNotifyingHost(granularFxAreaEnabled ? 1.0f : 0.0f);
+        }
+        
+        updateGranularFxAreaVisibility();
+        repaint();
+    };
+    
+    // Add effects area components to granularGroup
+    if (granularEffectsTitle) granularGroup.push_back(granularEffectsTitle.get());
+    if (granularDiceButton) granularGroup.push_back(granularDiceButton.get());
+    if (granularFxPowerButton) granularGroup.push_back(granularFxPowerButton.get());
+    
+    DBG("[UI] Granular effects area setup complete");
+}
+
+void PluginEditor::updateGranularFxAreaVisibility()
+{
+    float alpha = granularFxAreaEnabled ? 1.0f : 0.3f;
+    
+    for (int i = 0; i < 8; ++i) {
+        if (granularKnobs[i]) granularKnobs[i]->setAlpha(alpha);
+        if (granularKnobLabels[i]) granularKnobLabels[i]->setAlpha(alpha);
+        if (granularValueLabels[i]) granularValueLabels[i]->setAlpha(alpha);
+        if (granularIndicatorBars[i]) granularIndicatorBars[i]->setAlpha(alpha);
+        if (granularLockButtons[i]) granularLockButtons[i]->setAlpha(alpha);
+    }
+}
+
+void PluginEditor::randomizeGranularKnobValues()
+{
+    juce::Random& rng = juce::Random::getSystemRandom();
+    
+    for (int i = 0; i < 8; ++i) {
+        if (granularKnobLocked[i] || !granularKnobs[i])
+            continue;
+        
+        randomizeIndividualGranularKnob(i);
+    }
+}
+
+void PluginEditor::randomizeIndividualGranularKnob(int knobIndex)
+{
+    if (knobIndex < 0 || knobIndex >= 8 || granularKnobs[knobIndex] == nullptr)
+        return;
+    if (granularKnobLocked[knobIndex])
+        return;
+    
+    juce::Random& rng = juce::Random::getSystemRandom();
+    float randomValue = 0.0f;
+    
+    switch (knobIndex) {
+        case 0: randomValue = 5.0f + rng.nextFloat() * 195.0f; break; // Size (5-200)
+        case 1: randomValue = 1.0f + rng.nextFloat() * 79.0f; break; // Density (1-80)
+        case 2: randomValue = rng.nextFloat(); break; // Position (0-1)
+        case 3: randomValue = rng.nextFloat() * 200.0f; break; // Spray (0-200)
+        case 4: randomValue = -24.0f + rng.nextFloat() * 48.0f; break; // Pitch (-24 to +24)
+        case 5: randomValue = rng.nextFloat(); break; // Random (0-1)
+        case 6: randomValue = rng.nextFloat(); break; // Texture (0-1)
+        case 7: randomValue = rng.nextFloat(); break; // Mix (0-1)
+    }
+    
+    granularKnobs[knobIndex]->setValue(randomValue, juce::sendNotification);
+}
+

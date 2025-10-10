@@ -17,7 +17,7 @@
 struct RandomizationManager;
 
 // Tab system enum
-enum class FxPageID { SpaceDelay, Panner, Dirt, Chorus, Reverb };
+enum class FxPageID { SpaceDelay, Panner, Dirt, Chorus, Reverb, Granular };
 
 // Forward declaration
 class PluginProcessor;
@@ -438,6 +438,24 @@ public:
     std::unique_ptr<juce::Label> reverbAllStepsLabel;
     bool reverbAllStepsEnabled = false;
     
+    // Granular page components (no sequencer - live input only)
+    std::array<std::unique_ptr<CustomKnob>, 8> granularKnobs;
+    std::array<std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>, 8> granularAttachments;
+    std::array<std::unique_ptr<juce::Label>, 8> granularKnobLabels;
+    std::array<std::unique_ptr<juce::Label>, 8> granularValueLabels;
+    std::array<std::unique_ptr<IndicatorBar>, 8> granularIndicatorBars;
+    std::array<std::unique_ptr<CustomDiceButton>, 8> granularDiceButtons;
+    std::array<std::unique_ptr<LockButton>, 8> granularLockButtons;
+    std::array<bool, 8> granularKnobLocked { false, false, false, false, false, false, false, false };
+    
+    // Granular effects area (power button)
+    std::unique_ptr<juce::Label> granularEffectsTitle;
+    std::unique_ptr<CustomDiceButton> granularDiceButton;
+    std::unique_ptr<juce::DrawableButton> granularFxPowerButton;
+    bool granularFxAreaEnabled = true;
+    
+    std::vector<juce::Component*> granularGroup; // All Granular UI components for visibility toggling
+    
         // Helper methods
         void setupKnobs();
         void setupMasterKnobs();
@@ -514,6 +532,13 @@ public:
         void updateReverbParameterFromKnob(int knobIndex);
         void onReverbStepButtonClicked(int stepIndex);
         void updateReverbSequencerUI();
+        
+        // Granular page setup methods (no sequencer)
+        void setupGranularKnobs();
+        void setupGranularEffectsArea();
+        void updateGranularFxAreaVisibility();
+        void randomizeGranularKnobValues();
+        void randomizeIndividualGranularKnob(int knobIndex);
         
         void togglePlayback();
         
