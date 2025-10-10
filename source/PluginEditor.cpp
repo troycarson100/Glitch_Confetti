@@ -25,19 +25,101 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     
     // Set callback to reload APVTS parameters when randomization completes
     randomizationManager->onRandomizationComplete = [this]() {
-        DBG("[UI] Randomization complete - ALL 4 effect pages randomized");
+        DBG("[UI] Randomization complete - ALL 4 effect pages randomized, updating current steps");
         
-        // ALL step snapshots for ALL 4 effects have been randomized
-        // DO NOT update APVTS here - it triggers onValueChange which overwrites the snapshots!
-        // Instead, the randomized values will show when:
-        // 1. User switches to a different step (loads snapshot into APVTS)
-        // 2. Timer updates knobs from snapshots
-        // 3. Audio thread uses snapshots directly (not APVTS)
+        // Set flag to prevent onValueChange from overwriting snapshots
+        isLoadingFromSnapshot.store(true);
         
-        // Just force a repaint so indicator bars/value labels update
-        repaint();
+        // Update APVTS for ALL current steps (not just visible page)
+        // This ensures when you switch pages, you see the randomized values immediately
         
-        DBG("[UI] All pages randomized - switch steps/pages to see new values");
+        // Space Delay
+        {
+            int step = processorRef.getSelectedStep();
+            if (step >= 0 && step < 16) {
+                auto s = processorRef.getSafeSnapshot(step);
+                auto& apvts = processorRef.getAPVTS();
+                if (auto* p = apvts.getParameter("timeMs")) p->setValueNotifyingHost(p->convertTo0to1(s.delay.timeMs));
+                if (auto* p = apvts.getParameter("feedback")) p->setValueNotifyingHost(p->convertTo0to1(s.delay.feedback / 100.0f));
+                if (auto* p = apvts.getParameter("wowDepth")) p->setValueNotifyingHost(p->convertTo0to1(s.delay.wowDepth / 100.0f));
+                if (auto* p = apvts.getParameter("wowRate")) p->setValueNotifyingHost(p->convertTo0to1(s.delay.wowRate));
+                if (auto* p = apvts.getParameter("drive")) p->setValueNotifyingHost(p->convertTo0to1(s.delay.saturation / 100.0f));
+                if (auto* p = apvts.getParameter("hiCut")) p->setValueNotifyingHost(p->convertTo0to1(s.delay.highCut));
+                if (auto* p = apvts.getParameter("lowCut")) p->setValueNotifyingHost(p->convertTo0to1(s.delay.lowCut));
+                if (auto* p = apvts.getParameter("mix")) p->setValueNotifyingHost(p->convertTo0to1(s.delay.mix / 100.0f));
+            }
+        }
+        
+        // AutoPan
+        {
+            int step = autopanUiSelectedStep;
+            if (step >= 0 && step < 16) {
+                auto s = processorRef.getAutoPanSafeSnapshot(step);
+                auto& apvts = processorRef.getAPVTS();
+                if (auto* p = apvts.getParameter("panRate")) p->setValueNotifyingHost(p->convertTo0to1(s.autopan.rate));
+                if (auto* p = apvts.getParameter("panPhase")) p->setValueNotifyingHost(p->convertTo0to1(s.autopan.phase));
+                if (auto* p = apvts.getParameter("panWaveType")) p->setValueNotifyingHost(p->convertTo0to1((float)s.autopan.waveType));
+                if (auto* p = apvts.getParameter("panWaveShape")) p->setValueNotifyingHost(p->convertTo0to1(s.autopan.waveShape));
+                if (auto* p = apvts.getParameter("panInvert")) p->setValueNotifyingHost(p->convertTo0to1(s.autopan.inverted ? 1.0f : 0.0f));
+                if (auto* p = apvts.getParameter("panAmount")) p->setValueNotifyingHost(p->convertTo0to1(s.autopan.amount));
+            }
+        }
+        
+        // Dirt
+        {
+            int step = dirtUiSelectedStep;
+            if (step >= 0 && step < 16) {
+                auto s = processorRef.getDirtSafeSnapshot(step);
+                auto& apvts = processorRef.getAPVTS();
+                if (auto* p = apvts.getParameter("dirtDrive")) p->setValueNotifyingHost(p->convertTo0to1(s.dirt.drive));
+                if (auto* p = apvts.getParameter("dirtColor")) p->setValueNotifyingHost(p->convertTo0to1(s.dirt.color));
+                if (auto* p = apvts.getParameter("dirtAsym")) p->setValueNotifyingHost(p->convertTo0to1(s.dirt.asym));
+                if (auto* p = apvts.getParameter("dirtTexture")) p->setValueNotifyingHost(p->convertTo0to1(s.dirt.texture));
+                if (auto* p = apvts.getParameter("dirtLowCut")) p->setValueNotifyingHost(p->convertTo0to1(s.dirt.lowCut));
+                if (auto* p = apvts.getParameter("dirtHighCut")) p->setValueNotifyingHost(p->convertTo0to1(s.dirt.highCut));
+                if (auto* p = apvts.getParameter("dirtTone")) p->setValueNotifyingHost(p->convertTo0to1(s.dirt.tone));
+                if (auto* p = apvts.getParameter("dirtMix")) p->setValueNotifyingHost(p->convertTo0to1(s.dirt.mix));
+            }
+        }
+        
+        // Chorus
+        {
+            int step = chorusUiSelectedStep;
+            if (step >= 0 && step < 16) {
+                auto s = processorRef.getChorusSafeSnapshot(step);
+                auto& apvts = processorRef.getAPVTS();
+                if (auto* p = apvts.getParameter("chorusDelay")) p->setValueNotifyingHost(p->convertTo0to1(s.chorus.delayTime));
+                if (auto* p = apvts.getParameter("chorusRate")) p->setValueNotifyingHost(p->convertTo0to1(s.chorus.rate));
+                if (auto* p = apvts.getParameter("chorusDepth")) p->setValueNotifyingHost(p->convertTo0to1(s.chorus.depth));
+                if (auto* p = apvts.getParameter("chorusFeedback")) p->setValueNotifyingHost(p->convertTo0to1(s.chorus.feedback));
+                if (auto* p = apvts.getParameter("chorusVoices")) p->setValueNotifyingHost(p->convertTo0to1(s.chorus.voices));
+                if (auto* p = apvts.getParameter("chorusWidth")) p->setValueNotifyingHost(p->convertTo0to1(s.chorus.width));
+                if (auto* p = apvts.getParameter("chorusTone")) p->setValueNotifyingHost(p->convertTo0to1(s.chorus.tone));
+                if (auto* p = apvts.getParameter("chorusMix")) p->setValueNotifyingHost(p->convertTo0to1(s.chorus.mix));
+            }
+        }
+        
+        // Reverb
+        {
+            int step = reverbUiSelectedStep;
+            if (step >= 0 && step < 16) {
+                auto s = processorRef.getReverbSafeSnapshot(step);
+                auto& apvts = processorRef.getAPVTS();
+                if (auto* p = apvts.getParameter("verbWidth")) p->setValueNotifyingHost(p->convertTo0to1(s.reverb.type));
+                if (auto* p = apvts.getParameter("verbSize")) p->setValueNotifyingHost(p->convertTo0to1(s.reverb.size));
+                if (auto* p = apvts.getParameter("verbPredelayMs")) p->setValueNotifyingHost(p->convertTo0to1(s.reverb.predelayMs));
+                if (auto* p = apvts.getParameter("verbDampHz")) p->setValueNotifyingHost(p->convertTo0to1(s.reverb.dampHz));
+                if (auto* p = apvts.getParameter("verbDiffusion")) p->setValueNotifyingHost(p->convertTo0to1(s.reverb.diffusion));
+                if (auto* p = apvts.getParameter("verbEarlyLevel")) p->setValueNotifyingHost(p->convertTo0to1(s.reverb.early));
+                if (auto* p = apvts.getParameter("verbDecaySec")) p->setValueNotifyingHost(p->convertTo0to1(s.reverb.decaySec));
+                if (auto* p = apvts.getParameter("verbMix")) p->setValueNotifyingHost(p->convertTo0to1(s.reverb.mix));
+            }
+        }
+        
+        // Clear flag
+        isLoadingFromSnapshot.store(false);
+        
+        DBG("[UI] Current steps updated - all pages will show randomized values");
     };
     
     
@@ -3385,6 +3467,10 @@ void PluginEditor::setupAutoPanKnobs()
         
         // Add listener to save snapshots when knob changes
         autopanKnobs[i]->onValueChange = [this, i]() {
+            // Skip if we're loading from snapshot (prevents circular updates during randomization)
+            if (isLoadingFromSnapshot.load())
+                return;
+            
             // Update current step snapshot with new value
             float value = autopanKnobs[i]->getValue();
             processorRef.updateAutoPanCurrentStepSnapshot(i, value);
@@ -4843,6 +4929,10 @@ void PluginEditor::setupChorusKnobs()
         }
 
         chorusKnobs[i]->onValueChange = [this, i]() {
+            // Skip if we're loading from snapshot (prevents circular updates during randomization)
+            if (isLoadingFromSnapshot.load())
+                return;
+            
             if (chorusKnobs[i] != nullptr) {
                 updateChorusParameterFromKnob(i);
 
