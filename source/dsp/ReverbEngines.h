@@ -64,9 +64,10 @@ struct HallReverb {
             ap[i].prepare(spec);
             *ap[i].coefficients = *juce::dsp::IIR::Coefficients<float>::makeAllPass(sr, 900.0f, 0.7f);
         }
-        damp.prepare(sr); damp.setCutoff(8000.0f);
+        dampL.prepare(sr); dampL.setCutoff(8000.0f);
+        dampR.prepare(sr); dampR.setCutoff(8000.0f);
         setParams(0.7f, 4.0f, 0.8f); // size, decaySec, diffusion
-        wetTrim=2.2f; // ~+6.8 dB
+        wetTrim=1.7f; // ~+4.6 dB (more balanced)
     }
 
     // size01 ∈ [0.1..1.5], decaySec ∈ [0.2..20], diffusion ∈ [0..1]
@@ -86,7 +87,7 @@ struct HallReverb {
             fb[i] = juce::jlimit(0.2f, 0.9999f, g);
         }
     }
-    void setDampHz(float hz){ damp.setCutoff(hz); }
+    void setDampHz(float hz){ dampL.setCutoff(hz); dampR.setCutoff(hz); }
 
     inline void processSample(float inL,float inR,float& outL,float& outR){
         const float in = 0.5f*(inL+inR);
@@ -113,7 +114,7 @@ struct HallReverb {
             float del = rvb::lerp(delOld, delNow, 1.0f - xf);
 
             float apOut = ap[i].processSample(del); // diffuser
-            y[i] = damp.process(apGain * apOut);
+            y[i] = apGain * apOut; // Don't apply damping here - will apply after mixing
         }
 
         // Orthogonal mix (two 4x4 Hadamards)
@@ -138,35 +139,40 @@ struct HallReverb {
             for(int i=0;i<N;++i) if(++widx[i] >= line[i].getNumSamples()) widx[i]=0;
         }
 
-        // wide stereo sum
-        const float L = 0.25f*(y[0]+y[2]+y[4]+y[6]);
-        const float R = 0.25f*(y[1]+y[3]+y[5]+y[7]);
+        // wide stereo sum with damping applied after mixing (preserves energy in feedback)
+        float L = 0.25f*(y[0]+y[2]+y[4]+y[6]);
+        float R = 0.25f*(y[1]+y[3]+y[5]+y[7]);
+        
+        // Apply damping to output only, not in feedback loop
+        L = dampL.process(L);
+        R = dampR.process(R);
+        
         outL = rvb::satSoft(wetTrim * L);
         outR = rvb::satSoft(wetTrim * R);
     }
 
     double sampleRate{44100.0};
     juce::AudioBuffer<float> line[N]; int widx[N]{};
-    float baseMs[N]{}, delayMs[N]{}, fb[N]{}, size{0.7f}, decay{4.0f}, diff{0.8f}, apGain{0.8f}, wetTrim{2.2f};
+    float baseMs[N]{}, delayMs[N]{}, fb[N]{}, size{0.7f}, decay{4.0f}, diff{0.8f}, apGain{0.8f}, wetTrim{1.7f};
     juce::SmoothedValue<float> smoothMs[N];
     juce::dsp::IIR::Filter<float> ap[N];
-    rvb::OnePoleLPF damp;
-    // incommensurate template delays (ms)
-    const float baseTemplate[N] = { 31.7f, 37.1f, 43.8f, 51.2f, 58.9f, 67.3f, 73.5f, 81.0f };
+    rvb::OnePoleLPF dampL, dampR; // Stereo damping filters
+    // incommensurate template delays (ms) - longer for proper RT60
+    const float baseTemplate[N] = { 79.3f, 103.7f, 127.1f, 149.8f, 173.2f, 191.5f, 223.7f, 251.0f };
 };
 
 /*** Room: strong early reflections + compact late tail ***/
 struct RoomReverb {
     void prepare(double sr){
         sampleRate=sr;
-        // Strong ER taps (ms, gain)
-        taps = {{6.3f,0.95f},{9.5f,0.88f},{14.7f,0.8f},{21.0f,0.72f},{30.0f,0.62f},{44.0f,0.55f}};
+        // Strong ER taps (ms, gain) - reduced for better balance
+        taps = {{6.3f,0.65f},{9.5f,0.58f},{14.7f,0.52f},{21.0f,0.46f},{30.0f,0.38f},{44.0f,0.32f}};
         earlyBuf.setSize(2, (int)std::ceil(sr*140/1000.0)+8); earlyBuf.clear(); ew=0;
         predelay.prepare(sr, 200);
         hall.prepare(sr, 1200);            // compact late tail reuse
         hall.setParams(0.55f, 2.0f, 0.7f); // size, decay, diffusion defaults
-        earlyGain = 1.8f;                  // make ER audible
-        wetTrim   = 2.0f;                  // ~+6 dB
+        earlyGain = 0.95f;                 // balanced ER level
+        wetTrim   = 1.6f;                  // ~+4 dB
     }
     void setParams(float size01,float decaySec,float dampHz,float diffusion,float earlyLevel, float predelayMs){
         size = juce::jlimit(0.1f,1.5f,size01);
@@ -211,7 +217,7 @@ struct RoomReverb {
     juce::AudioBuffer<float> earlyBuf; int ew{0};
     rvb::PreDelay predelay;
     HallReverb hall;
-    float earlyGain{1.8f}, wetTrim{2.0f}, size{0.55f}, ER{0.6f};
+    float earlyGain{0.95f}, wetTrim{1.6f}, size{0.55f}, ER{0.6f};
 };
 
 /*** Shimmer: parallel octave tail in feedback (4-grain OLA), exclusive engine ***/
@@ -256,10 +262,10 @@ struct ShimmerReverb {
         hall.prepare(sr, maxMs);
         predelay.prepare(sr, 300);
         shL.prepare(sr, 2000); shR.prepare(sr, 2000);
-        lp.prepare(sr); lp.setCutoff(9500.0f);
-        hp.prepare(sr); hp.setCutoff(180.0f);
-        fbAmt.reset(sr, 0.12); fbAmt.setCurrentAndTargetValue(0.36f); // tuned
-        wetTrim=2.2f;
+        lp.prepare(sr); lp.setCutoff(12000.0f); // wider for less resonance
+        hp.prepare(sr); hp.setCutoff(120.0f);   // lower for more sub content
+        fbAmt.reset(sr, 0.12); fbAmt.setCurrentAndTargetValue(0.25f); // reduced for stability
+        wetTrim=1.7f; // ~+4.6 dB
     }
     void setParams(float size01,float decaySec,float dampHz,float diffusion,float predelayMs){
         hall.setParams(size01, juce::jlimit(0.2f,20.0f,decaySec), juce::jlimit(0.0f,1.0f,diffusion));
@@ -286,9 +292,9 @@ struct ShimmerReverb {
         fbL = g * fL;
         fbR = g * fR;
 
-        // parallel mix: hall core + octave layer
-        const float mL = 0.5f * (hL + fL);
-        const float mR = 0.5f * (hR + fR);
+        // parallel mix: 70% hall core + 30% octave layer (more natural)
+        const float mL = 0.7f * hL + 0.3f * fL;
+        const float mR = 0.7f * hR + 0.3f * fR;
         outL = rvb::satSoft(wetTrim * mL);
         outR = rvb::satSoft(wetTrim * mR);
     }
@@ -296,7 +302,7 @@ struct ShimmerReverb {
     double sampleRate{44100.0};
     HallReverb hall; rvb::PreDelay predelay;
     OctaveUpGrains4 shL, shR; rvb::OnePoleLPF lp; rvb::OnePoleHPF hp;
-    juce::SmoothedValue<float> fbAmt; float wetTrim{2.2f};
+    juce::SmoothedValue<float> fbAmt; float wetTrim{1.7f};
     float fbL{0.0f}, fbR{0.0f};
 };
 
