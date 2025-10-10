@@ -880,10 +880,8 @@ void PluginEditor::timerCallback()
             juce::String valueText;
             
             switch (i) {
-                case 0: // Type (0-2: Hall/Room/Shimmer)
-                    if (knobValue < 0.5f) valueText = "Hall";
-                    else if (knobValue < 1.5f) valueText = "Room";
-                    else valueText = "Shimmer";
+                case 0: // Width (0-1: mono to wide)
+                    valueText = juce::String((int)(knobValue * 100.0f)) + "%";
                     break;
                 case 1: valueText = juce::String(knobValue, 2); break; // Size (0.1-1.5)
                 case 2: valueText = juce::String(knobValue, 0) + " ms"; break; // Predelay (0-200ms)
@@ -915,7 +913,7 @@ void PluginEditor::timerCallback()
                 StepSnapshot s = processorRef.getReverbSafeSnapshot(playingStep);
                 
                 switch (i) {
-                    case 0: indicatorValue = s.reverb.type / 2.0f; break; // Type (0-2)
+                    case 0: indicatorValue = s.reverb.type; break; // Width (0-1, repurposed from type)
                     case 1: indicatorValue = (s.reverb.size - 0.1f) / 1.4f; break; // Size (0.1-1.5)
                     case 2: indicatorValue = s.reverb.predelayMs / 200.0f; break; // Predelay (0-200ms)
                     case 3: indicatorValue = (s.reverb.dampHz - 1000.0f) / 19000.0f; break; // Damping (1k-20k)
@@ -5387,9 +5385,9 @@ void PluginEditor::setupReverbKnobs()
 {
     DBG("[UI] Setting up Reverb knobs...");
 
-    // Reverb knob names (8 knobs): Type, Size, Predelay, Damping, Diffusion, Early, Decay, Mix
+    // Reverb knob names (8 knobs): Width, Size, Predelay, Damping, Diffusion, Early, Decay, Mix
     std::vector<juce::String> reverbKnobNames = {
-        "Type", "Size", "Predelay", "Damping", "Diffusion", "Early", "Decay", "Mix"
+        "Width", "Size", "Predelay", "Damping", "Diffusion", "Early", "Decay", "Mix"
     };
 
     // Effect area bounds (EXACT same as Chorus page)
@@ -5410,9 +5408,9 @@ void PluginEditor::setupReverbKnobs()
 
         // Set parameter ranges based on knob index
         switch (i) {
-            case 0: // Type (0-2: Hall/Room/Shimmer)
-                reverbKnobs[i]->setRange(0.0, 2.0, 0.01);
-                reverbKnobs[i]->setValue(0.0, juce::dontSendNotification);
+            case 0: // Width (0-1: mono to wide)
+                reverbKnobs[i]->setRange(0.0, 1.0, 0.01);
+                reverbKnobs[i]->setValue(1.0, juce::dontSendNotification);
                 break;
             case 1: // Size (0.1-1.5)
                 reverbKnobs[i]->setRange(0.1, 1.5, 0.01);
@@ -5546,7 +5544,7 @@ void PluginEditor::setupReverbKnobs()
 
     // Create parameter attachments to connect knobs to APVTS
     std::vector<juce::String> reverbParamIds = {
-        "verbType", "verbSize", "verbPredelayMs", "verbDampHz", 
+        "verbWidth", "verbSize", "verbPredelayMs", "verbDampHz", 
         "verbDiffusion", "verbEarlyLevel", "verbDecaySec", "verbMix"
     };
     
@@ -5961,7 +5959,7 @@ void PluginEditor::randomizeIndividualReverbKnob(int knobIndex)
     float randomValue = 0.0f;
     
     switch (knobIndex) {
-        case 0: randomValue = rng.nextFloat() * 2.0f; break; // Type (0-2)
+        case 0: randomValue = rng.nextFloat(); break; // Width (0-1)
         case 1: randomValue = 0.1f + rng.nextFloat() * 1.4f; break; // Size (0.1-1.5)
         case 2: randomValue = rng.nextFloat() * 200.0f; break; // Predelay (0-200)
         case 3: randomValue = 1000.0f + rng.nextFloat() * 19000.0f; break; // Damping (1k-20k)
@@ -6110,7 +6108,7 @@ void PluginEditor::onEffectSelectorChanged(int slotIndex)
         DBG("[ROUTER] Reverb selected - running preflight checks...");
         
         // Check APVTS parameters
-        if (!processorRef.getAPVTS().getParameter("verbType") ||
+        if (!processorRef.getAPVTS().getParameter("verbWidth") ||
             !processorRef.getAPVTS().getParameter("verbSize") ||
             !processorRef.getAPVTS().getParameter("verbPredelayMs") ||
             !processorRef.getAPVTS().getParameter("verbDampHz") ||

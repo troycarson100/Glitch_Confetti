@@ -172,9 +172,9 @@ juce::AudioProcessorValueTreeState::ParameterLayout PluginProcessor::createParam
         "masterLPHz", "LPF",
         juce::NormalisableRange<float>(20.0f, 20000.0f, 0.0f, 0.5f), 20000.0f)); // Start at 20 kHz (bypass)
     
-    // Reverb Parameters (8 knobs: Type, Size, Predelay, Damping, Diffusion, Early, Shimmer, Mix)
+    // Reverb Parameters (8 knobs: Width, Size, Predelay, Damping, Diffusion, Early, Decay, Mix)
     params.push_back(std::make_unique<juce::AudioParameterFloat>(
-        "verbType", "Type", juce::NormalisableRange<float>(0.0f, 2.0f, 0.0f, 1.0f), 0.0f)); // 0=Hall,1=Room,2=Shimmer
+        "verbWidth", "Width", juce::NormalisableRange<float>(0.0f, 1.0f, 0.0f, 1.0f), 1.0f)); // Stereo width
     params.push_back(std::make_unique<juce::AudioParameterFloat>(
         "verbSize", "Size", juce::NormalisableRange<float>(0.1f, 1.5f, 0.0f, 0.7f), 0.7f));
     params.push_back(std::make_unique<juce::AudioParameterFloat>(
@@ -264,7 +264,7 @@ void PluginProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
     autoPan.setVisualState(&panVis);
     dirt.prepare(sampleRate, samplesPerBlock); // Prepare Dirt saturation
     chorus.prepare(sampleRate, samplesPerBlock); // Prepare Chorus effect
-    reverb.prepare(sampleRate, samplesPerBlock); // Prepare Reverb effect
+    hallVerb.prepare(sampleRate, 4000); // Prepare Hall Reverb (4000ms max delay)
     seq.prepare(sampleRate); // Initialize delay sequencer with sample rate
     autopanSeq.prepare(sampleRate); // Initialize AutoPan sequencer with sample rate
     dirtSeq.prepare(sampleRate); // Initialize Dirt sequencer with sample rate
@@ -711,40 +711,40 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                 if (true) // Scoped block for local variables
                 {
                     // Read reverb parameters (from sequencer snapshot or APVTS)
-                    float type, size, predelay, dampHz, diffusion, early, mix;
+                    float width, size, predelay, dampHz, diffusion, early, decaySec, mix;
                     
                     // Check if Reverb sequencer is enabled AND active
-                    float decaySec;
                     if (reverbSeq.enabled.load() && reverbSeq.active.load()) {
                         // Use Reverb sequencer snapshot
                         int reverbStep = reverbSeq.currentStep.load();
                         const auto& snapshot = reverbStepSnapshots[juce::jlimit(0, 15, reverbStep)];
                         
-                        type      = snapshot.reverb.type;
+                        width     = snapshot.reverb.type; // Repurpose type field as width
                         size      = snapshot.reverb.size;
                         predelay  = snapshot.reverb.predelayMs;
                         dampHz    = snapshot.reverb.dampHz;
                         diffusion = snapshot.reverb.diffusion;
                         early     = snapshot.reverb.early;
-                        decaySec = snapshot.reverb.decaySec;
+                        decaySec  = snapshot.reverb.decaySec;
                         mix       = snapshot.reverb.mix;
                     } else {
                         // Use APVTS parameters (manual control)
-                        type      = valueTreeState.getRawParameterValue("verbType")->load();
+                        width     = valueTreeState.getRawParameterValue("verbWidth")->load();
                         size      = valueTreeState.getRawParameterValue("verbSize")->load();
                         predelay  = valueTreeState.getRawParameterValue("verbPredelayMs")->load();
                         dampHz    = valueTreeState.getRawParameterValue("verbDampHz")->load();
                         diffusion = valueTreeState.getRawParameterValue("verbDiffusion")->load();
                         early     = valueTreeState.getRawParameterValue("verbEarlyLevel")->load();
-                        decaySec = valueTreeState.getRawParameterValue("verbDecaySec")->load();
+                        decaySec  = valueTreeState.getRawParameterValue("verbDecaySec")->load();
                         mix       = valueTreeState.getRawParameterValue("verbMix")->load();
                     }
                     
                     // Update reverb targets (smoothed internally)
-                    reverb.setParams(type, size, predelay, dampHz, diffusion, early, decaySec, mix);
+                    hallVerb.setParams(size, decaySec, dampHz, diffusion, early, width, predelay);
+                    hallVerb.setMix(mix);
                     
                     // Process in-place
-                    reverb.processBlock(buffer);
+                    hallVerb.processBlock(buffer);
                 }
                 break;
             }

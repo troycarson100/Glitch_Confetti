@@ -183,7 +183,7 @@ namespace BinaryData
     const int            Unlocked_svgSize = 412;
 
     extern const char*   Verb_Icon_svg;
-    const int            Verb_Icon_svgSize = 34568;
+    const int            Verb_Icon_svgSize = 4565;
 
     extern const char*   Wow_Depth_svg;
     const int            Wow_Depth_svgSize = 41683;

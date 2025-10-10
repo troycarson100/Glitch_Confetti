@@ -329,7 +329,7 @@ const char* getNamedResource (const char* resourceNameUTF8, int& numBytes)
         case 0xd3c801f0:  numBytes = 2998; return Tab_Title_Space_Delayv2_svg_backup2_svg;
         case 0x880d7612:  numBytes = 13971; return Time_svg;
         case 0xdb3f4328:  numBytes = 412; return Unlocked_svg;
-        case 0xd85830be:  numBytes = 34568; return Verb_Icon_svg;
+        case 0xd85830be:  numBytes = 4565; return Verb_Icon_svg;
         case 0x90b4bb08:  numBytes = 41683; return Wow_Depth_svg;
         case 0xdd1caa65:  numBytes = 39199; return Wow_Rate_svg;
         case 0x2b192f8c:  numBytes = 26320; return Akira_Expanded_otf;
