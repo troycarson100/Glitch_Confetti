@@ -322,7 +322,12 @@ void PluginEditor::paint (juce::Graphics& g)
                     continue; // Skip invalid slots
             }
             
-            auto iconBounds = juce::Rectangle<float>(tabIconX, tabIconY, tabW, tabH);
+            // Use smaller icon size (original size) but center it in the tab area
+            float iconSize = 35.0f; // Original icon size
+            float iconX = tabIconX + (tabW - iconSize) / 2.0f; // Center horizontally
+            float iconY = tabIconY + (tabH - iconSize) / 2.0f; // Center vertically
+            
+            auto iconBounds = juce::Rectangle<float>(iconX, iconY, iconSize, iconSize);
             icon->drawWithin(g, iconBounds, juce::RectanglePlacement::centred, 1.0f);
         }
     }
