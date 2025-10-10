@@ -79,9 +79,15 @@ struct SingleHallReverb
 
         pd.prepare (sr, 240);
         damp.prepare (sr);
+        
+        // Smooth predelay parameter changes
+        predelaySmooth.reset(sr, 0.08); // 80ms smooth
+        predelaySmooth.setCurrentAndTargetValue(20.0f);
+        targetPredelayMs = 20.0f;
+        
         setParams (/*size*/ 0.8f, /*decaySec*/ 4.0f, /*dampingHz*/ 9000.0f, /*diffuse*/ 0.8f, /*early*/ 0.5f, /*width*/ 1.0f, /*predelayMs*/20.0f);
 
-        wetTrim = 2.5f; // ≈ +8 dB wet makeup so full-wet is obvious
+        wetTrim = 4.0f; // ≈ +12 dB wet makeup for BOLD, obvious reverb
     }
 
     // Public setter called once per block
@@ -93,7 +99,9 @@ struct SingleHallReverb
         earlyLevel = juce::jlimit (0.0f, 1.0f, earlyLevel01);
         width = juce::jlimit (0.0f, 1.0f, width01);
 
-        pd.setMs (juce::jlimit (0.0f, 200.0f, predelayMs));
+        // Smooth predelay changes to avoid scratching
+        targetPredelayMs = juce::jlimit (0.0f, 200.0f, predelayMs);
+        
         damp.setCutoff (juce::jlimit (1000.0f, 20000.0f, dampingHz));
 
         apGain = juce::jmap (diffusion, 0.55f, 0.92f);
@@ -122,7 +130,11 @@ struct SingleHallReverb
             float inL = L[n];
             float inR = R ? R[n] : inL;
 
-            // 1) Predelay
+            // 1) Predelay (with smoothing to avoid scratching)
+            predelaySmooth.setTargetValue(targetPredelayMs);
+            float smoothPredelayMs = predelaySmooth.getNextValue();
+            pd.setMs(smoothPredelayMs);
+            
             pd.push (inL, inR);
             const float pdL = pd.readCh (0);
             const float pdR = pd.readCh (1);
@@ -168,7 +180,7 @@ struct SingleHallReverb
                 const float del = readInterp (msNow);
 
                 float apOut = ap[i].processSample (del);
-                y[i] = damp.process (apGain * apOut);
+                y[i] = apGain * apOut; // NO damping in feedback loop - apply at output only
             }
 
             // 4) Orthogonal mix (two 4x4 Hadamards)
@@ -198,6 +210,14 @@ struct SingleHallReverb
             // 6) Stereo late sum (width controls M/S spread)
             float lateL = 0.25f * (y[0]+y[2]+y[4]+y[6]);
             float lateR = 0.25f * (y[1]+y[3]+y[5]+y[7]);
+            
+            // Apply VERY gentle damping (blend, not full filtering) to preserve energy
+            float dampedL = damp.process(lateL);
+            float dampedR = damp.process(lateR);
+            // Scale damping based on decay time: long decay = less damping
+            float dampBlend = juce::jmap(decay, 0.2f, 20.0f, 1.0f, 0.15f); // 100% to 15% damping
+            lateL = lateL + dampBlend * (dampedL - lateL);
+            lateR = lateR + dampBlend * (dampedR - lateR);
 
             // Convert to mid/side, apply width, back to L/R
             float mid  = 0.5f * (lateL + lateR);
@@ -242,8 +262,10 @@ struct SingleHallReverb
 
     // Params/state
     float size{0.8f}, decay{4.0f}, diffusion{0.8f}, earlyLevel{0.5f}, width{1.0f}, apGain{0.8f};
-    float wetTrim{2.5f}; // wet makeup so the hall is present at 100% mix
+    float wetTrim{4.0f}; // wet makeup so the hall is present at 100% mix
     float mix{0.3f};
+    float targetPredelayMs{20.0f};
+    juce::SmoothedValue<float> predelaySmooth; // Smooth predelay to avoid scratching
 
     // Incommensurate base delays (ms)
     const float baseTemplate[N] = { 31.7f, 37.1f, 43.8f, 51.2f, 58.9f, 67.3f, 73.5f, 81.0f };
