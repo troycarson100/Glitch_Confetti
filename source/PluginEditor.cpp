@@ -121,8 +121,11 @@ PluginEditor::PluginEditor (PluginProcessor& p)
             }
         }
         
-        // Clear flag
-        isLoadingFromSnapshot.store(false);
+        // Clear flag after a short delay to ensure all async updates complete
+        juce::Timer::callAfterDelay(50, [this]() {
+            isLoadingFromSnapshot.store(false);
+            DBG("[UI] isLoadingFromSnapshot flag cleared");
+        });
         
         DBG("[UI] Current steps updated - all pages will show randomized values");
     };
