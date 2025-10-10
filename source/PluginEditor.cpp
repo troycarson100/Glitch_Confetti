@@ -5741,9 +5741,10 @@ void PluginEditor::setupReverbSequencerArea()
         DBG("[UI] Reverb rate changed to index: " << selectedIndex);
     };
     
-    // Make dropdown background transparent
+    // Make dropdown background and outline transparent
     reverbRateDropdown->setColour(juce::ComboBox::backgroundColourId, juce::Colours::transparentBlack);
-    reverbRateDropdown->setColour(juce::ComboBox::outlineColourId, juce::Colours::white.withAlpha(0.3f));
+    reverbRateDropdown->setColour(juce::ComboBox::outlineColourId, juce::Colours::transparentBlack);
+    reverbRateDropdown->setColour(juce::ComboBox::buttonColourId, juce::Colours::transparentBlack);
     
     addAndMakeVisible(reverbRateDropdown.get());
     reverbRateDropdown->setVisible(false);
