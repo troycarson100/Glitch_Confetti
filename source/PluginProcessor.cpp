@@ -186,7 +186,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout PluginProcessor::createParam
     params.push_back(std::make_unique<juce::AudioParameterFloat>(
         "verbEarlyLevel", "Early", juce::NormalisableRange<float>(0.0f, 1.0f, 0.0f, 1.0f), 0.35f)); // room only
     params.push_back(std::make_unique<juce::AudioParameterFloat>(
-        "verbShimmerAmt", "Shimmer", juce::NormalisableRange<float>(0.0f, 1.0f, 0.0f, 1.0f), 0.0f)); // shimmer only
+        "verbDecaySec", "Decay", juce::NormalisableRange<float>(0.2f, 20.0f, 0.0f, 0.5f), 4.0f)); // RT60 in seconds
     params.push_back(std::make_unique<juce::AudioParameterFloat>(
         "verbMix", "Mix", juce::NormalisableRange<float>(0.0f, 1.0f, 0.0f, 1.0f), 0.25f));
     params.push_back(std::make_unique<juce::AudioParameterBool>("verbEnabled", "Reverb Enabled", true)); // Reverb effect enabled
@@ -711,9 +711,10 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                 if (true) // Scoped block for local variables
                 {
                     // Read reverb parameters (from sequencer snapshot or APVTS)
-                    float type, size, predelay, dampHz, diffusion, early, shimmer, mix;
+                    float type, size, predelay, dampHz, diffusion, early, mix;
                     
                     // Check if Reverb sequencer is enabled AND active
+                    float decaySec;
                     if (reverbSeq.enabled.load() && reverbSeq.active.load()) {
                         // Use Reverb sequencer snapshot
                         int reverbStep = reverbSeq.currentStep.load();
@@ -725,7 +726,7 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                         dampHz    = snapshot.reverb.dampHz;
                         diffusion = snapshot.reverb.diffusion;
                         early     = snapshot.reverb.early;
-                        shimmer   = snapshot.reverb.shimmer;
+                        decaySec = snapshot.reverb.decaySec;
                         mix       = snapshot.reverb.mix;
                     } else {
                         // Use APVTS parameters (manual control)
@@ -735,12 +736,12 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                         dampHz    = valueTreeState.getRawParameterValue("verbDampHz")->load();
                         diffusion = valueTreeState.getRawParameterValue("verbDiffusion")->load();
                         early     = valueTreeState.getRawParameterValue("verbEarlyLevel")->load();
-                        shimmer   = valueTreeState.getRawParameterValue("verbShimmerAmt")->load();
+                        decaySec = valueTreeState.getRawParameterValue("verbDecaySec")->load();
                         mix       = valueTreeState.getRawParameterValue("verbMix")->load();
                     }
                     
                     // Update reverb targets (smoothed internally)
-                    reverb.setParams(type, size, predelay, dampHz, diffusion, early, shimmer, mix);
+                    reverb.setParams(type, size, predelay, dampHz, diffusion, early, decaySec, mix);
                     
                     // Process in-place
                     reverb.processBlock(buffer);
@@ -1423,8 +1424,8 @@ void PluginProcessor::updateReverbCurrentStepSnapshot(int knobIndex, float value
         case 5: // Early
             reverbStepSnapshots[currentStep].reverb.early = value;
             break;
-        case 6: // Shimmer
-            reverbStepSnapshots[currentStep].reverb.shimmer = value;
+        case 6: // Decay
+            reverbStepSnapshots[currentStep].reverb.decaySec = value;
             break;
         case 7: // Mix
             reverbStepSnapshots[currentStep].reverb.mix = value;

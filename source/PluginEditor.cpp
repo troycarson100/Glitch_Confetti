@@ -890,7 +890,7 @@ void PluginEditor::timerCallback()
                 case 3: valueText = juce::String(knobValue, 0) + " Hz"; break; // Damping (1k-20k Hz)
                 case 4: valueText = juce::String(knobValue * 100.0f, 0) + "%"; break; // Diffusion (0-1)
                 case 5: valueText = juce::String(knobValue * 100.0f, 0) + "%"; break; // Early (0-1)
-                case 6: valueText = juce::String(knobValue * 100.0f, 0) + "%"; break; // Shimmer (0-1)
+                case 6: valueText = juce::String(knobValue, 1) + "s"; break; // Decay (0.2-20s)
                 case 7: valueText = juce::String(knobValue * 100.0f, 0) + "%"; break; // Mix (0-1)
             }
             
@@ -921,7 +921,7 @@ void PluginEditor::timerCallback()
                     case 3: indicatorValue = (s.reverb.dampHz - 1000.0f) / 19000.0f; break; // Damping (1k-20k)
                     case 4: indicatorValue = s.reverb.diffusion; break; // Diffusion (0-1)
                     case 5: indicatorValue = s.reverb.early; break; // Early (0-1)
-                    case 6: indicatorValue = s.reverb.shimmer; break; // Shimmer (0-1)
+                    case 6: indicatorValue = (s.reverb.decaySec - 0.2f) / 19.8f; break; // Decay (0.2-20s)
                     case 7: indicatorValue = s.reverb.mix; break; // Mix (0-1)
                 }
             }
@@ -935,7 +935,7 @@ void PluginEditor::timerCallback()
                     case 3: indicatorValue = (knobValue - 1000.0f) / 19000.0f; break; // Damping (1k-20k)
                     case 4: indicatorValue = knobValue; break; // Diffusion (0-1)
                     case 5: indicatorValue = knobValue; break; // Early (0-1)
-                    case 6: indicatorValue = knobValue; break; // Shimmer (0-1)
+                    case 6: indicatorValue = (knobValue - 0.2f) / 19.8f; break; // Decay (0.2-20s)
                     case 7: indicatorValue = knobValue; break; // Mix (0-1)
                 }
             }
@@ -5387,9 +5387,9 @@ void PluginEditor::setupReverbKnobs()
 {
     DBG("[UI] Setting up Reverb knobs...");
 
-    // Reverb knob names (8 knobs): Type, Size, Predelay, Damping, Diffusion, Early, Shimmer, Mix
+    // Reverb knob names (8 knobs): Type, Size, Predelay, Damping, Diffusion, Early, Decay, Mix
     std::vector<juce::String> reverbKnobNames = {
-        "Type", "Size", "Predelay", "Damping", "Diffusion", "Early", "Shimmer", "Mix"
+        "Type", "Size", "Predelay", "Damping", "Diffusion", "Early", "Decay", "Mix"
     };
 
     // Effect area bounds (EXACT same as Chorus page)
@@ -5434,9 +5434,9 @@ void PluginEditor::setupReverbKnobs()
                 reverbKnobs[i]->setRange(0.0, 1.0, 0.01);
                 reverbKnobs[i]->setValue(0.35, juce::dontSendNotification);
                 break;
-            case 6: // Shimmer (0-1)
-                reverbKnobs[i]->setRange(0.0, 1.0, 0.01);
-                reverbKnobs[i]->setValue(0.0, juce::dontSendNotification);
+            case 6: // Decay (0.2-20s)
+                reverbKnobs[i]->setRange(0.2, 20.0, 0.1);
+                reverbKnobs[i]->setValue(4.0, juce::dontSendNotification);
                 break;
             case 7: // Mix (0-1)
                 reverbKnobs[i]->setRange(0.0, 1.0, 0.01);
@@ -5460,7 +5460,7 @@ void PluginEditor::setupReverbKnobs()
                             case 3: snapshot.reverb.dampHz = value; break;
                             case 4: snapshot.reverb.diffusion = value; break;
                             case 5: snapshot.reverb.early = value; break;
-                            case 6: snapshot.reverb.shimmer = value; break;
+                            case 6: snapshot.reverb.decaySec = value; break;
                             case 7: snapshot.reverb.mix = value; break;
                         }
                         processorRef.setReverbStepSnapshot(step, snapshot);
@@ -5547,7 +5547,7 @@ void PluginEditor::setupReverbKnobs()
     // Create parameter attachments to connect knobs to APVTS
     std::vector<juce::String> reverbParamIds = {
         "verbType", "verbSize", "verbPredelayMs", "verbDampHz", 
-        "verbDiffusion", "verbEarlyLevel", "verbShimmerAmt", "verbMix"
+        "verbDiffusion", "verbEarlyLevel", "verbDecaySec", "verbMix"
     };
     
     for (int i = 0; i < 8; ++i) {
@@ -5928,7 +5928,7 @@ void PluginEditor::randomizeIndividualReverbKnob(int knobIndex)
         case 3: randomValue = 1000.0f + rng.nextFloat() * 19000.0f; break; // Damping (1k-20k)
         case 4: randomValue = rng.nextFloat(); break; // Diffusion (0-1)
         case 5: randomValue = rng.nextFloat(); break; // Early (0-1)
-        case 6: randomValue = rng.nextFloat(); break; // Shimmer (0-1)
+        case 6: randomValue = 0.2f + rng.nextFloat() * 19.8f; break; // Decay (0.2-20s)
         case 7: randomValue = rng.nextFloat(); break; // Mix (0-1)
     }
     
@@ -5953,7 +5953,7 @@ void PluginEditor::updateReverbParameterFromKnob(int knobIndex)
             case 3: currentSnapshot.reverb.dampHz = value; break;
             case 4: currentSnapshot.reverb.diffusion = value; break;
             case 5: currentSnapshot.reverb.early = value; break;
-            case 6: currentSnapshot.reverb.shimmer = value; break;
+            case 6: currentSnapshot.reverb.decaySec = value; break;
             case 7: currentSnapshot.reverb.mix = value; break;
         }
         
@@ -5980,7 +5980,7 @@ void PluginEditor::onReverbStepButtonClicked(int stepIndex)
                 case 3: value = snapshot.reverb.dampHz; break;
                 case 4: value = snapshot.reverb.diffusion; break;
                 case 5: value = snapshot.reverb.early; break;
-                case 6: value = snapshot.reverb.shimmer; break;
+                case 6: value = snapshot.reverb.decaySec; break;
                 case 7: value = snapshot.reverb.mix; break;
             }
             reverbKnobs[i]->setValue(value, juce::dontSendNotification);
@@ -6077,7 +6077,7 @@ void PluginEditor::onEffectSelectorChanged(int slotIndex)
             !processorRef.getAPVTS().getParameter("verbDampHz") ||
             !processorRef.getAPVTS().getParameter("verbDiffusion") ||
             !processorRef.getAPVTS().getParameter("verbEarlyLevel") ||
-            !processorRef.getAPVTS().getParameter("verbShimmerAmt") ||
+            !processorRef.getAPVTS().getParameter("verbDecaySec") ||
             !processorRef.getAPVTS().getParameter("verbMix") ||
             !processorRef.getAPVTS().getParameter("verbEnabled"))
         {

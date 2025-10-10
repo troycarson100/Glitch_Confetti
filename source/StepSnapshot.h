@@ -51,7 +51,7 @@ struct StepSnapshot {
         float dampHz = 8000.0f;    // 1000-20000 Hz (HF damping)
         float diffusion = 0.7f;    // 0-1 (diffusion amount)
         float early = 0.35f;       // 0-1 (early reflections level - Room mode)
-        float shimmer = 0.0f;      // 0-1 (shimmer amount - Shimmer mode)
+        float decaySec = 4.0f;     // 0.2-20s (RT60 decay time)
         float mix = 0.25f;         // 0-1 (dry/wet mix)
     } reverb;
 };

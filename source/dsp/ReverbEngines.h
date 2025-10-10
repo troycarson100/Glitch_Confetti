@@ -80,32 +80,32 @@ struct HallReverb
         }
         dampLpf.prepare (sr); dampLpf.setCutoff (8000.0f);
         setSize (0.7f); setDiffusion (0.7f);
-        setDecayFromSize(); // CRITICAL: Initialize delay times and feedback values
+        setDecayAndSize(4.0f, 0.7f); // CRITICAL: Initialize delay times and feedback values
     }
 
     void setSize (float s)      { size = juce::jlimit (0.1f, 1.5f, s); }
     void setDiffusion (float d) { diffusion = juce::jlimit (0.0f, 1.0f, d); }
     void setDampHz (float hz)   { dampLpf.setCutoff (hz); }
 
-    // rt60-ish mapping (simple): feedback = exp(-3 ln(10) * T / delay)
-    void setDecayFromSize()
+    // RT60 mapping: feedback = exp(-3 * delay / RT60)
+    void setDecayAndSize (float decaySec, float size)
     {
-        // base delays ~ [35..75] ms scaled by size
+        size = juce::jlimit(0.1f, 1.5f, size);
         const float baseMs[N] = { 37.1f, 53.3f, 61.7f, 73.0f };
-        for (int i=0; i<N; ++i)
+        for (int i=0; i<N; ++i) 
             delayMs[i] = baseMs[i] * size;
-        const float rtSec = juce::jmap (size, 0.1f, 1.5f, 0.6f, 8.0f); // musical mapping
         for (int i=0; i<N; ++i)
         {
             const float dS = delayMs[i] * 0.001f * (float) sampleRate;
-            fb[i] = std::exp (-6.9078f * (dS / (rtSec * (float) sampleRate))); // ~e^(-ln(1000)*delay/RT)
-            fb[i] = juce::jlimit (0.1f, 0.98f, fb[i]);
+            fb[i] = std::exp(-3.0f * dS / (decaySec * (float) sampleRate));
+            fb[i] = juce::jlimit(0.2f, 0.995f, fb[i]);
         }
     }
 
     void updateParams (float size_, float diffusion_, float dampHz_)
     {
-        setSize (size_); setDiffusion (diffusion_); setDampHz (dampHz_); setDecayFromSize();
+        setSize (size_); setDiffusion (diffusion_); setDampHz (dampHz_);
+        // Note: setDecayAndSize() must be called separately with decaySec parameter
     }
 
     inline void processSample (float inL, float inR, float& outL, float& outR)
@@ -143,16 +143,17 @@ struct HallReverb
 
         // Feedback write with diffusion amount shaping
         float d[N] { h0, h1, h2, h3 };
+        const float apGain = juce::jmap(diffusion, 0.0f, 1.0f, 0.6f, 0.88f); // Higher ceiling for diffusion > 0.8
         for (int i=0; i<N; ++i)
         {
-            float xin = in + fb[i] * (juce::jmap (diffusion, 0.0f, 1.0f, 0.7f, 1.0f) * d[i]);
+            float xin = in + fb[i] * (apGain * d[i]);
             lines[i].setSample (0, widx[i], dspx::softSat (xin));
             if (++widx[i] >= lines[i].getNumSamples()) widx[i] = 0;
         }
 
-        // Stereo out: simple pairings for width
-        outL = 0.5f * (y[0] + y[2]);
-        outR = 0.5f * (y[1] + y[3]);
+        // Stereo out: simple pairings for width with +3dB wet makeup
+        outL = 1.4142f * 0.5f * (y[0] + y[2]); // +3 dB ≈ *1.414
+        outR = 1.4142f * 0.5f * (y[1] + y[3]);
     }
 
     double sampleRate { 44100.0 };
@@ -181,7 +182,7 @@ struct RoomReverb
         
         // Tail: reuse a compact Hall tank with smaller sizes
         hall.prepare (sr, 120);
-        setParams (0.7f, 8000.0f, 0.7f, 0.35f, 20.0f);
+        setParams (0.7f, 8000.0f, 0.7f, 0.55f, 20.0f); // Boost early reflections default to 0.55
     }
 
     void setParams (float size, float dampHz, float diffusion, float earlyLevel, float predelayMs)
@@ -190,6 +191,12 @@ struct RoomReverb
         hall.updateParams (0.5f * size_, diffusion, dampHz);
         earlyLevel_ = juce::jlimit (0.0f, 1.0f, earlyLevel);
         predelay.setMs (juce::jlimit (0.0f, 200.0f, predelayMs));
+    }
+    
+    void setDecayAndSize (float decaySec, float size)
+    {
+        size_ = juce::jlimit (0.1f, 1.5f, size);
+        hall.setDecayAndSize(decaySec, 0.5f * size_); // Use shared decay with Hall
     }
 
     inline void processSample (float inL, float inR, float& outL, float& outR)
@@ -224,8 +231,9 @@ struct RoomReverb
         float hallL=0, hallR=0;
         hall.processSample (pdL, pdR, hallL, hallR);
 
-        outL = earlyLevel_ * erL + (1.0f - earlyLevel_) * hallL;
-        outR = earlyLevel_ * erR + (1.0f - earlyLevel_) * hallR;
+        // +3dB wet makeup and boost early reflections by 1.2x
+        outL = 1.4142f * (earlyLevel_ * 1.2f * erL + (1.0f - earlyLevel_) * hallL);
+        outR = 1.4142f * (earlyLevel_ * 1.2f * erR + (1.0f - earlyLevel_) * hallR);
     }
 
     double sampleRate { 44100.0 };
@@ -233,48 +241,55 @@ struct RoomReverb
     dspx::PreDelay predelay;
     std::vector<std::pair<float,float>> taps; // {ms, gain}
     juce::AudioBuffer<float> earlyBuf; int widx { 0 };
-    float size_ { 0.7f }, earlyLevel_ { 0.35f };
+    float size_ { 0.7f }, earlyLevel_ { 0.55f }; // Boosted default
 };
 
 //===================== Shimmer: Hall tail + pitch-shifted feedback =====================
-struct SimpleOctaveUp // lightweight time-domain shifter for tails
+struct OctaveUpGrains // 3-grain Hann-window shifter with 50% overlap
 {
-    // dual crossfaded delay grains, upshift by +12 semitones with sliding read
     void prepare (double sr, int maxMs)
     {
-        sampleRate = sr; const int N = (int) std::ceil (sr * maxMs / 1000.0) + 8;
-        buf.setSize (1, N); buf.clear(); widx = 0;
-        grainLen = (int) std::round (0.040 * sr); // 40 ms grains
+        sampleRate = sr;
+        int N = (int) std::ceil(sr * maxMs / 1000.0) + 8;
+        buf.setSize(1, N); buf.clear(); widx = 0;
+        setGrainMs(60.0f); // longer grains reduce glitching
+        shiftRatio = 2.0f; // +12 semitones
+        for (int g=0; g<3; ++g) { phase[g] = g / 3.0f; }
     }
-    void setShift (float semitones) {
-        // fixed +12 for now, but keep interface
-        shiftRatio = std::pow (2.0f, semitones / 12.0f);
+    void setGrainMs (float ms)
+    {
+        grainLen = juce::jlimit(16, (int) std::round(ms * sampleRate * 0.001f), 8192);
     }
     inline float process (float x)
     {
-        buf.setSample (0, widx, x);
-        // two grains with opposite crossfades
-        float y=0.0f; for (int g=0; g<2; ++g)
+        buf.setSample(0, widx, x);
+        float y=0.0f;
+        for (int g=0; g<3; ++g)
         {
-            float ph = phases[g]; ph += (shiftRatio - 1.0f) * (grainLen / (float) sampleRate);
-            if (ph >= 1.0f) ph -= 1.0f; phases[g] = ph;
+            phase[g] += (shiftRatio - 1.0f) * (grainLen / (float) sampleRate);
+            if (phase[g] >= 1.0f) phase[g] -= 1.0f;
 
-            float readBack = ph * (float) grainLen;
-            float rp = (float) widx - readBack; const int N = buf.getNumSamples();
-            while (rp < 0.0f) rp += (float) N; int i = (int) rp; float f = rp - (float) i;
+            // Hann window
+            float win = 0.5f - 0.5f * std::cos(juce::MathConstants<float>::twoPi * phase[g]);
 
-            auto at=[&](int k){ return buf.getSample (0, (k + N) % N); };
+            float readBack = phase[g] * (float) grainLen;
+            float rp = (float) widx - readBack;
+            const int N = buf.getNumSamples();
+            while (rp < 0.0f) rp += (float) N;
+            int i = (int) rp; float f = rp - (float) i;
+
+            auto at=[&](int k){ return buf.getSample(0, (k + N) % N); };
             float y0=at(i-1), y1=at(i), y2=at(i+1), y3=at(i+2);
             float c0=y1,c1=0.5f*(y2-y0),c2=y0-2.5f*y1+2.0f*y2-0.5f*y3,c3=0.5f*(y3-y0)+1.5f*(y1-y2);
             float s = ((c3*f + c2)*f + c1)*f + c0;
 
-            float win = (g==0 ? (1.0f - ph) : ph); // crossfade window
             y += win * s;
         }
         if (++widx >= buf.getNumSamples()) widx = 0;
-        return y * 0.7f; // tame gain
+        return y * (2.0f / 3.0f); // normalize 3 grains
     }
-    juce::AudioBuffer<float> buf; int widx{0}, grainLen{2048}; double sampleRate{44100.0}; float phases[2]{0,0}, shiftRatio{2.0f};
+    juce::AudioBuffer<float> buf; int widx{0}, grainLen{2048}; double sampleRate{44100.0};
+    float phase[3]{0,0,0}, shiftRatio{2.0f};
 };
 
 struct ShimmerReverb
@@ -283,45 +298,57 @@ struct ShimmerReverb
     {
         sampleRate = sr;
         hall.prepare (sr, maxMs);
-        shifterL.prepare (sr, 1200);
-        shifterR.prepare (sr, 1200);
-        shifterL.setShift (+12.0f); shifterR.setShift (+12.0f);
-        predelay.prepare (sr, 200);
-        damp.setCutoff (8000.0f); damp.prepare (sr);
+        shifterL.prepare(sr, 1500);
+        shifterR.prepare(sr, 1500);
+        predelay.prepare(sr, 200);
+        // Feedback filters
+        lp.setCutoff(9000.0f); lp.prepare(sr);
+        hp.setCutoff(150.0f);  hp.prepare(sr);
+        // Stable feedback amount tuned for lush but safe bloom
+        fbAmt.reset(sr, 0.1);
+        fbAmt.setCurrentAndTargetValue(0.42f); // ~42%
+        wetTrim = 1.4142f; // +3 dB
     }
 
-    void setParams (float size, float dampHz, float diffusion, float predelayMs, float shimmerAmt)
+    void setParams (float decaySec, float size, float dampHz, float diffusion, float predelayMs)
     {
-        hall.updateParams (size, diffusion, dampHz);
-        predelay.setMs (predelayMs);
-        shimmer = juce::jlimit (0.0f, 1.0f, shimmerAmt);
-        damp.setCutoff (dampHz);
+        hall.setDecayAndSize(decaySec, size);
+        hall.setDampHz(dampHz);
+        hall.setDiffusion(diffusion);
+        predelay.setMs(predelayMs);
+        lp.setCutoff(dampHz);
     }
 
     inline void processSample (float inL, float inR, float& outL, float& outR)
     {
-        // predelay into hall
-        predelay.push (inL, inR);
-        const float pdL = predelay.readCh (0);
-        const float pdR = predelay.readCh (1);
+        // predelay into hall with shimmer feedback injection
+        predelay.push(inL, inR);
+        const float pdL = predelay.readCh(0);
+        const float pdR = predelay.readCh(1);
 
         float hL=0, hR=0;
-        hall.processSample (pdL + fbL, pdR + fbR, hL, hR); // inject feedback into hall input
+        hall.processSample(pdL + fbL, pdR + fbR, hL, hR);
 
-        // pitch-shifted feedback from hall out
-        float sL = shifterL.process (hL);
-        float sR = shifterR.process (hR);
+        // pitch-shift hall out, filter, feed back
+        float sL = shifterL.process(hL);
+        float sR = shifterR.process(hR);
 
-        // filter & scale feedback
-        fbL = shimmer * damp.process (sL);
-        fbR = shimmer * damp.process (sR);
+        float fbl = hp.process(lp.process(sL));
+        float fbr = hp.process(lp.process(sR));
 
-        outL = hL; outR = hR;
+        const float g = fbAmt.getNextValue(); // smoothed
+        fbL = g * fbl;
+        fbR = g * fbr;
+
+        // wet makeup
+        outL = wetTrim * hL;
+        outR = wetTrim * hR;
     }
 
     double sampleRate{44100.0};
-    HallReverb hall; dspx::PreDelay predelay; SimpleOctaveUp shifterL, shifterR; dspx::OnePoleLPF damp;
-    float shimmer { 0.0f }, fbL{0.0f}, fbR{0.0f};
+    HallReverb hall; dspx::PreDelay predelay; OctaveUpGrains shifterL, shifterR;
+    dspx::OnePoleLPF lp, hp; juce::SmoothedValue<float> fbAmt;
+    float wetTrim{1.4142f}, fbL{0.0f}, fbR{0.0f};
 };
 
 //===================== Mixer wrapper for all three =====================
@@ -339,12 +366,15 @@ struct MultiReverb
         mix.reset (sr, 0.04);
     }
 
-    void setParams (float type, float size, float predelayMs, float dampHz, float diffusion, float early, float shimmerAmt, float mix01)
+    void setParams (float type, float size, float predelayMs, float dampHz, float diffusion, float early, float decaySec, float mix01)
     {
-        // update engines
-        hall.updateParams (size, diffusion, dampHz);
-        room.setParams     (size, dampHz, diffusion, early, predelayMs);
-        shimmer.setParams  (size, dampHz, diffusion, predelayMs, shimmerAmt);
+        // update engines with shared decay parameter
+        hall.setDecayAndSize(decaySec, size);
+        hall.setDampHz(dampHz);
+        hall.setDiffusion(diffusion);
+        room.setDecayAndSize(decaySec, size);
+        room.setParams(size, dampHz, diffusion, early, predelayMs);
+        shimmer.setParams(decaySec, size, dampHz, diffusion, predelayMs);
 
         // crossfade weights from type
         dspx::TypeWeights tw; tw.set (type);
