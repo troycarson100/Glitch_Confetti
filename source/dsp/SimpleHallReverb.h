@@ -114,43 +114,18 @@ struct SimpleHallReverb
         juce::dsp::ProcessContextReplacing<float> ctx (block);
         reverb.process (ctx);
 
-        // 2) Simple early reflections (audible presence) blended into wet
-        //    Short stereo taps mixed in; scaled by erAmt
-        const float erGain = erAmt.getNextValue();
+        // 2) Apply soft saturation to wet signal to prevent crackling
         for (int n = 0; n < numSamples; ++n)
         {
-            // write to ER ring
-            erBuffer.setSample (0, erWrite, wet.getSample (0, n));
-            erBuffer.setSample (1, erWrite, wet.getSample (1, n));
-
-            auto tap = [&](int ch, float ms)
-            {
-                float d = ms * (float) sr * 0.001f;
-                float rp = (float) erWrite - d; const int N = erBuffer.getNumSamples();
-                while (rp < 0) rp += (float) N;
-                int i = (int) rp; float f = rp - (float) i;
-                auto at=[&](int k){ return erBuffer.getSample (ch, (k+N)%N); };
-                float y0=at(i-1), y1=at(i), y2=at(i+1), y3=at(i+2);
-                float c0=y1,c1=0.5f*(y2-y0),c2=y0-2.5f*y1+2.0f*y2-0.5f*y3,c3=0.5f*(y3-y0)+1.5f*(y1-y2);
-                return ((c3*f+c2)*f+c1)*f+c0;
-            };
-
-            float erL = 0.0f, erR = 0.0f;
-            // tasteful audible taps (reduced gains to prevent clipping)
-            erL += 0.45f * tap(0, 7.0f);
-            erR += 0.45f * tap(1, 7.0f);
-            erL += 0.35f * tap(0, 15.5f);
-            erR += 0.35f * tap(1, 16.0f);
-            erL += 0.25f * tap(0, 33.0f);
-            erR += 0.25f * tap(1, 33.0f);
-
-            // add ER presence into the wet tail (scaled to prevent clipping)
-            float wL = wet.getSample (0, n) + erGain * erL * 0.6f;
-            float wR = wet.getSample (1, n) + erGain * erR * 0.6f;
-            wet.setSample (0, n, juce::jlimit (-0.95f, 0.95f, wL));
-            wet.setSample (1, n, juce::jlimit (-0.95f, 0.95f, wR));
-
-            if (++erWrite >= erBuffer.getNumSamples()) erWrite = 0;
+            float wL = wet.getSample (0, n);
+            float wR = wet.getSample (1, n);
+            
+            // Soft saturation to prevent hard clipping
+            wL = std::tanh(wL * 0.8f);
+            wR = std::tanh(wR * 0.8f);
+            
+            wet.setSample (0, n, wL);
+            wet.setSample (1, n, wR);
         }
 
         // 3) External mix crossfade (use saved dry signal)
