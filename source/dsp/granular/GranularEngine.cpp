@@ -11,11 +11,14 @@ void GranularEngine::prepare(double sampleRate, int samplesPerBlock, int numChan
     sr = sampleRate;
     channels = juce::jmin(numChannels, 2);
     
-    // Allocate ring buffer
-    ringSize = static_cast<int>(std::ceil(sr * kCaptureSec));
-    ringBuffer.setSize(2, ringSize);
-    ringBuffer.clear();
-    ringWritePos = 0;
+    // Allocate ring buffer (only if not already allocated)
+    int newRingSize = static_cast<int>(std::ceil(sr * kCaptureSec));
+    if (ringSize != newRingSize || ringBuffer.getNumSamples() == 0)
+    {
+        ringSize = newRingSize;
+        ringBuffer.setSize(2, ringSize, false, true, false); // Don't preserve, clear it
+        ringWritePos = 0;
+    }
     
     // Reset smoothed values
     sizeSmooth.reset(sr, 0.05);      // 50ms smoothing

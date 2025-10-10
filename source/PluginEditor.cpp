@@ -6429,6 +6429,27 @@ void PluginEditor::setupGranularKnobs()
                 granularKnobs[i]->setValue(0.5, juce::dontSendNotification);
                 break;
         }
+        
+        // Add value change callback to update value label
+        granularKnobs[i]->onValueChange = [this, i]() {
+            if (granularKnobs[i] && granularValueLabels[i]) {
+                float value = granularKnobs[i]->getValue();
+                juce::String valueText;
+                
+                switch (i) {
+                    case 0: valueText = juce::String(value, 1) + "ms"; break; // Size
+                    case 1: valueText = juce::String(value, 1) + "Hz"; break; // Density
+                    case 2: valueText = juce::String(int(value * 100)) + "%"; break; // Position
+                    case 3: valueText = juce::String(value, 1) + "ms"; break; // Spray
+                    case 4: valueText = juce::String(value, 1) + "st"; break; // Pitch (semitones)
+                    case 5: valueText = juce::String(int(value * 100)) + "%"; break; // Random
+                    case 6: valueText = juce::String(int(value * 100)) + "%"; break; // Texture
+                    case 7: valueText = juce::String(int(value * 100)) + "%"; break; // Mix
+                }
+                
+                granularValueLabels[i]->setText(valueText, juce::dontSendNotification);
+            }
+        };
 
         // Set knob images
         if (assets.knobRing != nullptr)

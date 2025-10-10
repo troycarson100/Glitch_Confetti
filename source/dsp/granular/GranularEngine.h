@@ -35,8 +35,8 @@ public:
     
 private:
     // Configuration
-    static constexpr float kCaptureSec = 8.0f;
-    static constexpr int kMaxVoices = 128;
+    static constexpr float kCaptureSec = 4.0f;  // Reduced from 8s to save memory/CPU
+    static constexpr int kMaxVoices = 64;       // Reduced from 128 to save CPU
     static constexpr float kTwoPi = 6.28318530718f;
     
     // Ring buffer for live input capture
