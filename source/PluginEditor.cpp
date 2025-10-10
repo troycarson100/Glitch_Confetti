@@ -6682,11 +6682,24 @@ void PluginEditor::setupGranularKnobs()
     
     auto* densitySyncParam = processorRef.getAPVTS().getRawParameterValue("granDensitySync");
     if (densitySyncParam) {
-        granularDensitySyncToggle->setToggleState(densitySyncParam->load() > 0.5f, juce::dontSendNotification);
+        granularDensitySyncEnabled = densitySyncParam->load() > 0.5f;
+        granularDensitySyncToggle->setToggleState(granularDensitySyncEnabled, juce::dontSendNotification);
+        
+        // If sync is enabled on startup, set density knob to division mode
+        if (granularDensitySyncEnabled && granularKnobs[1]) {
+            granularKnobs[1]->setRange(0.0, 7.0, 1.0);
+            // Find current Hz value and convert to nearest division
+            float currentHz = 8.0f; // Default
+            int nearestIdx = 4; // Default to 1/8
+            granularKnobs[1]->setValue(nearestIdx, juce::dontSendNotification);
+        }
     }
     
     granularDensitySyncToggle->onClick = [this]() {
-        granularDensitySyncEnabled = granularDensitySyncToggle->getToggleState();
+        // Toggle the state manually (CircularToggleButton doesn't auto-toggle)
+        granularDensitySyncEnabled = !granularDensitySyncEnabled;
+        granularDensitySyncToggle->setToggleState(granularDensitySyncEnabled, juce::dontSendNotification);
+        
         auto* param = processorRef.getAPVTS().getParameter("granDensitySync");
         if (param) {
             param->setValueNotifyingHost(granularDensitySyncEnabled ? 1.0f : 0.0f);
