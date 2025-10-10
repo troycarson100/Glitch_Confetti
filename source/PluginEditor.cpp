@@ -986,15 +986,26 @@ void PluginEditor::timerCallback()
             float knobValue = granularKnobs[i]->getValue();
             juce::String valueText;
             
-            switch (i) {
-                case 0: valueText = juce::String(knobValue, 1) + "ms"; break; // Size
-                case 1: valueText = juce::String(knobValue, 1) + "Hz"; break; // Density
-                case 2: valueText = juce::String((int)(knobValue * 100)) + "%"; break; // Position
-                case 3: valueText = juce::String(knobValue, 1) + "ms"; break; // Spray
-                case 4: valueText = juce::String(knobValue, 1) + "st"; break; // Pitch
-                case 5: valueText = juce::String((int)(knobValue * 100)) + "%"; break; // Random
-                case 6: valueText = juce::String((int)(knobValue * 100)) + "%"; break; // Texture
-                case 7: valueText = juce::String((int)(knobValue * 100)) + "%"; break; // Mix
+            if (i == 1 && granularDensitySyncEnabled) {
+                // Density in sync mode: show division
+                std::vector<juce::String> divisions = {"2", "1", "1/2", "1/4", "1/8", "1/16", "1/32", "1/64"};
+                int divIdx = juce::jlimit(0, 7, (int)std::round(knobValue));
+                valueText = divisions[divIdx];
+                
+                // Add std mode suffix
+                if (granularDensitySyncStdMode == 1) valueText << "t";
+                else if (granularDensitySyncStdMode == 2) valueText << ".";
+            } else {
+                switch (i) {
+                    case 0: valueText = juce::String(knobValue, 1) + "ms"; break; // Size
+                    case 1: valueText = juce::String(knobValue, 1) + "Hz"; break; // Density (Hz mode)
+                    case 2: valueText = juce::String((int)(knobValue * 100)) + "%"; break; // Position
+                    case 3: valueText = juce::String(knobValue, 1) + "ms"; break; // Spray
+                    case 4: valueText = juce::String(knobValue, 1) + "st"; break; // Pitch
+                    case 5: valueText = juce::String((int)(knobValue * 100)) + "%"; break; // Random
+                    case 6: valueText = juce::String((int)(knobValue * 100)) + "%"; break; // Texture
+                    case 7: valueText = juce::String((int)(knobValue * 100)) + "%"; break; // Mix
+                }
             }
             
             granularValueLabels[i]->setText(valueText, juce::dontSendNotification);
@@ -6675,12 +6686,62 @@ void PluginEditor::setupGranularKnobs()
     }
     
     granularDensitySyncToggle->onClick = [this]() {
-        bool syncEnabled = granularDensitySyncToggle->getToggleState();
+        granularDensitySyncEnabled = granularDensitySyncToggle->getToggleState();
         auto* param = processorRef.getAPVTS().getParameter("granDensitySync");
         if (param) {
-            param->setValueNotifyingHost(syncEnabled ? 1.0f : 0.0f);
+            param->setValueNotifyingHost(granularDensitySyncEnabled ? 1.0f : 0.0f);
         }
-        DBG("[UI] Granular density sync: " << (syncEnabled ? "ON" : "OFF"));
+        
+        if (granularDensitySyncEnabled && granularKnobs[1]) {
+            // When enabling sync, convert current Hz to nearest division
+            float currentHz = granularKnobs[1]->getValue();
+            float bpm = processorRef.getBpmOrDefault(120.0);
+            
+            // Convert Hz to division (0-7 maps to divisions)
+            // At 120 BPM: 1/4 = 2Hz, 1/8 = 4Hz, 1/16 = 8Hz, 1/32 = 16Hz
+            std::vector<float> divHz = {
+                bpm/30.0f,  // 2 bars
+                bpm/60.0f,  // 1 bar
+                bpm/120.0f, // 1/2
+                bpm/240.0f, // 1/4
+                bpm/480.0f, // 1/8
+                bpm/960.0f, // 1/16
+                bpm/1920.0f, // 1/32
+                bpm/3840.0f  // 1/64
+            };
+            
+            // Find nearest division
+            int nearestIdx = 0;
+            float minDiff = 999.0f;
+            for (int i = 0; i < 8; ++i) {
+                float diff = std::abs(currentHz - divHz[i]);
+                if (diff < minDiff) {
+                    minDiff = diff;
+                    nearestIdx = i;
+                }
+            }
+            
+            // Set knob to division index (0-7 range when synced)
+            granularKnobs[1]->setRange(0.0, 7.0, 1.0);
+            granularKnobs[1]->setValue(nearestIdx, juce::sendNotification);
+        } else if (granularKnobs[1]) {
+            // When disabling sync, convert division back to Hz
+            int divIdx = (int)granularKnobs[1]->getValue();
+            float bpm = processorRef.getBpmOrDefault(120.0);
+            
+            std::vector<float> divHz = {
+                bpm/30.0f, bpm/60.0f, bpm/120.0f, bpm/240.0f,
+                bpm/480.0f, bpm/960.0f, bpm/1920.0f, bpm/3840.0f
+            };
+            
+            float hz = (divIdx >= 0 && divIdx < 8) ? divHz[divIdx] : 8.0f;
+            
+            // Restore Hz range
+            granularKnobs[1]->setRange(1.0, 40.0, 0.1);
+            granularKnobs[1]->setValue(hz, juce::sendNotification);
+        }
+        
+        DBG("[UI] Granular density sync: " << (granularDensitySyncEnabled ? "ON" : "OFF"));
     };
     
     granularGroup.push_back(granularDensitySyncToggle.get());

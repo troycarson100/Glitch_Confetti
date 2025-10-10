@@ -461,6 +461,8 @@ public:
     std::unique_ptr<juce::ComboBox> granularRateDropdown;
     std::unique_ptr<CircularToggleButton> granularStdToggle;
     std::unique_ptr<CircularToggleButton> granularDensitySyncToggle;
+    bool granularDensitySyncEnabled = false;
+    int granularDensitySyncStdMode = 0; // 0 straight, 1 triplet, 2 dotted
     std::unique_ptr<juce::Label> granularStepTitle;
     std::unique_ptr<CustomDiceButton> granularStepDiceButton;
     std::unique_ptr<juce::DrawableButton> granularStepPowerButton;

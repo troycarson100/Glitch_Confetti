@@ -830,7 +830,24 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                     {
                         auto snapshot = granularStepSnapshots[currentStep];
                         sizeMs     = snapshot.granular.sizeMs;
-                        densityHz  = snapshot.granular.densityHz;
+                        
+                        // Convert density: if sync enabled, interpret as division index
+                        auto* densitySyncParam = valueTreeState.getRawParameterValue("granDensitySync");
+                        bool densitySyncEnabled = densitySyncParam && (densitySyncParam->load() > 0.5f);
+                        
+                        if (densitySyncEnabled) {
+                            // Density value is division index (0-7)
+                            int divIdx = juce::jlimit(0, 7, (int)std::round(snapshot.granular.densityHz));
+                            double bpm = getBpmOrDefault(120.0);
+                            std::vector<float> divHz = {
+                                (float)(bpm/30.0), (float)(bpm/60.0), (float)(bpm/120.0), (float)(bpm/240.0),
+                                (float)(bpm/480.0), (float)(bpm/960.0), (float)(bpm/1920.0), (float)(bpm/3840.0)
+                            };
+                            densityHz = divHz[divIdx];
+                        } else {
+                            densityHz = snapshot.granular.densityHz;
+                        }
+                        
                         position   = snapshot.granular.position;
                         sprayMs    = snapshot.granular.sprayMs;
                         pitchSemi  = snapshot.granular.pitchSemi;
@@ -882,7 +899,23 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                     }
                     
                     sizeMs     = sizeParam->load();
-                    densityHz  = densityParam->load();
+                    
+                    // Convert density if sync enabled
+                    auto* densitySyncParam = valueTreeState.getRawParameterValue("granDensitySync");
+                    bool densitySyncEnabled = densitySyncParam && (densitySyncParam->load() > 0.5f);
+                    
+                    if (densitySyncEnabled) {
+                        int divIdx = juce::jlimit(0, 7, (int)std::round(densityParam->load()));
+                        double bpm = getBpmOrDefault(120.0);
+                        std::vector<float> divHz = {
+                            (float)(bpm/30.0), (float)(bpm/60.0), (float)(bpm/120.0), (float)(bpm/240.0),
+                            (float)(bpm/480.0), (float)(bpm/960.0), (float)(bpm/1920.0), (float)(bpm/3840.0)
+                        };
+                        densityHz = divHz[divIdx];
+                    } else {
+                        densityHz = densityParam->load();
+                    }
+                    
                     position   = positionParam->load();
                     sprayMs    = sprayParam->load();
                     pitchSemi  = pitchParam->load();
