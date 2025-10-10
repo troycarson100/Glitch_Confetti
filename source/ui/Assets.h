@@ -31,6 +31,11 @@ struct UiAssets {
     std::unique_ptr<juce::Drawable> reverbBackgroundTab3;
     std::unique_ptr<juce::Drawable> reverbBackgroundTab4;
     
+    std::unique_ptr<juce::Drawable> granularBackgroundTab1;
+    std::unique_ptr<juce::Drawable> granularBackgroundTab2;
+    std::unique_ptr<juce::Drawable> granularBackgroundTab3;
+    std::unique_ptr<juce::Drawable> granularBackgroundTab4;
+    
     std::unique_ptr<juce::Drawable> effectPlate;
     std::unique_ptr<juce::Drawable> stepActive, stepInactive, stepTopActive, stepTopInactive;
     std::unique_ptr<juce::Drawable> buttonStepTopActive, buttonStepTopInactive;

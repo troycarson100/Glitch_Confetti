@@ -46,6 +46,11 @@ bool UiAssets::loadAll()
     reverbBackgroundTab3 = loadSVG (Reverb1_Background_Tab3_svg, Reverb1_Background_Tab3_svgSize);
     reverbBackgroundTab4 = loadSVG (Reverb1_Background_Tab4_svg, Reverb1_Background_Tab4_svgSize);
     
+    granularBackgroundTab1 = loadSVG (Granular_Background_Tab1_svg, Granular_Background_Tab1_svgSize);
+    granularBackgroundTab2 = loadSVG (Granular_Background_Tab2_svg, Granular_Background_Tab2_svgSize);
+    granularBackgroundTab3 = loadSVG (Granular_Background_Tab3_svg, Granular_Background_Tab3_svgSize);
+    granularBackgroundTab4 = loadSVG (Granular_Background_Tab4_svg, Granular_Background_Tab4_svgSize);
+    
     effectPlate       = loadSVG (Effect_Background_Plate_svg, Effect_Background_Plate_svgSize);
     stepActive        = loadSVG (Step_Active_svg, Step_Active_svgSize);
     stepInactive      = loadSVG (Step_Inactive_svg, Step_Inactive_svgSize);

@@ -217,6 +217,13 @@ void PluginEditor::paint (juce::Graphics& g)
                 else if (tabNumber == 3 && assets.reverbBackgroundTab3) return assets.reverbBackgroundTab3.get();
                 else if (tabNumber == 4 && assets.reverbBackgroundTab4) return assets.reverbBackgroundTab4.get();
                 break;
+                
+            case EffectID::Granular:
+                if (tabNumber == 1 && assets.granularBackgroundTab1) return assets.granularBackgroundTab1.get();
+                else if (tabNumber == 2 && assets.granularBackgroundTab2) return assets.granularBackgroundTab2.get();
+                else if (tabNumber == 3 && assets.granularBackgroundTab3) return assets.granularBackgroundTab3.get();
+                else if (tabNumber == 4 && assets.granularBackgroundTab4) return assets.granularBackgroundTab4.get();
+                break;
         }
         return nullptr;
     };
@@ -3238,7 +3245,7 @@ void PluginEditor::showPage(FxPageID id)
         updateReverbFxAreaVisibility();
     }
     
-    // Update Granular UI to reflect current parameter state (don't force it on)
+    // Update Granular UI to reflect current parameter state
     if (id == FxPageID::Granular) {
         auto* granEnabledParam = processorRef.getAPVTS().getRawParameterValue("granEnabled");
         if (granEnabledParam) {
@@ -3248,6 +3255,13 @@ void PluginEditor::showPage(FxPageID id)
             }
         }
         updateGranularFxAreaVisibility();
+        
+        // Trigger initial value label updates
+        for (int i = 0; i < 8; ++i) {
+            if (granularKnobs[i]) {
+                granularKnobs[i]->onValueChange();
+            }
+        }
     }
 
     // Show/Hide without touching parents or bounds
