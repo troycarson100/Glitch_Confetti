@@ -487,6 +487,14 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                     DBG("[REVERB SEQ] Lock-in at PPQ=" << ppq << " -> step " << reverbStep);
                 }
                 
+                // Also lock-in Granular sequencer if enabled AND active
+                if (granularSeq.enabled.load() && granularSeq.active.load()) {
+                    const int granularStep = granularSeq.computeStepFromPPQ(ppq);
+                    granularSeq.currentStep.store(granularStep);
+                    granularSeq.playingStep.store(granularStep);
+                    DBG("[GRANULAR SEQ] Lock-in at PPQ=" << ppq << " -> step " << granularStep);
+                }
+                
                 armPending.store(false);
             }
 
@@ -548,6 +556,16 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                     reverbSeq.currentStep.store(reverbStep);
                     reverbSeq.playingStep.store(reverbStep);
                     DBG("[REVERB SEQ] ★ Step changed to: " << reverbStep << " PPQ: " << ppq);
+                }
+            }
+            
+            // Granular sequencer stepping (shares same PPQ/transport, independent timing)
+            if (isPlaying && ppqValid && granularSeq.active.load()) {
+                const int granularStep = granularSeq.computeStepFromPPQ(ppq);
+                if (granularStep != granularSeq.currentStep.load()) {
+                    granularSeq.currentStep.store(granularStep);
+                    granularSeq.playingStep.store(granularStep);
+                    DBG("[GRANULAR SEQ] ★ Step changed to: " << granularStep << " PPQ: " << ppq);
                 }
             }
             
@@ -784,9 +802,94 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
             
             case EffectID::Granular:
             {
-                // TEMPORARILY DISABLED - Granular causes too much CPU load
-                // TODO: Reimplement with lighter algorithm
-                DBG("[GRANULAR] Skipped - disabled for performance");
+                // Process Granular effect
+                auto* granEnabledParam = valueTreeState.getRawParameterValue("granEnabled");
+                bool isGranEnabled = granEnabledParam ? (granEnabledParam->load() > 0.5f) : false;
+                
+                if (!isGranEnabled || buffer.getNumChannels() == 0 || buffer.getNumSamples() == 0) {
+                    break;
+                }
+                
+                // Read granular parameters (from sequencer snapshot if active, else APVTS)
+                float sizeMs, densityHz, position, sprayMs, pitchSemi, randomAmt, texture, mix;
+                
+                // Check if Granular sequencer is enabled AND active
+                bool useSequencer = granularSeq.enabled.load() && granularSeq.active.load();
+                
+                if (useSequencer)
+                {
+                    // Read from sequencer snapshot
+                    int currentStep = granularSeq.currentStep.load();
+                    if (currentStep >= 0 && currentStep < 16)
+                    {
+                        auto snapshot = granularStepSnapshots[currentStep];
+                        sizeMs     = snapshot.granular.sizeMs;
+                        densityHz  = snapshot.granular.densityHz;
+                        position   = snapshot.granular.position;
+                        sprayMs    = snapshot.granular.sprayMs;
+                        pitchSemi  = snapshot.granular.pitchSemi;
+                        randomAmt  = snapshot.granular.random;
+                        texture    = snapshot.granular.texture;
+                        mix        = snapshot.granular.mix;
+                    }
+                    else
+                    {
+                        // Fallback to APVTS if step invalid
+                        auto* sizeParam     = valueTreeState.getRawParameterValue("granSizeMs");
+                        auto* densityParam  = valueTreeState.getRawParameterValue("granDensityHz");
+                        auto* positionParam = valueTreeState.getRawParameterValue("granPosition");
+                        auto* sprayParam    = valueTreeState.getRawParameterValue("granSprayMs");
+                        auto* pitchParam    = valueTreeState.getRawParameterValue("granPitchSemi");
+                        auto* randomParam   = valueTreeState.getRawParameterValue("granRandom");
+                        auto* textureParam  = valueTreeState.getRawParameterValue("granTexture");
+                        auto* mixParam      = valueTreeState.getRawParameterValue("granMix");
+                        
+                        if (!sizeParam || !densityParam || !positionParam || !sprayParam || 
+                            !pitchParam || !randomParam || !textureParam || !mixParam) {
+                            break;
+                        }
+                        
+                        sizeMs     = sizeParam->load();
+                        densityHz  = densityParam->load();
+                        position   = positionParam->load();
+                        sprayMs    = sprayParam->load();
+                        pitchSemi  = pitchParam->load();
+                        randomAmt  = randomParam->load();
+                        texture    = textureParam->load();
+                        mix        = mixParam->load();
+                    }
+                }
+                else
+                {
+                    // Read directly from APVTS when sequencer not active
+                    auto* sizeParam     = valueTreeState.getRawParameterValue("granSizeMs");
+                    auto* densityParam  = valueTreeState.getRawParameterValue("granDensityHz");
+                    auto* positionParam = valueTreeState.getRawParameterValue("granPosition");
+                    auto* sprayParam    = valueTreeState.getRawParameterValue("granSprayMs");
+                    auto* pitchParam    = valueTreeState.getRawParameterValue("granPitchSemi");
+                    auto* randomParam   = valueTreeState.getRawParameterValue("granRandom");
+                    auto* textureParam  = valueTreeState.getRawParameterValue("granTexture");
+                    auto* mixParam      = valueTreeState.getRawParameterValue("granMix");
+                    
+                    if (!sizeParam || !densityParam || !positionParam || !sprayParam || 
+                        !pitchParam || !randomParam || !textureParam || !mixParam) {
+                        DBG("[GRANULAR] ERROR: Missing parameter!");
+                        break;
+                    }
+                    
+                    sizeMs     = sizeParam->load();
+                    densityHz  = densityParam->load();
+                    position   = positionParam->load();
+                    sprayMs    = sprayParam->load();
+                    pitchSemi  = pitchParam->load();
+                    randomAmt  = randomParam->load();
+                    texture    = textureParam->load();
+                    mix        = mixParam->load();
+                }
+                
+                // Set parameters and process
+                granular.setParameters(sizeMs, densityHz, position, sprayMs, pitchSemi, randomAmt, texture, mix);
+                granular.process(buffer);
                 break;
             }
         }
