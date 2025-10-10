@@ -1645,36 +1645,6 @@ void PluginEditor::setupKnobs()
             masterValueLabels[i]->setBounds(startX + i * spacing, y + knobSize - 10, knobSize, 15);
         }
         
-        // Setup MASTER title (matching EFFECT and SEQUENCER style)
-        masterTitle = std::make_unique<juce::Label>();
-        masterTitle->setText("MASTER", juce::dontSendNotification);
-        masterTitle->setFont(juce::Font(14.0f, juce::Font::bold));
-        masterTitle->setColour(juce::Label::textColourId, juce::Colours::white);
-        masterTitle->setJustificationType(juce::Justification::centredLeft);
-        addAndMakeVisible(masterTitle.get());
-        masterTitle->setBounds(masterArea.getX() + 15, masterArea.getY() + 6, 80, 20);
-        
-        // Setup Master Dice Button (randomizes all effects, all steps)
-        masterDiceButton = std::make_unique<CustomDiceButton>();
-        addAndMakeVisible(masterDiceButton.get());
-        
-        if (assets.diceLarge) {
-            masterDiceButton->setDiceImage(assets.diceLarge->createCopy());
-        }
-        
-        masterDiceButton->onClick = [this]() {
-            DBG("[UI] Master dice clicked - randomizing ALL effects, ALL steps");
-            randomizeAllEffectsAllSteps();
-        };
-        
-        // Position dice button to the right of MASTER title
-        const int diceSize = 24;
-        masterDiceButton->setBounds(
-            masterArea.getX() + masterArea.getWidth() - diceSize - 15,
-            masterArea.getY() + 6,
-            diceSize, diceSize
-        );
-        
         // Setup stereo meters (pre-fx and post-fx)
         const int meterWidth = 20;
         const int meterHeight = 120; // 20% shorter: 150 * 0.8 = 120
@@ -1875,6 +1845,44 @@ void PluginEditor::setupKnobs()
         effectsTitle->setJustificationType(juce::Justification::centredLeft);
         addAndMakeVisible(effectsTitle.get());
         effectsTitle->setBounds(effectArea.getX() + 10, effectArea.getY() + 5, 100, 30); // Moved left 10px and down 5px
+        
+        // Create "MASTER" title (global randomizer label) - positioned 250px from left
+        masterTitle = std::make_unique<juce::Label>();
+        masterTitle->setText("MASTER", juce::dontSendNotification);
+        masterTitle->setFont(juce::Font(14.0f, juce::Font::bold));
+        masterTitle->setColour(juce::Label::textColourId, juce::Colours::white);
+        masterTitle->setColour(juce::Label::backgroundColourId, juce::Colours::transparentBlack);
+        masterTitle->setJustificationType(juce::Justification::centredLeft);
+        addAndMakeVisible(masterTitle.get());
+        masterTitle->setBounds(effectArea.getX() + 180, effectArea.getY() + 6, 80, 20); // 180px from left, aligned with EFFECT
+        masterTitle->toFront(false); // Ensure it's on top
+        
+        // Create Master Dice Button (randomizes all effects, all steps)
+        masterDiceButton = std::make_unique<CustomDiceButton>();
+        addAndMakeVisible(masterDiceButton.get());
+        
+        if (assets.diceLarge) {
+            masterDiceButton->setDiceImage(assets.diceLarge->createCopy());
+        }
+        
+        masterDiceButton->onClick = [this]() {
+            DBG("[UI] Master dice clicked - randomizing ALL effects, ALL steps");
+            try {
+                randomizeAllEffectsAllSteps();
+            } catch (const std::exception& e) {
+                DBG("[UI] Error in randomizeAllEffectsAllSteps: " + juce::String(e.what()));
+            } catch (...) {
+                DBG("[UI] Unknown error in randomizeAllEffectsAllSteps");
+            }
+        };
+        
+        // Position dice button 250px from the left edge
+        const int diceSizeMaster = 24;
+        masterDiceButton->setBounds(
+            effectArea.getX() + 250,  // 250px from left edge
+            effectArea.getY() + 6,    // Aligned with EFFECT title
+            diceSizeMaster, diceSizeMaster
+        );
         
         // Create dice button
         diceButton = std::make_unique<CustomDiceButton>();
@@ -6032,11 +6040,12 @@ void PluginEditor::randomizeAllEffectsAllSteps()
 {
     DBG("[UI] Randomizing ALL effects, ALL steps (respecting locks)");
     
-    auto& router = processorRef.getEffectRouter();
-    juce::Random& rng = juce::Random::getSystemRandom();
-    
-    // Randomize all 4 active effect slots
-    for (int slot = 0; slot < 4; ++slot)
+    try {
+        auto& router = processorRef.getEffectRouter();
+        juce::Random& rng = juce::Random::getSystemRandom();
+        
+        // Randomize all 4 active effect slots
+        for (int slot = 0; slot < 4; ++slot)
     {
         EffectID effect = router.getEffectInSlot(static_cast<SlotID>(slot));
         
@@ -6126,14 +6135,19 @@ void PluginEditor::randomizeAllEffectsAllSteps()
         }
     }
     
-    // Update the UI for the currently visible effect
-    updateSequencerUI();
-    updateAutoPanSequencerUI();
-    updateDirtSequencerUI();
-    updateChorusSequencerUI();
-    updateReverbSequencerUI();
-    
-    DBG("[UI] Randomization complete!");
+        // Update the UI for the currently visible effect
+        updateSequencerUI();
+        updateAutoPanSequencerUI();
+        updateDirtSequencerUI();
+        updateChorusSequencerUI();
+        updateReverbSequencerUI();
+        
+        DBG("[UI] Randomization complete!");
+    } catch (const std::exception& e) {
+        DBG("[UI] Error in randomization: " + juce::String(e.what()));
+    } catch (...) {
+        DBG("[UI] Unknown error during randomization");
+    }
 }
 
 void PluginEditor::onReverbStepButtonClicked(int stepIndex)
