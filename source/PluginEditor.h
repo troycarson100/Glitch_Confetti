@@ -243,6 +243,10 @@ public:
     std::array<std::unique_ptr<juce::Label>, 3> masterValueLabels;
     std::array<std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>, 3> masterAttachments;
     
+    // Master area title and controls
+    std::unique_ptr<juce::Label> masterTitle;
+    std::unique_ptr<CustomDiceButton> masterDiceButton;
+    
     // Macro knobs
     std::array<std::unique_ptr<CustomKnob>, 2> macroKnobs;
     std::array<std::unique_ptr<juce::Label>, 2> macroLabels;
@@ -437,6 +441,7 @@ public:
         void randomizeKnobValues();
         void randomizeIndividualKnob(int knobIndex);
         void updateParameterFromKnob(int knobIndex);
+        void randomizeAllEffectsAllSteps(); // Master dice: randomize all unlocked knobs on all steps for all 4 active effects
         void updateAllStepSnapshots(int knobIndex);
         void onStepButtonClicked(int stepIndex);
         void updateSequencerUI();

@@ -69,7 +69,7 @@ PluginEditor::PluginEditor (PluginProcessor& p)
         
         // Sync AutoPan sequencer state with processor on startup
         processorRef.setAutoPanSequencerEnabled(autopanStepAreaEnabled);
-        DBG("[UI] Initial AutoPan sequencer state synced: enabled=" << autopanStepAreaEnabled);
+        DBG("[UI] Initial AutoPan sequencer state synced: enabled=" + juce::String(autopanStepAreaEnabled ? 1 : 0));
         
         // Setup Dirt page components
         setupDirtKnobs();
@@ -79,7 +79,7 @@ PluginEditor::PluginEditor (PluginProcessor& p)
         
         // Sync Dirt sequencer state with processor on startup
         processorRef.setDirtSequencerEnabled(dirtStepAreaEnabled);
-        DBG("[UI] Initial Dirt sequencer state synced: enabled=" << dirtStepAreaEnabled);
+        DBG("[UI] Initial Dirt sequencer state synced: enabled=" + juce::String(dirtStepAreaEnabled ? 1 : 0));
         
         // Initialize FX power button states from parameters
         auto* autopanEnabledParam = processorRef.getAPVTS().getRawParameterValue("autopanEnabled");
@@ -89,7 +89,7 @@ PluginEditor::PluginEditor (PluginProcessor& p)
                 autopanFxPowerButton->setToggleState(autopanFxAreaEnabled, juce::dontSendNotification);
             }
             updateAutoPanFxAreaVisibility(); // Update UI to reflect initial state
-            DBG("[UI] AutoPan FX power initialized: " << (autopanFxAreaEnabled ? "ON" : "OFF"));
+            DBG("[UI] AutoPan FX power initialized: " + juce::String(autopanFxAreaEnabled ? "ON" : "OFF"));
         }
         
         auto* dirtEnabledParam = processorRef.getAPVTS().getRawParameterValue("dirtEnabled");
@@ -99,7 +99,7 @@ PluginEditor::PluginEditor (PluginProcessor& p)
                 dirtFxPowerButton->setToggleState(dirtFxAreaEnabled, juce::dontSendNotification);
             }
             updateDirtFxAreaVisibility(); // Update UI to reflect initial state
-            DBG("[UI] Dirt FX power initialized: " << (dirtFxAreaEnabled ? "ON" : "OFF"));
+            DBG("[UI] Dirt FX power initialized: " + juce::String(dirtFxAreaEnabled ? "ON" : "OFF"));
         }
         
         // Setup Chorus page components
@@ -110,7 +110,7 @@ PluginEditor::PluginEditor (PluginProcessor& p)
         
         // Sync Chorus sequencer state with processor on startup
         processorRef.setChorusSequencerEnabled(chorusStepAreaEnabled);
-        DBG("[UI] Initial Chorus sequencer state synced: enabled=" << chorusStepAreaEnabled);
+        DBG("[UI] Initial Chorus sequencer state synced: enabled=" + juce::String(chorusStepAreaEnabled ? 1 : 0));
         
         // Setup Reverb page
         DBG("[UI] Setting up Reverb page...");
@@ -121,7 +121,7 @@ PluginEditor::PluginEditor (PluginProcessor& p)
         
         // Sync Reverb sequencer state with processor on startup
         processorRef.setReverbSequencerEnabled(reverbStepAreaEnabled);
-        DBG("[UI] Initial Reverb sequencer state synced: enabled=" << reverbStepAreaEnabled);
+        DBG("[UI] Initial Reverb sequencer state synced: enabled=" + juce::String(reverbStepAreaEnabled ? 1 : 0));
         
         // Initialize Chorus FX power button state from parameter
         auto* chorusEnabledParam = processorRef.getAPVTS().getRawParameterValue("chorusEnabled");
@@ -131,7 +131,7 @@ PluginEditor::PluginEditor (PluginProcessor& p)
                 chorusFxPowerButton->setToggleState(chorusFxAreaEnabled, juce::dontSendNotification);
             }
             updateChorusFxAreaVisibility(); // Update UI to reflect initial state
-            DBG("[UI] Chorus FX power initialized: " << (chorusFxAreaEnabled ? "ON" : "OFF"));
+            DBG("[UI] Chorus FX power initialized: " + juce::String(chorusFxAreaEnabled ? "ON" : "OFF"));
         }
         
         // Setup tab system
@@ -1645,6 +1645,36 @@ void PluginEditor::setupKnobs()
             masterValueLabels[i]->setBounds(startX + i * spacing, y + knobSize - 10, knobSize, 15);
         }
         
+        // Setup MASTER title (matching EFFECT and SEQUENCER style)
+        masterTitle = std::make_unique<juce::Label>();
+        masterTitle->setText("MASTER", juce::dontSendNotification);
+        masterTitle->setFont(juce::Font(14.0f, juce::Font::bold));
+        masterTitle->setColour(juce::Label::textColourId, juce::Colours::white);
+        masterTitle->setJustificationType(juce::Justification::centredLeft);
+        addAndMakeVisible(masterTitle.get());
+        masterTitle->setBounds(masterArea.getX() + 15, masterArea.getY() + 6, 80, 20);
+        
+        // Setup Master Dice Button (randomizes all effects, all steps)
+        masterDiceButton = std::make_unique<CustomDiceButton>();
+        addAndMakeVisible(masterDiceButton.get());
+        
+        if (assets.diceLarge) {
+            masterDiceButton->setDiceImage(assets.diceLarge->createCopy());
+        }
+        
+        masterDiceButton->onClick = [this]() {
+            DBG("[UI] Master dice clicked - randomizing ALL effects, ALL steps");
+            randomizeAllEffectsAllSteps();
+        };
+        
+        // Position dice button to the right of MASTER title
+        const int diceSize = 24;
+        masterDiceButton->setBounds(
+            masterArea.getX() + masterArea.getWidth() - diceSize - 15,
+            masterArea.getY() + 6,
+            diceSize, diceSize
+        );
+        
         // Setup stereo meters (pre-fx and post-fx)
         const int meterWidth = 20;
         const int meterHeight = 120; // 20% shorter: 150 * 0.8 = 120
@@ -2145,7 +2175,7 @@ void PluginEditor::setupAllStepsToggle()
     allStepsToggle->setToggleState(false, juce::dontSendNotification);
     allStepsToggle->onClick = [this]() {
         allStepsEnabled = allStepsToggle->getToggleState();
-        DBG("[UI] All Steps toggle: " << (allStepsEnabled ? "ON" : "OFF") << " toggleState=" << allStepsToggle->getToggleState());
+        DBG("[UI] All Steps toggle: " + juce::String(allStepsEnabled ? "ON" : "OFF") + " toggleState=" + juce::String(allStepsToggle->getToggleState() ? 1 : 0));
     };
     
     // Create "All Steps" label
@@ -3837,8 +3867,8 @@ void PluginEditor::setupAutoPanSequencerArea()
         
         updateAutoPanStepAreaVisibility();
         repaint();
-        DBG("[UI] AutoPan seq.enabled=" << processorRef.getAutoPanSeqState().enabled.load() 
-            << " active=" << processorRef.getAutoPanSeqState().active.load());
+        DBG("[UI] AutoPan seq.enabled=" + juce::String(processorRef.getAutoPanSeqState().enabled.load() ? 1 : 0) 
+            + " active=" + juce::String(processorRef.getAutoPanSeqState().active.load() ? 1 : 0));
     };
     
     DBG("[UI] AutoPan sequencer area setup complete");
@@ -3873,7 +3903,7 @@ void PluginEditor::setupAutoPanAllStepsToggle()
     autopanAllStepsToggle->setToggleState(false, juce::dontSendNotification);
     autopanAllStepsToggle->onClick = [this]() {
         autopanAllStepsEnabled = autopanAllStepsToggle->getToggleState();
-        DBG("[UI] AutoPan All Steps toggle: " << (autopanAllStepsEnabled ? "ON" : "OFF") << " toggleState=" << autopanAllStepsToggle->getToggleState());
+        DBG("[UI] AutoPan All Steps toggle: " + juce::String(autopanAllStepsEnabled ? "ON" : "OFF") + " toggleState=" + juce::String(autopanAllStepsToggle->getToggleState() ? 1 : 0));
     };
     
     // Create "All Steps" label
@@ -5996,6 +6026,114 @@ void PluginEditor::updateReverbParameterFromKnob(int knobIndex)
         
         processorRef.setReverbStepSnapshot(currentStep, currentSnapshot);
     }
+}
+
+void PluginEditor::randomizeAllEffectsAllSteps()
+{
+    DBG("[UI] Randomizing ALL effects, ALL steps (respecting locks)");
+    
+    auto& router = processorRef.getEffectRouter();
+    juce::Random& rng = juce::Random::getSystemRandom();
+    
+    // Randomize all 4 active effect slots
+    for (int slot = 0; slot < 4; ++slot)
+    {
+        EffectID effect = router.getEffectInSlot(static_cast<SlotID>(slot));
+        
+        // Randomize all 16 steps for this effect
+        for (int step = 0; step < 16; ++step)
+        {
+            switch (effect)
+            {
+                case EffectID::SpaceDelay:
+                {
+                    auto snapshot = processorRef.getSafeSnapshot(step);
+                    if (!knobLocked[0]) snapshot.delay.timeMs = 50.0f + rng.nextFloat() * 950.0f; // 50-1000ms
+                    if (!knobLocked[1]) snapshot.delay.feedback = rng.nextFloat() * 95.0f; // 0-95%
+                    if (!knobLocked[2]) snapshot.delay.wowDepth = rng.nextFloat(); // 0-1
+                    if (!knobLocked[3]) snapshot.delay.wowRate = rng.nextFloat() * 10.0f; // 0-10Hz
+                    if (!knobLocked[4]) snapshot.delay.saturation = rng.nextFloat(); // 0-1
+                    if (!knobLocked[5]) snapshot.delay.lowCut = 20.0f + rng.nextFloat() * 19980.0f; // 20-20kHz
+                    if (!knobLocked[6]) snapshot.delay.highCut = 20.0f + rng.nextFloat() * 19980.0f; // 20-20kHz
+                    if (!knobLocked[7]) snapshot.delay.mix = rng.nextFloat() * 100.0f; // 0-100%
+                    processorRef.setStepSnapshot(step, snapshot);
+                    break;
+                }
+                
+                case EffectID::AutoPan:
+                {
+                    auto snapshot = processorRef.getAutoPanSafeSnapshot(step);
+                    if (!autopanKnobLocked[0]) snapshot.autopan.rate = 0.01f + rng.nextFloat() * 9.99f;
+                    if (!autopanKnobLocked[1]) snapshot.autopan.amount = rng.nextFloat();
+                    if (!autopanKnobLocked[2]) snapshot.autopan.waveShape = rng.nextFloat();
+                    if (!autopanKnobLocked[3]) snapshot.autopan.phase = rng.nextFloat() * 360.0f;
+                    if (!autopanKnobLocked[4]) snapshot.autopan.waveType = (int)(rng.nextFloat() * 4.999f); // 0-4
+                    if (!autopanKnobLocked[5]) snapshot.autopan.inverted = rng.nextBool();
+                    if (!autopanKnobLocked[6]) snapshot.autopan.inverted = rng.nextBool(); // Note: 6 and 7 don't exist for autopan
+                    if (!autopanKnobLocked[7]) snapshot.autopan.inverted = rng.nextBool();
+                    processorRef.setAutoPanStepSnapshot(step, snapshot);
+                    break;
+                }
+                
+                case EffectID::Dirt:
+                {
+                    auto snapshot = processorRef.getDirtSafeSnapshot(step);
+                    if (!dirtKnobLocked[0]) snapshot.dirt.drive = rng.nextFloat() * 36.0f; // 0-36 dB
+                    if (!dirtKnobLocked[1]) snapshot.dirt.color = -1.0f + rng.nextFloat() * 2.0f; // -1 to +1
+                    if (!dirtKnobLocked[2]) snapshot.dirt.asym = -1.0f + rng.nextFloat() * 2.0f; // -1 to +1
+                    if (!dirtKnobLocked[3]) snapshot.dirt.texture = rng.nextFloat(); // 0-1
+                    if (!dirtKnobLocked[4]) snapshot.dirt.lowCut = 20.0f + rng.nextFloat() * 280.0f; // 20-300 Hz
+                    if (!dirtKnobLocked[5]) snapshot.dirt.highCut = 3000.0f + rng.nextFloat() * 19000.0f; // 3k-22k Hz
+                    if (!dirtKnobLocked[6]) snapshot.dirt.tone = -1.0f + rng.nextFloat() * 2.0f; // -1 to +1
+                    if (!dirtKnobLocked[7]) snapshot.dirt.mix = rng.nextFloat(); // 0-1
+                    processorRef.setDirtStepSnapshot(step, snapshot);
+                    break;
+                }
+                
+                case EffectID::Chorus:
+                {
+                    auto snapshot = processorRef.getChorusSafeSnapshot(step);
+                    if (!chorusKnobLocked[0]) snapshot.chorus.delayTime = 5.0f + rng.nextFloat() * 45.0f;
+                    if (!chorusKnobLocked[1]) snapshot.chorus.rate = 0.02f + rng.nextFloat() * 7.98f;
+                    if (!chorusKnobLocked[2]) snapshot.chorus.depth = rng.nextFloat() * 12.0f;
+                    if (!chorusKnobLocked[3]) snapshot.chorus.feedback = rng.nextFloat() * 0.9f;
+                    if (!chorusKnobLocked[4]) snapshot.chorus.voices = 2.0f + rng.nextFloat() * 6.0f;
+                    if (!chorusKnobLocked[5]) snapshot.chorus.width = rng.nextFloat();
+                    if (!chorusKnobLocked[6]) snapshot.chorus.tone = rng.nextFloat();
+                    if (!chorusKnobLocked[7]) snapshot.chorus.mix = rng.nextFloat();
+                    processorRef.setChorusStepSnapshot(step, snapshot);
+                    break;
+                }
+                
+                case EffectID::Reverb:
+                {
+                    auto snapshot = processorRef.getReverbSafeSnapshot(step);
+                    if (!reverbKnobLocked[0]) snapshot.reverb.type = rng.nextFloat(); // Width 0-1
+                    if (!reverbKnobLocked[1]) snapshot.reverb.size = 0.1f + rng.nextFloat() * 1.4f;
+                    if (!reverbKnobLocked[2]) snapshot.reverb.predelayMs = rng.nextFloat() * 200.0f;
+                    if (!reverbKnobLocked[3]) snapshot.reverb.dampHz = 1000.0f + rng.nextFloat() * 19000.0f;
+                    if (!reverbKnobLocked[4]) snapshot.reverb.diffusion = rng.nextFloat();
+                    if (!reverbKnobLocked[5]) snapshot.reverb.early = rng.nextFloat();
+                    if (!reverbKnobLocked[6]) snapshot.reverb.decaySec = 0.2f + rng.nextFloat() * 19.8f;
+                    if (!reverbKnobLocked[7]) snapshot.reverb.mix = rng.nextFloat();
+                    processorRef.setReverbStepSnapshot(step, snapshot);
+                    break;
+                }
+                
+                default:
+                    break;
+            }
+        }
+    }
+    
+    // Update the UI for the currently visible effect
+    updateSequencerUI();
+    updateAutoPanSequencerUI();
+    updateDirtSequencerUI();
+    updateChorusSequencerUI();
+    updateReverbSequencerUI();
+    
+    DBG("[UI] Randomization complete!");
 }
 
 void PluginEditor::onReverbStepButtonClicked(int stepIndex)

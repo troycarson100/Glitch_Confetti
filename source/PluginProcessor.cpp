@@ -387,7 +387,7 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                     autopanSeq.active.store(true);  // Activate AutoPan sequencer
                     DBG("[AUTOPAN SEQ] ✓ Activated on play edge");
                 } else {
-                    DBG("[AUTOPAN SEQ] ✗ NOT activated (enabled=" << (bool)autopanSeq.enabled.load() << ")");
+                    DBG("[AUTOPAN SEQ] ✗ NOT activated (enabled=" + juce::String(autopanSeq.enabled.load() ? 1 : 0) + ")");
                 }
                 
                 // Dirt sequencer activates if enabled (independent of followHost)
@@ -409,8 +409,8 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                 }
                 
                 DBG("[SEQ] Play edge detected");
-                DBG("[SEQ] Delay: enabled=" << (bool)seq.enabled.load() << " active=" << (bool)seq.active.load());
-                DBG("[SEQ] AutoPan: enabled=" << (bool)autopanSeq.enabled.load() << " active=" << (bool)autopanSeq.active.load());
+                DBG("[SEQ] Delay: enabled=" + juce::String(seq.enabled.load() ? 1 : 0) + " active=" + juce::String(seq.active.load() ? 1 : 0));
+                DBG("[SEQ] AutoPan: enabled=" + juce::String(autopanSeq.enabled.load() ? 1 : 0) + " active=" + juce::String(autopanSeq.active.load() ? 1 : 0));
             }
 
             // If arming and PPQ now valid, lock-in
@@ -469,9 +469,9 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
             // AutoPan sequencer stepping (shares same PPQ/transport as delay sequencer)
             static int autopanDebugCounter = 0;
             if ((autopanDebugCounter++ % 100) == 0) {  // Log every 100 blocks
-                DBG("[AUTOPAN SEQ DEBUG] isPlaying=" << isPlaying << " ppqValid=" << ppqValid 
-                    << " active=" << (bool)autopanSeq.active.load() << " enabled=" << (bool)autopanSeq.enabled.load()
-                    << " PPQ=" << ppq);
+                DBG("[AUTOPAN SEQ DEBUG] isPlaying=" + juce::String(isPlaying ? 1 : 0) + " ppqValid=" + juce::String(ppqValid ? 1 : 0) 
+                    + " active=" + juce::String(autopanSeq.active.load() ? 1 : 0) + " enabled=" + juce::String(autopanSeq.enabled.load() ? 1 : 0)
+                    + " PPQ=" + juce::String(ppq));
             }
             
             if (isPlaying && ppqValid && autopanSeq.active.load()) {
@@ -484,7 +484,7 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                         << " stepsUsed=" << autopanSeq.stepsUsed.load());
                 }
             } else if (autopanSeq.enabled.load() && !autopanSeq.active.load()) {
-                DBG("[AUTOPAN SEQ] WARNING: Enabled but not active! isPlaying=" << (bool)isPlaying << " ppqValid=" << (bool)ppqValid);
+                DBG("[AUTOPAN SEQ] WARNING: Enabled but not active! isPlaying=" + juce::String(isPlaying ? 1 : 0) + " ppqValid=" + juce::String(ppqValid ? 1 : 0));
             }
             
             // Dirt sequencer stepping (shares same PPQ/transport, independent timing)
@@ -1615,7 +1615,7 @@ void PluginProcessor::startStandalonePlayback() noexcept
     seq.active.store(true);
     seq.resetPhase();
     
-    DBG("[Processor] Standalone playback started - sequencer active: " << (bool)seq.active.load());
+    DBG("[Processor] Standalone playback started - sequencer active: " + juce::String(seq.active.load() ? 1 : 0));
 }
 
 // Helper function for sequencer
