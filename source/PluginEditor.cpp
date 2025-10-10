@@ -977,6 +977,78 @@ void PluginEditor::timerCallback()
     
     // Update Reverb sequencer UI
     updateReverbSequencerUI();
+    
+    // Update Granular value labels
+    for (int i = 0; i < 8; ++i)
+    {
+        if (granularValueLabels[i] != nullptr && granularKnobs[i] != nullptr)
+        {
+            float knobValue = granularKnobs[i]->getValue();
+            juce::String valueText;
+            
+            switch (i) {
+                case 0: valueText = juce::String(knobValue, 1) + "ms"; break; // Size
+                case 1: valueText = juce::String(knobValue, 1) + "Hz"; break; // Density
+                case 2: valueText = juce::String((int)(knobValue * 100)) + "%"; break; // Position
+                case 3: valueText = juce::String(knobValue, 1) + "ms"; break; // Spray
+                case 4: valueText = juce::String(knobValue, 1) + "st"; break; // Pitch
+                case 5: valueText = juce::String((int)(knobValue * 100)) + "%"; break; // Random
+                case 6: valueText = juce::String((int)(knobValue * 100)) + "%"; break; // Texture
+                case 7: valueText = juce::String((int)(knobValue * 100)) + "%"; break; // Mix
+            }
+            
+            granularValueLabels[i]->setText(valueText, juce::dontSendNotification);
+        }
+    }
+    
+    // Update Granular knob indicators
+    for (int i = 0; i < 8; ++i)
+    {
+        if (granularIndicatorBars[i] != nullptr && granularKnobs[i] != nullptr)
+        {
+            float knobValue = granularKnobs[i]->getValue();
+            float indicatorValue = 0.0f;
+            
+            const bool seqEnabled = processorRef.getGranularSeqState().enabled.load();
+            const bool seqActive = processorRef.getGranularSeqState().active.load();
+            const int playingStep = processorRef.getGranularPlayingStep();
+            
+            if (seqEnabled && seqActive && playingStep >= 0 && playingStep < 16)
+            {
+                StepSnapshot s = processorRef.getGranularSafeSnapshot(playingStep);
+                
+                switch (i) {
+                    case 0: indicatorValue = (s.granular.sizeMs - 5.0f) / 195.0f; break; // Size (5-200ms)
+                    case 1: indicatorValue = (s.granular.densityHz - 1.0f) / 39.0f; break; // Density (1-40Hz)
+                    case 2: indicatorValue = s.granular.position; break; // Position (0-1)
+                    case 3: indicatorValue = s.granular.sprayMs / 200.0f; break; // Spray (0-200ms)
+                    case 4: indicatorValue = (s.granular.pitchSemi + 24.0f) / 48.0f; break; // Pitch (-24 to +24)
+                    case 5: indicatorValue = s.granular.random; break; // Random (0-1)
+                    case 6: indicatorValue = s.granular.texture; break; // Texture (0-1)
+                    case 7: indicatorValue = s.granular.mix; break; // Mix (0-1)
+                }
+            }
+            else
+            {
+                // Show current knob position normalized to 0-1
+                switch (i) {
+                    case 0: indicatorValue = (knobValue - 5.0f) / 195.0f; break; // Size
+                    case 1: indicatorValue = (knobValue - 1.0f) / 39.0f; break; // Density
+                    case 2: indicatorValue = knobValue; break; // Position
+                    case 3: indicatorValue = knobValue / 200.0f; break; // Spray
+                    case 4: indicatorValue = (knobValue + 24.0f) / 48.0f; break; // Pitch
+                    case 5: indicatorValue = knobValue; break; // Random
+                    case 6: indicatorValue = knobValue; break; // Texture
+                    case 7: indicatorValue = knobValue; break; // Mix
+                }
+            }
+            
+            granularIndicatorBars[i]->setValue(indicatorValue);
+        }
+    }
+    
+    // Update Granular sequencer UI
+    updateGranularSequencerUI();
 }
 
 bool PluginEditor::keyPressed(const juce::KeyPress& key)
@@ -992,6 +1064,9 @@ bool PluginEditor::keyPressed(const juce::KeyPress& key)
         return false; // Let the TextEditor handle it
     }
     if (reverbStepAmountLabel && reverbStepAmountLabel->hasKeyboardFocus(true)) {
+        return false; // Let the TextEditor handle it
+    }
+    if (granularStepAmountLabel && granularStepAmountLabel->hasKeyboardFocus(true)) {
         return false; // Let the TextEditor handle it
     }
     if (stepAmountLabel && stepAmountLabel->hasKeyboardFocus(true)) {
@@ -7059,15 +7134,20 @@ void PluginEditor::updateGranularSequencerUI()
 {
     const auto& seqState = processorRef.getGranularSeqState();
     int stepsUsed = seqState.stepsUsed.load();
+    int selectedStep = granularUiSelectedStep;
+    int playingStep = processorRef.getGranularPlayingStep();
     
     if (granularStepAmountLabel != nullptr && !granularStepAmountLabel->hasKeyboardFocus(true)) {
         granularStepAmountLabel->setText(juce::String(stepsUsed), false);
     }
     
     for (int i = 0; i < 16; ++i) {
-        if (granularStepButtons[i]) {
-            granularStepButtons[i]->setEnabled(i < stepsUsed);
-            granularStepButtons[i]->setAlpha((i < stepsUsed) ? 1.0f : 0.3f);
+        if (granularStepButtons[i] != nullptr) {
+            granularStepButtons[i]->setSelected(i == selectedStep);
+            bool sequencerEnabled = processorRef.getGranularSeqState().enabled.load();
+            granularStepButtons[i]->setPlaying(sequencerEnabled && (i == playingStep) && (i != selectedStep));
+            bool shouldBeEnabled = i < stepsUsed;
+            granularStepButtons[i]->setEnabledStep(shouldBeEnabled);
         }
     }
 }
