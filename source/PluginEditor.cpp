@@ -6734,13 +6734,24 @@ void PluginEditor::setupGranularSequencerArea()
 {
     DBG("[UI] Setting up Granular sequencer area...");
     
-    auto sequencerArea = juce::Rectangle<int>(25, 374, 413, 140); // EXACT same as Reverb/Dirt/Chorus
+    // Use EXACT same bounds as Reverb sequencer (bottom area)
+    auto sequencerArea = juce::Rectangle<int>(25, 374, 413, 140);
     
-    // Create step buttons (16 buttons in 2x8 grid)
-    const int buttonSize = 44;
-    const int buttonSpacing = 4;
-    const int startX = sequencerArea.getX() + 10;
-    const int startY = sequencerArea.getY() + 45;
+    // Create step title (EXACT same as Reverb)
+    granularStepTitle = std::make_unique<juce::Label>();
+    granularStepTitle->setText("STEP", juce::dontSendNotification);
+    granularStepTitle->setFont(juce::Font(22.118f, juce::Font::bold));
+    granularStepTitle->setColour(juce::Label::textColourId, juce::Colours::white);
+    granularStepTitle->setJustificationType(juce::Justification::centredLeft);
+    addAndMakeVisible(granularStepTitle.get());
+    granularStepTitle->setVisible(false);
+    granularStepTitle->setBounds(sequencerArea.getX() + 10, sequencerArea.getY(), 80, 30);
+    
+    // Create step buttons (2 rows of 8) - EXACT same as Reverb
+    const int buttonSize = 40;
+    const int buttonSpacing = 8;
+    const int startX = sequencerArea.getX() + 20;
+    const int startY = sequencerArea.getY() + 35;
     
     for (int i = 0; i < 16; ++i)
     {
@@ -6807,66 +6818,70 @@ void PluginEditor::setupGranularSequencerArea()
     
     addAndMakeVisible(granularStepAmountLabel.get());
     granularStepAmountLabel->setVisible(false);
-    granularStepAmountLabel->setBounds(sequencerArea.getX() + 15, sequencerArea.getY() + 9, 34, 24);
+    granularStepAmountLabel->setBounds(sequencerArea.getX() + 180, sequencerArea.getY() - 10, 30, 25);
+    granularStepAmountLabel->setAlwaysOnTop(true);
     
-    // Rate dropdown
-    granularRateDropdown = std::make_unique<juce::ComboBox>("GranularRate");
-    granularRateDropdown->addItem("1/32", 1);
-    granularRateDropdown->addItem("1/16T", 2);
-    granularRateDropdown->addItem("1/16", 3);
-    granularRateDropdown->addItem("1/8T", 4);
-    granularRateDropdown->addItem("1/16D", 5);
+    // Rate dropdown (EXACT same as Reverb)
+    granularRateDropdown = std::make_unique<juce::ComboBox>();
+    
+    granularRateDropdown->addItem("4", 1);
+    granularRateDropdown->addItem("2", 2);
+    granularRateDropdown->addItem("1", 3);
+    granularRateDropdown->addItem("1/2", 4);
+    granularRateDropdown->addItem("1/4", 5);
     granularRateDropdown->addItem("1/8", 6);
-    granularRateDropdown->addItem("1/4T", 7);
-    granularRateDropdown->addItem("1/8D", 8);
-    granularRateDropdown->addItem("1/4", 9);
-    granularRateDropdown->addItem("1/2T", 10);
-    granularRateDropdown->addItem("1/4D", 11);
-    granularRateDropdown->setSelectedId(6);
+    granularRateDropdown->addItem("1/16", 7);
+    granularRateDropdown->addItem("1/32", 8);
     
+    granularRateDropdown->setSelectedId(6);
+    granularRateDropdown->onChange = [this]() {
+        int selectedIndex = granularRateDropdown->getSelectedId() - 1;
+        processorRef.setGranularDivisionIndex(selectedIndex);
+        DBG("[UI] Granular rate changed to index: " << selectedIndex);
+    };
+    
+    // Make dropdown background and outline transparent
     granularRateDropdown->setColour(juce::ComboBox::backgroundColourId, juce::Colours::transparentBlack);
-    granularRateDropdown->setColour(juce::ComboBox::textColourId, juce::Colours::white);
-    granularRateDropdown->setColour(juce::ComboBox::arrowColourId, juce::Colours::white);
     granularRateDropdown->setColour(juce::ComboBox::outlineColourId, juce::Colours::transparentBlack);
     granularRateDropdown->setColour(juce::ComboBox::buttonColourId, juce::Colours::transparentBlack);
-    granularRateDropdown->setJustificationType(juce::Justification::centred);
-    
-    granularRateDropdown->onChange = [this]() {
-        int divIndex = granularRateDropdown->getSelectedId() - 1;
-        processorRef.setGranularDivisionIndex(divIndex);
-    };
     
     addAndMakeVisible(granularRateDropdown.get());
     granularRateDropdown->setVisible(false);
-    granularRateDropdown->setBounds(sequencerArea.getX() + 60, sequencerArea.getY() + 9, 60, 24);
+    granularRateDropdown->setBounds(sequencerArea.getX() + 220, sequencerArea.getY() - 10, 74, 25);
     
-    // STD toggle button
+    // STD toggle (EXACT same positioning as Reverb)
     granularStdToggle = std::make_unique<CircularToggleButton>();
+    granularStdToggle->setButtonText("-");
     addAndMakeVisible(granularStdToggle.get());
     granularStdToggle->setVisible(false);
-    granularStdToggle->setBounds(sequencerArea.getX() + 130, sequencerArea.getY() + 9, 24, 24);
+    granularStdToggle->setBounds(sequencerArea.getX() + 288, sequencerArea.getY() - 14, 30, 30);
     
-    // STEP title
-    granularStepTitle = std::make_unique<juce::Label>();
-    granularStepTitle->setText("STEP", juce::dontSendNotification);
-    granularStepTitle->setFont(juce::Font(27.648f, juce::Font::bold));
-    granularStepTitle->setColour(juce::Label::textColourId, juce::Colours::white);
-    granularStepTitle->setJustificationType(juce::Justification::centredLeft);
-    addAndMakeVisible(granularStepTitle.get());
-    granularStepTitle->setVisible(false);
-    granularStepTitle->setBounds(sequencerArea.getX() + 165, sequencerArea.getY() + 5, 80, 30);
+    granularStdToggle->onClick = [this]() {
+        // Cycle through -/t/. states
+        static int stdState = 0; // 0=-, 1=t, 2=.
+        stdState = (stdState + 1) % 3;
+        
+        switch (stdState) {
+            case 0: granularStdToggle->setButtonText("-"); break;
+            case 1: granularStdToggle->setButtonText("t"); break;
+            case 2: granularStdToggle->setButtonText("."); break;
+        }
+        
+        int nextMode = (stdState) % 3;
+        // TODO: Add setGranularStdMode if needed
+        DBG("[UI] Granular STD mode: " << nextMode);
+    };
     
-    // Step dice button
+    // Step dice button (EXACT same positioning as Reverb)
     granularStepDiceButton = std::make_unique<CustomDiceButton>();
     addAndMakeVisible(granularStepDiceButton.get());
     granularStepDiceButton->setVisible(false);
+    int granularStepDiceSize = static_cast<int>(35 * 0.7); // 30% smaller = ~24px
+    granularStepDiceButton->setBounds(sequencerArea.getX() + 75, sequencerArea.getY() + 5, granularStepDiceSize, granularStepDiceSize);
     
     if (assets.diceLarge != nullptr) {
         granularStepDiceButton->setDiceImage(assets.diceLarge->createCopy());
     }
-    
-    const int diceSize = 32;
-    granularStepDiceButton->setBounds(sequencerArea.getX() + 240, sequencerArea.getY() + 5, diceSize, diceSize);
     
     granularStepDiceButton->onClick = [this]() {
         DBG("[UI] Granular step dice clicked - randomizing all steps");
@@ -6888,17 +6903,14 @@ void PluginEditor::setupGranularSequencerArea()
         updateGranularSequencerUI();
     };
     
-    // Step power button
+    // Step power button (EXACT same positioning as Reverb)
     granularStepPowerButton = std::make_unique<juce::DrawableButton>("granularStepPower", juce::DrawableButton::ButtonStyle::ImageFitted);
     addAndMakeVisible(granularStepPowerButton.get());
     granularStepPowerButton->setVisible(false);
     
-    const int stepPowerSize = 46;
-    granularStepPowerButton->setBounds(
-        sequencerArea.getX() + sequencerArea.getWidth() - stepPowerSize - 8 + 5,
-        sequencerArea.getY() + 6 - 20 + 4,
-        stepPowerSize, stepPowerSize
-    );
+    const int powerButtonSize = 40;
+    granularStepPowerButton->setBounds(sequencerArea.getX() + sequencerArea.getWidth() - powerButtonSize - 5 + 15 - 5 - 1, 
+                                   sequencerArea.getY() - 5 - 40 + 25 + 5, powerButtonSize, powerButtonSize);
     
     granularStepPowerButton->setColour(juce::DrawableButton::backgroundColourId, juce::Colours::transparentBlack);
     granularStepPowerButton->setColour(juce::DrawableButton::backgroundOnColourId, juce::Colours::transparentBlack);
@@ -6908,13 +6920,14 @@ void PluginEditor::setupGranularSequencerArea()
     }
     
     granularStepPowerButton->setClickingTogglesState(true);
+    granularStepAreaEnabled = processorRef.getGranularSeqState().enabled.load();
     granularStepPowerButton->setToggleState(granularStepAreaEnabled, juce::dontSendNotification);
     
     granularStepPowerButton->onClick = [this]() {
         granularStepAreaEnabled = granularStepPowerButton->getToggleState();
+        DBG("[UI] Granular sequencer power: " << (granularStepAreaEnabled ? "ON" : "OFF"));
         processorRef.setGranularSequencerEnabled(granularStepAreaEnabled);
         updateGranularStepAreaVisibility();
-        repaint();
     };
     
     // Add sequencer components to granularGroup
@@ -6935,61 +6948,65 @@ void PluginEditor::setupGranularAllStepsToggle()
 {
     DBG("[UI] Setting up Granular All Steps toggle...");
     
-    auto sequencerArea = juce::Rectangle<int>(25, 374, 413, 140);
+    auto effectArea = juce::Rectangle<int>(25, 54, 413, 296);
     
     granularAllStepsToggle = std::make_unique<AllStepsToggleButton>();
     addAndMakeVisible(granularAllStepsToggle.get());
     granularAllStepsToggle->setVisible(false);
     
-    if (assets.stepTopInactive && assets.stepTopActive) {
-        granularAllStepsToggle->setImages(assets.stepTopInactive->createCopy(), assets.stepTopActive->createCopy());
+    // Match Reverb's exact positioning and size
+    const int buttonSize = 29;
+    granularAllStepsToggle->setBounds(effectArea.getX() + effectArea.getWidth()/2 - buttonSize/2 + 30, 
+                                  effectArea.getY() - 1, buttonSize, buttonSize);
+    
+    // Set the toggle images (stepTopInactive/stepTopActive)
+    if (assets.stepTopInactive != nullptr && assets.stepTopActive != nullptr) {
+        static_cast<AllStepsToggleButton*>(granularAllStepsToggle.get())->setImages(
+            assets.stepTopInactive->createCopy(),
+            assets.stepTopActive->createCopy()
+        );
     }
     
-    granularAllStepsToggle->setBounds(sequencerArea.getX() + 280, sequencerArea.getY() + 7, 28, 28);
     granularAllStepsToggle->setToggleState(false, juce::dontSendNotification);
-    
     granularAllStepsToggle->onClick = [this]() {
         granularAllStepsEnabled = granularAllStepsToggle->getToggleState();
-        DBG("[UI] Granular All Steps: " << (granularAllStepsEnabled ? "ON" : "OFF"));
-        
-        if (granularAllStepsLabel) {
-            granularAllStepsLabel->setAlpha(granularAllStepsEnabled ? 1.0f : 0.5f);
-        }
+        DBG("[UI] Granular All Steps toggle: " << (granularAllStepsEnabled ? "ON" : "OFF"));
+        granularAllStepsLabel->setAlpha(granularAllStepsEnabled ? 1.0f : 0.5f);
         
         if (granularAllStepsEnabled) {
+            DBG("[UI] Granular All Steps enabled - randomizing all step snapshots");
+            
             for (int step = 0; step < 16; ++step) {
                 auto snapshot = processorRef.getGranularSafeSnapshot(step);
-                juce::Random& rng = juce::Random::getSystemRandom();
                 
-                snapshot.granular.sizeMs = 5.0f + rng.nextFloat() * 195.0f;
-                snapshot.granular.densityHz = 1.0f + rng.nextFloat() * 39.0f;
-                snapshot.granular.position = rng.nextFloat();
-                snapshot.granular.sprayMs = rng.nextFloat() * 200.0f;
-                snapshot.granular.pitchSemi = -24.0f + rng.nextFloat() * 48.0f;
-                snapshot.granular.random = rng.nextFloat();
-                snapshot.granular.texture = rng.nextFloat();
-                snapshot.granular.mix = rng.nextFloat();
+                if (!granularKnobLocked[0]) snapshot.granular.sizeMs = 5.0f + juce::Random::getSystemRandom().nextFloat() * 195.0f;
+                if (!granularKnobLocked[1]) snapshot.granular.densityHz = 1.0f + juce::Random::getSystemRandom().nextFloat() * 39.0f;
+                if (!granularKnobLocked[2]) snapshot.granular.position = juce::Random::getSystemRandom().nextFloat();
+                if (!granularKnobLocked[3]) snapshot.granular.sprayMs = juce::Random::getSystemRandom().nextFloat() * 200.0f;
+                if (!granularKnobLocked[4]) snapshot.granular.pitchSemi = -24.0f + juce::Random::getSystemRandom().nextFloat() * 48.0f;
+                if (!granularKnobLocked[5]) snapshot.granular.random = juce::Random::getSystemRandom().nextFloat();
+                if (!granularKnobLocked[6]) snapshot.granular.texture = juce::Random::getSystemRandom().nextFloat();
+                if (!granularKnobLocked[7]) snapshot.granular.mix = juce::Random::getSystemRandom().nextFloat();
                 
                 processorRef.setGranularStepSnapshot(step, snapshot);
             }
+            
+            // Update UI to show the new values
             updateGranularSequencerUI();
         }
-        
-        repaint();
     };
     
+    // Label - match Reverb's exact positioning
     granularAllStepsLabel = std::make_unique<juce::Label>();
     granularAllStepsLabel->setText("All Steps", juce::dontSendNotification);
-    granularAllStepsLabel->setFont(juce::Font(12.0f, juce::Font::bold));
+    granularAllStepsLabel->setFont(juce::Font(14.4f, juce::Font::bold));
     granularAllStepsLabel->setColour(juce::Label::textColourId, juce::Colours::white);
     granularAllStepsLabel->setJustificationType(juce::Justification::centredLeft);
-    granularAllStepsLabel->setAlpha(0.5f);
     addAndMakeVisible(granularAllStepsLabel.get());
     granularAllStepsLabel->setVisible(false);
-    granularAllStepsLabel->setBounds(sequencerArea.getX() + 315, sequencerArea.getY() + 11, 80, 20);
-    
-    granularGroup.push_back(granularAllStepsToggle.get());
-    granularGroup.push_back(granularAllStepsLabel.get());
+    granularAllStepsLabel->setAlpha(1.0f); // Start fully visible (will grey when toggled off)
+    granularAllStepsLabel->setBounds(effectArea.getX() + effectArea.getWidth()/2 + buttonSize/2 + 5 + 30, 
+                                effectArea.getY() + 1, 80, 24);
     
     DBG("[UI] Granular All Steps toggle setup complete");
 }
