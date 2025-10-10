@@ -7,6 +7,7 @@
 #include "dsp/FxDirt.h"
 #include "dsp/FxChorus.h"
 #include "dsp/SimpleHallReverb.h"
+#include "dsp/granular/GranularEngine.h"
 #include "dsp/DspFlags.h"
 #include "StepSnapshot.h"
 #include "MeterTheme.h"
@@ -339,6 +340,7 @@ public:
     
     // Reverb DSP Implementation
     SimpleHallReverb hall;
+    GranularEngine granular;
     
     // PanMan-style visualizer clock
     struct PanVisClock {

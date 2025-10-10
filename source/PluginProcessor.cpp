@@ -191,6 +191,25 @@ juce::AudioProcessorValueTreeState::ParameterLayout PluginProcessor::createParam
         "verbMix", "Mix", juce::NormalisableRange<float>(0.0f, 1.0f, 0.0f, 1.0f), 0.25f));
     params.push_back(std::make_unique<juce::AudioParameterBool>("verbEnabled", "Reverb Enabled", true)); // Reverb effect enabled
     
+    // Granular parameters
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(
+        "granSizeMs", "Grain Size", juce::NormalisableRange<float>(5.0f, 200.0f, 0.0f, 0.6f), 40.0f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(
+        "granDensityHz", "Density", juce::NormalisableRange<float>(1.0f, 80.0f, 0.0f, 0.5f), 20.0f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(
+        "granPosition", "Position", juce::NormalisableRange<float>(0.0f, 1.0f, 0.0f, 1.0f), 1.0f)); // 0=oldest, 1=latest
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(
+        "granSprayMs", "Spray", juce::NormalisableRange<float>(0.0f, 200.0f, 0.0f, 0.5f), 35.0f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(
+        "granPitchSemi", "Pitch", juce::NormalisableRange<float>(-24.0f, 24.0f, 0.01f, 1.0f), 0.0f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(
+        "granRandom", "Random", juce::NormalisableRange<float>(0.0f, 1.0f, 0.0f, 1.0f), 0.25f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(
+        "granTexture", "Texture", juce::NormalisableRange<float>(0.0f, 1.0f, 0.0f, 1.0f), 0.3f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(
+        "granMix", "Mix", juce::NormalisableRange<float>(0.0f, 1.0f, 0.0f, 1.0f), 0.5f));
+    params.push_back(std::make_unique<juce::AudioParameterBool>("granEnabled", "Granular Enabled", true));
+    
     return { params.begin(), params.end() };
 }
 
@@ -265,6 +284,7 @@ void PluginProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
     dirt.prepare(sampleRate, samplesPerBlock); // Prepare Dirt saturation
     chorus.prepare(sampleRate, samplesPerBlock); // Prepare Chorus effect
     hall.prepare(sampleRate, samplesPerBlock, 300); // Prepare JUCE Hall (300ms max predelay)
+    granular.prepare(sampleRate, samplesPerBlock, getTotalNumOutputChannels()); // Prepare Granular engine
     seq.prepare(sampleRate); // Initialize delay sequencer with sample rate
     autopanSeq.prepare(sampleRate); // Initialize AutoPan sequencer with sample rate
     dirtSeq.prepare(sampleRate); // Initialize Dirt sequencer with sample rate
@@ -745,6 +765,32 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                     // Process in-place
                     hall.process(buffer);
                 }
+                break;
+            }
+            
+            case EffectID::Granular:
+            {
+                // Process Granular effect
+                auto* granEnabledParam = valueTreeState.getRawParameterValue("granEnabled");
+                bool isGranEnabled = granEnabledParam ? (granEnabledParam->load() > 0.5f) : false;
+                
+                if (!isGranEnabled || buffer.getNumChannels() == 0 || buffer.getNumSamples() == 0) {
+                    break;
+                }
+                
+                // Read granular parameters
+                float sizeMs     = valueTreeState.getRawParameterValue("granSizeMs")->load();
+                float densityHz  = valueTreeState.getRawParameterValue("granDensityHz")->load();
+                float position   = valueTreeState.getRawParameterValue("granPosition")->load();
+                float sprayMs    = valueTreeState.getRawParameterValue("granSprayMs")->load();
+                float pitchSemi  = valueTreeState.getRawParameterValue("granPitchSemi")->load();
+                float randomAmt  = valueTreeState.getRawParameterValue("granRandom")->load();
+                float texture    = valueTreeState.getRawParameterValue("granTexture")->load();
+                float mix        = valueTreeState.getRawParameterValue("granMix")->load();
+                
+                // Set parameters and process
+                granular.setParameters(sizeMs, densityHz, position, sprayMs, pitchSemi, randomAmt, texture, mix);
+                granular.process(buffer);
                 break;
             }
         }
