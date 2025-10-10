@@ -74,6 +74,23 @@ void GranularEngine::process(juce::AudioBuffer<float>& buffer)
     if (numSamples == 0 || ringSize == 0)
         return;
     
+    // Get current mix to check if we should process at all
+    float currentMix = mixSmooth.getCurrentValue();
+    
+    // Skip expensive processing if mix is essentially zero
+    if (currentMix < 0.001f)
+    {
+        // Just advance the smoothed values and return
+        for (int n = 0; n < numSamples; ++n)
+        {
+            sizeSmooth.getNextValue();
+            pitchSmooth.getNextValue();
+            densitySmooth.getNextValue();
+            mixSmooth.getNextValue();
+        }
+        return;
+    }
+    
     // Save dry signal
     juce::AudioBuffer<float> dry(buffer.getNumChannels(), numSamples);
     for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
