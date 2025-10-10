@@ -322,8 +322,8 @@ void PluginEditor::paint (juce::Graphics& g)
                     continue; // Skip invalid slots
             }
             
-            // Use 2x bigger icon size but center it in the tab area
-            float iconSize = 70.0f; // 2x the original 35px size
+            // Use 20% bigger icon size but center it in the tab area
+            float iconSize = 84.0f; // 70px + 20% = 84px
             float iconX = tabIconX + (tabW - iconSize) / 2.0f; // Center horizontally
             float iconY = tabIconY + (tabH - iconSize) / 2.0f; // Center vertically
             
