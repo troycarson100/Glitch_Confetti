@@ -60,8 +60,10 @@ PluginEditor::PluginEditor (PluginProcessor& p)
             case EffectID::AutoPan:
             {
                 int autopanStep = autopanUiSelectedStep;
+                DBG("[UI] AutoPan callback: updating APVTS for step " + juce::String(autopanStep));
                 if (autopanStep >= 0 && autopanStep < 16) {
                     auto snapshot = processorRef.getAutoPanSafeSnapshot(autopanStep);
+                    DBG("[UI]   AutoPan step " + juce::String(autopanStep) + " snapshot rate=" + juce::String(snapshot.autopan.rate));
                     auto& apvts = processorRef.getAPVTS();
                     
                     if (auto* p = apvts.getParameter("panRate")) p->setValueNotifyingHost(p->convertTo0to1(snapshot.autopan.rate));

@@ -116,12 +116,17 @@ void RandomizationManager::applyStepDataChanges()
     for (int slot = 0; slot < 4; ++slot)
     {
         EffectID effect = router.getEffectInSlot(static_cast<SlotID>(slot));
+        DBG("[RAND] Randomizing slot " + juce::String(slot) + " effect " + juce::String((int)effect));
         
         for (int step = 0; step < 16; ++step)
         {
             // Skip locked steps
             if (isStepLocked(step, effect))
                 continue;
+            
+            if (step == 0) {
+                DBG("[RAND]   Step 0 for effect " + juce::String((int)effect) + " slot " + juce::String(slot));
+            }
             
             // Randomize based on effect type
             switch (effect)
@@ -144,13 +149,17 @@ void RandomizationManager::applyStepDataChanges()
                 case EffectID::AutoPan:
                 {
                     auto snapshot = processor.getAutoPanSafeSnapshot(step);
-                    snapshot.autopan.rate = 0.01f + rand01() * 9.99f;
+                    float newRate = 0.01f + rand01() * 9.99f;
+                    snapshot.autopan.rate = newRate;
                     snapshot.autopan.amount = rand01();
                     snapshot.autopan.waveShape = rand01();
                     snapshot.autopan.phase = rand01() * 360.0f;
                     snapshot.autopan.waveType = static_cast<int>(rand01() * 4.999f);
                     snapshot.autopan.inverted = rand01() > 0.5f;
                     processor.setAutoPanStepSnapshot(step, snapshot);
+                    if (step == 0) {
+                        DBG("[RAND]     AutoPan step 0 randomized: rate=" + juce::String(newRate));
+                    }
                     break;
                 }
                 
@@ -172,7 +181,8 @@ void RandomizationManager::applyStepDataChanges()
                 case EffectID::Chorus:
                 {
                     auto snapshot = processor.getChorusSafeSnapshot(step);
-                    snapshot.chorus.delayTime = 5.0f + rand01() * 45.0f;
+                    float newDelay = 5.0f + rand01() * 45.0f;
+                    snapshot.chorus.delayTime = newDelay;
                     snapshot.chorus.rate = 0.02f + rand01() * 7.98f;
                     snapshot.chorus.depth = rand01() * 12.0f;
                     snapshot.chorus.feedback = rand01() * 0.9f;
@@ -181,6 +191,9 @@ void RandomizationManager::applyStepDataChanges()
                     snapshot.chorus.tone = rand01();
                     snapshot.chorus.mix = rand01();
                     processor.setChorusStepSnapshot(step, snapshot);
+                    if (step == 0) {
+                        DBG("[RAND]     Chorus step 0 randomized: delayTime=" + juce::String(newDelay));
+                    }
                     break;
                 }
                 
