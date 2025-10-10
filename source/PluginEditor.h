@@ -460,6 +460,7 @@ public:
     std::unique_ptr<juce::TextEditor> granularStepAmountLabel;
     std::unique_ptr<juce::ComboBox> granularRateDropdown;
     std::unique_ptr<CircularToggleButton> granularStdToggle;
+    std::unique_ptr<CircularToggleButton> granularDensitySyncToggle;
     std::unique_ptr<juce::Label> granularStepTitle;
     std::unique_ptr<CustomDiceButton> granularStepDiceButton;
     std::unique_ptr<juce::DrawableButton> granularStepPowerButton;

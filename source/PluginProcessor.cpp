@@ -812,14 +812,19 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                 }
                 
                 // Read granular parameters (from sequencer snapshot if active, else APVTS)
-                float sizeMs, densityHz, position, sprayMs, pitchSemi, randomAmt, texture, mix;
+                // NOTE: Mix is ALWAYS read from APVTS (global control, not per-step)
+                float sizeMs, densityHz, position, sprayMs, pitchSemi, randomAmt, texture;
+                
+                // Mix is always global (not sequenced)
+                auto* mixParam = valueTreeState.getRawParameterValue("granMix");
+                float mix = mixParam ? mixParam->load() : 0.5f;
                 
                 // Check if Granular sequencer is enabled AND active
                 bool useSequencer = granularSeq.enabled.load() && granularSeq.active.load();
                 
                 if (useSequencer)
                 {
-                    // Read from sequencer snapshot
+                    // Read from sequencer snapshot (except mix)
                     int currentStep = granularSeq.currentStep.load();
                     if (currentStep >= 0 && currentStep < 16)
                     {
@@ -831,7 +836,7 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                         pitchSemi  = snapshot.granular.pitchSemi;
                         randomAmt  = snapshot.granular.random;
                         texture    = snapshot.granular.texture;
-                        mix        = snapshot.granular.mix;
+                        // mix already set from APVTS above
                     }
                     else
                     {
@@ -843,10 +848,9 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                         auto* pitchParam    = valueTreeState.getRawParameterValue("granPitchSemi");
                         auto* randomParam   = valueTreeState.getRawParameterValue("granRandom");
                         auto* textureParam  = valueTreeState.getRawParameterValue("granTexture");
-                        auto* mixParam      = valueTreeState.getRawParameterValue("granMix");
                         
                         if (!sizeParam || !densityParam || !positionParam || !sprayParam || 
-                            !pitchParam || !randomParam || !textureParam || !mixParam) {
+                            !pitchParam || !randomParam || !textureParam) {
                             break;
                         }
                         
@@ -857,12 +861,12 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                         pitchSemi  = pitchParam->load();
                         randomAmt  = randomParam->load();
                         texture    = textureParam->load();
-                        mix        = mixParam->load();
+                        // mix already set from APVTS above
                     }
                 }
                 else
                 {
-                    // Read directly from APVTS when sequencer not active
+                    // Read directly from APVTS when sequencer not active (except mix which is always APVTS)
                     auto* sizeParam     = valueTreeState.getRawParameterValue("granSizeMs");
                     auto* densityParam  = valueTreeState.getRawParameterValue("granDensityHz");
                     auto* positionParam = valueTreeState.getRawParameterValue("granPosition");
@@ -870,10 +874,9 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                     auto* pitchParam    = valueTreeState.getRawParameterValue("granPitchSemi");
                     auto* randomParam   = valueTreeState.getRawParameterValue("granRandom");
                     auto* textureParam  = valueTreeState.getRawParameterValue("granTexture");
-                    auto* mixParam      = valueTreeState.getRawParameterValue("granMix");
                     
                     if (!sizeParam || !densityParam || !positionParam || !sprayParam || 
-                        !pitchParam || !randomParam || !textureParam || !mixParam) {
+                        !pitchParam || !randomParam || !textureParam) {
                         DBG("[GRANULAR] ERROR: Missing parameter!");
                         break;
                     }
@@ -885,7 +888,7 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                     pitchSemi  = pitchParam->load();
                     randomAmt  = randomParam->load();
                     texture    = textureParam->load();
-                    mix        = mixParam->load();
+                    // mix already set from APVTS above
                 }
                 
                 // Set parameters and process
@@ -1598,6 +1601,9 @@ void PluginProcessor::updateGranularCurrentStepSnapshot(int knobIndex, float val
     int currentStep = granularUiSelectedStep.load();
     if (currentStep < 0 || currentStep >= 16) return;
     
+    // Mix (knob 7) is global, not saved to snapshots
+    if (knobIndex == 7) return;
+    
     // Update the specific Granular parameter in the snapshot
     switch (knobIndex) {
         case 0: // Size
@@ -1620,9 +1626,6 @@ void PluginProcessor::updateGranularCurrentStepSnapshot(int knobIndex, float val
             break;
         case 6: // Texture
             granularStepSnapshots[currentStep].granular.texture = value;
-            break;
-        case 7: // Mix
-            granularStepSnapshots[currentStep].granular.mix = value;
             break;
     }
 }

@@ -6534,10 +6534,13 @@ void PluginEditor::setupGranularKnobs()
         // Add value change callback to update value label and save to snapshot
         granularKnobs[i]->onValueChange = [this, i]() {
             if (granularKnobs[i] != nullptr) {
-                updateGranularParameterFromKnob(i);
+                // Mix (knob 7) is global, not saved to snapshots
+                if (i != 7) {
+                    updateGranularParameterFromKnob(i);
+                }
                 
-                if (granularAllStepsEnabled) {
-                    // Update all steps with current knob value
+                if (granularAllStepsEnabled && i != 7) {
+                    // Update all steps with current knob value (except mix)
                     for (int step = 0; step < 16; ++step) {
                         auto snapshot = processorRef.getGranularSafeSnapshot(step);
                         float value = granularKnobs[i]->getValue();
@@ -6549,7 +6552,6 @@ void PluginEditor::setupGranularKnobs()
                             case 4: snapshot.granular.pitchSemi = value; break;
                             case 5: snapshot.granular.random = value; break;
                             case 6: snapshot.granular.texture = value; break;
-                            case 7: snapshot.granular.mix = value; break;
                         }
                         processorRef.setGranularStepSnapshot(step, snapshot);
                     }
@@ -6652,6 +6654,37 @@ void PluginEditor::setupGranularKnobs()
         };
     }
 
+    // Create Density sync toggle (next to Density knob - knob 1)
+    granularDensitySyncToggle = std::make_unique<CircularToggleButton>();
+    granularDensitySyncToggle->setButtonText("S");
+    addAndMakeVisible(granularDensitySyncToggle.get());
+    granularDensitySyncToggle->setVisible(false);
+    
+    // Position it to the left of the Density knob label (knob 1)
+    int densityKnobIndex = 1;
+    int densityX = startX + (densityKnobIndex % 4) * (knobSize + knobSpacing);
+    int densityY = startY + (densityKnobIndex / 4) * (knobSize + 20);
+    if (densityKnobIndex < 4) densityY -= 23;
+    else densityY -= 1;
+    
+    granularDensitySyncToggle->setBounds(densityX - 22, densityY - 13, 18, 18);
+    
+    auto* densitySyncParam = processorRef.getAPVTS().getRawParameterValue("granDensitySync");
+    if (densitySyncParam) {
+        granularDensitySyncToggle->setToggleState(densitySyncParam->load() > 0.5f, juce::dontSendNotification);
+    }
+    
+    granularDensitySyncToggle->onClick = [this]() {
+        bool syncEnabled = granularDensitySyncToggle->getToggleState();
+        auto* param = processorRef.getAPVTS().getParameter("granDensitySync");
+        if (param) {
+            param->setValueNotifyingHost(syncEnabled ? 1.0f : 0.0f);
+        }
+        DBG("[UI] Granular density sync: " << (syncEnabled ? "ON" : "OFF"));
+    };
+    
+    granularGroup.push_back(granularDensitySyncToggle.get());
+    
     // Create parameter attachments to connect knobs to APVTS
     std::vector<juce::String> granularParamIds = {
         "granSizeMs", "granDensityHz", "granPosition", "granSprayMs",
