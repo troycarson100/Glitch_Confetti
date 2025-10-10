@@ -1589,14 +1589,14 @@ void PluginEditor::setupKnobs()
         // Master area bounds (positioned in master area)
         auto masterArea = juce::Rectangle<int>(453, 54, 413, 296);
         
-        // Create "MASTER" title in master area (top-left corner, 5px right)
+        // Create "MASTER" title in master area (top-left corner, 10px right)
         masterTitle = std::make_unique<juce::Label>();
         masterTitle->setText("MASTER", juce::dontSendNotification);
         masterTitle->setFont(juce::Font(27.648f, juce::Font::bold)); // Same as EFFECT title
         masterTitle->setColour(juce::Label::textColourId, juce::Colours::white);
         masterTitle->setJustificationType(juce::Justification::centredLeft);
         addAndMakeVisible(masterTitle.get());
-        masterTitle->setBounds(masterArea.getX() + 15, masterArea.getY() + 5, 150, 30); // 5px more right (was 10)
+        masterTitle->setBounds(masterArea.getX() + 20, masterArea.getY() + 5, 150, 30); // 20px from left (5px more right)
         masterTitle->toFront(false);
         
         // Create Master Dice Button (randomizes all effects, all steps) 
