@@ -36,8 +36,8 @@ PluginProcessor::PluginProcessor()
     chorusSeq.divisionIndex.store(5); // 1/8 default (index 5 = item ID 6)
     chorusSeq.playingStep.store(0);
     
-    // Initialize Reverb sequencer state (independent)
-    reverbSeq.enabled.store(false);
+    // Initialize Reverb sequencer state (starts enabled like delay sequencer)
+    reverbSeq.enabled.store(true); // Start enabled so it auto-activates on play
     reverbSeq.stepsUsed.store(16);
     reverbSeq.divisionIndex.store(5); // 1/8 default (index 5 = item ID 6)
     reverbSeq.playingStep.store(0);
@@ -402,11 +402,11 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                     DBG("[CHORUS SEQ] ✓ Activated on play edge");
                 }
                 
-                // Auto-enable and activate Reverb sequencer on play (like delay sequencer)
-                // User can disable with power button, but it will re-enable on next play
-                reverbSeq.enabled.store(true);
-                reverbSeq.active.store(true);
-                DBG("[REVERB SEQ] ✓ Auto-enabled and activated on play edge");
+                // Reverb sequencer activates if enabled (independent of followHost)
+                if (reverbSeq.enabled.load()) {
+                    reverbSeq.active.store(true);  // Activate Reverb sequencer
+                    DBG("[REVERB SEQ] ✓ Activated on play edge");
+                }
                 
                 DBG("[SEQ] Play edge detected");
                 DBG("[SEQ] Delay: enabled=" << (bool)seq.enabled.load() << " active=" << (bool)seq.active.load());
