@@ -23,12 +23,12 @@ struct SimpleHallReverb
         predelay.setMaximumDelayInSamples (maxDelaySamps);
         predelay.setDelay (0.0);
 
-        // Smoothing
-        mix.reset   (sampleRate, 0.050);
-        room.reset  (sampleRate, 0.050);
-        damp.reset  (sampleRate, 0.050);
-        width.reset (sampleRate, 0.050);
-        erAmt.reset (sampleRate, 0.050);
+        // Smoothing with initial values
+        mix.reset   (sampleRate, 0.050); mix.setCurrentAndTargetValue(0.0f);
+        room.reset  (sampleRate, 0.050); room.setCurrentAndTargetValue(0.90f);
+        damp.reset  (sampleRate, 0.050); damp.setCurrentAndTargetValue(0.20f);
+        width.reset (sampleRate, 0.050); width.setCurrentAndTargetValue(1.0f);
+        erAmt.reset (sampleRate, 0.050); erAmt.setCurrentAndTargetValue(0.5f);
 
         // Make it present by default
         params.roomSize  = 0.90f;   // big space
@@ -154,9 +154,9 @@ struct SimpleHallReverb
         }
 
         // 3) External mix crossfade (use saved dry signal)
-        const float m = mix.getNextValue();
         for (int n = 0; n < numSamples; ++n)
         {
+            const float m = mix.getNextValue(); // Get smoothed mix value per sample
             const float dryL = dry.getSample (0, n);
             const float dryR = dry.getSample (1, n);
             const float wetL = wet.getSample (0, n);
