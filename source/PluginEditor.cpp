@@ -322,8 +322,8 @@ void PluginEditor::paint (juce::Graphics& g)
                     continue; // Skip invalid slots
             }
             
-            // Use smaller icon size (original size) but center it in the tab area
-            float iconSize = 35.0f; // Original icon size
+            // Use 2x bigger icon size but center it in the tab area
+            float iconSize = 70.0f; // 2x the original 35px size
             float iconX = tabIconX + (tabW - iconSize) / 2.0f; // Center horizontally
             float iconY = tabIconY + (tabH - iconSize) / 2.0f; // Center vertically
             
@@ -3337,15 +3337,15 @@ void PluginEditor::showPage(FxPageID id)
     // Update processor parameters only if page actually changed
     if (pageChanged)
     {
-        auto* currentPageParam = processorRef.getAPVTS().getParameter("currentPage");
-        if (currentPageParam) {
-            float pageValue = 0.0f;
-            if (id == FxPageID::Panner) pageValue = 1.0f;
-            else if (id == FxPageID::Dirt) pageValue = 2.0f;
-            else if (id == FxPageID::Chorus) pageValue = 3.0f;
+    auto* currentPageParam = processorRef.getAPVTS().getParameter("currentPage");
+    if (currentPageParam) {
+        float pageValue = 0.0f;
+        if (id == FxPageID::Panner) pageValue = 1.0f;
+        else if (id == FxPageID::Dirt) pageValue = 2.0f;
+        else if (id == FxPageID::Chorus) pageValue = 3.0f;
             else if (id == FxPageID::Reverb) pageValue = 4.0f;
             else if (id == FxPageID::Granular) pageValue = 5.0f;
-            currentPageParam->setValueNotifyingHost(pageValue);
+        currentPageParam->setValueNotifyingHost(pageValue);
         }
     }
     
