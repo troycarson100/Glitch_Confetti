@@ -208,7 +208,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout PluginProcessor::createParam
         "granTexture", "Texture", juce::NormalisableRange<float>(0.0f, 1.0f, 0.0f, 1.0f), 0.3f));
     params.push_back(std::make_unique<juce::AudioParameterFloat>(
         "granMix", "Mix", juce::NormalisableRange<float>(0.0f, 1.0f, 0.0f, 1.0f), 0.5f));
-    params.push_back(std::make_unique<juce::AudioParameterBool>("granEnabled", "Granular Enabled", true));
+    params.push_back(std::make_unique<juce::AudioParameterBool>("granEnabled", "Granular Enabled", false)); // Start disabled to prevent crashes
     
     return { params.begin(), params.end() };
 }
@@ -778,15 +778,30 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                     break;
                 }
                 
-                // Read granular parameters
-                float sizeMs     = valueTreeState.getRawParameterValue("granSizeMs")->load();
-                float densityHz  = valueTreeState.getRawParameterValue("granDensityHz")->load();
-                float position   = valueTreeState.getRawParameterValue("granPosition")->load();
-                float sprayMs    = valueTreeState.getRawParameterValue("granSprayMs")->load();
-                float pitchSemi  = valueTreeState.getRawParameterValue("granPitchSemi")->load();
-                float randomAmt  = valueTreeState.getRawParameterValue("granRandom")->load();
-                float texture    = valueTreeState.getRawParameterValue("granTexture")->load();
-                float mix        = valueTreeState.getRawParameterValue("granMix")->load();
+                // Read granular parameters with null checks
+                auto* sizeParam     = valueTreeState.getRawParameterValue("granSizeMs");
+                auto* densityParam  = valueTreeState.getRawParameterValue("granDensityHz");
+                auto* positionParam = valueTreeState.getRawParameterValue("granPosition");
+                auto* sprayParam    = valueTreeState.getRawParameterValue("granSprayMs");
+                auto* pitchParam    = valueTreeState.getRawParameterValue("granPitchSemi");
+                auto* randomParam   = valueTreeState.getRawParameterValue("granRandom");
+                auto* textureParam  = valueTreeState.getRawParameterValue("granTexture");
+                auto* mixParam      = valueTreeState.getRawParameterValue("granMix");
+                
+                if (!sizeParam || !densityParam || !positionParam || !sprayParam || 
+                    !pitchParam || !randomParam || !textureParam || !mixParam) {
+                    DBG("[GRANULAR] ERROR: Missing parameter!");
+                    break;
+                }
+                
+                float sizeMs     = sizeParam->load();
+                float densityHz  = densityParam->load();
+                float position   = positionParam->load();
+                float sprayMs    = sprayParam->load();
+                float pitchSemi  = pitchParam->load();
+                float randomAmt  = randomParam->load();
+                float texture    = textureParam->load();
+                float mix        = mixParam->load();
                 
                 // Set parameters and process
                 granular.setParameters(sizeMs, densityHz, position, sprayMs, pitchSemi, randomAmt, texture, mix);
