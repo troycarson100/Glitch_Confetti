@@ -19,6 +19,9 @@ struct RandomizationManager : private juce::AsyncUpdater
     // Optional: block re-entry
     bool isBusy() const noexcept { return busy.load(); }
     
+    // Callback when randomization is complete (called on message thread)
+    std::function<void()> onRandomizationComplete;
+    
 private:
     void handleAsyncUpdate() override; // does the work on the message thread
     void randomizeAll();               // transactional randomization

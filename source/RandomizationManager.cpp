@@ -208,9 +208,11 @@ void RandomizationManager::applyStepDataChanges()
 
 void RandomizationManager::notifyUI()
 {
-    // UI will update automatically via the existing timer callback
-    // No explicit repaint needed
-    DBG("[RAND] Randomization complete - UI will update via timer");
+    // Call the completion callback if set (PluginEditor uses this to reload knobs)
+    if (onRandomizationComplete)
+        onRandomizationComplete();
+    
+    DBG("[RAND] Randomization complete - UI callback invoked");
 }
 
 float RandomizationManager::rand01()

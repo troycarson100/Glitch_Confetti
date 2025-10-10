@@ -23,6 +23,82 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     // Initialize randomization manager (thread-safe)
     randomizationManager = std::make_unique<RandomizationManager>(processorRef, processorRef.getAPVTS());
     
+    // Set callback to reload knobs when randomization completes
+    randomizationManager->onRandomizationComplete = [this]() {
+        DBG("[UI] Randomization complete - reloading current step knobs");
+        
+        // Reload current step's snapshot into knobs for each effect
+        // This simulates clicking the current step button again
+        
+        // Space Delay
+        int delayStep = processorRef.getSelectedStep();
+        if (delayStep >= 0 && delayStep < 16) {
+            auto snapshot = processorRef.getSafeSnapshot(delayStep);
+            if (knobs[0]) knobs[0]->setValue((snapshot.delay.timeMs - 10.0f) / (2000.0f - 10.0f), juce::dontSendNotification);
+            if (knobs[1]) knobs[1]->setValue(snapshot.delay.feedback / 100.0f, juce::dontSendNotification);
+            if (knobs[2]) knobs[2]->setValue(snapshot.delay.wowDepth / 100.0f, juce::dontSendNotification);
+            if (knobs[3]) knobs[3]->setValue((snapshot.delay.wowRate - 0.1f) / (8.0f - 0.1f), juce::dontSendNotification);
+            if (knobs[4]) knobs[4]->setValue(snapshot.delay.saturation / 100.0f, juce::dontSendNotification);
+            if (knobs[5]) knobs[5]->setValue((snapshot.delay.highCut - 1000.0f) / (20000.0f - 1000.0f), juce::dontSendNotification);
+            if (knobs[6]) knobs[6]->setValue((snapshot.delay.lowCut - 20.0f) / (2000.0f - 20.0f), juce::dontSendNotification);
+            if (knobs[7]) knobs[7]->setValue(snapshot.delay.mix / 100.0f, juce::dontSendNotification);
+        }
+        
+        // AutoPan
+        int autopanStep = autopanUiSelectedStep;
+        if (autopanStep >= 0 && autopanStep < 16) {
+            auto snapshot = processorRef.getAutoPanSafeSnapshot(autopanStep);
+            if (autopanKnobs[0]) autopanKnobs[0]->setValue(snapshot.autopan.rate, juce::dontSendNotification);
+            if (autopanKnobs[1]) autopanKnobs[1]->setValue(snapshot.autopan.phase, juce::dontSendNotification);
+            if (autopanKnobs[2]) autopanKnobs[2]->setValue((float)snapshot.autopan.waveType, juce::dontSendNotification);
+            if (autopanKnobs[3]) autopanKnobs[3]->setValue(snapshot.autopan.waveShape, juce::dontSendNotification);
+            if (autopanKnobs[4]) autopanKnobs[4]->setValue(snapshot.autopan.inverted ? 1.0f : 0.0f, juce::dontSendNotification);
+            if (autopanKnobs[5]) autopanKnobs[5]->setValue(snapshot.autopan.amount, juce::dontSendNotification);
+        }
+        
+        // Dirt
+        int dirtStep = dirtUiSelectedStep;
+        if (dirtStep >= 0 && dirtStep < 16) {
+            auto snapshot = processorRef.getDirtSafeSnapshot(dirtStep);
+            if (dirtKnobs[0]) dirtKnobs[0]->setValue(snapshot.dirt.drive, juce::dontSendNotification);
+            if (dirtKnobs[1]) dirtKnobs[1]->setValue(snapshot.dirt.color, juce::dontSendNotification);
+            if (dirtKnobs[2]) dirtKnobs[2]->setValue(snapshot.dirt.asym, juce::dontSendNotification);
+            if (dirtKnobs[3]) dirtKnobs[3]->setValue(snapshot.dirt.texture, juce::dontSendNotification);
+            if (dirtKnobs[4]) dirtKnobs[4]->setValue(snapshot.dirt.lowCut, juce::dontSendNotification);
+            if (dirtKnobs[5]) dirtKnobs[5]->setValue(snapshot.dirt.highCut, juce::dontSendNotification);
+            if (dirtKnobs[6]) dirtKnobs[6]->setValue(snapshot.dirt.tone, juce::dontSendNotification);
+            if (dirtKnobs[7]) dirtKnobs[7]->setValue(snapshot.dirt.mix, juce::dontSendNotification);
+        }
+        
+        // Chorus
+        int chorusStep = chorusUiSelectedStep;
+        if (chorusStep >= 0 && chorusStep < 16) {
+            auto snapshot = processorRef.getChorusSafeSnapshot(chorusStep);
+            if (chorusKnobs[0]) chorusKnobs[0]->setValue(snapshot.chorus.delayTime, juce::dontSendNotification);
+            if (chorusKnobs[1]) chorusKnobs[1]->setValue(snapshot.chorus.rate, juce::dontSendNotification);
+            if (chorusKnobs[2]) chorusKnobs[2]->setValue(snapshot.chorus.depth, juce::dontSendNotification);
+            if (chorusKnobs[3]) chorusKnobs[3]->setValue(snapshot.chorus.feedback, juce::dontSendNotification);
+            if (chorusKnobs[4]) chorusKnobs[4]->setValue(snapshot.chorus.voices, juce::dontSendNotification);
+            if (chorusKnobs[5]) chorusKnobs[5]->setValue(snapshot.chorus.width, juce::dontSendNotification);
+            if (chorusKnobs[6]) chorusKnobs[6]->setValue(snapshot.chorus.tone, juce::dontSendNotification);
+            if (chorusKnobs[7]) chorusKnobs[7]->setValue(snapshot.chorus.mix, juce::dontSendNotification);
+        }
+        
+        // Reverb
+        int reverbStep = reverbUiSelectedStep;
+        if (reverbStep >= 0 && reverbStep < 16) {
+            auto snapshot = processorRef.getReverbSafeSnapshot(reverbStep);
+            if (reverbKnobs[0]) reverbKnobs[0]->setValue(snapshot.reverb.type, juce::dontSendNotification); // Width
+            if (reverbKnobs[1]) reverbKnobs[1]->setValue(snapshot.reverb.size, juce::dontSendNotification);
+            if (reverbKnobs[2]) reverbKnobs[2]->setValue(snapshot.reverb.predelayMs, juce::dontSendNotification);
+            if (reverbKnobs[3]) reverbKnobs[3]->setValue(snapshot.reverb.dampHz, juce::dontSendNotification);
+            if (reverbKnobs[4]) reverbKnobs[4]->setValue(snapshot.reverb.diffusion, juce::dontSendNotification);
+            if (reverbKnobs[5]) reverbKnobs[5]->setValue(snapshot.reverb.early, juce::dontSendNotification);
+            if (reverbKnobs[6]) reverbKnobs[6]->setValue(snapshot.reverb.decaySec, juce::dontSendNotification);
+            if (reverbKnobs[7]) reverbKnobs[7]->setValue(snapshot.reverb.mix, juce::dontSendNotification);
+        }
+    };
+    
     // Set the size to match our desired dimensions
     setSize (974, 532);
     
