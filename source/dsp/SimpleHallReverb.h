@@ -17,8 +17,9 @@ struct SimpleHallReverb
         reverb.prepare ({ sampleRate, (juce::uint32) samplesPerBlock, 2 });
 
         // Pre-delay: allocate enough for UI range
+        juce::dsp::ProcessSpec spec { sampleRate, (juce::uint32) samplesPerBlock, 2 };
+        predelay.prepare (spec);
         const int maxDelaySamps = (int) std::ceil (sampleRate * maxPredelayMs / 1000.0) + 8;
-        predelay.reset();
         predelay.setMaximumDelayInSamples (maxDelaySamps);
         predelay.setDelay (0.0);
 
