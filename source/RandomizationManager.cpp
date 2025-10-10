@@ -116,16 +116,14 @@ void RandomizationManager::collectTargets()
 
 void RandomizationManager::applyParamChanges()
 {
-    // After randomizing all step snapshots, we need to reload the current step
-    // into APVTS for each effect so the knobs update immediately
+    // After randomizing all step snapshots, reload current step into knobs for each effect
+    // IMPORTANT: Don't call onStepButtonClicked() - it saves current knobs FIRST, overwriting our randomization!
+    // Instead, directly load snapshots into knobs
     
     if (!editor)
         return;
     
     DBG("[RAND] Reloading current steps into knobs...");
-    
-    // Trigger a reload for each effect's current step by simulating a re-click
-    // This loads the randomized snapshot into the knobs
     
     auto& router = processor.getEffectRouter();
     
@@ -137,51 +135,93 @@ void RandomizationManager::applyParamChanges()
         {
             case EffectID::SpaceDelay:
             {
-                int currentStep = processor.getSelectedStep();
-                if (currentStep >= 0 && currentStep < 16) {
-                    // Re-trigger the step button click to reload snapshot into knobs
-                    editor->onStepButtonClicked(currentStep);
-                    DBG("[RAND]   SpaceDelay step " + juce::String(currentStep) + " reloaded");
+                int step = processor.getSelectedStep();
+                if (step >= 0 && step < 16) {
+                    auto s = processor.getSafeSnapshot(step);
+                    // Load into knobs (which triggers APVTS update via attachments)
+                    if (editor->knobs[0]) editor->knobs[0]->setValue((s.delay.timeMs - 10.0f) / (2000.0f - 10.0f), juce::sendNotification);
+                    if (editor->knobs[1]) editor->knobs[1]->setValue(s.delay.feedback / 100.0f, juce::sendNotification);
+                    if (editor->knobs[2]) editor->knobs[2]->setValue(s.delay.wowDepth / 100.0f, juce::sendNotification);
+                    if (editor->knobs[3]) editor->knobs[3]->setValue((s.delay.wowRate - 0.1f) / (8.0f - 0.1f), juce::sendNotification);
+                    if (editor->knobs[4]) editor->knobs[4]->setValue(s.delay.saturation / 100.0f, juce::sendNotification);
+                    if (editor->knobs[5]) editor->knobs[5]->setValue((s.delay.highCut - 1000.0f) / (20000.0f - 1000.0f), juce::sendNotification);
+                    if (editor->knobs[6]) editor->knobs[6]->setValue((s.delay.lowCut - 20.0f) / (2000.0f - 20.0f), juce::sendNotification);
+                    if (editor->knobs[7]) editor->knobs[7]->setValue(s.delay.mix / 100.0f, juce::sendNotification);
+                    DBG("[RAND]   SpaceDelay step " + juce::String(step) + " reloaded");
                 }
                 break;
             }
             
             case EffectID::AutoPan:
             {
-                int currentStep = editor->autopanUiSelectedStep;
-                if (currentStep >= 0 && currentStep < 16) {
-                    editor->onAutoPanStepButtonClicked(currentStep);
-                    DBG("[RAND]   AutoPan step " + juce::String(currentStep) + " reloaded");
+                int step = editor->autopanUiSelectedStep;
+                if (step >= 0 && step < 16) {
+                    auto s = processor.getAutoPanSafeSnapshot(step);
+                    // Load into knobs
+                    if (editor->autopanKnobs[0]) editor->autopanKnobs[0]->setValue(s.autopan.rate, juce::sendNotification);
+                    if (editor->autopanKnobs[1]) editor->autopanKnobs[1]->setValue(s.autopan.phase, juce::sendNotification);
+                    if (editor->autopanKnobs[2]) editor->autopanKnobs[2]->setValue((float)s.autopan.waveType, juce::sendNotification);
+                    if (editor->autopanKnobs[3]) editor->autopanKnobs[3]->setValue(s.autopan.waveShape, juce::sendNotification);
+                    if (editor->autopanKnobs[4]) editor->autopanKnobs[4]->setValue(s.autopan.inverted ? 1.0f : 0.0f, juce::sendNotification);
+                    if (editor->autopanKnobs[5]) editor->autopanKnobs[5]->setValue(s.autopan.amount, juce::sendNotification);
+                    DBG("[RAND]   AutoPan step " + juce::String(step) + " reloaded");
                 }
                 break;
             }
             
             case EffectID::Dirt:
             {
-                int currentStep = editor->dirtUiSelectedStep;
-                if (currentStep >= 0 && currentStep < 16) {
-                    editor->onDirtStepButtonClicked(currentStep);
-                    DBG("[RAND]   Dirt step " + juce::String(currentStep) + " reloaded");
+                int step = editor->dirtUiSelectedStep;
+                if (step >= 0 && step < 16) {
+                    auto s = processor.getDirtSafeSnapshot(step);
+                    // Load into knobs
+                    if (editor->dirtKnobs[0]) editor->dirtKnobs[0]->setValue(s.dirt.drive, juce::sendNotification);
+                    if (editor->dirtKnobs[1]) editor->dirtKnobs[1]->setValue(s.dirt.color, juce::sendNotification);
+                    if (editor->dirtKnobs[2]) editor->dirtKnobs[2]->setValue(s.dirt.asym, juce::sendNotification);
+                    if (editor->dirtKnobs[3]) editor->dirtKnobs[3]->setValue(s.dirt.texture, juce::sendNotification);
+                    if (editor->dirtKnobs[4]) editor->dirtKnobs[4]->setValue(s.dirt.lowCut, juce::sendNotification);
+                    if (editor->dirtKnobs[5]) editor->dirtKnobs[5]->setValue(s.dirt.highCut, juce::sendNotification);
+                    if (editor->dirtKnobs[6]) editor->dirtKnobs[6]->setValue(s.dirt.tone, juce::sendNotification);
+                    if (editor->dirtKnobs[7]) editor->dirtKnobs[7]->setValue(s.dirt.mix, juce::sendNotification);
+                    DBG("[RAND]   Dirt step " + juce::String(step) + " reloaded");
                 }
                 break;
             }
             
             case EffectID::Chorus:
             {
-                int currentStep = editor->chorusUiSelectedStep;
-                if (currentStep >= 0 && currentStep < 16) {
-                    editor->onChorusStepButtonClicked(currentStep);
-                    DBG("[RAND]   Chorus step " + juce::String(currentStep) + " reloaded");
+                int step = editor->chorusUiSelectedStep;
+                if (step >= 0 && step < 16) {
+                    auto s = processor.getChorusSafeSnapshot(step);
+                    // Load into knobs
+                    if (editor->chorusKnobs[0]) editor->chorusKnobs[0]->setValue(s.chorus.delayTime, juce::sendNotification);
+                    if (editor->chorusKnobs[1]) editor->chorusKnobs[1]->setValue(s.chorus.rate, juce::sendNotification);
+                    if (editor->chorusKnobs[2]) editor->chorusKnobs[2]->setValue(s.chorus.depth, juce::sendNotification);
+                    if (editor->chorusKnobs[3]) editor->chorusKnobs[3]->setValue(s.chorus.feedback, juce::sendNotification);
+                    if (editor->chorusKnobs[4]) editor->chorusKnobs[4]->setValue(s.chorus.voices, juce::sendNotification);
+                    if (editor->chorusKnobs[5]) editor->chorusKnobs[5]->setValue(s.chorus.width, juce::sendNotification);
+                    if (editor->chorusKnobs[6]) editor->chorusKnobs[6]->setValue(s.chorus.tone, juce::sendNotification);
+                    if (editor->chorusKnobs[7]) editor->chorusKnobs[7]->setValue(s.chorus.mix, juce::sendNotification);
+                    DBG("[RAND]   Chorus step " + juce::String(step) + " reloaded");
                 }
                 break;
             }
             
             case EffectID::Reverb:
             {
-                int currentStep = editor->reverbUiSelectedStep;
-                if (currentStep >= 0 && currentStep < 16) {
-                    editor->onReverbStepButtonClicked(currentStep);
-                    DBG("[RAND]   Reverb step " + juce::String(currentStep) + " reloaded");
+                int step = editor->reverbUiSelectedStep;
+                if (step >= 0 && step < 16) {
+                    auto s = processor.getReverbSafeSnapshot(step);
+                    // Load into knobs
+                    if (editor->reverbKnobs[0]) editor->reverbKnobs[0]->setValue(s.reverb.type, juce::sendNotification); // Width
+                    if (editor->reverbKnobs[1]) editor->reverbKnobs[1]->setValue(s.reverb.size, juce::sendNotification);
+                    if (editor->reverbKnobs[2]) editor->reverbKnobs[2]->setValue(s.reverb.predelayMs, juce::sendNotification);
+                    if (editor->reverbKnobs[3]) editor->reverbKnobs[3]->setValue(s.reverb.dampHz, juce::sendNotification);
+                    if (editor->reverbKnobs[4]) editor->reverbKnobs[4]->setValue(s.reverb.diffusion, juce::sendNotification);
+                    if (editor->reverbKnobs[5]) editor->reverbKnobs[5]->setValue(s.reverb.early, juce::sendNotification);
+                    if (editor->reverbKnobs[6]) editor->reverbKnobs[6]->setValue(s.reverb.decaySec, juce::sendNotification);
+                    if (editor->reverbKnobs[7]) editor->reverbKnobs[7]->setValue(s.reverb.mix, juce::sendNotification);
+                    DBG("[RAND]   Reverb step " + juce::String(step) + " reloaded");
                 }
                 break;
             }
