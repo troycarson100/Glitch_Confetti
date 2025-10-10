@@ -6424,11 +6424,11 @@ void PluginEditor::setupGranularKnobs()
         switch (i) {
             case 0: // Size (5-200ms)
                 granularKnobs[i]->setRange(5.0, 200.0, 0.1);
-                granularKnobs[i]->setValue(40.0, juce::dontSendNotification);
+                granularKnobs[i]->setValue(80.0, juce::dontSendNotification); // Longer for smoothness
                 break;
-            case 1: // Density (1-80 Hz)
-                granularKnobs[i]->setRange(1.0, 80.0, 0.1);
-                granularKnobs[i]->setValue(20.0, juce::dontSendNotification);
+            case 1: // Density (1-40 Hz)
+                granularKnobs[i]->setRange(1.0, 40.0, 0.1); // Max 40Hz
+                granularKnobs[i]->setValue(8.0, juce::dontSendNotification); // Lower for clarity
                 break;
             case 2: // Position (0-1)
                 granularKnobs[i]->setRange(0.0, 1.0, 0.01);
@@ -6436,7 +6436,7 @@ void PluginEditor::setupGranularKnobs()
                 break;
             case 3: // Spray (0-200ms)
                 granularKnobs[i]->setRange(0.0, 200.0, 0.1);
-                granularKnobs[i]->setValue(35.0, juce::dontSendNotification);
+                granularKnobs[i]->setValue(20.0, juce::dontSendNotification); // Less spray
                 break;
             case 4: // Pitch (-24 to +24 semitones)
                 granularKnobs[i]->setRange(-24.0, 24.0, 0.01);
@@ -6444,11 +6444,11 @@ void PluginEditor::setupGranularKnobs()
                 break;
             case 5: // Random (0-1)
                 granularKnobs[i]->setRange(0.0, 1.0, 0.01);
-                granularKnobs[i]->setValue(0.25, juce::dontSendNotification);
+                granularKnobs[i]->setValue(0.15, juce::dontSendNotification); // Less chaos
                 break;
             case 6: // Texture (0-1)
                 granularKnobs[i]->setRange(0.0, 1.0, 0.01);
-                granularKnobs[i]->setValue(0.3, juce::dontSendNotification);
+                granularKnobs[i]->setValue(0.2, juce::dontSendNotification); // Smoother window
                 break;
             case 7: // Mix (0-1)
                 granularKnobs[i]->setRange(0.0, 1.0, 0.01);

@@ -168,23 +168,28 @@ void GranularEngine::process(juce::AudioBuffer<float>& buffer)
                 v.active = false;
         }
         
-        // Soft clip wet output
-        outL = std::tanh(outL * 0.8f);
-        outR = std::tanh(outR * 0.8f);
+        // Normalize and soft clip wet output
+        float gainComp = 1.0f / std::sqrt(32.0f); // Normalize for ~32 average active voices
+        outL = std::tanh(outL * gainComp * 1.5f); // Slight boost after normalization
+        outR = std::tanh(outR * gainComp * 1.5f);
         
         wet.setSample(0, n, outL);
         wet.setSample(1, n, outR);
     }
     
-    // External wet/dry mix
+    // External wet/dry mix (use proper crossfade)
     float mix = mixSmooth.getCurrentValue();
     for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
     {
+        int wetCh = juce::jmin(ch, 1);
+        auto* bufPtr = buffer.getWritePointer(ch);
+        const auto* dryPtr = dry.getReadPointer(ch);
+        const auto* wetPtr = wet.getReadPointer(wetCh);
+        
         for (int n = 0; n < numSamples; ++n)
         {
-            float dryVal = dry.getSample(ch, n);
-            float wetVal = wet.getSample(juce::jmin(ch, 1), n);
-            buffer.setSample(ch, n, dryVal * (1.0f - mix) + wetVal * mix);
+            // Pure crossfade: at mix=1.0, output is 100% wet (no dry)
+            bufPtr[n] = dryPtr[n] * (1.0f - mix) + wetPtr[n] * mix;
         }
     }
 }
@@ -201,14 +206,14 @@ void GranularEngine::spawnGrain(float baseReadPos)
     v.phase = 0.0f;
     v.readPos = baseReadPos;
     
-    // Duration with jitter
+    // Duration with jitter (musical: favor longer grains for smoothness)
     float size = sizeSmooth.getCurrentValue();
-    float sizeJitter = 1.0f + (rand01() - 0.5f) * 0.5f * currentRandomAmt; // ±25% jitter
-    v.duration = juce::jmax(128.0f, size * 0.001f * (float)sr * sizeJitter);
+    float sizeJitter = 1.0f + (rand01() - 0.5f) * 0.3f * currentRandomAmt; // ±15% jitter (less chaos)
+    v.duration = juce::jmax(256.0f, size * 0.001f * (float)sr * sizeJitter); // Min 256 samples for smoothness
     
-    // Pitch with jitter
+    // Pitch with jitter (musical: smaller jitter range)
     float pitch = pitchSmooth.getCurrentValue();
-    float pitchJitter = (rand01() - 0.5f) * 6.0f * currentRandomAmt; // ±3 semitones
+    float pitchJitter = (rand01() - 0.5f) * 2.0f * currentRandomAmt; // ±1 semitone jitter (more musical)
     v.increment = std::pow(2.0f, (pitch + pitchJitter) / 12.0f);
     
     // Random panning (subtle)

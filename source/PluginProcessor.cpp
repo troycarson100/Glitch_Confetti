@@ -214,8 +214,8 @@ juce::AudioProcessorValueTreeState::ParameterLayout PluginProcessor::createParam
     params.push_back(std::make_unique<juce::AudioParameterFloat>(
         "granTexture", "Texture", juce::NormalisableRange<float>(0.0f, 1.0f, 0.0f, 1.0f), 0.3f));
     params.push_back(std::make_unique<juce::AudioParameterFloat>(
-        "granMix", "Mix", juce::NormalisableRange<float>(0.0f, 1.0f, 0.0f, 1.0f), 0.0f)); // Start at 0% mix
-    params.push_back(std::make_unique<juce::AudioParameterBool>("granEnabled", "Granular Enabled", false)); // Start disabled to prevent lag
+        "granMix", "Mix", juce::NormalisableRange<float>(0.0f, 1.0f, 0.0f, 1.0f), 0.5f)); // Start at 50% mix
+    params.push_back(std::make_unique<juce::AudioParameterBool>("granEnabled", "Granular Enabled", true)); // Start enabled
     
     return { params.begin(), params.end() };
 }

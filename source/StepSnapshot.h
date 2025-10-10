@@ -56,13 +56,13 @@ struct StepSnapshot {
     } reverb;
     
     struct {
-        float sizeMs = 40.0f;      // 5-200 ms (grain size)
-        float densityHz = 10.0f;   // 1-40 Hz (grains per second)
+        float sizeMs = 80.0f;      // 5-200 ms (grain size) - longer for smoothness
+        float densityHz = 8.0f;    // 1-40 Hz (grains per second) - lower for clarity
         float position = 1.0f;     // 0-1 (buffer position: 0=oldest, 1=latest)
-        float sprayMs = 35.0f;     // 0-200 ms (position randomization)
+        float sprayMs = 20.0f;     // 0-200 ms (position randomization) - less spray
         float pitchSemi = 0.0f;    // -24 to +24 semitones (pitch shift)
-        float random = 0.25f;      // 0-1 (global randomization)
-        float texture = 0.3f;      // 0-1 (window morph: Hann→Blackman→Rect)
-        float mix = 0.0f;          // 0-1 (dry/wet mix) - start at 0 for safety
+        float random = 0.15f;      // 0-1 (global randomization) - less chaos
+        float texture = 0.2f;      // 0-1 (window morph: Hann→Blackman→Rect) - smoother
+        float mix = 0.5f;          // 0-1 (dry/wet mix) - start at 50%
     } granular;
 };
