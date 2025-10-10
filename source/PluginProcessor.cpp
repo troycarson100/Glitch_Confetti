@@ -264,7 +264,7 @@ void PluginProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
     autoPan.setVisualState(&panVis);
     dirt.prepare(sampleRate, samplesPerBlock); // Prepare Dirt saturation
     chorus.prepare(sampleRate, samplesPerBlock); // Prepare Chorus effect
-    hallVerb.prepare(sampleRate, 4000); // Prepare Hall Reverb (4000ms max delay)
+    hallVerb.prepare(sampleRate, 4200); // Prepare SignalSmith Hall (4200ms max delay for long tails)
     seq.prepare(sampleRate); // Initialize delay sequencer with sample rate
     autopanSeq.prepare(sampleRate); // Initialize AutoPan sequencer with sample rate
     dirtSeq.prepare(sampleRate); // Initialize Dirt sequencer with sample rate
@@ -740,8 +740,7 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                     }
                     
                     // Update reverb targets (smoothed internally)
-                    hallVerb.setParams(size, decaySec, dampHz, diffusion, early, width, predelay);
-                    hallVerb.setMix(mix);
+                    hallVerb.setParams(size, decaySec, dampHz, diffusion, early, width, predelay, mix);
                     
                     // Process in-place
                     hallVerb.processBlock(buffer);
