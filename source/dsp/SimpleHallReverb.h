@@ -136,19 +136,19 @@ struct SimpleHallReverb
             };
 
             float erL = 0.0f, erR = 0.0f;
-            // tasteful audible taps
-            erL += 0.95f * tap(0, 7.0f);
-            erR += 0.95f * tap(1, 7.0f);
-            erL += 0.80f * tap(0, 15.5f);
-            erR += 0.80f * tap(1, 16.0f);
-            erL += 0.66f * tap(0, 33.0f);
-            erR += 0.66f * tap(1, 33.0f);
+            // tasteful audible taps (reduced gains to prevent clipping)
+            erL += 0.45f * tap(0, 7.0f);
+            erR += 0.45f * tap(1, 7.0f);
+            erL += 0.35f * tap(0, 15.5f);
+            erR += 0.35f * tap(1, 16.0f);
+            erL += 0.25f * tap(0, 33.0f);
+            erR += 0.25f * tap(1, 33.0f);
 
-            // add ER presence into the wet tail
-            float wL = wet.getSample (0, n) + erGain * erL;
-            float wR = wet.getSample (1, n) + erGain * erR;
-            wet.setSample (0, n, juce::jlimit (-1.2f, 1.2f, wL));
-            wet.setSample (1, n, juce::jlimit (-1.2f, 1.2f, wR));
+            // add ER presence into the wet tail (scaled to prevent clipping)
+            float wL = wet.getSample (0, n) + erGain * erL * 0.6f;
+            float wR = wet.getSample (1, n) + erGain * erR * 0.6f;
+            wet.setSample (0, n, juce::jlimit (-0.95f, 0.95f, wL));
+            wet.setSample (1, n, juce::jlimit (-0.95f, 0.95f, wR));
 
             if (++erWrite >= erBuffer.getNumSamples()) erWrite = 0;
         }
