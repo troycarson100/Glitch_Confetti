@@ -39,6 +39,9 @@ namespace dspx
 
     // Gentle safety soft clip
     inline float softSat (float x) { return std::tanh (x * 0.8f); }
+    
+    // Safety saturation for wet output
+    inline float safetySat (float x) { return std::tanh (x * 0.7f); }
 
     // Tri-weighted crossfade weights for verbType in [0..2]
     struct TypeWeights {
@@ -81,25 +84,39 @@ struct HallReverb
         dampLpf.prepare (sr); dampLpf.setCutoff (8000.0f);
         setSize (0.7f); setDiffusion (0.7f);
         setDecayAndSize(4.0f, 0.7f); // CRITICAL: Initialize delay times and feedback values
+        
+        // Initialize smoothed delay values for click-free morphing
+        for (int i=0; i<N; ++i) { 
+            delayMsSmooth[i].reset(sr, 0.06); // ~60ms smoothing
+            delayMsSmooth[i].setCurrentAndTargetValue(delayMs[i]); 
+        }
     }
 
     void setSize (float s)      { size = juce::jlimit (0.1f, 1.5f, s); }
     void setDiffusion (float d) { diffusion = juce::jlimit (0.0f, 1.0f, d); }
     void setDampHz (float hz)   { dampLpf.setCutoff (hz); }
 
-    // RT60 mapping: feedback = exp(-3 * delay / RT60)
+    // True RT60 mapping: g = exp(-ln(1000) * D / T) = exp(-6.907755 * D / T)
     void setDecayAndSize (float decaySec, float size)
     {
         size = juce::jlimit(0.1f, 1.5f, size);
-        const float baseMs[N] = { 37.1f, 53.3f, 61.7f, 73.0f };
-        for (int i=0; i<N; ++i) 
+
+        // base delays (ms) scaled by size
+        static constexpr float baseMs[N] = { 37.1f, 53.3f, 61.7f, 73.0f };
+        for (int i = 0; i < N; ++i)
             delayMs[i] = baseMs[i] * size;
-        for (int i=0; i<N; ++i)
+
+        // true RT60 mapping (NO sampleRate terms here)
+        for (int i = 0; i < N; ++i)
         {
-            const float dS = delayMs[i] * 0.001f * (float) sampleRate;
-            fb[i] = std::exp(-3.0f * dS / (decaySec * (float) sampleRate));
-            fb[i] = juce::jlimit(0.2f, 0.995f, fb[i]);
+            const float D = delayMs[i] * 0.001f; // seconds
+            float g = std::exp(-6.907755f * (D / juce::jmax(0.2f, decaySec)));
+            fb[i] = juce::jlimit(0.2f, 0.9995f, g);
+            
+            // Update smoothed delay target for click-free morphing
+            delayMsSmooth[i].setTargetValue(delayMs[i]);
         }
+        wetTrim = 1.68f; // ≈ +4.5 dB
     }
 
     void updateParams (float size_, float diffusion_, float dampHz_)
@@ -116,15 +133,31 @@ struct HallReverb
         float y[N];
         for (int i=0; i<N; ++i)
         {
-            // Read line with cubic interp
-            float dSamp = delayMs[i] * 0.001f * (float) sampleRate;
-            float rp = (float) widx[i] - dSamp; const int Nbuf = lines[i].getNumSamples();
-            while (rp < 0.0f) rp += (float) Nbuf;
-            int idx = (int) rp; float frac = rp - (float) idx;
-            auto at=[&](int k){ return lines[i].getSample (0, (k + Nbuf) % Nbuf); };
-            float y0 = at(idx-1), y1 = at(idx), y2 = at(idx+1), y3 = at(idx+2);
-            float c0=y1, c1=0.5f*(y2-y0), c2=y0-2.5f*y1+2.0f*y2-0.5f*y3, c3=0.5f*(y3-y0)+1.5f*(y1-y2);
-            float del = ((c3*frac + c2)*frac + c1)*frac + c0;
+            // Dual-tap crossfade morph for click-free size changes
+            float msTarget = delayMs[i];
+            delayMsSmooth[i].setTargetValue(msTarget);
+            float msNow = delayMsSmooth[i].getNextValue();
+
+            // Crossfade factor based on how far from target we are
+            float xf = juce::jlimit(0.0f, 1.0f, std::abs(msTarget - msNow) / 8.0f); // within 8ms → xf→0
+            xf = 1.0f - xf; // 1 = at target
+
+            // Cubic interpolation helper
+            auto readInterp = [&](float ms){
+                float dSamp = ms * 0.001f * (float) sampleRate;
+                float rp = (float) widx[i] - dSamp;
+                const int Nbuf = lines[i].getNumSamples();
+                while (rp < 0.0f) rp += (float) Nbuf;
+                int idx = (int) rp; float frac = rp - (float) idx;
+                auto at=[&](int k){ return lines[i].getSample (0, (k + Nbuf) % Nbuf); };
+                float y0=at(idx-1), y1=at(idx), y2=at(idx+1), y3=at(idx+2);
+                float c0=y1,c1=0.5f*(y2-y0),c2=y0-2.5f*y1+2.0f*y2-0.5f*y3,c3=0.5f*(y3-y0)+1.5f*(y1-y2);
+                return ((c3*frac + c2)*frac + c1)*frac + c0;
+            };
+
+            float delNow = readInterp(msNow);
+            float delOld = readInterp(msTarget); // "other side" tap
+            float del = juce::jmap (xf, delOld, delNow); // short morph
 
             // Diffusion via allpass with slight LFO mod
             float lfo = std::sin (juce::MathConstants<float>::twoPi * lfoPhase[i]); // slow sine
@@ -151,9 +184,9 @@ struct HallReverb
             if (++widx[i] >= lines[i].getNumSamples()) widx[i] = 0;
         }
 
-        // Stereo out: simple pairings for width with +3dB wet makeup
-        outL = 1.4142f * 0.5f * (y[0] + y[2]); // +3 dB ≈ *1.414
-        outR = 1.4142f * 0.5f * (y[1] + y[3]);
+        // Stereo out: simple pairings for width with +4.5dB wet makeup and safety limiting
+        outL = dspx::safetySat(wetTrim * 0.5f * (y[0] + y[2]));
+        outR = dspx::safetySat(wetTrim * 0.5f * (y[1] + y[3]));
     }
 
     double sampleRate { 44100.0 };
@@ -161,6 +194,8 @@ struct HallReverb
     float delayMs[N] {}; float fb[N] {}; float size{0.7f}, diffusion{0.7f};
     juce::dsp::IIR::Filter<float> ap[N]; float lfoPhase[N] {};
     dspx::OnePoleLPF dampLpf;
+    float wetTrim { 1.68f }; // +4.5 dB wet makeup
+    juce::SmoothedValue<float> delayMsSmooth[N]; // for click-free size morph
 };
 
 //===================== Room: Early reflections + compact tail =====================
@@ -231,9 +266,10 @@ struct RoomReverb
         float hallL=0, hallR=0;
         hall.processSample (pdL, pdR, hallL, hallR);
 
-        // +3dB wet makeup and boost early reflections by 1.2x
-        outL = 1.4142f * (earlyLevel_ * 1.2f * erL + (1.0f - earlyLevel_) * hallL);
-        outR = 1.4142f * (earlyLevel_ * 1.2f * erR + (1.0f - earlyLevel_) * hallR);
+        // Apply global ER gain and +4.5dB wet makeup with safety limiting
+        erL *= earlyGlobalGain; erR *= earlyGlobalGain;
+        outL = dspx::safetySat(wetTrim * (earlyLevel_ * erL + (1.0f - earlyLevel_) * hallL));
+        outR = dspx::safetySat(wetTrim * (earlyLevel_ * erR + (1.0f - earlyLevel_) * hallR));
     }
 
     double sampleRate { 44100.0 };
@@ -242,34 +278,36 @@ struct RoomReverb
     std::vector<std::pair<float,float>> taps; // {ms, gain}
     juce::AudioBuffer<float> earlyBuf; int widx { 0 };
     float size_ { 0.7f }, earlyLevel_ { 0.55f }; // Boosted default
+    float earlyGlobalGain { 1.35f }; // Boost ERs globally
+    float wetTrim { 1.68f }; // +4.5 dB wet makeup
 };
 
 //===================== Shimmer: Hall tail + pitch-shifted feedback =====================
-struct OctaveUpGrains // 3-grain Hann-window shifter with 50% overlap
+struct OctaveUpGrains4 // 4-grain Hann-window shifter with 75% overlap
 {
     void prepare (double sr, int maxMs)
     {
         sampleRate = sr;
         int N = (int) std::ceil(sr * maxMs / 1000.0) + 8;
         buf.setSize(1, N); buf.clear(); widx = 0;
-        setGrainMs(60.0f); // longer grains reduce glitching
-        shiftRatio = 2.0f; // +12 semitones
-        for (int g=0; g<3; ++g) { phase[g] = g / 3.0f; }
+        setGrainMs(80.0f); // 80ms reduces graininess
+        for (int g=0; g<4; ++g) phase[g] = g / 4.0f;
+        shiftRatio = 2.0f; // +12
     }
     void setGrainMs (float ms)
     {
-        grainLen = juce::jlimit(16, (int) std::round(ms * sampleRate * 0.001f), 8192);
+        grainLen = juce::jlimit(32, (int) std::round(ms * sampleRate * 0.001f), 16384);
     }
     inline float process (float x)
     {
         buf.setSample(0, widx, x);
         float y=0.0f;
-        for (int g=0; g<3; ++g)
+        for (int g=0; g<4; ++g)
         {
-            phase[g] += (shiftRatio - 1.0f) * (grainLen / (float) sampleRate);
+            // 75% overlap ⇒ phase increment steeper:
+            phase[g] += (shiftRatio - 1.0f) * (grainLen / (float) sampleRate) * 1.33f;
             if (phase[g] >= 1.0f) phase[g] -= 1.0f;
 
-            // Hann window
             float win = 0.5f - 0.5f * std::cos(juce::MathConstants<float>::twoPi * phase[g]);
 
             float readBack = phase[g] * (float) grainLen;
@@ -286,10 +324,10 @@ struct OctaveUpGrains // 3-grain Hann-window shifter with 50% overlap
             y += win * s;
         }
         if (++widx >= buf.getNumSamples()) widx = 0;
-        return y * (2.0f / 3.0f); // normalize 3 grains
+        return y * 0.5f; // normalize
     }
-    juce::AudioBuffer<float> buf; int widx{0}, grainLen{2048}; double sampleRate{44100.0};
-    float phase[3]{0,0,0}, shiftRatio{2.0f};
+    juce::AudioBuffer<float> buf; int widx{0}, grainLen{4096}; double sampleRate{44100.0};
+    float phase[4]{0,0,0,0}, shiftRatio{2.0f};
 };
 
 struct ShimmerReverb
@@ -298,8 +336,7 @@ struct ShimmerReverb
     {
         sampleRate = sr;
         hall.prepare (sr, maxMs);
-        shifterL.prepare(sr, 1500);
-        shifterR.prepare(sr, 1500);
+        shL.prepare(sr, 2000); shR.prepare(sr, 2000);
         predelay.prepare(sr, 200);
         // Feedback filters
         lp.setCutoff(9000.0f); lp.prepare(sr);
@@ -307,7 +344,7 @@ struct ShimmerReverb
         // Stable feedback amount tuned for lush but safe bloom
         fbAmt.reset(sr, 0.1);
         fbAmt.setCurrentAndTargetValue(0.42f); // ~42%
-        wetTrim = 1.4142f; // +3 dB
+        wetTrim = 1.68f; // +4.5 dB
     }
 
     void setParams (float decaySec, float size, float dampHz, float diffusion, float predelayMs)
@@ -329,26 +366,26 @@ struct ShimmerReverb
         float hL=0, hR=0;
         hall.processSample(pdL + fbL, pdR + fbR, hL, hR);
 
-        // pitch-shift hall out, filter, feed back
-        float sL = shifterL.process(hL);
-        float sR = shifterR.process(hR);
+        float sL = shL.process(hL);
+        float sR = shR.process(hR);
 
-        float fbl = hp.process(lp.process(sL));
-        float fbr = hp.process(lp.process(sR));
+        // tone-shape feedback to avoid hash
+        float fL = hp.process(lp.process(sL));
+        float fR = hp.process(lp.process(sR));
 
-        const float g = fbAmt.getNextValue(); // smoothed
-        fbL = g * fbl;
-        fbR = g * fbr;
+        const float g = fbAmt.getNextValue();
+        fbL = g * fL;
+        fbR = g * fR;
 
-        // wet makeup
-        outL = wetTrim * hL;
-        outR = wetTrim * hR;
+        outL = dspx::safetySat (wetTrim * hL);
+        outR = dspx::safetySat (wetTrim * hR);
     }
 
     double sampleRate{44100.0};
-    HallReverb hall; dspx::PreDelay predelay; OctaveUpGrains shifterL, shifterR;
+    HallReverb hall; dspx::PreDelay predelay;
+    OctaveUpGrains4 shL, shR;
     dspx::OnePoleLPF lp, hp; juce::SmoothedValue<float> fbAmt;
-    float wetTrim{1.4142f}, fbL{0.0f}, fbR{0.0f};
+    float wetTrim{1.68f}, fbL{0.0f}, fbR{0.0f};
 };
 
 //===================== Mixer wrapper for all three =====================
