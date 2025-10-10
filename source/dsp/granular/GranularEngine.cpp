@@ -74,19 +74,20 @@ void GranularEngine::process(juce::AudioBuffer<float>& buffer)
     if (numSamples == 0 || ringSize == 0)
         return;
     
-    // Get current mix to check if we should process at all
+    // Get target mix to check if we should process at all
+    float targetMix = mixSmooth.getTargetValue();
     float currentMix = mixSmooth.getCurrentValue();
     
-    // Skip expensive processing if mix is essentially zero
-    if (currentMix < 0.001f)
+    // Skip expensive processing if mix is essentially zero and not ramping up
+    if (currentMix < 0.001f && targetMix < 0.001f)
     {
-        // Just advance the smoothed values and return
+        // Just advance the smoothed values and return dry signal
         for (int n = 0; n < numSamples; ++n)
         {
-            sizeSmooth.getNextValue();
-            pitchSmooth.getNextValue();
-            densitySmooth.getNextValue();
-            mixSmooth.getNextValue();
+            sizeSmooth.skip(1);
+            pitchSmooth.skip(1);
+            densitySmooth.skip(1);
+            mixSmooth.skip(1);
         }
         return;
     }
@@ -168,10 +169,10 @@ void GranularEngine::process(juce::AudioBuffer<float>& buffer)
                 v.active = false;
         }
         
-        // Normalize and soft clip wet output
-        float gainComp = 1.0f / std::sqrt(32.0f); // Normalize for ~32 average active voices
-        outL = std::tanh(outL * gainComp * 1.5f); // Slight boost after normalization
-        outR = std::tanh(outR * gainComp * 1.5f);
+        // Normalize and boost wet output (make it audible and musical)
+        float gainComp = 1.0f / std::sqrt(16.0f); // Normalize assuming ~16 average active voices
+        outL = std::tanh(outL * gainComp * 3.0f); // Strong boost for audibility
+        outR = std::tanh(outR * gainComp * 3.0f);
         
         wet.setSample(0, n, outL);
         wet.setSample(1, n, outR);
