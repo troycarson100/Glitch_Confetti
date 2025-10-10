@@ -42,12 +42,19 @@ PluginProcessor::PluginProcessor()
     reverbSeq.divisionIndex.store(5); // 1/8 default (index 5 = item ID 6)
     reverbSeq.playingStep.store(0);
     
+    // Initialize Granular sequencer state (starts enabled)
+    granularSeq.enabled.store(true); // Start enabled so it auto-activates on play
+    granularSeq.stepsUsed.store(16);
+    granularSeq.divisionIndex.store(5); // 1/8 default (index 5 = item ID 6)
+    granularSeq.playingStep.store(0);
+    
     // Initialize UI state
     uiSelectedStep.store(0);
     autopanUiSelectedStep.store(0);
     dirtUiSelectedStep.store(0);
     chorusUiSelectedStep.store(0);
     reverbUiSelectedStep.store(0);
+    granularUiSelectedStep.store(0);
     
     // Initialize transport cache
     transportCache.valid.store(false);
@@ -290,6 +297,7 @@ void PluginProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
     dirtSeq.prepare(sampleRate); // Initialize Dirt sequencer with sample rate
     chorusSeq.prepare(sampleRate); // Initialize Chorus sequencer with sample rate
     reverbSeq.prepare(sampleRate); // Initialize Reverb sequencer with sample rate
+    granularSeq.prepare(sampleRate); // Initialize Granular sequencer with sample rate
     
     // Prepare output visualizer buffer (store ~1 second of downsampled audio)
     const int bufferSize = (int)(sampleRate / downsampleRate); // ~1 second at downsample rate
@@ -426,6 +434,12 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                 if (reverbSeq.enabled.load()) {
                     reverbSeq.active.store(true);  // Activate Reverb sequencer
                     DBG("[REVERB SEQ] ✓ Activated on play edge");
+                }
+                
+                // Granular sequencer activates if enabled (independent of followHost)
+                if (granularSeq.enabled.load()) {
+                    granularSeq.active.store(true);  // Activate Granular sequencer
+                    DBG("[GRANULAR SEQ] ✓ Activated on play edge");
                 }
                 
                 DBG("[SEQ] Play edge detected");
@@ -1456,6 +1470,55 @@ void PluginProcessor::updateReverbCurrentStepSnapshot(int knobIndex, float value
             break;
         case 7: // Mix
             reverbStepSnapshots[currentStep].reverb.mix = value;
+            break;
+    }
+}
+
+StepSnapshot PluginProcessor::getGranularSafeSnapshot(int step) const
+{
+    if (step >= 0 && step < 16) {
+        return granularStepSnapshots[step];
+    }
+    return granularStepSnapshots[0];
+}
+
+void PluginProcessor::setGranularStepSnapshot(int step, const StepSnapshot& snapshot) noexcept
+{
+    if (step >= 0 && step < 16) {
+        granularStepSnapshots[step] = snapshot;
+    }
+}
+
+void PluginProcessor::updateGranularCurrentStepSnapshot(int knobIndex, float value)
+{
+    int currentStep = granularUiSelectedStep.load();
+    if (currentStep < 0 || currentStep >= 16) return;
+    
+    // Update the specific Granular parameter in the snapshot
+    switch (knobIndex) {
+        case 0: // Size
+            granularStepSnapshots[currentStep].granular.sizeMs = value;
+            break;
+        case 1: // Density
+            granularStepSnapshots[currentStep].granular.densityHz = value;
+            break;
+        case 2: // Position
+            granularStepSnapshots[currentStep].granular.position = value;
+            break;
+        case 3: // Spray
+            granularStepSnapshots[currentStep].granular.sprayMs = value;
+            break;
+        case 4: // Pitch
+            granularStepSnapshots[currentStep].granular.pitchSemi = value;
+            break;
+        case 5: // Random
+            granularStepSnapshots[currentStep].granular.random = value;
+            break;
+        case 6: // Texture
+            granularStepSnapshots[currentStep].granular.texture = value;
+            break;
+        case 7: // Mix
+            granularStepSnapshots[currentStep].granular.mix = value;
             break;
     }
 }

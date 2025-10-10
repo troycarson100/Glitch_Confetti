@@ -116,8 +116,8 @@ void PageTargetRegistry::buildRegistry()
             "granTexture",    // Knob 6: Texture
             "granMix"         // Knob 7: Mix
         };
-        targets.sequencerStepsUsedKey = ""; // No sequencer for Granular (live input)
-        targets.maxSteps = 0; // No steps
+        targets.sequencerStepsUsedKey = "granularStepsUsed";
+        targets.maxSteps = 16;
         registry[EffectID::Granular] = targets;
     }
 }

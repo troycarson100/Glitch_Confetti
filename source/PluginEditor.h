@@ -438,7 +438,7 @@ public:
     std::unique_ptr<juce::Label> reverbAllStepsLabel;
     bool reverbAllStepsEnabled = false;
     
-    // Granular page components (no sequencer - live input only)
+    // Granular page components (with sequencer)
     std::array<std::unique_ptr<CustomKnob>, 8> granularKnobs;
     std::array<std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>, 8> granularAttachments;
     std::array<std::unique_ptr<juce::Label>, 8> granularKnobLabels;
@@ -453,6 +453,22 @@ public:
     std::unique_ptr<CustomDiceButton> granularDiceButton;
     std::unique_ptr<juce::DrawableButton> granularFxPowerButton;
     bool granularFxAreaEnabled = true;
+    
+    // Granular step sequencer components
+    std::array<std::unique_ptr<StepButton>, 16> granularStepButtons;
+    int granularUiSelectedStep = 0;
+    std::unique_ptr<juce::TextEditor> granularStepAmountLabel;
+    std::unique_ptr<juce::ComboBox> granularRateDropdown;
+    std::unique_ptr<CircularToggleButton> granularStdToggle;
+    std::unique_ptr<juce::Label> granularStepTitle;
+    std::unique_ptr<CustomDiceButton> granularStepDiceButton;
+    std::unique_ptr<juce::DrawableButton> granularStepPowerButton;
+    bool granularStepAreaEnabled = true;
+    
+    // Granular All Steps toggle
+    std::unique_ptr<AllStepsToggleButton> granularAllStepsToggle;
+    std::unique_ptr<juce::Label> granularAllStepsLabel;
+    bool granularAllStepsEnabled = false;
     
     std::vector<juce::Component*> granularGroup; // All Granular UI components for visibility toggling
     
@@ -533,12 +549,18 @@ public:
         void onReverbStepButtonClicked(int stepIndex);
         void updateReverbSequencerUI();
         
-        // Granular page setup methods (no sequencer)
+        // Granular page setup methods
         void setupGranularKnobs();
         void setupGranularEffectsArea();
+        void setupGranularSequencerArea();
+        void setupGranularAllStepsToggle();
         void updateGranularFxAreaVisibility();
+        void updateGranularStepAreaVisibility();
         void randomizeGranularKnobValues();
         void randomizeIndividualGranularKnob(int knobIndex);
+        void updateGranularParameterFromKnob(int knobIndex);
+        void onGranularStepButtonClicked(int stepIndex);
+        void updateGranularSequencerUI();
         
         void togglePlayback();
         

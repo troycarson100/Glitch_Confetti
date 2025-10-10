@@ -227,6 +227,22 @@ public:
     void setReverbStepSnapshot(int step, const StepSnapshot& snapshot) noexcept;
     void updateReverbCurrentStepSnapshot(int knobIndex, float value);
     
+    // Granular sequencer accessors
+    const SeqState& getGranularSeqState() const { return granularSeq; }
+    int getGranularPlayingStep() const noexcept { return granularSeq.playingStep.load(); }
+    int getGranularCurrentStep() const noexcept { return granularSeq.currentStep.load(); }
+    void setGranularSelectedStep(int step) noexcept { granularUiSelectedStep.store(step); }
+    void setGranularSequencerEnabled(bool enabled) noexcept {
+        granularSeq.enabled.store(enabled);
+        granularSeq.active.store(enabled);
+    }
+    void setGranularStepsUsed(int steps) noexcept { granularSeq.stepsUsed.store(juce::jlimit(1, 16, steps)); }
+    void setGranularDivisionIndex(int idx) noexcept { granularSeq.divisionIndex.store(juce::jlimit(0, 10, idx)); }
+    
+    StepSnapshot getGranularSafeSnapshot(int step) const;
+    void setGranularStepSnapshot(int step, const StepSnapshot& snapshot) noexcept;
+    void updateGranularCurrentStepSnapshot(int knobIndex, float value);
+    
     void setSequencerEnabled(bool enabled) noexcept { 
         seq.enabled.store(enabled); 
         // Only set active if enabled, otherwise leave active state for transport watcher
@@ -296,12 +312,17 @@ private:
     SeqState reverbSeq;
     std::atomic<int> reverbUiSelectedStep { 0 };  // Reverb editor's selected step
     
+    // Granular Sequencer State (independent from all other sequencers)
+    SeqState granularSeq;
+    std::atomic<int> granularUiSelectedStep { 0 };  // Granular editor's selected step
+    
     // Step snapshots storage (shared structure, independent sequencing)
     std::array<StepSnapshot, 16> stepSnapshots;
     std::array<StepSnapshot, 16> autopanStepSnapshots;
     std::array<StepSnapshot, 16> dirtStepSnapshots;
     std::array<StepSnapshot, 16> chorusStepSnapshots;
     std::array<StepSnapshot, 16> reverbStepSnapshots;
+    std::array<StepSnapshot, 16> granularStepSnapshots;
     
     // Level tracking for meters
     std::atomic<float> inputLevel { -60.0f };

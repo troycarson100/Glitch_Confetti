@@ -127,10 +127,16 @@ PluginEditor::PluginEditor (PluginProcessor& p)
         processorRef.setReverbSequencerEnabled(reverbStepAreaEnabled);
         DBG("[UI] Initial Reverb sequencer state synced: enabled=" + juce::String(reverbStepAreaEnabled ? 1 : 0));
         
-        // Setup Granular page (no sequencer - live input only)
+        // Setup Granular page (with sequencer)
         DBG("[UI] Setting up Granular page...");
         setupGranularKnobs();
         setupGranularEffectsArea();
+        setupGranularSequencerArea();
+        setupGranularAllStepsToggle();
+        
+        // Sync Granular sequencer state with processor on startup
+        processorRef.setGranularSequencerEnabled(granularStepAreaEnabled);
+        DBG("[UI] Initial Granular sequencer state synced: enabled=" + juce::String(granularStepAreaEnabled ? 1 : 0));
         
         // Initialize Granular FX power button state from parameter
         auto* granEnabledParam = processorRef.getAPVTS().getRawParameterValue("granEnabled");
@@ -6450,24 +6456,48 @@ void PluginEditor::setupGranularKnobs()
                 break;
         }
         
-        // Add value change callback to update value label
+        // Add value change callback to update value label and save to snapshot
         granularKnobs[i]->onValueChange = [this, i]() {
-            if (granularKnobs[i] && granularValueLabels[i]) {
-                float value = granularKnobs[i]->getValue();
-                juce::String valueText;
+            if (granularKnobs[i] != nullptr) {
+                updateGranularParameterFromKnob(i);
                 
-                switch (i) {
-                    case 0: valueText = juce::String(value, 1) + "ms"; break; // Size
-                    case 1: valueText = juce::String(value, 1) + "Hz"; break; // Density
-                    case 2: valueText = juce::String(int(value * 100)) + "%"; break; // Position
-                    case 3: valueText = juce::String(value, 1) + "ms"; break; // Spray
-                    case 4: valueText = juce::String(value, 1) + "st"; break; // Pitch (semitones)
-                    case 5: valueText = juce::String(int(value * 100)) + "%"; break; // Random
-                    case 6: valueText = juce::String(int(value * 100)) + "%"; break; // Texture
-                    case 7: valueText = juce::String(int(value * 100)) + "%"; break; // Mix
+                if (granularAllStepsEnabled) {
+                    // Update all steps with current knob value
+                    for (int step = 0; step < 16; ++step) {
+                        auto snapshot = processorRef.getGranularSafeSnapshot(step);
+                        float value = granularKnobs[i]->getValue();
+                        switch (i) {
+                            case 0: snapshot.granular.sizeMs = value; break;
+                            case 1: snapshot.granular.densityHz = value; break;
+                            case 2: snapshot.granular.position = value; break;
+                            case 3: snapshot.granular.sprayMs = value; break;
+                            case 4: snapshot.granular.pitchSemi = value; break;
+                            case 5: snapshot.granular.random = value; break;
+                            case 6: snapshot.granular.texture = value; break;
+                            case 7: snapshot.granular.mix = value; break;
+                        }
+                        processorRef.setGranularStepSnapshot(step, snapshot);
+                    }
                 }
                 
-                granularValueLabels[i]->setText(valueText, juce::dontSendNotification);
+                // Update value label
+                if (granularValueLabels[i]) {
+                    float value = granularKnobs[i]->getValue();
+                    juce::String valueText;
+                    
+                    switch (i) {
+                        case 0: valueText = juce::String(value, 1) + "ms"; break; // Size
+                        case 1: valueText = juce::String(value, 1) + "Hz"; break; // Density
+                        case 2: valueText = juce::String(int(value * 100)) + "%"; break; // Position
+                        case 3: valueText = juce::String(value, 1) + "ms"; break; // Spray
+                        case 4: valueText = juce::String(value, 1) + "st"; break; // Pitch (semitones)
+                        case 5: valueText = juce::String(int(value * 100)) + "%"; break; // Random
+                        case 6: valueText = juce::String(int(value * 100)) + "%"; break; // Texture
+                        case 7: valueText = juce::String(int(value * 100)) + "%"; break; // Mix
+                    }
+                    
+                    granularValueLabels[i]->setText(valueText, juce::dontSendNotification);
+                }
             }
         };
 
@@ -6697,5 +6727,336 @@ void PluginEditor::randomizeIndividualGranularKnob(int knobIndex)
     }
     
     granularKnobs[knobIndex]->setValue(randomValue, juce::sendNotification);
+}
+
+
+void PluginEditor::setupGranularSequencerArea()
+{
+    DBG("[UI] Setting up Granular sequencer area...");
+    
+    auto sequencerArea = juce::Rectangle<int>(25, 374, 413, 140); // EXACT same as Reverb/Dirt/Chorus
+    
+    // Create step buttons (16 buttons in 2x8 grid)
+    const int buttonSize = 44;
+    const int buttonSpacing = 4;
+    const int startX = sequencerArea.getX() + 10;
+    const int startY = sequencerArea.getY() + 45;
+    
+    for (int i = 0; i < 16; ++i)
+    {
+        granularStepButtons[i] = std::make_unique<StepButton>(i);
+        addAndMakeVisible(granularStepButtons[i].get());
+        granularStepButtons[i]->setVisible(false);
+        
+        // 2 rows of 8 buttons
+        int x = startX + (i % 8) * (buttonSize + buttonSpacing);
+        int y = startY + (i / 8) * (buttonSize + buttonSpacing);
+        
+        granularStepButtons[i]->setBounds(x, y, buttonSize, buttonSize);
+        
+        if (assets.stepActive != nullptr) {
+            granularStepButtons[i]->setActiveImage(assets.stepActive->createCopy());
+        }
+        if (assets.stepInactive != nullptr) {
+            granularStepButtons[i]->setInactiveImage(assets.stepInactive->createCopy());
+        }
+        
+        granularStepButtons[i]->onClick = [this, i]() { onGranularStepButtonClicked(i); };
+    }
+    
+    // Step amount label (TextEditor)
+    granularStepAmountLabel = std::make_unique<juce::TextEditor>();
+    granularStepAmountLabel->setText("16");
+    granularStepAmountLabel->setFont(juce::Font(16.0f, juce::Font::bold));
+    granularStepAmountLabel->setColour(juce::TextEditor::textColourId, juce::Colours::white);
+    granularStepAmountLabel->setColour(juce::TextEditor::backgroundColourId, juce::Colours::transparentBlack);
+    granularStepAmountLabel->setColour(juce::TextEditor::outlineColourId, juce::Colours::white);
+    granularStepAmountLabel->setColour(juce::TextEditor::focusedOutlineColourId, juce::Colours::white);
+    granularStepAmountLabel->setJustification(juce::Justification::centred);
+    granularStepAmountLabel->setBorder(juce::BorderSize<int>(2));
+    granularStepAmountLabel->setIndents(0, 0);
+    granularStepAmountLabel->setInputRestrictions(2, "0123456789");
+    granularStepAmountLabel->setWantsKeyboardFocus(true);
+    granularStepAmountLabel->setMouseClickGrabsKeyboardFocus(true);
+    granularStepAmountLabel->setCaretVisible(true);
+    granularStepAmountLabel->setPopupMenuEnabled(false);
+    granularStepAmountLabel->setScrollbarsShown(false);
+    granularStepAmountLabel->setMultiLine(false);
+    granularStepAmountLabel->setReturnKeyStartsNewLine(false);
+    granularStepAmountLabel->setInterceptsMouseClicks(true, false);
+    granularStepAmountLabel->setAlwaysOnTop(true);
+    
+    granularStepAmountLabel->onReturnKey = [this]() {
+        int value = juce::jlimit(1, 16, granularStepAmountLabel->getText().getIntValue());
+        processorRef.setGranularStepsUsed(value);
+        granularStepAmountLabel->setText(juce::String(value), false);
+        updateGranularSequencerUI();
+        granularStepAmountLabel->giveAwayKeyboardFocus();
+    };
+    
+    granularStepAmountLabel->onFocusLost = [this]() {
+        int value = juce::jlimit(1, 16, granularStepAmountLabel->getText().getIntValue());
+        processorRef.setGranularStepsUsed(value);
+        granularStepAmountLabel->setText(juce::String(value), false);
+        updateGranularSequencerUI();
+    };
+    
+    granularStepAmountLabel->onTextChange = [this]() {
+        // Empty - validation happens on return/focus lost
+    };
+    
+    addAndMakeVisible(granularStepAmountLabel.get());
+    granularStepAmountLabel->setVisible(false);
+    granularStepAmountLabel->setBounds(sequencerArea.getX() + 15, sequencerArea.getY() + 9, 34, 24);
+    
+    // Rate dropdown
+    granularRateDropdown = std::make_unique<juce::ComboBox>("GranularRate");
+    granularRateDropdown->addItem("1/32", 1);
+    granularRateDropdown->addItem("1/16T", 2);
+    granularRateDropdown->addItem("1/16", 3);
+    granularRateDropdown->addItem("1/8T", 4);
+    granularRateDropdown->addItem("1/16D", 5);
+    granularRateDropdown->addItem("1/8", 6);
+    granularRateDropdown->addItem("1/4T", 7);
+    granularRateDropdown->addItem("1/8D", 8);
+    granularRateDropdown->addItem("1/4", 9);
+    granularRateDropdown->addItem("1/2T", 10);
+    granularRateDropdown->addItem("1/4D", 11);
+    granularRateDropdown->setSelectedId(6);
+    
+    granularRateDropdown->setColour(juce::ComboBox::backgroundColourId, juce::Colours::transparentBlack);
+    granularRateDropdown->setColour(juce::ComboBox::textColourId, juce::Colours::white);
+    granularRateDropdown->setColour(juce::ComboBox::arrowColourId, juce::Colours::white);
+    granularRateDropdown->setColour(juce::ComboBox::outlineColourId, juce::Colours::transparentBlack);
+    granularRateDropdown->setColour(juce::ComboBox::buttonColourId, juce::Colours::transparentBlack);
+    granularRateDropdown->setJustificationType(juce::Justification::centred);
+    
+    granularRateDropdown->onChange = [this]() {
+        int divIndex = granularRateDropdown->getSelectedId() - 1;
+        processorRef.setGranularDivisionIndex(divIndex);
+    };
+    
+    addAndMakeVisible(granularRateDropdown.get());
+    granularRateDropdown->setVisible(false);
+    granularRateDropdown->setBounds(sequencerArea.getX() + 60, sequencerArea.getY() + 9, 60, 24);
+    
+    // STD toggle button
+    granularStdToggle = std::make_unique<CircularToggleButton>();
+    addAndMakeVisible(granularStdToggle.get());
+    granularStdToggle->setVisible(false);
+    granularStdToggle->setBounds(sequencerArea.getX() + 130, sequencerArea.getY() + 9, 24, 24);
+    
+    // STEP title
+    granularStepTitle = std::make_unique<juce::Label>();
+    granularStepTitle->setText("STEP", juce::dontSendNotification);
+    granularStepTitle->setFont(juce::Font(27.648f, juce::Font::bold));
+    granularStepTitle->setColour(juce::Label::textColourId, juce::Colours::white);
+    granularStepTitle->setJustificationType(juce::Justification::centredLeft);
+    addAndMakeVisible(granularStepTitle.get());
+    granularStepTitle->setVisible(false);
+    granularStepTitle->setBounds(sequencerArea.getX() + 165, sequencerArea.getY() + 5, 80, 30);
+    
+    // Step dice button
+    granularStepDiceButton = std::make_unique<CustomDiceButton>();
+    addAndMakeVisible(granularStepDiceButton.get());
+    granularStepDiceButton->setVisible(false);
+    
+    if (assets.diceLarge != nullptr) {
+        granularStepDiceButton->setDiceImage(assets.diceLarge->createCopy());
+    }
+    
+    const int diceSize = 32;
+    granularStepDiceButton->setBounds(sequencerArea.getX() + 240, sequencerArea.getY() + 5, diceSize, diceSize);
+    
+    granularStepDiceButton->onClick = [this]() {
+        DBG("[UI] Granular step dice clicked - randomizing all steps");
+        for (int step = 0; step < 16; ++step) {
+            auto snapshot = processorRef.getGranularSafeSnapshot(step);
+            juce::Random& rng = juce::Random::getSystemRandom();
+            
+            snapshot.granular.sizeMs = 5.0f + rng.nextFloat() * 195.0f;
+            snapshot.granular.densityHz = 1.0f + rng.nextFloat() * 39.0f;
+            snapshot.granular.position = rng.nextFloat();
+            snapshot.granular.sprayMs = rng.nextFloat() * 200.0f;
+            snapshot.granular.pitchSemi = -24.0f + rng.nextFloat() * 48.0f;
+            snapshot.granular.random = rng.nextFloat();
+            snapshot.granular.texture = rng.nextFloat();
+            snapshot.granular.mix = rng.nextFloat();
+            
+            processorRef.setGranularStepSnapshot(step, snapshot);
+        }
+        updateGranularSequencerUI();
+    };
+    
+    // Step power button
+    granularStepPowerButton = std::make_unique<juce::DrawableButton>("granularStepPower", juce::DrawableButton::ButtonStyle::ImageFitted);
+    addAndMakeVisible(granularStepPowerButton.get());
+    granularStepPowerButton->setVisible(false);
+    
+    const int stepPowerSize = 46;
+    granularStepPowerButton->setBounds(
+        sequencerArea.getX() + sequencerArea.getWidth() - stepPowerSize - 8 + 5,
+        sequencerArea.getY() + 6 - 20 + 4,
+        stepPowerSize, stepPowerSize
+    );
+    
+    granularStepPowerButton->setColour(juce::DrawableButton::backgroundColourId, juce::Colours::transparentBlack);
+    granularStepPowerButton->setColour(juce::DrawableButton::backgroundOnColourId, juce::Colours::transparentBlack);
+    
+    if (assets.stepPowerOn != nullptr) {
+        granularStepPowerButton->setImages(assets.stepPowerOn->createCopy().get());
+    }
+    
+    granularStepPowerButton->setClickingTogglesState(true);
+    granularStepPowerButton->setToggleState(granularStepAreaEnabled, juce::dontSendNotification);
+    
+    granularStepPowerButton->onClick = [this]() {
+        granularStepAreaEnabled = granularStepPowerButton->getToggleState();
+        processorRef.setGranularSequencerEnabled(granularStepAreaEnabled);
+        updateGranularStepAreaVisibility();
+        repaint();
+    };
+    
+    // Add sequencer components to granularGroup
+    for (int i = 0; i < 16; ++i) {
+        if (granularStepButtons[i]) granularGroup.push_back(granularStepButtons[i].get());
+    }
+    if (granularStepAmountLabel) granularGroup.push_back(granularStepAmountLabel.get());
+    if (granularRateDropdown) granularGroup.push_back(granularRateDropdown.get());
+    if (granularStdToggle) granularGroup.push_back(granularStdToggle.get());
+    if (granularStepTitle) granularGroup.push_back(granularStepTitle.get());
+    if (granularStepDiceButton) granularGroup.push_back(granularStepDiceButton.get());
+    if (granularStepPowerButton) granularGroup.push_back(granularStepPowerButton.get());
+    
+    DBG("[UI] Granular sequencer area setup complete");
+}
+
+void PluginEditor::setupGranularAllStepsToggle()
+{
+    DBG("[UI] Setting up Granular All Steps toggle...");
+    
+    auto sequencerArea = juce::Rectangle<int>(25, 374, 413, 140);
+    
+    granularAllStepsToggle = std::make_unique<AllStepsToggleButton>();
+    addAndMakeVisible(granularAllStepsToggle.get());
+    granularAllStepsToggle->setVisible(false);
+    
+    if (assets.stepTopInactive && assets.stepTopActive) {
+        granularAllStepsToggle->setImages(assets.stepTopInactive->createCopy(), assets.stepTopActive->createCopy());
+    }
+    
+    granularAllStepsToggle->setBounds(sequencerArea.getX() + 280, sequencerArea.getY() + 7, 28, 28);
+    granularAllStepsToggle->setToggleState(false, juce::dontSendNotification);
+    
+    granularAllStepsToggle->onClick = [this]() {
+        granularAllStepsEnabled = granularAllStepsToggle->getToggleState();
+        DBG("[UI] Granular All Steps: " << (granularAllStepsEnabled ? "ON" : "OFF"));
+        
+        if (granularAllStepsLabel) {
+            granularAllStepsLabel->setAlpha(granularAllStepsEnabled ? 1.0f : 0.5f);
+        }
+        
+        if (granularAllStepsEnabled) {
+            for (int step = 0; step < 16; ++step) {
+                auto snapshot = processorRef.getGranularSafeSnapshot(step);
+                juce::Random& rng = juce::Random::getSystemRandom();
+                
+                snapshot.granular.sizeMs = 5.0f + rng.nextFloat() * 195.0f;
+                snapshot.granular.densityHz = 1.0f + rng.nextFloat() * 39.0f;
+                snapshot.granular.position = rng.nextFloat();
+                snapshot.granular.sprayMs = rng.nextFloat() * 200.0f;
+                snapshot.granular.pitchSemi = -24.0f + rng.nextFloat() * 48.0f;
+                snapshot.granular.random = rng.nextFloat();
+                snapshot.granular.texture = rng.nextFloat();
+                snapshot.granular.mix = rng.nextFloat();
+                
+                processorRef.setGranularStepSnapshot(step, snapshot);
+            }
+            updateGranularSequencerUI();
+        }
+        
+        repaint();
+    };
+    
+    granularAllStepsLabel = std::make_unique<juce::Label>();
+    granularAllStepsLabel->setText("All Steps", juce::dontSendNotification);
+    granularAllStepsLabel->setFont(juce::Font(12.0f, juce::Font::bold));
+    granularAllStepsLabel->setColour(juce::Label::textColourId, juce::Colours::white);
+    granularAllStepsLabel->setJustificationType(juce::Justification::centredLeft);
+    granularAllStepsLabel->setAlpha(0.5f);
+    addAndMakeVisible(granularAllStepsLabel.get());
+    granularAllStepsLabel->setVisible(false);
+    granularAllStepsLabel->setBounds(sequencerArea.getX() + 315, sequencerArea.getY() + 11, 80, 20);
+    
+    granularGroup.push_back(granularAllStepsToggle.get());
+    granularGroup.push_back(granularAllStepsLabel.get());
+    
+    DBG("[UI] Granular All Steps toggle setup complete");
+}
+
+void PluginEditor::updateGranularStepAreaVisibility()
+{
+    float alpha = granularStepAreaEnabled ? 1.0f : 0.3f;
+    
+    for (int i = 0; i < 16; ++i) {
+        if (granularStepButtons[i]) granularStepButtons[i]->setAlpha(alpha);
+    }
+    if (granularStepAmountLabel) granularStepAmountLabel->setAlpha(alpha);
+    if (granularRateDropdown) granularRateDropdown->setAlpha(alpha);
+    if (granularStdToggle) granularStdToggle->setAlpha(alpha);
+    if (granularStepTitle) granularStepTitle->setAlpha(alpha);
+}
+
+void PluginEditor::onGranularStepButtonClicked(int stepIndex)
+{
+    if (stepIndex < 0 || stepIndex >= 16) return;
+    
+    granularUiSelectedStep = stepIndex;
+    processorRef.setGranularSelectedStep(stepIndex);
+    
+    auto snapshot = processorRef.getGranularSafeSnapshot(stepIndex);
+    
+    if (granularKnobs[0]) granularKnobs[0]->setValue(snapshot.granular.sizeMs, juce::dontSendNotification);
+    if (granularKnobs[1]) granularKnobs[1]->setValue(snapshot.granular.densityHz, juce::dontSendNotification);
+    if (granularKnobs[2]) granularKnobs[2]->setValue(snapshot.granular.position, juce::dontSendNotification);
+    if (granularKnobs[3]) granularKnobs[3]->setValue(snapshot.granular.sprayMs, juce::dontSendNotification);
+    if (granularKnobs[4]) granularKnobs[4]->setValue(snapshot.granular.pitchSemi, juce::dontSendNotification);
+    if (granularKnobs[5]) granularKnobs[5]->setValue(snapshot.granular.random, juce::dontSendNotification);
+    if (granularKnobs[6]) granularKnobs[6]->setValue(snapshot.granular.texture, juce::dontSendNotification);
+    if (granularKnobs[7]) granularKnobs[7]->setValue(snapshot.granular.mix, juce::dontSendNotification);
+    
+    for (int i = 0; i < 8; ++i) {
+        if (granularKnobs[i] && granularKnobs[i]->onValueChange) {
+            granularKnobs[i]->onValueChange();
+        }
+    }
+    
+    repaint();
+}
+
+void PluginEditor::updateGranularSequencerUI()
+{
+    const auto& seqState = processorRef.getGranularSeqState();
+    int stepsUsed = seqState.stepsUsed.load();
+    
+    if (granularStepAmountLabel != nullptr && !granularStepAmountLabel->hasKeyboardFocus(true)) {
+        granularStepAmountLabel->setText(juce::String(stepsUsed), false);
+    }
+    
+    for (int i = 0; i < 16; ++i) {
+        if (granularStepButtons[i]) {
+            granularStepButtons[i]->setEnabled(i < stepsUsed);
+            granularStepButtons[i]->setAlpha((i < stepsUsed) ? 1.0f : 0.3f);
+        }
+    }
+}
+
+void PluginEditor::updateGranularParameterFromKnob(int knobIndex)
+{
+    if (knobIndex < 0 || knobIndex >= 8 || !granularKnobs[knobIndex])
+        return;
+    
+    float value = granularKnobs[knobIndex]->getValue();
+    processorRef.updateGranularCurrentStepSnapshot(knobIndex, value);
 }
 
