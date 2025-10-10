@@ -406,6 +406,11 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                 if (reverbSeq.enabled.load()) {
                     reverbSeq.active.store(true);  // Activate Reverb sequencer
                     DBG("[REVERB SEQ] ✓ Activated on play edge");
+                } else {
+                    // Auto-enable Reverb sequencer on first play (like delay sequencer)
+                    reverbSeq.enabled.store(true);
+                    reverbSeq.active.store(true);
+                    DBG("[REVERB SEQ] ✓ Auto-enabled and activated on play edge");
                 }
                 
                 DBG("[SEQ] Play edge detected");

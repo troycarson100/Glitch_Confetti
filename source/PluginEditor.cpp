@@ -5785,8 +5785,25 @@ void PluginEditor::setupReverbSequencerArea()
     }
     
     reverbStepDiceButton->onClick = [this]() {
-        DBG("[UI] Reverb step dice clicked - randomizing current step");
-        randomizeReverbKnobValues();
+        DBG("[UI] Reverb step dice clicked - randomizing all step snapshots");
+        
+        for (int step = 0; step < 16; ++step) {
+            auto snapshot = processorRef.getReverbSafeSnapshot(step);
+            
+            if (!reverbKnobLocked[0]) snapshot.reverb.type = juce::Random::getSystemRandom().nextFloat() * 2.0f;
+            if (!reverbKnobLocked[1]) snapshot.reverb.size = 0.1f + juce::Random::getSystemRandom().nextFloat() * 1.4f;
+            if (!reverbKnobLocked[2]) snapshot.reverb.predelayMs = juce::Random::getSystemRandom().nextFloat() * 200.0f;
+            if (!reverbKnobLocked[3]) snapshot.reverb.dampHz = 1000.0f + juce::Random::getSystemRandom().nextFloat() * 19000.0f;
+            if (!reverbKnobLocked[4]) snapshot.reverb.diffusion = juce::Random::getSystemRandom().nextFloat();
+            if (!reverbKnobLocked[5]) snapshot.reverb.early = juce::Random::getSystemRandom().nextFloat();
+            if (!reverbKnobLocked[6]) snapshot.reverb.decaySec = 0.2f + juce::Random::getSystemRandom().nextFloat() * 19.8f;
+            if (!reverbKnobLocked[7]) snapshot.reverb.mix = juce::Random::getSystemRandom().nextFloat();
+            
+            processorRef.setReverbStepSnapshot(step, snapshot);
+        }
+        
+        // Update UI to show the new values
+        updateReverbSequencerUI();
     };
     
     // Step power button (EXACT same positioning as Dirt)
@@ -5847,6 +5864,28 @@ void PluginEditor::setupReverbAllStepsToggle()
         reverbAllStepsEnabled = reverbAllStepsToggle->getToggleState();
         DBG("[UI] Reverb All Steps toggle: " << (reverbAllStepsEnabled ? "ON" : "OFF"));
         reverbAllStepsLabel->setAlpha(reverbAllStepsEnabled ? 1.0f : 0.5f);
+        
+        if (reverbAllStepsEnabled) {
+            DBG("[UI] Reverb All Steps enabled - randomizing all step snapshots");
+            
+            for (int step = 0; step < 16; ++step) {
+                auto snapshot = processorRef.getReverbSafeSnapshot(step);
+                
+                if (!reverbKnobLocked[0]) snapshot.reverb.type = juce::Random::getSystemRandom().nextFloat() * 2.0f;
+                if (!reverbKnobLocked[1]) snapshot.reverb.size = 0.1f + juce::Random::getSystemRandom().nextFloat() * 1.4f;
+                if (!reverbKnobLocked[2]) snapshot.reverb.predelayMs = juce::Random::getSystemRandom().nextFloat() * 200.0f;
+                if (!reverbKnobLocked[3]) snapshot.reverb.dampHz = 1000.0f + juce::Random::getSystemRandom().nextFloat() * 19000.0f;
+                if (!reverbKnobLocked[4]) snapshot.reverb.diffusion = juce::Random::getSystemRandom().nextFloat();
+                if (!reverbKnobLocked[5]) snapshot.reverb.early = juce::Random::getSystemRandom().nextFloat();
+                if (!reverbKnobLocked[6]) snapshot.reverb.decaySec = 0.2f + juce::Random::getSystemRandom().nextFloat() * 19.8f;
+                if (!reverbKnobLocked[7]) snapshot.reverb.mix = juce::Random::getSystemRandom().nextFloat();
+                
+                processorRef.setReverbStepSnapshot(step, snapshot);
+            }
+            
+            // Update UI to show the new values
+            updateReverbSequencerUI();
+        }
     };
     
     // Label - match Dirt's exact positioning
