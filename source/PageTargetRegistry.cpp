@@ -101,6 +101,25 @@ void PageTargetRegistry::buildRegistry()
         targets.maxSteps = 16;
         registry[EffectID::Reverb] = targets;
     }
+    
+    // Granular Page
+    {
+        PageTargets targets;
+        targets.pageId = "Granular";
+        targets.knobParamIds = {
+            "granSizeMs",     // Knob 0: Grain Size
+            "granDensityHz",  // Knob 1: Density
+            "granPosition",   // Knob 2: Position
+            "granSprayMs",    // Knob 3: Spray
+            "granPitchSemi",  // Knob 4: Pitch
+            "granRandom",     // Knob 5: Random
+            "granTexture",    // Knob 6: Texture
+            "granMix"         // Knob 7: Mix
+        };
+        targets.sequencerStepsUsedKey = ""; // No sequencer for Granular (live input)
+        targets.maxSteps = 0; // No steps
+        registry[EffectID::Granular] = targets;
+    }
 }
 
 std::array<PageTargets, 4> PageTargetRegistry::getActivePages(
