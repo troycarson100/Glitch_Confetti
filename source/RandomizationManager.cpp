@@ -116,35 +116,82 @@ void RandomizationManager::collectTargets()
 
 void RandomizationManager::applyParamChanges()
 {
-    if (paramTargets.empty())
+    // After randomizing all step snapshots, we need to reload the current step
+    // into APVTS for each effect so the knobs update immediately
+    
+    if (!editor)
         return;
     
-    DBG("[RAND] Applying parameter changes...");
+    DBG("[RAND] Reloading current steps into knobs...");
     
-    // Start single undo transaction
-    auto* um = apvts.undoManager;
-    if (um)
-        um->beginNewTransaction("Dice Randomize");
+    // Trigger a reload for each effect's current step by simulating a re-click
+    // This loads the randomized snapshot into the knobs
     
-    // Randomize each parameter
-    for (auto& target : paramTargets)
+    auto& router = processor.getEffectRouter();
+    
+    for (int slot = 0; slot < 4; ++slot)
     {
-        if (!target.param || target.locked)
-            continue;
+        EffectID effect = router.getEffectInSlot(static_cast<SlotID>(slot));
         
-        // Bias toward current value (70% current + 30% random)
-        float randNorm = rand01();
-        float normTarget = juce::jlimit(0.0f, 1.0f, 0.7f * target.currentNorm + 0.3f * randNorm);
-        
-        // Apply with gesture
-        target.param->beginChangeGesture();
-        target.param->setValueNotifyingHost(normTarget);
-        target.param->endChangeGesture();
-        
-        stats.paramsRandomized++;
+        switch (effect)
+        {
+            case EffectID::SpaceDelay:
+            {
+                int currentStep = processor.getSelectedStep();
+                if (currentStep >= 0 && currentStep < 16) {
+                    // Re-trigger the step button click to reload snapshot into knobs
+                    editor->onStepButtonClicked(currentStep);
+                    DBG("[RAND]   SpaceDelay step " + juce::String(currentStep) + " reloaded");
+                }
+                break;
+            }
+            
+            case EffectID::AutoPan:
+            {
+                int currentStep = editor->autopanUiSelectedStep;
+                if (currentStep >= 0 && currentStep < 16) {
+                    editor->onAutoPanStepButtonClicked(currentStep);
+                    DBG("[RAND]   AutoPan step " + juce::String(currentStep) + " reloaded");
+                }
+                break;
+            }
+            
+            case EffectID::Dirt:
+            {
+                int currentStep = editor->dirtUiSelectedStep;
+                if (currentStep >= 0 && currentStep < 16) {
+                    editor->onDirtStepButtonClicked(currentStep);
+                    DBG("[RAND]   Dirt step " + juce::String(currentStep) + " reloaded");
+                }
+                break;
+            }
+            
+            case EffectID::Chorus:
+            {
+                int currentStep = editor->chorusUiSelectedStep;
+                if (currentStep >= 0 && currentStep < 16) {
+                    editor->onChorusStepButtonClicked(currentStep);
+                    DBG("[RAND]   Chorus step " + juce::String(currentStep) + " reloaded");
+                }
+                break;
+            }
+            
+            case EffectID::Reverb:
+            {
+                int currentStep = editor->reverbUiSelectedStep;
+                if (currentStep >= 0 && currentStep < 16) {
+                    editor->onReverbStepButtonClicked(currentStep);
+                    DBG("[RAND]   Reverb step " + juce::String(currentStep) + " reloaded");
+                }
+                break;
+            }
+            
+            default:
+                break;
+        }
     }
     
-    DBG("[RAND] Randomized " + juce::String(stats.paramsRandomized) + " parameters");
+    stats.paramsRandomized = paramTargets.size() - stats.paramsLocked;
 }
 
 void RandomizationManager::applyStepChanges()

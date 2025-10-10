@@ -192,6 +192,8 @@ private:
 //==============================================================================
 class PluginEditor : public juce::AudioProcessorEditor, public juce::Timer
 {
+    friend class RandomizationManager;
+    
 public:
     explicit PluginEditor (PluginProcessor&);
     ~PluginEditor() override;
