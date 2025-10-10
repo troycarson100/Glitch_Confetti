@@ -195,7 +195,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout PluginProcessor::createParam
     params.push_back(std::make_unique<juce::AudioParameterFloat>(
         "granSizeMs", "Grain Size", juce::NormalisableRange<float>(5.0f, 200.0f, 0.0f, 0.6f), 40.0f));
     params.push_back(std::make_unique<juce::AudioParameterFloat>(
-        "granDensityHz", "Density", juce::NormalisableRange<float>(1.0f, 80.0f, 0.0f, 0.5f), 20.0f));
+        "granDensityHz", "Density", juce::NormalisableRange<float>(1.0f, 40.0f, 0.0f, 0.5f), 10.0f)); // Reduced max to 40Hz, default to 10Hz
     params.push_back(std::make_unique<juce::AudioParameterFloat>(
         "granPosition", "Position", juce::NormalisableRange<float>(0.0f, 1.0f, 0.0f, 1.0f), 1.0f)); // 0=oldest, 1=latest
     params.push_back(std::make_unique<juce::AudioParameterFloat>(
