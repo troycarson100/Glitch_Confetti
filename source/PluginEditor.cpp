@@ -1846,15 +1846,15 @@ void PluginEditor::setupKnobs()
         addAndMakeVisible(effectsTitle.get());
         effectsTitle->setBounds(effectArea.getX() + 10, effectArea.getY() + 5, 100, 30); // Moved left 10px and down 5px
         
-        // Create "MASTER" title (global randomizer label) - positioned 250px from left
+        // Create "MASTER" title (global randomizer label) - matching EFFECT style
         masterTitle = std::make_unique<juce::Label>();
         masterTitle->setText("MASTER", juce::dontSendNotification);
-        masterTitle->setFont(juce::Font(14.0f, juce::Font::bold));
+        masterTitle->setFont(juce::Font(27.648f, juce::Font::bold)); // Same as EFFECT title
         masterTitle->setColour(juce::Label::textColourId, juce::Colours::white);
         masterTitle->setColour(juce::Label::backgroundColourId, juce::Colours::transparentBlack);
         masterTitle->setJustificationType(juce::Justification::centredLeft);
         addAndMakeVisible(masterTitle.get());
-        masterTitle->setBounds(effectArea.getX() + 180, effectArea.getY() + 6, 80, 20); // 180px from left, aligned with EFFECT
+        masterTitle->setBounds(effectArea.getX() + 200, effectArea.getY() + 5, 120, 30); // 200px from left, same Y as EFFECT
         masterTitle->toFront(false); // Ensure it's on top
         
         // Create Master Dice Button (randomizes all effects, all steps)
@@ -6135,12 +6135,17 @@ void PluginEditor::randomizeAllEffectsAllSteps()
         }
     }
     
-        // Update the UI for the currently visible effect
-        updateSequencerUI();
-        updateAutoPanSequencerUI();
-        updateDirtSequencerUI();
-        updateChorusSequencerUI();
-        updateReverbSequencerUI();
+        // Update the UI for the currently visible effect (on message thread for safety)
+        auto safeThis = juce::Component::SafePointer<PluginEditor>(this);
+        juce::MessageManager::callAsync([safeThis]() {
+            if (safeThis) {
+                safeThis->updateSequencerUI();
+                safeThis->updateAutoPanSequencerUI();
+                safeThis->updateDirtSequencerUI();
+                safeThis->updateChorusSequencerUI();
+                safeThis->updateReverbSequencerUI();
+            }
+        });
         
         DBG("[UI] Randomization complete!");
     } catch (const std::exception& e) {
