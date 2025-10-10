@@ -53,10 +53,15 @@ PluginEditor::PluginEditor (PluginProcessor& p)
         // AutoPan
         {
             int step = autopanUiSelectedStep;
+            DBG("[UI] AutoPan: loading step " + juce::String(step) + " into APVTS");
             if (step >= 0 && step < 16) {
                 auto s = processorRef.getAutoPanSafeSnapshot(step);
+                DBG("[UI]   AutoPan step " + juce::String(step) + " snapshot rate=" + juce::String(s.autopan.rate));
                 auto& apvts = processorRef.getAPVTS();
-                if (auto* p = apvts.getParameter("panRate")) p->setValueNotifyingHost(p->convertTo0to1(s.autopan.rate));
+                if (auto* p = apvts.getParameter("panRate")) {
+                    DBG("[UI]   Setting panRate to " + juce::String(s.autopan.rate));
+                    p->setValueNotifyingHost(p->convertTo0to1(s.autopan.rate));
+                }
                 if (auto* p = apvts.getParameter("panPhase")) p->setValueNotifyingHost(p->convertTo0to1(s.autopan.phase));
                 if (auto* p = apvts.getParameter("panWaveType")) p->setValueNotifyingHost(p->convertTo0to1((float)s.autopan.waveType));
                 if (auto* p = apvts.getParameter("panWaveShape")) p->setValueNotifyingHost(p->convertTo0to1(s.autopan.waveShape));
@@ -3468,9 +3473,12 @@ void PluginEditor::setupAutoPanKnobs()
         // Add listener to save snapshots when knob changes
         autopanKnobs[i]->onValueChange = [this, i]() {
             // Skip if we're loading from snapshot (prevents circular updates during randomization)
-            if (isLoadingFromSnapshot.load())
+            if (isLoadingFromSnapshot.load()) {
+                DBG("[UI] AutoPan knob " + juce::String(i) + " onValueChange BLOCKED by flag");
                 return;
+            }
             
+            DBG("[UI] AutoPan knob " + juce::String(i) + " onValueChange triggered, updating snapshot");
             // Update current step snapshot with new value
             float value = autopanKnobs[i]->getValue();
             processorRef.updateAutoPanCurrentStepSnapshot(i, value);
