@@ -125,6 +125,9 @@ void RandomizationManager::applyParamChanges()
     
     DBG("[RAND] Reloading current steps into knobs...");
     
+    // Set flag in editor to block onValueChange callbacks during this reload
+    editor->isLoadingFromSnapshot.store(true);
+    
     auto& router = processor.getEffectRouter();
     
     for (int slot = 0; slot < 4; ++slot)
@@ -230,6 +233,10 @@ void RandomizationManager::applyParamChanges()
                 break;
         }
     }
+    
+    // Clear the flag
+    editor->isLoadingFromSnapshot.store(false);
+    DBG("[RAND] isLoadingFromSnapshot flag cleared");
     
     stats.paramsRandomized = paramTargets.size() - stats.paramsLocked;
 }

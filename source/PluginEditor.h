@@ -211,6 +211,9 @@ public:
         // Randomization manager (thread-safe)
         std::unique_ptr<RandomizationManager> randomizationManager;
         
+        // Flag to prevent onValueChange from saving snapshots during randomization reload
+        std::atomic<bool> isLoadingFromSnapshot { false };
+        
         // UI Assets
         UiAssets assets;
         

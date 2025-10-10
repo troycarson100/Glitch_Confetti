@@ -3367,6 +3367,10 @@ void PluginEditor::setupAutoPanKnobs()
         
         // Add listener to save snapshots when knob changes
         autopanKnobs[i]->onValueChange = [this, i]() {
+            // Skip if loading from snapshot (prevents circular updates during randomization)
+            if (isLoadingFromSnapshot.load())
+                return;
+            
             // Update current step snapshot with new value
             float value = autopanKnobs[i]->getValue();
             processorRef.updateAutoPanCurrentStepSnapshot(i, value);
@@ -4825,6 +4829,10 @@ void PluginEditor::setupChorusKnobs()
         }
 
         chorusKnobs[i]->onValueChange = [this, i]() {
+            // Skip if loading from snapshot (prevents circular updates during randomization)
+            if (isLoadingFromSnapshot.load())
+                return;
+            
             if (chorusKnobs[i] != nullptr) {
                 updateChorusParameterFromKnob(i);
 
