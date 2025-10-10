@@ -6,7 +6,7 @@
 #include "dsp/AutoPan.h"
 #include "dsp/FxDirt.h"
 #include "dsp/FxChorus.h"
-#include "dsp/SignalSmithHall.h"
+#include "dsp/SimpleHallReverb.h"
 #include "dsp/DspFlags.h"
 #include "StepSnapshot.h"
 #include "MeterTheme.h"
@@ -338,7 +338,7 @@ public:
     ChorusEngine chorus;
     
     // Reverb DSP Implementation
-    SignalSmithHall hallVerb;
+    SimpleHallReverb hall;
     
     // PanMan-style visualizer clock
     struct PanVisClock {
