@@ -77,6 +77,12 @@ struct SimpleHallReverb
         auto* L = buffer.getWritePointer (0);
         auto* R = buffer.getNumChannels() > 1 ? buffer.getWritePointer (1) : nullptr;
 
+        // SAVE DRY SIGNAL FIRST (before any processing)
+        juce::AudioBuffer<float> dry (2, numSamples);
+        dry.copyFrom (0, 0, L, numSamples);
+        if (R) dry.copyFrom (1, 0, R, numSamples);
+        else   dry.copyFrom (1, 0, L, numSamples);
+
         // Update reverb params smoothly per block (not every sample)
         params.roomSize = room.getNextValue();
         params.damping  = damp.getNextValue();
@@ -147,11 +153,12 @@ struct SimpleHallReverb
             if (++erWrite >= erBuffer.getNumSamples()) erWrite = 0;
         }
 
-        // 3) External mix crossfade (prevents double mixing + fixes "width kills left" issues)
+        // 3) External mix crossfade (use saved dry signal)
         const float m = mix.getNextValue();
         for (int n = 0; n < numSamples; ++n)
         {
-            const float dryL = L[n], dryR = R ? R[n] : dryL;
+            const float dryL = dry.getSample (0, n);
+            const float dryR = dry.getSample (1, n);
             const float wetL = wet.getSample (0, n);
             const float wetR = wet.getSample (1, n);
             L[n] = juce::jmap (m, dryL, wetL);
