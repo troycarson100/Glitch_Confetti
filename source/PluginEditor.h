@@ -13,8 +13,10 @@
 #include "ui/OutputSpectrumView.h"
 #include "ui/SpectrumFilterSlider.h"
 
-// Forward declaration
+// Forward declarations
 struct RandomizationManager;
+class PresetManager;
+class PresetBrowserComponent;
 
 // Tab system enum
 enum class FxPageID { SpaceDelay, Panner, Dirt, Chorus, Reverb, Granular, Slicer };
@@ -210,6 +212,11 @@ public:
         
         // Randomization manager (thread-safe)
         std::unique_ptr<RandomizationManager> randomizationManager;
+        
+        // Preset management system
+        std::unique_ptr<PresetManager> presetManager;
+        std::unique_ptr<PresetBrowserComponent> presetBrowser;
+        std::unique_ptr<juce::TextButton> presetBrowserButton;
         
         // Flag to prevent onValueChange from saving snapshots during randomization reload
         std::atomic<bool> isLoadingFromSnapshot { false };

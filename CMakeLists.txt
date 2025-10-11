@@ -38,6 +38,10 @@ set(SourceFiles
     ${CMAKE_CURRENT_SOURCE_DIR}/source/StepSnapshot.h
     ${CMAKE_CURRENT_SOURCE_DIR}/source/RandomizationManager.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/source/RandomizationManager.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/source/PresetManager.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/source/PresetManager.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/source/PresetBrowserComponent.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/source/PresetBrowserComponent.h
     ${CMAKE_CURRENT_SOURCE_DIR}/source/PageTargetRegistry.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/source/PageTargetRegistry.h
     ${CMAKE_CURRENT_SOURCE_DIR}/source/FontManager.cpp

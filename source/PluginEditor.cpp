@@ -4,6 +4,8 @@
 #include "ui/PanIndicator.h"
 #include "ui/RouterComboLookAndFeel.h"
 #include "RandomizationManager.h"
+#include "PresetManager.h"
+#include "PresetBrowserComponent.h"
 
 //==============================================================================
 // CustomEffectDropdown Implementation
@@ -22,6 +24,10 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     
     // Initialize randomization manager (thread-safe)
     randomizationManager = std::make_unique<RandomizationManager>(processorRef, processorRef.getAPVTS(), this);
+    
+    // Initialize preset management system
+    presetManager = std::make_unique<PresetManager>(processorRef, processorRef.getAPVTS());
+    presetManager->initialize();
     
     // Set the size to match our desired dimensions
     setSize (974, 532);
@@ -1871,6 +1877,41 @@ void PluginEditor::setupKnobs()
             masterArea.getY() + 6,    // Aligned with MASTER title
             diceSizeMaster, diceSizeMaster
         );
+        
+        // Preset Browser Button
+        presetBrowserButton = std::make_unique<juce::TextButton>("PRESETS");
+        addAndMakeVisible(presetBrowserButton.get());
+        presetBrowserButton->setColour(juce::TextButton::buttonColourId, juce::Colour(0xff2a2a2a));
+        presetBrowserButton->setColour(juce::TextButton::textColourOffId, juce::Colours::white);
+        presetBrowserButton->setBounds(
+            masterArea.getX() + 10,
+            masterArea.getY() + 6,
+            100, 28
+        );
+        
+        presetBrowserButton->onClick = [this, masterArea]() {
+            if (presetBrowser == nullptr) {
+                // Create browser overlay
+                presetBrowser = std::make_unique<PresetBrowserComponent>(*presetManager);
+                addAndMakeVisible(presetBrowser.get());
+                presetBrowser->setBounds(masterArea);
+                presetBrowser->toFront(true);
+                
+                presetBrowser->onClose = [this]() {
+                    presetBrowser->setVisible(false);
+                    presetBrowser.reset();
+                };
+            }
+            else
+            {
+                presetBrowser->setVisible(!presetBrowser->isVisible());
+                if (presetBrowser->isVisible())
+                {
+                    presetBrowser->setBounds(masterArea);
+                    presetBrowser->refreshCategories();
+                }
+            }
+        };
         
         // Position master knobs horizontally in master area (centered and moved down 20px more)
         const int knobSize = 109; // 30% bigger: 84 * 1.3 = 109
