@@ -322,14 +322,15 @@ void PluginEditor::paint (juce::Graphics& g)
                     continue; // Skip invalid slots
             }
             
-            // Use consistent size for all icons since they now have uniform containing boxes
-            float iconSize = 75.0f; // Same size for all icons (height and width)
-            float iconX = tabIconX + (tabW - iconSize) / 2.0f - 16.0f; // Center horizontally, then move left 16px
-            float iconY = 12.0f - 32.0f - 10.0f + 20.0f - 5.0f; // Move up 32px + 10px more, then down 20px, then up 5px from carrot Y position
+            // Use natural icon size (250x70 from SVG viewBox) reduced by 60%, then 22% smaller, then 10% smaller
+            float iconWidth = 250.0f * 0.4f * 0.78f * 0.9f;  // 60% reduction, then 22% smaller, then 10% smaller = 70.2px
+            float iconHeight = 70.0f * 0.4f * 0.78f * 0.9f;  // 60% reduction, then 22% smaller, then 10% smaller = 19.66px
+            float iconX = tabIconX + (tabW - iconWidth) / 2.0f - 16.0f; // Center horizontally, then move left 16px
+            float iconY = 12.0f - 32.0f - 10.0f + 20.0f - 5.0f + 25.0f - 4.0f; // Move up 32px + 10px more, then down 20px, then up 5px, then down 25px, then up 4px
             
-            // Create bounds with same size for all icons and STRETCH to fill (ignore aspect ratio)
-            auto iconBounds = juce::Rectangle<float>(iconX, iconY, iconSize, iconSize);
-            icon->drawWithin(g, iconBounds, juce::RectanglePlacement::stretchToFit, 1.0f);
+            // Create bounds at reduced size
+            auto iconBounds = juce::Rectangle<float>(iconX, iconY, iconWidth, iconHeight);
+            icon->drawWithin(g, iconBounds, juce::RectanglePlacement::centred, 1.0f);
         }
     }
     
