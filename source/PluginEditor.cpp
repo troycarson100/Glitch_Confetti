@@ -322,12 +322,26 @@ void PluginEditor::paint (juce::Graphics& g)
                     continue; // Skip invalid slots
             }
             
-            // Make 10% bigger, move up 10px more and left 16px
-            float iconSize = 69.3f; // 63px + 10% = 69.3px
-            float iconX = tabIconX + (tabW - iconSize) / 2.0f - 16.0f; // Center horizontally, then move left 16px
+            // Use fixed height with variable width for consistent sizing
+            float iconHeight = 50.0f; // Fixed height for all icons
+            float iconWidth = 50.0f;  // Default width, will be adjusted per icon
+            float iconX = tabIconX + (tabW - iconWidth) / 2.0f - 16.0f; // Center horizontally, then move left 16px
             float iconY = 12.0f - 32.0f - 10.0f + 20.0f - 5.0f; // Move up 32px + 10px more, then down 20px, then up 5px from carrot Y position
             
-            auto iconBounds = juce::Rectangle<float>(iconX, iconY, iconSize, iconSize);
+            // Adjust width based on effect type for better proportions
+            EffectID effect = router.getEffectInSlot(static_cast<SlotID>(slot));
+            switch (effect)
+            {
+                case EffectID::SpaceDelay: iconWidth = 60.0f; break;  // Wider for "SPACE DELAY"
+                case EffectID::AutoPan:    iconWidth = 55.0f; break;  // Medium for "AUTO PAN"
+                case EffectID::Dirt:       iconWidth = 45.0f; break;  // Narrower for "DIRT"
+                case EffectID::Chorus:     iconWidth = 55.0f; break;  // Medium for "CHORUS"
+                case EffectID::Reverb:     iconWidth = 50.0f; break;  // Default for "REVERB"
+                case EffectID::Granular:   iconWidth = 65.0f; break;  // Wider for "GRANULAR"
+                default: iconWidth = 50.0f; break;
+            }
+            
+            auto iconBounds = juce::Rectangle<float>(iconX, iconY, iconWidth, iconHeight);
             icon->drawWithin(g, iconBounds, juce::RectanglePlacement::centred, 1.0f);
         }
     }
