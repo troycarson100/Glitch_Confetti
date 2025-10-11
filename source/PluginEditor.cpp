@@ -322,12 +322,12 @@ void PluginEditor::paint (juce::Graphics& g)
                     continue; // Skip invalid slots
             }
             
-            // Use fixed height with aspect ratio preservation for consistent sizing
+            // Force all icons to exactly 50px height by stretching to fit
             float iconHeight = 50.0f; // Fixed height for all icons
             float iconX = tabIconX + (tabW - 60.0f) / 2.0f - 16.0f; // Center horizontally, then move left 16px (use max width for centering)
             float iconY = 12.0f - 32.0f - 10.0f + 20.0f - 5.0f; // Move up 32px + 10px more, then down 20px, then up 5px from carrot Y position
             
-            // Calculate width based on effect type, but maintain aspect ratio
+            // Calculate width based on effect type
             EffectID effect = router.getEffectInSlot(static_cast<SlotID>(slot));
             float targetWidth;
             switch (effect)
@@ -341,9 +341,9 @@ void PluginEditor::paint (juce::Graphics& g)
                 default: targetWidth = 50.0f; break;
             }
             
-            // Create bounds with fixed height and calculated width, then draw with fit-to-height
+            // Create bounds with fixed height and calculated width, force exact fit (stretch if needed)
             auto iconBounds = juce::Rectangle<float>(iconX, iconY, targetWidth, iconHeight);
-            icon->drawWithin(g, iconBounds, juce::RectanglePlacement::centred | juce::RectanglePlacement::onlyReduceInSize, 1.0f);
+            icon->drawWithin(g, iconBounds, juce::RectanglePlacement::centred, 1.0f);
         }
     }
     
