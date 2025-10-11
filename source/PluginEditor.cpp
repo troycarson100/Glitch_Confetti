@@ -261,17 +261,17 @@ void PluginEditor::paint (juce::Graphics& g)
         drawOrder = {0, 1, 2, 3}; // Cascade from left to right, ending with selected tab 4 on top
     }
     
-    // Helper lambda to get effect icon for a given slot
+    // Helper lambda to get effect icon for a given slot (using existing assets with consistent sizing)
     auto getEffectIconForSlot = [&](int slotIndex) -> juce::Drawable* {
         EffectID effect = router.getEffectInSlot(static_cast<SlotID>(slotIndex));
         switch (effect)
         {
-            case EffectID::SpaceDelay: return assets.tabTitleSpaceDelay.get();
-            case EffectID::AutoPan:    return assets.tabTitleAutoPan.get();
-            case EffectID::Dirt:       return assets.tabDirtIcon.get();
-            case EffectID::Chorus:     return assets.tabChorusIcon.get();
-            case EffectID::Reverb:     return assets.tabVerbIcon.get();
-            case EffectID::Granular:   return assets.tabGranularIcon.get();
+            case EffectID::SpaceDelay: return assets.tabTitleSpaceDelay.get();  // Will be replaced with Space_Icon
+            case EffectID::AutoPan:    return assets.tabTitleAutoPan.get();     // Will be replaced with AutoPan_Icon
+            case EffectID::Dirt:       return assets.tabDirtIcon.get();         // Will be replaced with Dirt_Icon
+            case EffectID::Chorus:     return assets.tabChorusIcon.get();       // Will be replaced with Chorus_Icon
+            case EffectID::Reverb:     return assets.tabVerbIcon.get();         // Will be replaced with Hall_Icon
+            case EffectID::Granular:   return assets.tabGranularIcon.get();     // Will be replaced with Grain_Icon
         }
         return nullptr;
     };
@@ -322,27 +322,13 @@ void PluginEditor::paint (juce::Graphics& g)
                     continue; // Skip invalid slots
             }
             
-            // Force all icons to exactly 75px height by stretching to fit
-            float iconHeight = 75.0f; // Fixed height for all icons
-            float iconX = tabIconX + (tabW - 60.0f) / 2.0f - 16.0f; // Center horizontally, then move left 16px (use max width for centering)
+            // Use consistent size for all icons since they now have uniform containing boxes
+            float iconSize = 75.0f; // Same size for all icons (height and width)
+            float iconX = tabIconX + (tabW - iconSize) / 2.0f - 16.0f; // Center horizontally, then move left 16px
             float iconY = 12.0f - 32.0f - 10.0f + 20.0f - 5.0f; // Move up 32px + 10px more, then down 20px, then up 5px from carrot Y position
             
-            // Calculate width based on effect type
-            EffectID effect = router.getEffectInSlot(static_cast<SlotID>(slot));
-            float targetWidth;
-            switch (effect)
-            {
-                case EffectID::SpaceDelay: targetWidth = 60.0f; break;  // Wider for "SPACE DELAY"
-                case EffectID::AutoPan:    targetWidth = 55.0f; break;  // Medium for "AUTO PAN"
-                case EffectID::Dirt:       targetWidth = 45.0f; break;  // Narrower for "DIRT"
-                case EffectID::Chorus:     targetWidth = 55.0f; break;  // Medium for "CHORUS"
-                case EffectID::Reverb:     targetWidth = 50.0f; break;  // Default for "REVERB"
-                case EffectID::Granular:   targetWidth = 65.0f; break;  // Wider for "GRANULAR"
-                default: targetWidth = 50.0f; break;
-            }
-            
-            // Create bounds with fixed height and calculated width, force exact fit (stretch if needed)
-            auto iconBounds = juce::Rectangle<float>(iconX, iconY, targetWidth, iconHeight);
+            // Create bounds with same size for all icons
+            auto iconBounds = juce::Rectangle<float>(iconX, iconY, iconSize, iconSize);
             icon->drawWithin(g, iconBounds, juce::RectanglePlacement::centred, 1.0f);
         }
     }
