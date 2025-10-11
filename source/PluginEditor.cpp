@@ -322,8 +322,8 @@ void PluginEditor::paint (juce::Graphics& g)
                     continue; // Skip invalid slots
             }
             
-            // Force all icons to exactly 50px height by stretching to fit
-            float iconHeight = 50.0f; // Fixed height for all icons
+            // Force all icons to exactly 75px height by stretching to fit
+            float iconHeight = 75.0f; // Fixed height for all icons
             float iconX = tabIconX + (tabW - 60.0f) / 2.0f - 16.0f; // Center horizontally, then move left 16px (use max width for centering)
             float iconY = 12.0f - 32.0f - 10.0f + 20.0f - 5.0f; // Move up 32px + 10px more, then down 20px, then up 5px from carrot Y position
             
