@@ -2166,9 +2166,11 @@ void PluginEditor::setupSpaceDelayUI()
     
     // Add effect types
     effectTypeDropdown->addItem("Space Delay", 1);
-    effectTypeDropdown->addItem("Chorus", 2);
-    effectTypeDropdown->addItem("Flanger", 3);
-    effectTypeDropdown->addItem("Phaser", 4);
+    effectTypeDropdown->addItem("Auto Pan", 2);
+    effectTypeDropdown->addItem("Dirt", 3);
+    effectTypeDropdown->addItem("Chorus", 4);
+    effectTypeDropdown->addItem("Reverb", 5);
+    effectTypeDropdown->addItem("Granular", 6);
     effectTypeDropdown->setSelectedId(1, juce::dontSendNotification);
     
     // Position dropdown with proper height for closed control
