@@ -322,8 +322,8 @@ void PluginEditor::paint (juce::Graphics& g)
                     continue; // Skip invalid slots
             }
             
-            // Make 25% smaller, move up 10px more and left 16px
-            float iconSize = 63.0f; // 84px - 25% = 63px
+            // Make 10% bigger, move up 10px more and left 16px
+            float iconSize = 69.3f; // 63px + 10% = 69.3px
             float iconX = tabIconX + (tabW - iconSize) / 2.0f - 16.0f; // Center horizontally, then move left 16px
             float iconY = 12.0f - 32.0f - 10.0f + 20.0f - 5.0f; // Move up 32px + 10px more, then down 20px, then up 5px from carrot Y position
             
