@@ -272,6 +272,7 @@ const char* getNamedResource (const char* resourceNameUTF8, int& numBytes)
     switch (hash)
     {
         case 0x163d7b13:  numBytes = 14169; return gui_xml;
+        case 0xc1a2f28f:  numBytes = 3321; return AutoPan_Icon_svg;
         case 0xe214babe:  numBytes = 3904; return Background_Mustard_svg;
         case 0x187f005b:  numBytes = 308; return Button_Step_Top_Active_svg;
         case 0x2759b740:  numBytes = 217; return Button_Step_Top_Inactive_svg;
@@ -279,19 +280,26 @@ const char* getNamedResource (const char* resourceNameUTF8, int& numBytes)
         case 0x74b0925a:  numBytes = 5183; return Chorus_Background_Tab2_svg;
         case 0x74bea9db:  numBytes = 5248; return Chorus_Background_Tab3_svg;
         case 0x74ccc15c:  numBytes = 5257; return Chorus_Background_Tab4_svg;
-        case 0xc53e8c17:  numBytes = 4444; return Chorus_Icon_svg;
+        case 0xc53e8c17:  numBytes = 4446; return Chorus_Icon_svg;
         case 0xd67e60c8:  numBytes = 21950; return Dice_Large_svg;
         case 0xce28d43a:  numBytes = 4991; return Dirt_Background_Tab1_svg;
         case 0xce36ebbb:  numBytes = 5188; return Dirt_Background_Tab2_svg;
         case 0xce45033c:  numBytes = 5352; return Dirt_Background_Tab3_svg;
         case 0xce531abd:  numBytes = 5269; return Dirt_Background_Tab4_svg;
-        case 0x5f124556:  numBytes = 3176; return Dirt_Icon_svg;
+        case 0x5f124556:  numBytes = 3153; return Dirt_Icon_svg;
         case 0x25f9d20f:  numBytes = 18163; return Drive_svg;
         case 0xcf336db8:  numBytes = 1235; return Effect_Background_Plate_svg;
         case 0x2d6c2f0b:  numBytes = 1573; return FX_Power_On_svg;
         case 0x1988464f:  numBytes = 203; return FX_Type_Carrot_Active_svg;
         case 0x0b295034:  numBytes = 343; return FX_Type_Carrot_Inactive_svg;
         case 0xa2f2e2ca:  numBytes = 37363; return Feedback_svg;
+        case 0xabd04122:  numBytes = 2036; return Grain_Icon_svg;
+        case 0xb122bf93:  numBytes = 4979; return Granular_Background_Tab1_svg;
+        case 0xb130d714:  numBytes = 5169; return Granular_Background_Tab2_svg;
+        case 0xb13eee95:  numBytes = 5236; return Granular_Background_Tab3_svg;
+        case 0xb14d0616:  numBytes = 5251; return Granular_Background_Tab4_svg;
+        case 0x3cf9f79d:  numBytes = 2046; return Granular_Icon_svg;
+        case 0xbbe97ae4:  numBytes = 3819; return Hall_Icon_svg;
         case 0x93eca6c5:  numBytes = 29926; return HighCut_svg;
         case 0xfba89bc6:  numBytes = 418; return Knob_Basic_Dice_svg;
         case 0xb81a971b:  numBytes = 759; return Knob_Basic_Inside_svg;
@@ -320,6 +328,7 @@ const char* getNamedResource (const char* resourceNameUTF8, int& numBytes)
         case 0x0529ab51:  numBytes = 5192; return SpaceDelay_Background_Tab2_svg;
         case 0x0537c2d2:  numBytes = 5217; return SpaceDelay_Background_Tab3_svg;
         case 0x0545da53:  numBytes = 5245; return SpaceDelay_Background_Tab4_svg;
+        case 0x513e7cf7:  numBytes = 3016; return Space_Icon_svg;
         case 0x239664fe:  numBytes = 309; return Step_Active_svg;
         case 0x0e90bb5d:  numBytes = 1222; return Step_Background_Plate_svg;
         case 0xca2a7f23:  numBytes = 218; return Step_Inactive_svg;
@@ -345,6 +354,7 @@ const char* getNamedResource (const char* resourceNameUTF8, int& numBytes)
 const char* namedResourceList[] =
 {
     "gui_xml",
+    "AutoPan_Icon_svg",
     "Background_Mustard_svg",
     "Button_Step_Top_Active_svg",
     "Button_Step_Top_Inactive_svg",
@@ -365,6 +375,13 @@ const char* namedResourceList[] =
     "FX_Type_Carrot_Active_svg",
     "FX_Type_Carrot_Inactive_svg",
     "Feedback_svg",
+    "Grain_Icon_svg",
+    "Granular_Background_Tab1_svg",
+    "Granular_Background_Tab2_svg",
+    "Granular_Background_Tab3_svg",
+    "Granular_Background_Tab4_svg",
+    "Granular_Icon_svg",
+    "Hall_Icon_svg",
     "HighCut_svg",
     "Knob_Basic_Dice_svg",
     "Knob_Basic_Inside_svg",
@@ -393,6 +410,7 @@ const char* namedResourceList[] =
     "SpaceDelay_Background_Tab2_svg",
     "SpaceDelay_Background_Tab3_svg",
     "SpaceDelay_Background_Tab4_svg",
+    "Space_Icon_svg",
     "Step_Active_svg",
     "Step_Background_Plate_svg",
     "Step_Inactive_svg",
@@ -413,6 +431,7 @@ const char* namedResourceList[] =
 const char* originalFilenames[] =
 {
     "gui.xml",
+    "AutoPan_Icon.svg",
     "Background_Mustard.svg",
     "Button_Step_Top_Active.svg",
     "Button_Step_Top_Inactive.svg",
@@ -433,6 +452,13 @@ const char* originalFilenames[] =
     "FX_Type_Carrot_Active.svg",
     "FX_Type_Carrot_Inactive.svg",
     "Feedback.svg",
+    "Grain_Icon.svg",
+    "Granular_Background_Tab1.svg",
+    "Granular_Background_Tab2.svg",
+    "Granular_Background_Tab3.svg",
+    "Granular_Background_Tab4.svg",
+    "Granular_Icon.svg",
+    "Hall_Icon.svg",
     "High-Cut.svg",
     "Knob_Basic_Dice.svg",
     "Knob_Basic_Inside.svg",
@@ -461,6 +487,7 @@ const char* originalFilenames[] =
     "SpaceDelay_Background_Tab2.svg",
     "SpaceDelay_Background_Tab3.svg",
     "SpaceDelay_Background_Tab4.svg",
+    "Space_Icon.svg",
     "Step_Active.svg",
     "Step_Background_Plate.svg",
     "Step_Inactive.svg",

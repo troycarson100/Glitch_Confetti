@@ -11,6 +11,9 @@ namespace BinaryData
     extern const char*   gui_xml;
     const int            gui_xmlSize = 14169;
 
+    extern const char*   AutoPan_Icon_svg;
+    const int            AutoPan_Icon_svgSize = 3321;
+
     extern const char*   Background_Mustard_svg;
     const int            Background_Mustard_svgSize = 3904;
 
@@ -33,7 +36,7 @@ namespace BinaryData
     const int            Chorus_Background_Tab4_svgSize = 5257;
 
     extern const char*   Chorus_Icon_svg;
-    const int            Chorus_Icon_svgSize = 4444;
+    const int            Chorus_Icon_svgSize = 4446;
 
     extern const char*   Dice_Large_svg;
     const int            Dice_Large_svgSize = 21950;
@@ -51,7 +54,7 @@ namespace BinaryData
     const int            Dirt_Background_Tab4_svgSize = 5269;
 
     extern const char*   Dirt_Icon_svg;
-    const int            Dirt_Icon_svgSize = 3176;
+    const int            Dirt_Icon_svgSize = 3153;
 
     extern const char*   Drive_svg;
     const int            Drive_svgSize = 18163;
@@ -70,6 +73,27 @@ namespace BinaryData
 
     extern const char*   Feedback_svg;
     const int            Feedback_svgSize = 37363;
+
+    extern const char*   Grain_Icon_svg;
+    const int            Grain_Icon_svgSize = 2036;
+
+    extern const char*   Granular_Background_Tab1_svg;
+    const int            Granular_Background_Tab1_svgSize = 4979;
+
+    extern const char*   Granular_Background_Tab2_svg;
+    const int            Granular_Background_Tab2_svgSize = 5169;
+
+    extern const char*   Granular_Background_Tab3_svg;
+    const int            Granular_Background_Tab3_svgSize = 5236;
+
+    extern const char*   Granular_Background_Tab4_svg;
+    const int            Granular_Background_Tab4_svgSize = 5251;
+
+    extern const char*   Granular_Icon_svg;
+    const int            Granular_Icon_svgSize = 2046;
+
+    extern const char*   Hall_Icon_svg;
+    const int            Hall_Icon_svgSize = 3819;
 
     extern const char*   HighCut_svg;
     const int            HighCut_svgSize = 29926;
@@ -155,6 +179,9 @@ namespace BinaryData
     extern const char*   SpaceDelay_Background_Tab4_svg;
     const int            SpaceDelay_Background_Tab4_svgSize = 5245;
 
+    extern const char*   Space_Icon_svg;
+    const int            Space_Icon_svgSize = 3016;
+
     extern const char*   Step_Active_svg;
     const int            Step_Active_svgSize = 309;
 
@@ -201,7 +228,7 @@ namespace BinaryData
     const int            AlteHaasGroteskRegular_ttfSize = 143896;
 
     // Number of elements in the namedResourceList and originalFileNames arrays.
-    const int namedResourceListSize = 64;
+    const int namedResourceListSize = 73;
 
     // Points to the start of a list of resource names.
     extern const char* namedResourceList[];

@@ -1,4 +1,5 @@
 /Users/troycarson/Documents/JUCE Projects/Stepper/assets/gui.xml
+/Users/troycarson/Documents/JUCE Projects/Stepper/assets/ui/AutoPan_Icon.svg
 /Users/troycarson/Documents/JUCE Projects/Stepper/assets/ui/Background_Mustard.svg
 /Users/troycarson/Documents/JUCE Projects/Stepper/assets/ui/Button_Step_Top_Active.svg
 /Users/troycarson/Documents/JUCE Projects/Stepper/assets/ui/Button_Step_Top_Inactive.svg
@@ -19,6 +20,13 @@
 /Users/troycarson/Documents/JUCE Projects/Stepper/assets/ui/FX_Type_Carrot_Active.svg
 /Users/troycarson/Documents/JUCE Projects/Stepper/assets/ui/FX_Type_Carrot_Inactive.svg
 /Users/troycarson/Documents/JUCE Projects/Stepper/assets/ui/Feedback.svg
+/Users/troycarson/Documents/JUCE Projects/Stepper/assets/ui/Grain_Icon.svg
+/Users/troycarson/Documents/JUCE Projects/Stepper/assets/ui/Granular_Background_Tab1.svg
+/Users/troycarson/Documents/JUCE Projects/Stepper/assets/ui/Granular_Background_Tab2.svg
+/Users/troycarson/Documents/JUCE Projects/Stepper/assets/ui/Granular_Background_Tab3.svg
+/Users/troycarson/Documents/JUCE Projects/Stepper/assets/ui/Granular_Background_Tab4.svg
+/Users/troycarson/Documents/JUCE Projects/Stepper/assets/ui/Granular_Icon.svg
+/Users/troycarson/Documents/JUCE Projects/Stepper/assets/ui/Hall_Icon.svg
 /Users/troycarson/Documents/JUCE Projects/Stepper/assets/ui/High-Cut.svg
 /Users/troycarson/Documents/JUCE Projects/Stepper/assets/ui/Knob_Basic_Dice.svg
 /Users/troycarson/Documents/JUCE Projects/Stepper/assets/ui/Knob_Basic_Inside.svg
@@ -47,6 +55,7 @@
 /Users/troycarson/Documents/JUCE Projects/Stepper/assets/ui/SpaceDelay_Background_Tab2.svg
 /Users/troycarson/Documents/JUCE Projects/Stepper/assets/ui/SpaceDelay_Background_Tab3.svg
 /Users/troycarson/Documents/JUCE Projects/Stepper/assets/ui/SpaceDelay_Background_Tab4.svg
+/Users/troycarson/Documents/JUCE Projects/Stepper/assets/ui/Space_Icon.svg
 /Users/troycarson/Documents/JUCE Projects/Stepper/assets/ui/Step_Active.svg
 /Users/troycarson/Documents/JUCE Projects/Stepper/assets/ui/Step_Background_Plate.svg
 /Users/troycarson/Documents/JUCE Projects/Stepper/assets/ui/Step_Inactive.svg
