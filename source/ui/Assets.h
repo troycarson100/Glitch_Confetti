@@ -36,6 +36,11 @@ struct UiAssets {
     std::unique_ptr<juce::Drawable> granularBackgroundTab3;
     std::unique_ptr<juce::Drawable> granularBackgroundTab4;
     
+    std::unique_ptr<juce::Drawable> slicerBackgroundTab1;
+    std::unique_ptr<juce::Drawable> slicerBackgroundTab2;
+    std::unique_ptr<juce::Drawable> slicerBackgroundTab3;
+    std::unique_ptr<juce::Drawable> slicerBackgroundTab4;
+    
     std::unique_ptr<juce::Drawable> effectPlate;
     std::unique_ptr<juce::Drawable> stepActive, stepInactive, stepTopActive, stepTopInactive;
     std::unique_ptr<juce::Drawable> buttonStepTopActive, buttonStepTopInactive;
@@ -54,6 +59,7 @@ struct UiAssets {
     std::unique_ptr<juce::Drawable> tabChorusIconNew;  // Chorus_Icon.svg (rename to avoid conflict)
     std::unique_ptr<juce::Drawable> tabHallIcon;       // Hall_Icon.svg (was reverb)
     std::unique_ptr<juce::Drawable> tabGrainIcon;      // Grain_Icon.svg
+    std::unique_ptr<juce::Drawable> tabSlicerIcon;     // Slice_Icon.svg
     std::unique_ptr<juce::Drawable> fxPowerOn, stepPowerOn, knobDice, diceLarge, macroAssign;
     std::unique_ptr<juce::Drawable> macro1AssignButton, macro2AssignButton;
     std::unique_ptr<juce::Drawable> lockedIcon, unlockedIcon;

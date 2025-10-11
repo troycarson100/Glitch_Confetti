@@ -51,6 +51,11 @@ bool UiAssets::loadAll()
     granularBackgroundTab3 = loadSVG (Granular_Background_Tab3_svg, Granular_Background_Tab3_svgSize);
     granularBackgroundTab4 = loadSVG (Granular_Background_Tab4_svg, Granular_Background_Tab4_svgSize);
     
+    slicerBackgroundTab1 = loadSVG (Slicer_Background_Tab1_svg, Slicer_Background_Tab1_svgSize);
+    slicerBackgroundTab2 = loadSVG (Slicer_Background_Tab2_svg, Slicer_Background_Tab2_svgSize);
+    slicerBackgroundTab3 = loadSVG (Slicer_Background_Tab3_svg, Slicer_Background_Tab3_svgSize);
+    slicerBackgroundTab4 = loadSVG (Slicer_Background_Tab4_svg, Slicer_Background_Tab4_svgSize);
+    
     effectPlate       = loadSVG (Effect_Background_Plate_svg, Effect_Background_Plate_svgSize);
     stepActive        = loadSVG (Step_Active_svg, Step_Active_svgSize);
     stepInactive      = loadSVG (Step_Inactive_svg, Step_Inactive_svgSize);
@@ -74,6 +79,7 @@ bool UiAssets::loadAll()
     tabChorusIconNew  = loadSVG (Chorus_Icon_svg, Chorus_Icon_svgSize);
     tabHallIcon       = loadSVG (Hall_Icon_svg, Hall_Icon_svgSize);
     tabGrainIcon      = loadSVG (Grain_Icon_svg, Grain_Icon_svgSize);
+    tabSlicerIcon     = loadSVG (Slice_Icon_svg, Slice_Icon_svgSize);
     fxPowerOn         = loadSVG (FX_Power_On_svg, FX_Power_On_svgSize);
     stepPowerOn       = loadSVG (Step_Power_On_svg, Step_Power_On_svgSize);
     knobDice          = loadSVG (Knob_Basic_Dice_svg, Knob_Basic_Dice_svgSize);

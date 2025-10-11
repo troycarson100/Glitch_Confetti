@@ -229,6 +229,42 @@ void RandomizationManager::applyParamChanges()
                 break;
             }
             
+            case EffectID::Granular:
+            {
+                int step = editor->granularUiSelectedStep;
+                if (step >= 0 && step < 16) {
+                    auto s = processor.getGranularSafeSnapshot(step);
+                    // Load into knobs
+                    if (editor->granularKnobs[0]) editor->granularKnobs[0]->setValue(s.granular.sizeMs, juce::sendNotification);
+                    if (editor->granularKnobs[1]) editor->granularKnobs[1]->setValue(s.granular.densityHz, juce::sendNotification);
+                    if (editor->granularKnobs[2]) editor->granularKnobs[2]->setValue(s.granular.position, juce::sendNotification);
+                    if (editor->granularKnobs[3]) editor->granularKnobs[3]->setValue(s.granular.sprayMs, juce::sendNotification);
+                    if (editor->granularKnobs[4]) editor->granularKnobs[4]->setValue(s.granular.pitchSemi, juce::sendNotification);
+                    if (editor->granularKnobs[5]) editor->granularKnobs[5]->setValue(s.granular.random, juce::sendNotification);
+                    if (editor->granularKnobs[6]) editor->granularKnobs[6]->setValue(s.granular.texture, juce::sendNotification);
+                    if (editor->granularKnobs[7]) editor->granularKnobs[7]->setValue(s.granular.mix, juce::sendNotification);
+                    DBG("[RAND]   Granular step " + juce::String(step) + " reloaded");
+                }
+                break;
+            }
+            
+            case EffectID::Slicer:
+            {
+                int step = editor->slicerUiSelectedStep;
+                if (step >= 0 && step < 16) {
+                    auto s = processor.getSlicerSafeSnapshot(step);
+                    // Load into knobs (6 knobs, not 8)
+                    if (editor->slicerKnobs[0]) editor->slicerKnobs[0]->setValue(s.slicer.pattern, juce::sendNotification);
+                    if (editor->slicerKnobs[1]) editor->slicerKnobs[1]->setValue(s.slicer.division, juce::sendNotification);
+                    if (editor->slicerKnobs[2]) editor->slicerKnobs[2]->setValue(s.slicer.offset, juce::sendNotification);
+                    if (editor->slicerKnobs[3]) editor->slicerKnobs[3]->setValue(s.slicer.shape, juce::sendNotification);
+                    if (editor->slicerKnobs[4]) editor->slicerKnobs[4]->setValue(s.slicer.releaseMs, juce::sendNotification);
+                    if (editor->slicerKnobs[5]) editor->slicerKnobs[5]->setValue(s.slicer.mix, juce::sendNotification);
+                    DBG("[RAND]   Slicer step " + juce::String(step) + " reloaded");
+                }
+                break;
+            }
+            
             default:
                 break;
         }
@@ -327,6 +363,34 @@ void RandomizationManager::applyStepChanges()
                 snapshot.reverb.decaySec = 0.2f + rand01() * 19.8f;
                 snapshot.reverb.mix = rand01();
                 processor.setReverbStepSnapshot(target.stepIndex, snapshot);
+                break;
+            }
+            
+            case EffectID::Granular:
+            {
+                auto snapshot = processor.getGranularSafeSnapshot(target.stepIndex);
+                snapshot.granular.sizeMs = 5.0f + rand01() * 195.0f; // 5-200ms
+                snapshot.granular.densityHz = 1.0f + rand01() * 39.0f; // 1-40Hz
+                snapshot.granular.position = rand01(); // 0-1
+                snapshot.granular.sprayMs = rand01() * 200.0f; // 0-200ms
+                snapshot.granular.pitchSemi = -24.0f + rand01() * 48.0f; // -24 to +24
+                snapshot.granular.random = rand01(); // 0-1
+                snapshot.granular.texture = rand01(); // 0-1
+                snapshot.granular.mix = rand01(); // 0-1
+                processor.setGranularStepSnapshot(target.stepIndex, snapshot);
+                break;
+            }
+            
+            case EffectID::Slicer:
+            {
+                auto snapshot = processor.getSlicerSafeSnapshot(target.stepIndex);
+                snapshot.slicer.pattern = std::floor(rand01() * 8.0f); // 0-7
+                snapshot.slicer.division = std::floor(rand01() * 6.0f); // 0-5
+                snapshot.slicer.offset = rand01(); // 0-1 (bipolar in engine)
+                snapshot.slicer.shape = 0.2f + rand01() * 0.6f; // 0.2-0.8 (musical range)
+                snapshot.slicer.releaseMs = 10.0f + rand01() * 50.0f; // 10-60ms (musical range)
+                snapshot.slicer.mix = 0.3f + rand01() * 0.7f; // 0.3-1.0 (audible range)
+                processor.setSlicerStepSnapshot(target.stepIndex, snapshot);
                 break;
             }
             

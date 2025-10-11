@@ -48,12 +48,30 @@ PluginProcessor::PluginProcessor()
     granularSeq.divisionIndex.store(5); // 1/8 default (index 5 = item ID 6)
     granularSeq.playingStep.store(0);
     
+    // Initialize Slicer sequencer
+    slicerSeq.enabled.store(true); // Start enabled
+    slicerSeq.stepsUsed.store(16);
+    slicerSeq.divisionIndex.store(3); // 1/8 default (index 3 for Slicer's 0-5 range)
+    slicerSeq.playingStep.store(0);
+    
+    // Initialize Slicer step snapshots with defaults
+    for (int i = 0; i < 16; ++i) {
+        slicerStepSnapshots[i].slicer.pattern = 0.0f;
+        slicerStepSnapshots[i].slicer.division = 3.0f;
+        slicerStepSnapshots[i].slicer.offset = 0.5f;
+        slicerStepSnapshots[i].slicer.shape = 0.5f;
+        slicerStepSnapshots[i].slicer.releaseMs = 20.0f;
+        slicerStepSnapshots[i].slicer.mix = 0.75f;
+    }
+    DBG("[Stepper] Initialized Slicer step snapshots with default values");
+    
     // Initialize UI state
     uiSelectedStep.store(0);
     autopanUiSelectedStep.store(0);
     dirtUiSelectedStep.store(0);
     chorusUiSelectedStep.store(0);
     reverbUiSelectedStep.store(0);
+    slicerUiSelectedStep.store(0);
     granularUiSelectedStep.store(0);
     
     // Initialize transport cache
@@ -218,23 +236,19 @@ juce::AudioProcessorValueTreeState::ParameterLayout PluginProcessor::createParam
     params.push_back(std::make_unique<juce::AudioParameterBool>("granEnabled", "Granular Enabled", true)); // Start enabled
     params.push_back(std::make_unique<juce::AudioParameterBool>("granDensitySync", "Granular Density Sync", false)); // Density sync mode
     
-    // Rhythm Gate Parameters (8 knobs + 1 toggle)
-    params.push_back(std::make_unique<juce::AudioParameterInt>("gatePattern", "Gate Pattern", 0, 7, 0)); // 8 patterns
-    params.push_back(std::make_unique<juce::AudioParameterInt>("gateDivision", "Gate Division", 0, 5, 3)); // 0=1/1, 1=1/2, 2=1/4, 3=1/8, 4=1/16, 5=1/32
-    params.push_back(std::make_unique<juce::AudioParameterFloat>("gateOffset", "Gate Offset", 
-        juce::NormalisableRange<float>(0.0f, 1.0f, 0.0f, 1.0f), 0.0f)); // Pattern phase shift
-    params.push_back(std::make_unique<juce::AudioParameterFloat>("gateShape", "Gate Shape", 
-        juce::NormalisableRange<float>(0.0f, 1.0f, 0.0f, 1.0f), 0.35f)); // 0=hard/exp, 1=smooth/sine
-    params.push_back(std::make_unique<juce::AudioParameterFloat>("gatePitchSemi", "Gate Pitch", 
-        juce::NormalisableRange<float>(-12.0f, 12.0f, 0.01f, 1.0f), 0.0f)); // Varispeed pitch
-    params.push_back(std::make_unique<juce::AudioParameterFloat>("gateReverse", "Gate Reverse", 
-        juce::NormalisableRange<float>(0.0f, 1.0f, 0.0f, 1.0f), 0.0f)); // Reverse probability/mix
-    params.push_back(std::make_unique<juce::AudioParameterFloat>("gateGlitch", "Gate Glitch", 
-        juce::NormalisableRange<float>(0.0f, 1.0f, 0.0f, 1.0f), 0.0f)); // Micro-stutter amount
-    params.push_back(std::make_unique<juce::AudioParameterFloat>("gateMix", "Gate Mix", 
-        juce::NormalisableRange<float>(0.0f, 1.0f, 0.0f, 1.0f), 0.75f)); // Wet/dry
-    params.push_back(std::make_unique<juce::AudioParameterBool>("gateSync", "Gate Sync", true)); // Tempo sync toggle
-    params.push_back(std::make_unique<juce::AudioParameterBool>("gateEnabled", "Gate Enabled", false)); // Start disabled to prevent crashes
+        // Slicer Parameters (6 knobs + 1 toggle)
+        params.push_back(std::make_unique<juce::AudioParameterInt>("slicerPattern", "Slicer Pattern", 0, 7, 0)); // 8 patterns
+        params.push_back(std::make_unique<juce::AudioParameterInt>("slicerDivision", "Slicer Division", 0, 5, 3)); // 0=1/1, 1=1/2, 2=1/4, 3=1/8, 4=1/16, 5=1/32
+        params.push_back(std::make_unique<juce::AudioParameterFloat>("slicerOffset", "Slicer Offset", 
+            juce::NormalisableRange<float>(0.0f, 1.0f, 0.0f, 1.0f), 0.5f)); // Bipolar: 0.5=center (0%), 0=early, 1=late
+        params.push_back(std::make_unique<juce::AudioParameterFloat>("slicerShape", "Slicer Shape", 
+            juce::NormalisableRange<float>(0.0f, 1.0f, 0.0f, 1.0f), 0.5f)); // Envelope curvature/easing (default centered)
+        params.push_back(std::make_unique<juce::AudioParameterFloat>("slicerReleaseMs", "Slicer Release", 
+            juce::NormalisableRange<float>(5.0f, 80.0f, 0.0f, 1.0f), 20.0f)); // Crossfade/tail duration (ms)
+        params.push_back(std::make_unique<juce::AudioParameterFloat>("slicerMix", "Slicer Mix", 
+            juce::NormalisableRange<float>(0.0f, 1.0f, 0.0f, 1.0f), 0.75f)); // Wet/dry
+        params.push_back(std::make_unique<juce::AudioParameterBool>("slicerSync", "Slicer Sync", true)); // Tempo sync toggle
+        params.push_back(std::make_unique<juce::AudioParameterBool>("slicerEnabled", "Slicer Enabled", true)); // Start enabled
     
     return { params.begin(), params.end() };
 }
@@ -311,13 +325,14 @@ void PluginProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
     chorus.prepare(sampleRate, samplesPerBlock); // Prepare Chorus effect
     hall.prepare(sampleRate, samplesPerBlock, 300); // Prepare JUCE Hall (300ms max predelay)
     granular.prepare(sampleRate, samplesPerBlock, getTotalNumOutputChannels()); // Prepare Granular engine
-    rhythmGate.prepare(sampleRate, samplesPerBlock, getTotalNumOutputChannels()); // Prepare Rhythm Gate engine
+    slicer.prepare(sampleRate, samplesPerBlock, getTotalNumOutputChannels()); // Prepare Slicer engine
     seq.prepare(sampleRate); // Initialize delay sequencer with sample rate
     autopanSeq.prepare(sampleRate); // Initialize AutoPan sequencer with sample rate
     dirtSeq.prepare(sampleRate); // Initialize Dirt sequencer with sample rate
     chorusSeq.prepare(sampleRate); // Initialize Chorus sequencer with sample rate
     reverbSeq.prepare(sampleRate); // Initialize Reverb sequencer with sample rate
     granularSeq.prepare(sampleRate); // Initialize Granular sequencer with sample rate
+    slicerSeq.prepare(sampleRate); // Initialize Slicer sequencer with sample rate
     
     // Prepare output visualizer buffer (store ~1 second of downsampled audio)
     const int bufferSize = (int)(sampleRate / downsampleRate); // ~1 second at downsample rate
@@ -423,6 +438,8 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                 dirtSeq.resetPhase();      // Dirt sequencer phase reset
                 chorusSeq.resetPhase();    // Chorus sequencer phase reset
                 reverbSeq.resetPhase();    // Reverb sequencer phase reset
+                granularSeq.resetPhase();  // Granular sequencer phase reset
+                slicerSeq.resetPhase();    // Slicer sequencer phase reset
                 
                 // Auto-enable delay sequencer on DAW play (user can still disable with power button)
                 if (followHost.load()) {
@@ -460,6 +477,11 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                 if (granularSeq.enabled.load()) {
                     granularSeq.active.store(true);  // Activate Granular sequencer
                     DBG("[GRANULAR SEQ] ✓ Activated on play edge");
+                }
+                
+                if (slicerSeq.enabled.load()) {
+                    slicerSeq.active.store(true);  // Activate Slicer sequencer
+                    DBG("[SLICER SEQ] ✓ Activated on play edge");
                 }
                 
                 DBG("[SEQ] Play edge detected");
@@ -513,6 +535,13 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                     granularSeq.currentStep.store(granularStep);
                     granularSeq.playingStep.store(granularStep);
                     DBG("[GRANULAR SEQ] Lock-in at PPQ=" << ppq << " -> step " << granularStep);
+                }
+                
+                if (slicerSeq.enabled.load() && slicerSeq.active.load()) {
+                    const int slicerStep = slicerSeq.computeStepFromPPQ(ppq);
+                    slicerSeq.currentStep.store(slicerStep);
+                    slicerSeq.playingStep.store(slicerStep);
+                    DBG("[SLICER SEQ] Lock-in at PPQ=" << ppq << " -> step " << slicerStep);
                 }
                 
                 armPending.store(false);
@@ -586,6 +615,16 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                     granularSeq.currentStep.store(granularStep);
                     granularSeq.playingStep.store(granularStep);
                     DBG("[GRANULAR SEQ] ★ Step changed to: " << granularStep << " PPQ: " << ppq);
+                }
+            }
+            
+            // Slicer sequencer stepping (shares same PPQ/transport, independent timing)
+            if (isPlaying && ppqValid && slicerSeq.active.load()) {
+                const int slicerStep = slicerSeq.computeStepFromPPQ(ppq);
+                if (slicerStep != slicerSeq.currentStep.load()) {
+                    slicerSeq.currentStep.store(slicerStep);
+                    slicerSeq.playingStep.store(slicerStep);
+                    DBG("[SLICER SEQ] ★ Step changed to: " << slicerStep << " PPQ: " << ppq);
                 }
             }
             
@@ -949,45 +988,76 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                 break;
             }
             
-            case EffectID::RhythmGate:
+            case EffectID::Slicer:
             {
                 // Check if effect is enabled
-                auto* gateEnabledParam = valueTreeState.getRawParameterValue("gateEnabled");
-                bool isGateEnabled = gateEnabledParam ? (gateEnabledParam->load() > 0.5f) : false;
+                auto* slicerEnabledParam = valueTreeState.getRawParameterValue("slicerEnabled");
+                bool isSlicerEnabled = slicerEnabledParam ? (slicerEnabledParam->load() > 0.5f) : false;
                 
-                if (isGateEnabled)
+                if (isSlicerEnabled)
                 {
-                    // Get parameters from APVTS
-                    auto* patternParam = valueTreeState.getRawParameterValue("gatePattern");
-                    auto* divisionParam = valueTreeState.getRawParameterValue("gateDivision");
-                    auto* offsetParam = valueTreeState.getRawParameterValue("gateOffset");
-                    auto* shapeParam = valueTreeState.getRawParameterValue("gateShape");
-                    auto* pitchParam = valueTreeState.getRawParameterValue("gatePitchSemi");
-                    auto* reverseParam = valueTreeState.getRawParameterValue("gateReverse");
-                    auto* glitchParam = valueTreeState.getRawParameterValue("gateGlitch");
-                    auto* mixParam = valueTreeState.getRawParameterValue("gateMix");
-                    auto* syncParam = valueTreeState.getRawParameterValue("gateSync");
+                    // Check if sequencer is enabled and active
+                    bool seqEnabled = slicerSeq.enabled.load();
+                    bool seqActive = slicerSeq.active.load();
+                    int playingStep = slicerSeq.playingStep.load();
                     
-                    int patternIdx = patternParam ? static_cast<int>(patternParam->load()) : 0;
-                    int divisionIdx = divisionParam ? static_cast<int>(divisionParam->load()) : 3;
-                    float offset01 = offsetParam ? offsetParam->load() : 0.0f;
-                    float shape01 = shapeParam ? shapeParam->load() : 0.35f;
-                    float pitchSemi = pitchParam ? pitchParam->load() : 0.0f;
-                    float reverse01 = reverseParam ? reverseParam->load() : 0.0f;
-                    float glitch01 = glitchParam ? glitchParam->load() : 0.0f;
-                    float mix01 = mixParam ? mixParam->load() : 0.75f;
+                    // Get parameters from sequencer snapshot OR APVTS
+                    int patternIdx, divisionIdx;
+                    float offset01, shape01, releaseMs, mix01;
+                    
+                    if (seqEnabled && seqActive && playingStep >= 0 && playingStep < 16) {
+                        // Read from step snapshot
+                        StepSnapshot snapshot = slicerStepSnapshots[playingStep];
+                        patternIdx = static_cast<int>(snapshot.slicer.pattern);
+                        divisionIdx = static_cast<int>(snapshot.slicer.division);
+                        offset01 = snapshot.slicer.offset;
+                        shape01 = snapshot.slicer.shape;
+                        releaseMs = snapshot.slicer.releaseMs;
+                        mix01 = snapshot.slicer.mix;
+                    } else {
+                        // Read from APVTS (global)
+                        auto* patternParam = valueTreeState.getRawParameterValue("slicerPattern");
+                        auto* divisionParam = valueTreeState.getRawParameterValue("slicerDivision");
+                        auto* offsetParam = valueTreeState.getRawParameterValue("slicerOffset");
+                        auto* shapeParam = valueTreeState.getRawParameterValue("slicerShape");
+                        auto* releaseParam = valueTreeState.getRawParameterValue("slicerReleaseMs");
+                        auto* mixParam = valueTreeState.getRawParameterValue("slicerMix");
+                        
+                        patternIdx = patternParam ? static_cast<int>(patternParam->load()) : 0;
+                        divisionIdx = divisionParam ? static_cast<int>(divisionParam->load()) : 3;
+                        offset01 = offsetParam ? offsetParam->load() : 0.5f;
+                        shape01 = shapeParam ? shapeParam->load() : 0.5f;
+                        releaseMs = releaseParam ? releaseParam->load() : 20.0f;
+                        mix01 = mixParam ? mixParam->load() : 0.75f;
+                    }
+                    
+                    // Sync toggle (always from APVTS)
+                    auto* syncParam = valueTreeState.getRawParameterValue("slicerSync");
                     bool syncOn = syncParam ? (syncParam->load() > 0.5f) : true;
                     
                     // Update tempo info
-                    rhythmGate.setTempoInfo(transportCache.playing.load(), transportCache.bpm.load(), 
-                                           transportCache.ppq.load(), transportCache.tsNum.load());
+                    slicer.setTempoInfo(transportCache.playing.load(), transportCache.bpm.load(), 
+                                       transportCache.ppq.load(), transportCache.tsNum.load());
                     
                     // Set parameters
-                    rhythmGate.setParameters(patternIdx, divisionIdx, offset01, shape01, 
-                                           pitchSemi, reverse01, glitch01, mix01, syncOn);
+                    slicer.setParameters(patternIdx, divisionIdx, offset01, shape01, 
+                                       releaseMs, mix01, syncOn);
+                    
+                    // Debug log (throttled)
+                    static int slicerDebugCounter = 0;
+                    if ((slicerDebugCounter++ % 500) == 0) {  // Every 500 blocks
+                        float offsetBP = (offset01 - 0.5f) * 2.0f;
+                        DBG("[SLICER] pat=" << patternIdx << " div=" << divisionIdx 
+                            << " offsetBP=" << juce::String(offsetBP, 2)
+                            << " shape=" << juce::String(shape01, 2)
+                            << " rel=" << juce::String(releaseMs, 1) << "ms"
+                            << " mix=" << juce::String(mix01, 2)
+                            << " seqActive=" << (seqActive ? "Y" : "N")
+                            << " step=" << playingStep);
+                    }
                     
                     // Process
-                    rhythmGate.process(buffer);
+                    slicer.process(buffer);
                 }
                 break;
             }
@@ -1721,6 +1791,50 @@ void PluginProcessor::updateGranularCurrentStepSnapshot(int knobIndex, float val
             break;
         case 6: // Texture
             granularStepSnapshots[currentStep].granular.texture = value;
+            break;
+    }
+}
+
+// Slicer snapshot accessors
+StepSnapshot PluginProcessor::getSlicerSafeSnapshot(int step) const
+{
+    if (step >= 0 && step < 16) {
+        return slicerStepSnapshots[step];
+    }
+    return slicerStepSnapshots[0];
+}
+
+void PluginProcessor::setSlicerStepSnapshot(int step, const StepSnapshot& snapshot) noexcept
+{
+    if (step >= 0 && step < 16) {
+        slicerStepSnapshots[step] = snapshot;
+    }
+}
+
+void PluginProcessor::updateSlicerCurrentStepSnapshot(int knobIndex, float value)
+{
+    int currentStep = slicerUiSelectedStep.load();
+    if (currentStep < 0 || currentStep >= 16) return;
+    
+    // Mix (knob 5) is global, not saved to snapshots
+    if (knobIndex == 5) return;
+    
+    // Update the specific Slicer parameter in the snapshot
+    switch (knobIndex) {
+        case 0: // Pattern
+            slicerStepSnapshots[currentStep].slicer.pattern = value;
+            break;
+        case 1: // Division
+            slicerStepSnapshots[currentStep].slicer.division = value;
+            break;
+        case 2: // Offset
+            slicerStepSnapshots[currentStep].slicer.offset = value;
+            break;
+        case 3: // Shape
+            slicerStepSnapshots[currentStep].slicer.shape = value;
+            break;
+        case 4: // Release (ms)
+            slicerStepSnapshots[currentStep].slicer.releaseMs = value;
             break;
     }
 }

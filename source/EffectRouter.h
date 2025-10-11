@@ -17,7 +17,7 @@ enum class EffectID {
     Chorus = 3,
     Reverb = 4,
     Granular = 5,
-    RhythmGate = 6
+    Slicer = 6
 };
 
 enum class SlotID {

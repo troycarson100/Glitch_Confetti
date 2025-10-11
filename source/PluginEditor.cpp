@@ -150,20 +150,30 @@ PluginEditor::PluginEditor (PluginProcessor& p)
         }
         
         // Setup Rhythm Gate page
-        DBG("[UI] Setting up Rhythm Gate page...");
-        setupGateKnobs();
-        setupGateEffectsArea();
+        DBG("[UI] Setting up Slicer page...");
+        setupSlicerKnobs();
+        setupSlicerEffectsArea();
+        setupSlicerSequencerArea();
+        setupSlicerAllStepsToggle();
         
-        // Initialize Rhythm Gate FX power button state from parameter
-        auto* gateEnabledParam = processorRef.getAPVTS().getRawParameterValue("gateEnabled");
-        if (gateEnabledParam) {
-            gateFxAreaEnabled = gateEnabledParam->load() > 0.5f;
-            if (gateFxPowerButton) {
-                gateFxPowerButton->setToggleState(gateFxAreaEnabled, juce::dontSendNotification);
-            }
-            updateGateFxAreaVisibility();
-            DBG("[UI] Rhythm Gate FX power initialized: " + juce::String(gateFxAreaEnabled ? "ON" : "OFF"));
+        // Sync Slicer sequencer state with processor on startup
+        processorRef.setSlicerSequencerEnabled(slicerStepAreaEnabled);
+        DBG("[UI] Initial Slicer sequencer state synced: enabled=" + juce::String(slicerStepAreaEnabled ? 1 : 0));
+        
+        // Initialize Slicer step power button state
+        if (slicerStepPowerButton) {
+            slicerStepPowerButton->setToggleState(true, juce::dontSendNotification);
+            slicerStepAreaEnabled = true;
         }
+        
+        // Initialize Slicer FX power button state - start enabled
+        slicerFxAreaEnabled = true;
+        if (slicerFxPowerButton) {
+            slicerFxPowerButton->setToggleState(true, juce::dontSendNotification);
+        }
+        updateSlicerFxAreaVisibility();
+        updateSlicerStepAreaVisibility();
+        DBG("[UI] Slicer FX power initialized: ON");
         
         // Initialize Chorus FX power button state from parameter
         auto* chorusEnabledParam = processorRef.getAPVTS().getRawParameterValue("chorusEnabled");
@@ -246,6 +256,13 @@ void PluginEditor::paint (juce::Graphics& g)
                 else if (tabNumber == 3 && assets.granularBackgroundTab3) return assets.granularBackgroundTab3.get();
                 else if (tabNumber == 4 && assets.granularBackgroundTab4) return assets.granularBackgroundTab4.get();
                 break;
+                
+            case EffectID::Slicer:
+                if (tabNumber == 1 && assets.slicerBackgroundTab1) return assets.slicerBackgroundTab1.get();
+                else if (tabNumber == 2 && assets.slicerBackgroundTab2) return assets.slicerBackgroundTab2.get();
+                else if (tabNumber == 3 && assets.slicerBackgroundTab3) return assets.slicerBackgroundTab3.get();
+                else if (tabNumber == 4 && assets.slicerBackgroundTab4) return assets.slicerBackgroundTab4.get();
+                break;
         }
         return nullptr;
     };
@@ -288,7 +305,7 @@ void PluginEditor::paint (juce::Graphics& g)
             case EffectID::Chorus:     return assets.tabChorusIconNew.get();  // Chorus_Icon
             case EffectID::Reverb:     return assets.tabHallIcon.get();       // Hall_Icon (was reverb)
             case EffectID::Granular:   return assets.tabGrainIcon.get();      // Grain_Icon
-            case EffectID::RhythmGate: return nullptr;                        // TODO: Add RhythmGate icon
+            case EffectID::Slicer: return assets.tabSlicerIcon.get();
         }
         return nullptr;
     };
@@ -457,26 +474,26 @@ void PluginEditor::paint (juce::Graphics& g)
             }
             break;
             
-        case EffectID::RhythmGate:
+        case EffectID::Slicer:
             // No lock buttons for Rhythm Gate (real-time effect without per-step snapshots)
             // But draw LED strip visualization
             {
-                auto* patternParam = processorRef.getAPVTS().getRawParameterValue("gatePattern");
+                auto* patternParam = processorRef.getAPVTS().getRawParameterValue("slicerPattern");
                 int patternIdx = patternParam ? static_cast<int>(patternParam->load()) : 0;
                 
                 // Draw LEDs based on current pattern
                 for (int i = 0; i < 16; ++i)
                 {
-                    if (gateLEDStrip[i] != nullptr && gateLEDStrip[i]->isVisible())
+                    if (slicerLEDStrip[i] != nullptr && slicerLEDStrip[i]->isVisible())
                     {
-                        auto ledBounds = gateLEDStrip[i]->getBounds().toFloat();
+                        auto ledBounds = slicerLEDStrip[i]->getBounds().toFloat();
                         
                         // Get pattern value (0 or 1) for this step
                         float patternValue = 0.0f;
                         // This will be implemented based on the pattern in RhythmGateEngine
                         // For now, draw a simple on/off indicator
                         bool isOn = (i % 2 == 0); // Placeholder
-                        bool isCurrent = (i == gateCurrentStep);
+                        bool isCurrent = (i == slicerCurrentStep);
                         
                         // LED color: green if on, dim gray if off, bright white if current step
                         juce::Colour ledColor = isCurrent ? juce::Colours::white : 
@@ -1175,6 +1192,9 @@ void PluginEditor::timerCallback()
     
     // Update Granular sequencer UI
     updateGranularSequencerUI();
+    
+    // Update Slicer sequencer UI
+    updateSlicerSequencerUI();
 }
 
 bool PluginEditor::keyPressed(const juce::KeyPress& key)
@@ -2224,9 +2244,9 @@ void PluginEditor::setupSpaceDelayUI()
     effectTypeDropdown->addItem("Auto Pan", 2);
     effectTypeDropdown->addItem("Dirt", 3);
     effectTypeDropdown->addItem("Chorus", 4);
-    effectTypeDropdown->addItem("Reverb", 5);
-    effectTypeDropdown->addItem("Granular", 6);
-    effectTypeDropdown->addItem("Rhythm Gate", 7);
+    effectTypeDropdown->addItem("Hall", 5);
+    effectTypeDropdown->addItem("Grain", 6);
+    effectTypeDropdown->addItem("Slicer", 7);
     effectTypeDropdown->setSelectedId(1, juce::dontSendNotification);
     
     // Position dropdown with proper height for closed control
@@ -3148,8 +3168,9 @@ void PluginEditor::setupTabSystem()
         selector->addItem("Auto Pan", 2);
         selector->addItem("Dirt", 3);
         selector->addItem("Chorus", 4);
-        selector->addItem("Reverb", 5);
-        selector->addItem("Granular", 6);
+        selector->addItem("Hall", 5);
+        selector->addItem("Grain", 6);
+        selector->addItem("Slicer", 7);
         
         // Hide text when closed - just show carrot icon
         selector->setTextWhenNothingSelected("");
@@ -3383,6 +3404,8 @@ void PluginEditor::setupTabSystem()
     DBG("[UI] Dirt components: " << dirtGroup.size());
     DBG("[UI] Chorus components: " << chorusGroup.size());
     DBG("[UI] Reverb components: " << reverbGroup.size());
+    DBG("[UI] Granular components: " << granularGroup.size());
+    DBG("[UI] Slicer components: " << slicerGroup.size());
 }
 
 void PluginEditor::showPage(FxPageID id)
@@ -3493,7 +3516,7 @@ void PluginEditor::showPage(FxPageID id)
     setVisibleVec(chorusGroup, false);
     setVisibleVec(reverbGroup, false);
     setVisibleVec(granularGroup, false);
-    setVisibleVec(gateGroup, false);
+    setVisibleVec(slicerGroup, false);
     
     // Show only the group for the effect assigned to this slot
     switch (assignedEffect)
@@ -3522,24 +3545,32 @@ void PluginEditor::showPage(FxPageID id)
             setVisibleVec(granularGroup, true);
             DBG("[ROUTER] Showing Granular UI for slot " << slotIndex);
             break;
-        case EffectID::RhythmGate:
-            setVisibleVec(gateGroup, true);
-            DBG("[ROUTER] Showing Rhythm Gate UI for slot " << slotIndex);
+        case EffectID::Slicer:
+            setVisibleVec(slicerGroup, true);
+            DBG("[ROUTER] Showing Slicer UI for slot " << slotIndex);
             
-            // Sync UI state with parameter
-            auto* gateEnabledParam = processorRef.getAPVTS().getRawParameterValue("gateEnabled");
-            if (gateEnabledParam) {
-                gateFxAreaEnabled = gateEnabledParam->load() > 0.5f;
-                if (gateFxPowerButton) {
-                    gateFxPowerButton->setToggleState(gateFxAreaEnabled, juce::dontSendNotification);
+            // Restore UI state from APVTS parameters
+            {
+                auto* fxEnabledParam = processorRef.getAPVTS().getRawParameterValue("slicerEnabled");
+                slicerFxAreaEnabled = fxEnabledParam ? (fxEnabledParam->load() > 0.5f) : true;
+                if (slicerFxPowerButton) {
+                    slicerFxPowerButton->setToggleState(slicerFxAreaEnabled, juce::dontSendNotification);
                 }
+                
+                // Step power is always on (no APVTS param for it)
+                slicerStepAreaEnabled = true;
+                if (slicerStepPowerButton) {
+                    slicerStepPowerButton->setToggleState(true, juce::dontSendNotification);
+                }
+                
+                updateSlicerFxAreaVisibility();
+                updateSlicerStepAreaVisibility();
             }
-            updateGateFxAreaVisibility();
             
-            // Trigger initial value label updates
-            for (int i = 0; i < 8; ++i) {
-                if (gateKnobs[i]) {
-                    gateKnobs[i]->onValueChange();
+            // Trigger initial value label updates (6 knobs, not 8)
+            for (int i = 0; i < 6; ++i) {
+                if (slicerKnobs[i]) {
+                    slicerKnobs[i]->onValueChange();
                 }
             }
             break;
@@ -6409,7 +6440,7 @@ void PluginEditor::onEffectSelectorChanged(int slotIndex)
     int selectedEffectID = selector->getSelectedId() - 1; // ComboBox IDs are 1-based
     DBG("[ROUTER] Selected effect ID: " << selectedEffectID);
     
-    if (selectedEffectID < 0 || selectedEffectID > 5) {
+    if (selectedEffectID < 0 || selectedEffectID > 6) {
         DBG("[ROUTER] ERROR: Invalid effect ID " << selectedEffectID);
         return;
     }
@@ -6510,6 +6541,7 @@ void PluginEditor::onEffectSelectorChanged(int slotIndex)
     setVisibleVec(chorusGroup, false);
     setVisibleVec(reverbGroup, false);
     setVisibleVec(granularGroup, false);
+    setVisibleVec(slicerGroup, false);
     DBG("[ROUTER] ✓ All groups hidden");
     
     // Show the correct effect for the current page based on new assignment
@@ -6544,6 +6576,37 @@ void PluginEditor::onEffectSelectorChanged(int slotIndex)
             DBG("[ROUTER] Showing Granular group (" << granularGroup.size() << " components)");
             setVisibleVec(granularGroup, true);
             DBG("[ROUTER] ✓ Granular group shown");
+            break;
+        case EffectID::Slicer:
+            DBG("[ROUTER] Showing Slicer group (" << slicerGroup.size() << " components)");
+            setVisibleVec(slicerGroup, true);
+            
+            // Restore UI state from APVTS parameters
+            {
+                auto* fxEnabledParam = processorRef.getAPVTS().getRawParameterValue("slicerEnabled");
+                slicerFxAreaEnabled = fxEnabledParam ? (fxEnabledParam->load() > 0.5f) : true;
+                if (slicerFxPowerButton) {
+                    slicerFxPowerButton->setToggleState(slicerFxAreaEnabled, juce::dontSendNotification);
+                }
+                
+                // Step power is always on (no APVTS param for it)
+                slicerStepAreaEnabled = true;
+                if (slicerStepPowerButton) {
+                    slicerStepPowerButton->setToggleState(true, juce::dontSendNotification);
+                }
+                
+                updateSlicerFxAreaVisibility();
+                updateSlicerStepAreaVisibility();
+            }
+            
+            // Trigger initial value label updates (6 knobs, not 8)
+            for (int i = 0; i < 6; ++i) {
+                if (slicerKnobs[i]) {
+                    slicerKnobs[i]->onValueChange();
+                }
+            }
+            
+            DBG("[ROUTER] ✓ Slicer group shown");
             break;
     }
     
@@ -6779,19 +6842,34 @@ void PluginEditor::setupGranularKnobs()
     }
 
     // Create Density sync toggle (next to Density knob - knob 1)
-    granularDensitySyncToggle = std::make_unique<CircularToggleButton>();
-    granularDensitySyncToggle->setButtonText("S");
+    // Create Density sync toggle (next to Density knob - knob 1) - using SSyncButton like delay page
+    struct GranularSSyncButton : public juce::Button {
+        GranularSSyncButton() : juce::Button("GranularSSync") {}
+        void paintButton(juce::Graphics& g, bool over, bool down) override {
+            juce::ignoreUnused(over, down);
+            auto r = getLocalBounds().toFloat();
+            const float radius = juce::jmin(r.getWidth(), r.getHeight()) * 0.5f;
+            auto centre = r.getCentre();
+            g.setColour(juce::Colours::white);
+            if (getToggleState()) {
+                g.fillEllipse(centre.x - radius, centre.y - radius, radius*2, radius*2);
+                g.setColour(juce::Colours::black);
+            } else {
+                g.drawEllipse(centre.x - radius, centre.y - radius, radius*2, radius*2, 2.0f);
+            }
+            g.setFont(juce::Font(10.0f, juce::Font::bold));
+            g.drawText("S", r, juce::Justification::centred);
+        }
+    };
+    granularDensitySyncToggle = std::make_unique<GranularSSyncButton>();
     addAndMakeVisible(granularDensitySyncToggle.get());
     granularDensitySyncToggle->setVisible(false);
     
-    // Position it to the left of the Density knob label (knob 1)
-    int densityKnobIndex = 1;
-    int densityX = startX + (densityKnobIndex % 4) * (knobSize + knobSpacing);
-    int densityY = startY + (densityKnobIndex / 4) * (knobSize + 20);
-    if (densityKnobIndex < 4) densityY -= 23;
-    else densityY -= 1;
-    
-    granularDensitySyncToggle->setBounds(densityX - 22, densityY - 13, 18, 18);
+    // Position relative to Density knob label (knob 1) - moved left 5px from delay page
+    if (granularKnobLabels[1] != nullptr) {
+        auto lb = granularKnobLabels[1]->getBounds();
+        granularDensitySyncToggle->setBounds(lb.getX() + 5, lb.getY() + 4, 12, 12);
+    }
     
     auto* densitySyncParam = processorRef.getAPVTS().getRawParameterValue("granDensitySync");
     if (densitySyncParam) {
@@ -7382,16 +7460,16 @@ void PluginEditor::updateGranularParameterFromKnob(int knobIndex)
 }
 
 //==============================================================================
-// Rhythm Gate Page Implementation
+// Slicer Page Implementation
 //==============================================================================
 
-void PluginEditor::setupGateKnobs()
+void PluginEditor::setupSlicerKnobs()
 {
-    DBG("[UI] Setting up Rhythm Gate knobs...");
+    DBG("[UI] Setting up Slicer knobs...");
 
-    // Rhythm Gate knob names (8 knobs)
-    std::vector<juce::String> gateKnobNames = {
-        "Pattern", "Division", "Offset", "Shape", "Pitch", "Reverse", "Glitch", "Mix"
+    // Slicer knob names (6 knobs)
+    std::vector<juce::String> slicerKnobNames = {
+        "Pattern", "Division", "Offset", "Shape", "Release", "Mix"
     };
 
     // Effect area bounds (same as other pages)
@@ -7401,59 +7479,51 @@ void PluginEditor::setupGateKnobs()
     const int startX = effectArea.getX() + 15;
     const int startY = effectArea.getY() + effectArea.getHeight() - 210;
 
-    for (int i = 0; i < 8; ++i)
+    for (int i = 0; i < 6; ++i)
     {
-        gateKnobs[i] = std::make_unique<CustomKnob>();
-        addAndMakeVisible(gateKnobs[i].get());
-        gateKnobs[i]->setVisible(false);
+        slicerKnobs[i] = std::make_unique<CustomKnob>();
+        addAndMakeVisible(slicerKnobs[i].get());
+        slicerKnobs[i]->setVisible(false);
         
-        gateKnobs[i]->setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
-        gateKnobs[i]->setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
+        slicerKnobs[i]->setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
+        slicerKnobs[i]->setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
 
         // Set parameter ranges based on knob index
         switch (i) {
             case 0: // Pattern (0-7)
-                gateKnobs[i]->setRange(0.0, 7.0, 1.0);
-                gateKnobs[i]->setValue(0.0, juce::dontSendNotification);
+                slicerKnobs[i]->setRange(0.0, 7.0, 1.0);
+                slicerKnobs[i]->setValue(0.0, juce::dontSendNotification);
                 break;
             case 1: // Division (0-5: 1/1, 1/2, 1/4, 1/8, 1/16, 1/32)
-                gateKnobs[i]->setRange(0.0, 5.0, 1.0);
-                gateKnobs[i]->setValue(3.0, juce::dontSendNotification); // 1/8 default
+                slicerKnobs[i]->setRange(0.0, 5.0, 1.0);
+                slicerKnobs[i]->setValue(3.0, juce::dontSendNotification); // 1/8 default
                 break;
-            case 2: // Offset (0-1)
-                gateKnobs[i]->setRange(0.0, 1.0, 0.01);
-                gateKnobs[i]->setValue(0.0, juce::dontSendNotification);
+            case 2: // Offset (0-1, bipolar: 0.5=center)
+                slicerKnobs[i]->setRange(0.0, 1.0, 0.01);
+                slicerKnobs[i]->setValue(0.5, juce::dontSendNotification);
                 break;
             case 3: // Shape (0-1)
-                gateKnobs[i]->setRange(0.0, 1.0, 0.01);
-                gateKnobs[i]->setValue(0.35, juce::dontSendNotification);
+                slicerKnobs[i]->setRange(0.0, 1.0, 0.01);
+                slicerKnobs[i]->setValue(0.5, juce::dontSendNotification);
                 break;
-            case 4: // Pitch (-12 to +12 semitones)
-                gateKnobs[i]->setRange(-12.0, 12.0, 0.01);
-                gateKnobs[i]->setValue(0.0, juce::dontSendNotification);
+            case 4: // Release (5-80 ms)
+                slicerKnobs[i]->setRange(5.0, 80.0, 0.1);
+                slicerKnobs[i]->setValue(20.0, juce::dontSendNotification);
                 break;
-            case 5: // Reverse (0-1)
-                gateKnobs[i]->setRange(0.0, 1.0, 0.01);
-                gateKnobs[i]->setValue(0.0, juce::dontSendNotification);
-                break;
-            case 6: // Glitch (0-1)
-                gateKnobs[i]->setRange(0.0, 1.0, 0.01);
-                gateKnobs[i]->setValue(0.0, juce::dontSendNotification);
-                break;
-            case 7: // Mix (0-1)
-                gateKnobs[i]->setRange(0.0, 1.0, 0.01);
-                gateKnobs[i]->setValue(0.75, juce::dontSendNotification);
+            case 5: // Mix (0-1)
+                slicerKnobs[i]->setRange(0.0, 1.0, 0.01);
+                slicerKnobs[i]->setValue(0.75, juce::dontSendNotification);
                 break;
         }
         
         // Add value change callback to update value label
-        gateKnobs[i]->onValueChange = [this, i]() {
-            if (gateKnobs[i] != nullptr) {
-                updateGateParameterFromKnob(i);
+        slicerKnobs[i]->onValueChange = [this, i]() {
+            if (slicerKnobs[i] != nullptr) {
+                updateSlicerParameterFromKnob(i);
                 
                 // Update value label
-                if (gateValueLabels[i]) {
-                    float value = gateKnobs[i]->getValue();
+                if (slicerValueLabels[i]) {
+                    float value = slicerKnobs[i]->getValue();
                     juce::String valueText;
                     
                     switch (i) {
@@ -7466,29 +7536,37 @@ void PluginEditor::setupGateKnobs()
                             break;
                         }
                         case 1: { // Division
-                            std::vector<juce::String> divNames = {"1/1", "1/2", "1/4", "1/8", "1/16", "1/32"};
                             int divIdx = juce::jlimit(0, 5, (int)value);
-                            valueText = divNames[divIdx];
+                            if (slicerSyncEnabled) {
+                                std::vector<juce::String> divNames = {"1/1", "1/2", "1/4", "1/8", "1/16", "1/32"};
+                                valueText = divNames[divIdx];
+                            } else {
+                                // Show ms values when not synced (at 120 BPM baseline)
+                                std::vector<juce::String> msValues = {"2000ms", "1000ms", "500ms", "250ms", "125ms", "62ms"};
+                                valueText = msValues[divIdx];
+                            }
                             break;
                         }
-                        case 2: valueText = juce::String(int(value * 100)) + "%"; break; // Offset
+                        case 2: { // Offset (bipolar: 0.5=0%, 0=-50%, 1=+50%)
+                            int bipolar = int((value - 0.5f) * 100.0f);
+                            valueText = (bipolar >= 0 ? "+" : "") + juce::String(bipolar) + "%";
+                            break;
+                        }
                         case 3: valueText = juce::String(int(value * 100)) + "%"; break; // Shape
-                        case 4: valueText = juce::String(value, 1) + "st"; break; // Pitch (semitones)
-                        case 5: valueText = juce::String(int(value * 100)) + "%"; break; // Reverse
-                        case 6: valueText = juce::String(int(value * 100)) + "%"; break; // Glitch
-                        case 7: valueText = juce::String(int(value * 100)) + "%"; break; // Mix
+                        case 4: valueText = juce::String(int(value)) + "ms"; break; // Release (5-80ms)
+                        case 5: valueText = juce::String(int(value * 100)) + "%"; break; // Mix
                     }
                     
-                    gateValueLabels[i]->setText(valueText, juce::dontSendNotification);
+                    slicerValueLabels[i]->setText(valueText, juce::dontSendNotification);
                 }
             }
         };
 
         // Set knob images
         if (assets.knobRing != nullptr)
-            gateKnobs[i]->setRingImage(assets.knobRing->createCopy());
+            slicerKnobs[i]->setRingImage(assets.knobRing->createCopy());
         if (assets.knobInside != nullptr)
-            gateKnobs[i]->setInnerImage(assets.knobInside->createCopy());
+            slicerKnobs[i]->setInnerImage(assets.knobInside->createCopy());
 
         int x = startX + (i % 4) * (knobSize + knobSpacing);
         int y = startY + (i / 4) * (knobSize + 20);
@@ -7498,219 +7576,633 @@ void PluginEditor::setupGateKnobs()
         else
             y -= 1;
 
-        gateKnobs[i]->setBounds(x, y, knobSize, knobSize);
+        slicerKnobs[i]->setBounds(x, y, knobSize, knobSize);
 
         // Create label
-        gateKnobLabels[i] = std::make_unique<juce::Label>();
-        gateKnobLabels[i]->setText(gateKnobNames[i], juce::dontSendNotification);
-        gateKnobLabels[i]->setFont(juce::Font(12.0f, juce::Font::bold));
-        gateKnobLabels[i]->setColour(juce::Label::textColourId, juce::Colours::white);
-        gateKnobLabels[i]->setJustificationType(juce::Justification::centred);
-        addAndMakeVisible(gateKnobLabels[i].get());
-        gateKnobLabels[i]->setVisible(false);
-        gateKnobLabels[i]->setBounds(x, y - 15, knobSize, 20);
+        slicerKnobLabels[i] = std::make_unique<juce::Label>();
+        slicerKnobLabels[i]->setText(slicerKnobNames[i], juce::dontSendNotification);
+        slicerKnobLabels[i]->setFont(juce::Font(12.0f, juce::Font::bold));
+        slicerKnobLabels[i]->setColour(juce::Label::textColourId, juce::Colours::white);
+        slicerKnobLabels[i]->setJustificationType(juce::Justification::centred);
+        addAndMakeVisible(slicerKnobLabels[i].get());
+        slicerKnobLabels[i]->setVisible(false);
+        slicerKnobLabels[i]->setBounds(x, y - 15, knobSize, 20);
 
         // Create value label
-        gateValueLabels[i] = std::make_unique<juce::Label>();
-        gateValueLabels[i]->setText("0", juce::dontSendNotification);
-        gateValueLabels[i]->setFont(juce::Font(10.0f, juce::Font::plain));
-        gateValueLabels[i]->setColour(juce::Label::textColourId, juce::Colours::white);
-        gateValueLabels[i]->setJustificationType(juce::Justification::centred);
-        addAndMakeVisible(gateValueLabels[i].get());
-        gateValueLabels[i]->setVisible(false);
-        gateValueLabels[i]->setBounds(x, y + knobSize - 10, knobSize, 15);
+        slicerValueLabels[i] = std::make_unique<juce::Label>();
+        slicerValueLabels[i]->setText("0", juce::dontSendNotification);
+        slicerValueLabels[i]->setFont(juce::Font(10.0f, juce::Font::plain));
+        slicerValueLabels[i]->setColour(juce::Label::textColourId, juce::Colours::white);
+        slicerValueLabels[i]->setJustificationType(juce::Justification::centred);
+        addAndMakeVisible(slicerValueLabels[i].get());
+        slicerValueLabels[i]->setVisible(false);
+        slicerValueLabels[i]->setBounds(x, y + knobSize - 10, knobSize, 15);
 
         // Create indicator bar
-        gateIndicatorBars[i] = std::make_unique<IndicatorBar>();
-        addAndMakeVisible(gateIndicatorBars[i].get());
-        gateIndicatorBars[i]->setVisible(false);
-        gateIndicatorBars[i]->setBounds(x + 10, y + knobSize + 8, knobSize - 20, 13);
-        gateIndicatorBars[i]->setValue(0.5f);
+        slicerIndicatorBars[i] = std::make_unique<IndicatorBar>();
+        addAndMakeVisible(slicerIndicatorBars[i].get());
+        slicerIndicatorBars[i]->setVisible(false);
+        slicerIndicatorBars[i]->setBounds(x + 10, y + knobSize + 8, knobSize - 20, 13);
+        slicerIndicatorBars[i]->setValue(0.5f);
     }
 
-    // Create Sync toggle (next to Division knob - knob 1)
-    gateSyncToggle = std::make_unique<CircularToggleButton>();
-    gateSyncToggle->setButtonText("S");
-    addAndMakeVisible(gateSyncToggle.get());
-    gateSyncToggle->setVisible(false);
+    // Create Sync toggle (next to Division knob - knob 1) - using SSyncButton like delay page
+    struct SlicerSSyncButton : public juce::Button {
+        SlicerSSyncButton() : juce::Button("SlicerSSync") {}
+        void paintButton(juce::Graphics& g, bool over, bool down) override {
+            juce::ignoreUnused(over, down);
+            auto r = getLocalBounds().toFloat();
+            const float radius = juce::jmin(r.getWidth(), r.getHeight()) * 0.5f;
+            auto centre = r.getCentre();
+            g.setColour(juce::Colours::white);
+            if (getToggleState()) {
+                g.fillEllipse(centre.x - radius, centre.y - radius, radius*2, radius*2);
+                g.setColour(juce::Colours::black);
+            } else {
+                g.drawEllipse(centre.x - radius, centre.y - radius, radius*2, radius*2, 2.0f);
+            }
+            g.setFont(juce::Font(10.0f, juce::Font::bold));
+            g.drawText("S", r, juce::Justification::centred);
+        }
+    };
+    slicerSyncToggle = std::make_unique<SlicerSSyncButton>();
+    addAndMakeVisible(slicerSyncToggle.get());
+    slicerSyncToggle->setVisible(false);
     
-    // Position it to the left of the Division knob label (knob 1)
-    int divisionKnobIndex = 1;
-    int divisionX = startX + (divisionKnobIndex % 4) * (knobSize + knobSpacing);
-    int divisionY = startY + (divisionKnobIndex / 4) * (knobSize + 20);
-    if (divisionKnobIndex < 4) divisionY -= 23;
-    else divisionY -= 1;
-    
-    gateSyncToggle->setBounds(divisionX - 22, divisionY - 13, 18, 18);
-    
-    auto* syncParam = processorRef.getAPVTS().getRawParameterValue("gateSync");
-    if (syncParam) {
-        gateSyncEnabled = syncParam->load() > 0.5f;
-        gateSyncToggle->setToggleState(gateSyncEnabled, juce::dontSendNotification);
+    // Position relative to Division knob label (knob 1) - moved left 5px from delay page
+    if (slicerKnobLabels[1] != nullptr) {
+        auto lb = slicerKnobLabels[1]->getBounds();
+        slicerSyncToggle->setBounds(lb.getX() + 5, lb.getY() + 4, 12, 12);
     }
     
-    gateSyncToggle->onClick = [this]() {
-        // Toggle the state manually
-        gateSyncEnabled = !gateSyncEnabled;
-        gateSyncToggle->setToggleState(gateSyncEnabled, juce::dontSendNotification);
+    auto* syncParam = processorRef.getAPVTS().getRawParameterValue("slicerSync");
+    if (syncParam) {
+        slicerSyncEnabled = syncParam->load() > 0.5f;
+        slicerSyncToggle->setToggleState(slicerSyncEnabled, juce::dontSendNotification);
+    }
+    
+    slicerSyncToggle->setClickingTogglesState(true);
+    slicerSyncToggle->onClick = [this]() {
+        slicerSyncEnabled = slicerSyncToggle->getToggleState();
         
-        auto* param = processorRef.getAPVTS().getParameter("gateSync");
+        auto* param = processorRef.getAPVTS().getParameter("slicerSync");
         if (param) {
-            param->setValueNotifyingHost(gateSyncEnabled ? 1.0f : 0.0f);
+            param->setValueNotifyingHost(slicerSyncEnabled ? 1.0f : 0.0f);
         }
         
-        DBG("[UI] Rhythm Gate sync: " << (gateSyncEnabled ? "ON" : "OFF"));
+        // Trigger Division knob value change to update display (shows beat divisions or ms)
+        if (slicerKnobs[1]) {
+            slicerKnobs[1]->onValueChange();
+        }
+        
+        DBG("[UI] Slicer sync: " << (slicerSyncEnabled ? "ON" : "OFF"));
+        repaint();
     };
     
-    gateGroup.push_back(gateSyncToggle.get());
+    slicerGroup.push_back(slicerSyncToggle.get());
     
     // Create parameter attachments to connect knobs to APVTS
-    std::vector<juce::String> gateParamIds = {
-        "gatePattern", "gateDivision", "gateOffset", "gateShape",
-        "gatePitchSemi", "gateReverse", "gateGlitch", "gateMix"
+    std::vector<juce::String> slicerParamIds = {
+        "slicerPattern", "slicerDivision", "slicerOffset", "slicerShape",
+        "slicerReleaseMs", "slicerMix"
     };
-
-    for (int i = 0; i < 8; ++i)
+    
+    for (int i = 0; i < 6; ++i)
     {
-        gateAttachments[i] = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
-            processorRef.getAPVTS(), gateParamIds[i], *gateKnobs[i]);
+        slicerAttachments[i] = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+            processorRef.getAPVTS(), slicerParamIds[i], *slicerKnobs[i]);
         
-        // Add to gateGroup for visibility toggling
-        gateGroup.push_back(gateKnobs[i].get());
-        gateGroup.push_back(gateKnobLabels[i].get());
-        gateGroup.push_back(gateValueLabels[i].get());
-        gateGroup.push_back(gateIndicatorBars[i].get());
+        // Add to slicerGroup for visibility toggling
+        slicerGroup.push_back(slicerKnobs[i].get());
+        slicerGroup.push_back(slicerKnobLabels[i].get());
+        slicerGroup.push_back(slicerValueLabels[i].get());
+        slicerGroup.push_back(slicerIndicatorBars[i].get());
     }
     
-    // Create LED strip for pattern visualization (16 small rectangles)
-    auto sequencerArea = juce::Rectangle<int>(25, 374, 413, 140);
-    const int ledWidth = 20;
-    const int ledHeight = 10;
-    const int ledSpacing = 5;
-    const int ledStartX = sequencerArea.getX() + 20;
-    const int ledStartY = sequencerArea.getY() + sequencerArea.getHeight() - 30;
-    
-    for (int i = 0; i < 16; ++i)
-    {
-        gateLEDStrip[i] = std::make_unique<juce::Component>();
-        addAndMakeVisible(gateLEDStrip[i].get());
-        gateLEDStrip[i]->setVisible(false);
-        
-        int x = ledStartX + i * (ledWidth + ledSpacing);
-        gateLEDStrip[i]->setBounds(x, ledStartY, ledWidth, ledHeight);
-        
-        gateGroup.push_back(gateLEDStrip[i].get());
-    }
-    
-    DBG("[UI] Rhythm Gate knobs setup complete");
+    DBG("[UI] Slicer knobs setup complete");
 }
 
-void PluginEditor::setupGateEffectsArea()
+void PluginEditor::setupSlicerEffectsArea()
 {
-    DBG("[UI] Setting up Rhythm Gate effects area...");
+    DBG("[UI] Setting up Slicer effects area...");
     
     // Effect area bounds
     auto effectArea = juce::Rectangle<int>(25, 54, 413, 296);
     
-    // Create "RHYTHM GATE" title label
-    gateEffectsTitle = std::make_unique<juce::Label>();
-    gateEffectsTitle->setText("RHYTHM GATE", juce::dontSendNotification);
-    gateEffectsTitle->setFont(juce::Font(27.648f, juce::Font::bold));
-    gateEffectsTitle->setColour(juce::Label::textColourId, juce::Colours::white);
-    gateEffectsTitle->setJustificationType(juce::Justification::centredLeft);
-    addAndMakeVisible(gateEffectsTitle.get());
-    gateEffectsTitle->setVisible(false);
-    gateEffectsTitle->setBounds(effectArea.getX() + 12, effectArea.getY() + 10, 250, 30);
+    // Create "SLICER" title label
+    slicerEffectsTitle = std::make_unique<juce::Label>();
+    slicerEffectsTitle->setText("SLICER", juce::dontSendNotification);
+    slicerEffectsTitle->setFont(juce::Font(27.648f, juce::Font::bold));
+    slicerEffectsTitle->setColour(juce::Label::textColourId, juce::Colours::white);
+    slicerEffectsTitle->setJustificationType(juce::Justification::centredLeft);
+    addAndMakeVisible(slicerEffectsTitle.get());
+    slicerEffectsTitle->setVisible(false);
+    slicerEffectsTitle->setBounds(effectArea.getX() + 12, effectArea.getY() + 10, 250, 30);
     
     // FX Power button
-    gateFxPowerButton = std::make_unique<juce::DrawableButton>("gatePower", juce::DrawableButton::ImageFitted);
-    addAndMakeVisible(gateFxPowerButton.get());
-    gateFxPowerButton->setVisible(false);
-    gateFxPowerButton->setClickingTogglesState(true);
+    slicerFxPowerButton = std::make_unique<juce::DrawableButton>("slicerPower", juce::DrawableButton::ImageFitted);
+    addAndMakeVisible(slicerFxPowerButton.get());
+    slicerFxPowerButton->setVisible(false);
+    slicerFxPowerButton->setClickingTogglesState(true);
+    
+    // Make button background transparent (match other pages)
+    slicerFxPowerButton->setColour(juce::DrawableButton::backgroundColourId, juce::Colours::transparentBlack);
+    slicerFxPowerButton->setColour(juce::DrawableButton::backgroundOnColourId, juce::Colours::transparentBlack);
     
     if (assets.fxPowerOn) {
-        gateFxPowerButton->setImages(assets.fxPowerOn.get());
+        slicerFxPowerButton->setImages(assets.fxPowerOn.get());
     }
     
-    const int powerButtonSize = 40;
-    int powerX = effectArea.getX() + effectArea.getWidth() - powerButtonSize - 5 + 15 - 5 - 1;
-    int powerY = effectArea.getY() - 5 - powerButtonSize + 25 + 5;
-    gateFxPowerButton->setBounds(powerX, powerY, powerButtonSize, powerButtonSize);
+    const int buttonSize = 46;
+    slicerFxPowerButton->setBounds(effectArea.getX() + effectArea.getWidth() - buttonSize - 8 + 8 + 3, 
+                                   effectArea.getY() + 6 - 20 + 4, buttonSize, buttonSize);
     
-    gateFxPowerButton->onClick = [this]() {
-        gateFxAreaEnabled = gateFxPowerButton->getToggleState();
+    slicerFxPowerButton->onClick = [this]() {
+        slicerFxAreaEnabled = slicerFxPowerButton->getToggleState();
         
         // Update APVTS parameter
-        auto* param = processorRef.getAPVTS().getParameter("gateEnabled");
+        auto* param = processorRef.getAPVTS().getParameter("slicerEnabled");
         if (param) {
-            param->setValueNotifyingHost(gateFxAreaEnabled ? 1.0f : 0.0f);
+            param->setValueNotifyingHost(slicerFxAreaEnabled ? 1.0f : 0.0f);
         }
         
-        updateGateFxAreaVisibility();
-        DBG("[UI] Rhythm Gate FX power: " << (gateFxAreaEnabled ? "ON" : "OFF"));
+        updateSlicerFxAreaVisibility();
+        DBG("[UI] Slicer FX power: " << (slicerFxAreaEnabled ? "ON" : "OFF"));
     };
     
-    gateGroup.push_back(gateEffectsTitle.get());
-    gateGroup.push_back(gateFxPowerButton.get());
+    // Main dice button (randomize all unlocked knobs)
+    slicerDiceButton = std::make_unique<CustomDiceButton>();
+    addAndMakeVisible(slicerDiceButton.get());
+    slicerDiceButton->setVisible(false);
     
-    DBG("[UI] Rhythm Gate effects area setup complete");
+    if (assets.diceLarge != nullptr) {
+        slicerDiceButton->setDiceImage(assets.diceLarge->createCopy());
+    }
+    
+    // Position next to title (match Grain page)
+    const int diceSize = 32;
+    slicerDiceButton->setBounds(effectArea.getX() + 130, effectArea.getY() + 5, diceSize, diceSize);
+    
+    slicerDiceButton->onClick = [this]() {
+        DBG("[UI] Slicer main dice clicked - randomizing current step knobs");
+        randomizeSlicerKnobValues();
+    };
+    
+    slicerGroup.push_back(slicerEffectsTitle.get());
+    slicerGroup.push_back(slicerFxPowerButton.get());
+    slicerGroup.push_back(slicerDiceButton.get());
+    
+    DBG("[UI] Slicer effects area setup complete");
 }
 
-void PluginEditor::updateGateFxAreaVisibility()
+void PluginEditor::updateSlicerFxAreaVisibility()
 {
-    float alpha = gateFxAreaEnabled ? 1.0f : 0.3f;
+    float alpha = slicerFxAreaEnabled ? 1.0f : 0.3f;
     
-    // Update knobs and labels alpha
-    for (int i = 0; i < 8; ++i) {
-        if (gateKnobs[i]) { 
-            gateKnobs[i]->setAlpha(alpha); 
-            gateKnobs[i]->setEnabled(gateFxAreaEnabled);
+    // Update knobs and labels alpha (6 knobs, not 8)
+    for (int i = 0; i < 6; ++i) {
+        if (slicerKnobs[i]) { 
+            slicerKnobs[i]->setAlpha(alpha); 
+            slicerKnobs[i]->setEnabled(slicerFxAreaEnabled);
         }
-        if (gateKnobLabels[i]) gateKnobLabels[i]->setAlpha(alpha);
-        if (gateValueLabels[i]) gateValueLabels[i]->setAlpha(alpha);
-        if (gateIndicatorBars[i]) gateIndicatorBars[i]->setAlpha(alpha);
+        if (slicerKnobLabels[i]) slicerKnobLabels[i]->setAlpha(alpha);
+        if (slicerValueLabels[i]) slicerValueLabels[i]->setAlpha(alpha);
+        if (slicerIndicatorBars[i]) slicerIndicatorBars[i]->setAlpha(alpha);
     }
     
     // Update sync toggle
-    if (gateSyncToggle) {
-        gateSyncToggle->setAlpha(alpha);
-        gateSyncToggle->setEnabled(gateFxAreaEnabled);
+    if (slicerSyncToggle) {
+        slicerSyncToggle->setAlpha(alpha);
+        slicerSyncToggle->setEnabled(slicerFxAreaEnabled);
     }
     
     // Update LED strip
     for (int i = 0; i < 16; ++i) {
-        if (gateLEDStrip[i]) {
-            gateLEDStrip[i]->setAlpha(alpha);
+        if (slicerLEDStrip[i]) {
+            slicerLEDStrip[i]->setAlpha(alpha);
         }
     }
     
     repaint();
 }
 
-void PluginEditor::updateGateParameterFromKnob(int knobIndex)
+void PluginEditor::updateSlicerStepAreaVisibility()
 {
-    if (knobIndex < 0 || knobIndex >= 8 || !gateKnobs[knobIndex])
+    float alpha = slicerStepAreaEnabled ? 1.0f : 0.3f;
+    
+    // Update step buttons
+    for (int i = 0; i < 16; ++i) {
+        if (slicerStepButtons[i]) {
+            slicerStepButtons[i]->setAlpha(alpha);
+            slicerStepButtons[i]->setEnabled(slicerStepAreaEnabled);
+        }
+    }
+    
+    // Update sequencer controls
+    if (slicerStepAmountLabel) {
+        slicerStepAmountLabel->setAlpha(alpha);
+        slicerStepAmountLabel->setEnabled(slicerStepAreaEnabled);
+    }
+    if (slicerRateDropdown) {
+        slicerRateDropdown->setAlpha(alpha);
+        slicerRateDropdown->setEnabled(slicerStepAreaEnabled);
+    }
+    if (slicerStdToggle) {
+        slicerStdToggle->setAlpha(alpha);
+        slicerStdToggle->setEnabled(slicerStepAreaEnabled);
+    }
+    if (slicerStepTitle) slicerStepTitle->setAlpha(alpha);
+    if (slicerStepDiceButton) {
+        slicerStepDiceButton->setAlpha(alpha);
+        slicerStepDiceButton->setEnabled(slicerStepAreaEnabled);
+    }
+    
+    repaint();
+}
+
+void PluginEditor::updateSlicerParameterFromKnob(int knobIndex)
+{
+    if (knobIndex < 0 || knobIndex >= 6 || !slicerKnobs[knobIndex])
         return;
     
-    float value = gateKnobs[knobIndex]->getValue();
+    float value = slicerKnobs[knobIndex]->getValue();
     
-    // Update APVTS directly (no sequencer snapshots for Rhythm Gate - it's a real-time effect)
-    std::vector<juce::String> gateParamIds = {
-        "gatePattern", "gateDivision", "gateOffset", "gateShape",
-        "gatePitchSemi", "gateReverse", "gateGlitch", "gateMix"
+    std::vector<juce::String> slicerParamIds = {
+        "slicerPattern", "slicerDivision", "slicerOffset", "slicerShape",
+        "slicerReleaseMs", "slicerMix"
     };
     
-    auto* param = processorRef.getAPVTS().getParameter(gateParamIds[knobIndex]);
+    // Update APVTS parameter
+    auto* param = processorRef.getAPVTS().getParameter(slicerParamIds[knobIndex]);
     if (param) {
         float normalizedValue = param->convertTo0to1(value);
         param->setValueNotifyingHost(normalizedValue);
     }
+    
+    // Update snapshots
+    if (slicerAllStepsEnabled) {
+        // Update all steps' snapshots directly
+        for (int step = 0; step < 16; ++step) {
+            auto snapshot = processorRef.getSlicerSafeSnapshot(step);
+            
+            // Update the specific parameter (Mix is global, so skip it)
+            if (knobIndex != 5) { // Mix is knob 5, don't snapshot it
+                switch (knobIndex) {
+                    case 0: snapshot.slicer.pattern = value; break;
+                    case 1: snapshot.slicer.division = value; break;
+                    case 2: snapshot.slicer.offset = value; break;
+                    case 3: snapshot.slicer.shape = value; break;
+                    case 4: snapshot.slicer.releaseMs = value; break;
+                }
+                processorRef.setSlicerStepSnapshot(step, snapshot);
+            }
+        }
+    } else {
+        // Update only the current step's snapshot
+        processorRef.updateSlicerCurrentStepSnapshot(knobIndex, value);
+    }
 }
 
-void PluginEditor::updateGateLEDStrip()
+void PluginEditor::randomizeSlicerKnobValues()
+{
+    DBG("[UI] Randomizing ALL Slicer knob values (AllSteps=" << (slicerAllStepsEnabled ? "ON" : "OFF") << ")");
+    
+    for (int i = 0; i < 8; ++i)
+    {
+        randomizeIndividualSlicerKnob(i);
+    }
+    
+    DBG("[UI] Slicer randomization complete");
+}
+
+void PluginEditor::randomizeIndividualSlicerKnob(int knobIndex)
+{
+    if (knobIndex < 0 || knobIndex >= 6 || !slicerKnobs[knobIndex])
+        return;
+    
+    float randomValue = juce::Random::getSystemRandom().nextFloat();
+    
+    switch (knobIndex) {
+        case 0: // Pattern (0-7)
+            randomValue = std::floor(juce::Random::getSystemRandom().nextFloat() * 8.0f);
+            break;
+        case 1: // Division (0-5)
+            randomValue = std::floor(juce::Random::getSystemRandom().nextFloat() * 6.0f);
+            break;
+        case 2: // Offset (0-1)
+            // randomValue already 0-1
+            break;
+        case 3: // Shape (0-1)
+            randomValue = 0.2f + juce::Random::getSystemRandom().nextFloat() * 0.6f; // 0.2-0.8
+            break;
+        case 4: // Release (0-1)
+            randomValue = juce::Random::getSystemRandom().nextFloat() * 0.8f; // 0-80%
+            break;
+        case 5: // Reverse (0-1)
+            randomValue = juce::Random::getSystemRandom().nextFloat() * 0.7f; // 0-0.7
+            break;
+        case 6: // Glitch (0-1)
+            randomValue = juce::Random::getSystemRandom().nextFloat() * 0.6f; // 0-0.6
+            break;
+        case 7: // Mix (0-1)
+            randomValue = 0.5f + juce::Random::getSystemRandom().nextFloat() * 0.5f; // 0.5-1.0
+            break;
+    }
+    
+    slicerKnobs[knobIndex]->setValue(randomValue, juce::sendNotification);
+    DBG("[UI] Randomized Slicer knob " << knobIndex << " to " << randomValue);
+}
+
+void PluginEditor::updateSlicerLEDStrip()
 {
     // Update LED strip based on current pattern and playhead position
     // This would be called from a timer or repaint callback
     // For now, just a placeholder - the LEDs will be painted in the paint() method
+}
+
+void PluginEditor::updateSlicerSequencerUI()
+{
+    int selectedStep = slicerUiSelectedStep;
+    int playingStep = processorRef.getSlicerCurrentStep();
+    const int stepsUsed = processorRef.getSlicerSeqState().stepsUsed.load();
+    
+    for (int i = 0; i < 16; ++i) {
+        if (slicerStepButtons[i] != nullptr) {
+            slicerStepButtons[i]->setSelected(i == selectedStep);
+            bool sequencerEnabled = processorRef.getSlicerSeqState().enabled.load();
+            slicerStepButtons[i]->setPlaying(sequencerEnabled && (i == playingStep));
+            bool shouldBeEnabled = i < stepsUsed;
+            slicerStepButtons[i]->setEnabledStep(shouldBeEnabled);
+        }
+    }
+    
+    // Update step amount display (don't overwrite if user is editing)
+    if (slicerStepAmountLabel != nullptr && !slicerStepAmountLabel->hasKeyboardFocus(true)) {
+        slicerStepAmountLabel->setText(juce::String(stepsUsed), false);
+    }
+    
+    repaint();
+}
+
+void PluginEditor::onSlicerStepButtonClicked(int stepIndex)
+{
+    if (stepIndex < 0 || stepIndex >= 16) return;
+    
+    // Update UI selected step
+    slicerUiSelectedStep = stepIndex;
+    processorRef.setSlicerSelectedStep(stepIndex);
+    
+    // Load the snapshot for this step and update knobs
+    StepSnapshot snapshot = processorRef.getSlicerSafeSnapshot(stepIndex);
+    
+    if (!slicerAllStepsEnabled) {
+        // Update knobs with values from the snapshot
+        if (slicerKnobs[0]) slicerKnobs[0]->setValue(snapshot.slicer.pattern, juce::dontSendNotification);
+        if (slicerKnobs[1]) slicerKnobs[1]->setValue(snapshot.slicer.division, juce::dontSendNotification);
+        if (slicerKnobs[2]) slicerKnobs[2]->setValue(snapshot.slicer.offset, juce::dontSendNotification);
+        if (slicerKnobs[3]) slicerKnobs[3]->setValue(snapshot.slicer.shape, juce::dontSendNotification);
+        if (slicerKnobs[4]) slicerKnobs[4]->setValue(snapshot.slicer.releaseMs, juce::dontSendNotification);
+        // Knob 5 (Mix) is global, not per-step
+        
+        // Trigger value change callbacks to update labels
+        for (int i = 0; i < 5; ++i) {
+            if (slicerKnobs[i]) {
+                slicerKnobs[i]->onValueChange();
+            }
+        }
+    }
+    
+    updateSlicerSequencerUI();
+    
+    DBG("[UI] Switched to Slicer step " << stepIndex);
+}
+
+void PluginEditor::setupSlicerSequencerArea()
+{
+    DBG("[UI] Setting up Slicer sequencer area...");
+    
+    // Sequencer area bounds (EXACT same as other pages)
+    auto sequencerArea = juce::Rectangle<int>(25, 374, 413, 140);
+    
+    // Create step title
+    slicerStepTitle = std::make_unique<juce::Label>();
+    slicerStepTitle->setText("STEP", juce::dontSendNotification);
+    slicerStepTitle->setFont(juce::Font(22.118f, juce::Font::bold));
+    slicerStepTitle->setColour(juce::Label::textColourId, juce::Colours::white);
+    slicerStepTitle->setJustificationType(juce::Justification::centredLeft);
+    addAndMakeVisible(slicerStepTitle.get());
+    slicerStepTitle->setVisible(false);
+    slicerStepTitle->setBounds(sequencerArea.getX() + 10, sequencerArea.getY(), 80, 30);
+    
+    // Create step buttons (2 rows of 8)
+    const int buttonSize = 40;
+    const int buttonSpacing = 8;
+    const int startX = sequencerArea.getX() + 20;
+    const int startY = sequencerArea.getY() + 35;
+    
+    for (int i = 0; i < 16; ++i) {
+        slicerStepButtons[i] = std::make_unique<StepButton>(i);
+        addAndMakeVisible(slicerStepButtons[i].get());
+        slicerStepButtons[i]->setVisible(false);
+        
+        int x = startX + (i % 8) * (buttonSize + buttonSpacing);
+        int y = startY + (i / 8) * (buttonSize + buttonSpacing);
+        
+        slicerStepButtons[i]->setBounds(x, y, buttonSize, buttonSize);
+        
+        if (assets.stepActive) {
+            slicerStepButtons[i]->setActiveImage(assets.stepActive->createCopy());
+        }
+        if (assets.stepInactive) {
+            slicerStepButtons[i]->setInactiveImage(assets.stepInactive->createCopy());
+        }
+        
+        // Wire up step button click handler
+        slicerStepButtons[i]->onClick = [this, i]() {
+            onSlicerStepButtonClicked(i);
+        };
+    }
+    
+    // Create step amount editor
+    slicerStepAmountLabel = std::make_unique<juce::TextEditor>();
+    slicerStepAmountLabel->setText("16");
+    slicerStepAmountLabel->setFont(juce::Font(16.0f, juce::Font::bold));
+    slicerStepAmountLabel->setColour(juce::TextEditor::textColourId, juce::Colours::white);
+    slicerStepAmountLabel->setColour(juce::TextEditor::backgroundColourId, juce::Colours::transparentBlack);
+    slicerStepAmountLabel->setColour(juce::TextEditor::outlineColourId, juce::Colours::white);
+    slicerStepAmountLabel->setColour(juce::TextEditor::focusedOutlineColourId, juce::Colours::white);
+    slicerStepAmountLabel->setJustification(juce::Justification::centred);
+    slicerStepAmountLabel->setBorder(juce::BorderSize<int>(2));
+    slicerStepAmountLabel->setIndents(0, 0);
+    slicerStepAmountLabel->setInputRestrictions(2, "0123456789");
+    slicerStepAmountLabel->setReadOnly(true); // Read-only for now as Slicer uses fixed 16-step patterns
+    addAndMakeVisible(slicerStepAmountLabel.get());
+    slicerStepAmountLabel->setVisible(false);
+    slicerStepAmountLabel->setBounds(sequencerArea.getX() + 180, sequencerArea.getY() - 10, 30, 25);
+    
+    // Create rate dropdown
+    slicerRateDropdown = std::make_unique<juce::ComboBox>();
+    slicerRateDropdown->addItem("4", 1);
+    slicerRateDropdown->addItem("2", 2);
+    slicerRateDropdown->addItem("1", 3);
+    slicerRateDropdown->addItem("1/2", 4);
+    slicerRateDropdown->addItem("1/4", 5);
+    slicerRateDropdown->addItem("1/8", 6);
+    slicerRateDropdown->addItem("1/16", 7);
+    slicerRateDropdown->addItem("1/32", 8);
+    slicerRateDropdown->setSelectedId(4); // Default to 1/8 (matches slicerDivision default of 3)
+    slicerRateDropdown->setColour(juce::ComboBox::backgroundColourId, juce::Colours::transparentBlack);
+    slicerRateDropdown->setColour(juce::ComboBox::outlineColourId, juce::Colours::transparentBlack);
+    slicerRateDropdown->setColour(juce::ComboBox::buttonColourId, juce::Colours::transparentBlack);
+    slicerRateDropdown->setColour(juce::ComboBox::textColourId, juce::Colours::white);
+    slicerRateDropdown->setColour(juce::ComboBox::arrowColourId, juce::Colours::white);
+    slicerRateDropdown->onChange = [this]() {
+        if (slicerRateDropdown) {
+            const int selected = slicerRateDropdown->getSelectedId();
+            if (selected >= 1 && selected <= 8) {
+                const int newDivisionIndex = selected - 1;
+                // Update the slicerDivision parameter
+                auto* param = processorRef.getAPVTS().getParameter("slicerDivision");
+                if (param) {
+                    param->setValueNotifyingHost(param->convertTo0to1((float)newDivisionIndex));
+                }
+                // Update processor sequencer division
+                processorRef.setSlicerDivisionIndex(newDivisionIndex);
+                updateSlicerSequencerUI();
+            }
+        }
+    };
+    addAndMakeVisible(slicerRateDropdown.get());
+    slicerRateDropdown->setVisible(false);
+    slicerRateDropdown->setBounds(sequencerArea.getX() + 220, sequencerArea.getY() - 10, 74, 25);
+    
+    // Create STD toggle
+    slicerStdToggle = std::make_unique<CircularToggleButton>();
+    slicerStdToggle->setButtonText("-");
+    addAndMakeVisible(slicerStdToggle.get());
+    slicerStdToggle->setVisible(false);
+    slicerStdToggle->setBounds(sequencerArea.getX() + 288, sequencerArea.getY() - 14, 30, 30);
+    // STD toggle is visual only for Slicer (no functionality needed)
+    
+    // Create step dice button
+    slicerStepDiceButton = std::make_unique<juce::DrawableButton>("slicerStepDice", juce::DrawableButton::ImageFitted);
+    if (assets.diceLarge) {
+        slicerStepDiceButton->setImages(assets.diceLarge.get());
+    }
+    addAndMakeVisible(slicerStepDiceButton.get());
+    slicerStepDiceButton->setVisible(false);
+    int slicerStepDiceSize = 35; // Full size (not scaled down)
+    slicerStepDiceButton->setBounds(sequencerArea.getX() + 75, sequencerArea.getY() + 5, slicerStepDiceSize, slicerStepDiceSize);
+    
+    slicerStepDiceButton->onClick = [this]() {
+        DBG("[UI] Slicer step dice clicked - randomizing all 16 steps");
+        for (int step = 0; step < 16; ++step) {
+            auto snapshot = processorRef.getSlicerSafeSnapshot(step);
+            juce::Random& rng = juce::Random::getSystemRandom();
+            
+            snapshot.slicer.pattern = std::floor(rng.nextFloat() * 8.0f);
+            snapshot.slicer.division = std::floor(rng.nextFloat() * 6.0f);
+            snapshot.slicer.offset = rng.nextFloat(); // 0-1 (will be bipolar in engine)
+            snapshot.slicer.shape = 0.2f + rng.nextFloat() * 0.6f; // 0.2-0.8 (musical range)
+            snapshot.slicer.releaseMs = 10.0f + rng.nextFloat() * 50.0f; // 10-60ms (musical range)
+            
+            processorRef.setSlicerStepSnapshot(step, snapshot);
+        }
+        
+        // Reload current step to UI (Mix is global, not per-step)
+        auto currentSnapshot = processorRef.getSlicerSafeSnapshot(slicerUiSelectedStep);
+        if (slicerKnobs[0]) slicerKnobs[0]->setValue(currentSnapshot.slicer.pattern, juce::sendNotification);
+        if (slicerKnobs[1]) slicerKnobs[1]->setValue(currentSnapshot.slicer.division, juce::sendNotification);
+        if (slicerKnobs[2]) slicerKnobs[2]->setValue(currentSnapshot.slicer.offset, juce::sendNotification);
+        if (slicerKnobs[3]) slicerKnobs[3]->setValue(currentSnapshot.slicer.shape, juce::sendNotification);
+        if (slicerKnobs[4]) slicerKnobs[4]->setValue(currentSnapshot.slicer.releaseMs, juce::sendNotification);
+        
+        DBG("[UI] All 16 Slicer steps randomized");
+    };
+    
+    // Create step power button
+    slicerStepPowerButton = std::make_unique<juce::DrawableButton>("slicerStepPower", juce::DrawableButton::ImageFitted);
+    
+    // Make button background transparent (match other pages)
+    slicerStepPowerButton->setColour(juce::DrawableButton::backgroundColourId, juce::Colours::transparentBlack);
+    slicerStepPowerButton->setColour(juce::DrawableButton::backgroundOnColourId, juce::Colours::transparentBlack);
+    
+    if (assets.stepPowerOn) {
+        slicerStepPowerButton->setImages(assets.stepPowerOn.get());
+    }
+    addAndMakeVisible(slicerStepPowerButton.get());
+    slicerStepPowerButton->setVisible(false);
+    slicerStepPowerButton->setClickingTogglesState(true);
+    const int stepPowerSize = 40;
+    slicerStepPowerButton->setBounds(sequencerArea.getX() + sequencerArea.getWidth() - stepPowerSize - 5 + 15 - 5 - 1, sequencerArea.getY() - 5 - stepPowerSize + 25 + 5, stepPowerSize, stepPowerSize);
+    
+    slicerStepPowerButton->onClick = [this]() {
+        slicerStepAreaEnabled = slicerStepPowerButton->getToggleState();
+        processorRef.setSlicerSequencerEnabled(slicerStepAreaEnabled); // Sync with processor
+        updateSlicerStepAreaVisibility();
+        DBG("[UI] Slicer step power: " << (slicerStepAreaEnabled ? "ON" : "OFF"));
+    };
+    
+    // Add all sequencer components to slicerGroup
+    slicerGroup.push_back(slicerStepTitle.get());
+    slicerGroup.push_back(slicerStepAmountLabel.get());
+    slicerGroup.push_back(slicerRateDropdown.get());
+    slicerGroup.push_back(slicerStdToggle.get());
+    slicerGroup.push_back(slicerStepDiceButton.get());
+    slicerGroup.push_back(slicerStepPowerButton.get());
+    
+    for (int i = 0; i < 16; ++i) {
+        if (slicerStepButtons[i]) {
+            slicerGroup.push_back(slicerStepButtons[i].get());
+        }
+    }
+    
+    DBG("[UI] Slicer sequencer area setup complete");
+}
+
+void PluginEditor::setupSlicerAllStepsToggle()
+{
+    DBG("[UI] Setting up Slicer All Steps toggle...");
+    
+    auto effectArea = juce::Rectangle<int>(25, 54, 413, 296);
+    
+    slicerAllStepsToggle = std::make_unique<AllStepsToggleButton>();
+    addAndMakeVisible(slicerAllStepsToggle.get());
+    slicerAllStepsToggle->setVisible(false);
+    
+    const int buttonSize = 29;
+    slicerAllStepsToggle->setBounds(effectArea.getX() + effectArea.getWidth()/2 - buttonSize/2 + 30, 
+                                     effectArea.getY() - 1, buttonSize, buttonSize);
+    
+    if (assets.stepTopInactive && assets.stepTopActive) {
+        static_cast<AllStepsToggleButton*>(slicerAllStepsToggle.get())->setImages(
+            assets.stepTopInactive->createCopy(),
+            assets.stepTopActive->createCopy()
+        );
+    }
+    
+    slicerAllStepsToggle->setToggleState(false, juce::dontSendNotification);
+    slicerAllStepsToggle->onClick = [this]() {
+        slicerAllStepsEnabled = slicerAllStepsToggle->getToggleState();
+        DBG("[UI] Slicer All Steps toggle: " << (slicerAllStepsEnabled ? "ON" : "OFF"));
+        slicerAllStepsLabel->setAlpha(slicerAllStepsEnabled ? 1.0f : 0.5f);
+        // Slicer doesn't have per-step snapshots, so this is visual only
+    };
+    
+    slicerAllStepsLabel = std::make_unique<juce::Label>();
+    slicerAllStepsLabel->setText("All Steps", juce::dontSendNotification);
+    slicerAllStepsLabel->setFont(juce::Font(14.4f, juce::Font::bold));
+    slicerAllStepsLabel->setColour(juce::Label::textColourId, juce::Colours::white);
+    slicerAllStepsLabel->setJustificationType(juce::Justification::centredLeft);
+    addAndMakeVisible(slicerAllStepsLabel.get());
+    slicerAllStepsLabel->setVisible(false);
+    slicerAllStepsLabel->setAlpha(1.0f);
+    slicerAllStepsLabel->setBounds(effectArea.getX() + effectArea.getWidth()/2 + buttonSize/2 + 5 + 30, 
+                                    effectArea.getY() + 1, 80, 24);
+    
+    slicerGroup.push_back(slicerAllStepsToggle.get());
+    slicerGroup.push_back(slicerAllStepsLabel.get());
+    
+    DBG("[UI] Slicer All Steps toggle setup complete");
 }
 

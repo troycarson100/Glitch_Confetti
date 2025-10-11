@@ -240,9 +240,26 @@ public:
     void setGranularStepsUsed(int steps) noexcept { granularSeq.stepsUsed.store(juce::jlimit(1, 16, steps)); }
     void setGranularDivisionIndex(int idx) noexcept { granularSeq.divisionIndex.store(juce::jlimit(0, 10, idx)); }
     
+    // Slicer sequencer accessors
+    const SeqState& getSlicerSeqState() const { return slicerSeq; }
+    int getSlicerPlayingStep() const noexcept { return slicerSeq.playingStep.load(); }
+    int getSlicerCurrentStep() const noexcept { return slicerSeq.currentStep.load(); }
+    void setSlicerSelectedStep(int step) noexcept { slicerUiSelectedStep.store(step); }
+    void setSlicerSequencerEnabled(bool enabled) noexcept {
+        slicerSeq.enabled.store(enabled);
+        slicerSeq.active.store(enabled);
+    }
+    void setSlicerStepsUsed(int steps) noexcept { slicerSeq.stepsUsed.store(juce::jlimit(1, 16, steps)); }
+    void setSlicerDivisionIndex(int idx) noexcept { slicerSeq.divisionIndex.store(juce::jlimit(0, 7, idx)); }
+    
     StepSnapshot getGranularSafeSnapshot(int step) const;
     void setGranularStepSnapshot(int step, const StepSnapshot& snapshot) noexcept;
     void updateGranularCurrentStepSnapshot(int knobIndex, float value);
+    
+    // Slicer snapshot accessors
+    StepSnapshot getSlicerSafeSnapshot(int step) const;
+    void setSlicerStepSnapshot(int step, const StepSnapshot& snapshot) noexcept;
+    void updateSlicerCurrentStepSnapshot(int knobIndex, float value);
     
     void setSequencerEnabled(bool enabled) noexcept { 
         seq.enabled.store(enabled); 
@@ -317,6 +334,10 @@ private:
     SeqState granularSeq;
     std::atomic<int> granularUiSelectedStep { 0 };  // Granular editor's selected step
     
+    // Slicer Sequencer State (independent from all other sequencers)
+    SeqState slicerSeq;
+    std::atomic<int> slicerUiSelectedStep { 0 };  // Slicer editor's selected step
+    
     // Step snapshots storage (shared structure, independent sequencing)
     std::array<StepSnapshot, 16> stepSnapshots;
     std::array<StepSnapshot, 16> autopanStepSnapshots;
@@ -324,6 +345,7 @@ private:
     std::array<StepSnapshot, 16> chorusStepSnapshots;
     std::array<StepSnapshot, 16> reverbStepSnapshots;
     std::array<StepSnapshot, 16> granularStepSnapshots;
+    std::array<StepSnapshot, 16> slicerStepSnapshots;
     
     // Level tracking for meters
     std::atomic<float> inputLevel { -60.0f };
@@ -364,8 +386,8 @@ public:
     SimpleHallReverb hall;
     GranularEngine granular;
     
-    // Rhythm Gate DSP Implementation
-    RhythmGateEngine rhythmGate;
+    // Slicer DSP Implementation
+    RhythmGateEngine slicer;
     
     // PanMan-style visualizer clock
     struct PanVisClock {

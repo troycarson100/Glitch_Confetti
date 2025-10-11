@@ -17,7 +17,7 @@
 struct RandomizationManager;
 
 // Tab system enum
-enum class FxPageID { SpaceDelay, Panner, Dirt, Chorus, Reverb, Granular, RhythmGate };
+enum class FxPageID { SpaceDelay, Panner, Dirt, Chorus, Reverb, Granular, Slicer };
 
 // Forward declaration
 class PluginProcessor;
@@ -460,7 +460,7 @@ public:
     std::unique_ptr<juce::TextEditor> granularStepAmountLabel;
     std::unique_ptr<juce::ComboBox> granularRateDropdown;
     std::unique_ptr<CircularToggleButton> granularStdToggle;
-    std::unique_ptr<CircularToggleButton> granularDensitySyncToggle;
+    std::unique_ptr<juce::Button> granularDensitySyncToggle;
     bool granularDensitySyncEnabled = false;
     int granularDensitySyncStdMode = 0; // 0 straight, 1 triplet, 2 dotted
     std::unique_ptr<juce::Label> granularStepTitle;
@@ -475,27 +475,46 @@ public:
     
     std::vector<juce::Component*> granularGroup; // All Granular UI components for visibility toggling
     
-    // Rhythm Gate page components (8 knobs + sync toggle + LED strip)
-    std::array<std::unique_ptr<CustomKnob>, 8> gateKnobs;
-    std::array<std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>, 8> gateAttachments;
-    std::array<std::unique_ptr<juce::Label>, 8> gateKnobLabels;
-    std::array<std::unique_ptr<juce::Label>, 8> gateValueLabels;
-    std::array<std::unique_ptr<IndicatorBar>, 8> gateIndicatorBars;
+    // Slicer page components (6 knobs + sync toggle + LED strip)
+    std::array<std::unique_ptr<CustomKnob>, 6> slicerKnobs;
+    std::array<std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>, 6> slicerAttachments;
+    std::array<std::unique_ptr<juce::Label>, 6> slicerKnobLabels;
+    std::array<std::unique_ptr<juce::Label>, 6> slicerValueLabels;
+    std::array<std::unique_ptr<IndicatorBar>, 6> slicerIndicatorBars;
     
-    // Rhythm Gate effects area
-    std::unique_ptr<juce::Label> gateEffectsTitle;
-    std::unique_ptr<juce::DrawableButton> gateFxPowerButton;
-    bool gateFxAreaEnabled = true;
+    // Slicer effects area
+    std::unique_ptr<juce::Label> slicerEffectsTitle;
+    std::unique_ptr<juce::DrawableButton> slicerFxPowerButton;
+    bool slicerFxAreaEnabled = true;
     
-    // Rhythm Gate sync toggle (styled like granular density sync)
-    std::unique_ptr<CircularToggleButton> gateSyncToggle;
-    bool gateSyncEnabled = true;
+    // Slicer sync toggle (styled like granular density sync)
+    std::unique_ptr<juce::Button> slicerSyncToggle;
+    bool slicerSyncEnabled = true;
     
     // LED strip for 16-step pattern visualization
-    std::array<std::unique_ptr<juce::Component>, 16> gateLEDStrip;
-    int gateCurrentStep = 0; // For LED playhead indicator
+    std::array<std::unique_ptr<juce::Component>, 16> slicerLEDStrip;
+    int slicerCurrentStep = 0; // For LED playhead indicator
     
-    std::vector<juce::Component*> gateGroup; // All Rhythm Gate UI components for visibility toggling
+    // Slicer step sequencer area (matching other pages)
+    std::array<std::unique_ptr<StepButton>, 16> slicerStepButtons;
+    int slicerUiSelectedStep = 0;
+    std::unique_ptr<juce::TextEditor> slicerStepAmountLabel;
+    std::unique_ptr<juce::ComboBox> slicerRateDropdown;
+    std::unique_ptr<CircularToggleButton> slicerStdToggle;
+    std::unique_ptr<juce::Label> slicerStepTitle;
+    std::unique_ptr<juce::DrawableButton> slicerStepDiceButton;
+    std::unique_ptr<juce::DrawableButton> slicerStepPowerButton;
+    bool slicerStepAreaEnabled = true;
+    
+    // Slicer All Steps toggle
+    std::unique_ptr<AllStepsToggleButton> slicerAllStepsToggle;
+    std::unique_ptr<juce::Label> slicerAllStepsLabel;
+    bool slicerAllStepsEnabled = false;
+    
+    // Slicer main dice button
+    std::unique_ptr<CustomDiceButton> slicerDiceButton;
+    
+    std::vector<juce::Component*> slicerGroup; // All Slicer UI components for visibility toggling
     
         // Helper methods
         void setupKnobs();
@@ -587,12 +606,19 @@ public:
         void onGranularStepButtonClicked(int stepIndex);
         void updateGranularSequencerUI();
         
-        // Rhythm Gate page helper methods
-        void setupGateKnobs();
-        void setupGateEffectsArea();
-        void updateGateFxAreaVisibility();
-        void updateGateParameterFromKnob(int knobIndex);
-        void updateGateLEDStrip();
+        // Slicer page helper methods
+        void setupSlicerKnobs();
+        void setupSlicerEffectsArea();
+        void setupSlicerSequencerArea();
+        void setupSlicerAllStepsToggle();
+        void updateSlicerFxAreaVisibility();
+        void updateSlicerStepAreaVisibility();
+        void randomizeSlicerKnobValues();
+        void randomizeIndividualSlicerKnob(int knobIndex); // Helper for randomization
+        void updateSlicerParameterFromKnob(int knobIndex);
+        void updateSlicerSequencerUI();
+        void onSlicerStepButtonClicked(int stepIndex);
+        void updateSlicerLEDStrip();
         
         void togglePlayback();
         

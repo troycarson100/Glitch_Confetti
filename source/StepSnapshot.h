@@ -65,4 +65,13 @@ struct StepSnapshot {
         float texture = 0.2f;      // 0-1 (window morph: Hann→Blackman→Rect) - smoother
         float mix = 0.5f;          // 0-1 (dry/wet mix) - start at 50%
     } granular;
+    
+    struct {
+        float pattern = 0.0f;      // 0-7 (pattern index)
+        float division = 3.0f;     // 0-5 (division index: 1/1, 1/2, 1/4, 1/8, 1/16, 1/32)
+        float offset = 0.5f;       // 0-1 (bipolar: 0.5=center, 0=early, 1=late)
+        float shape = 0.5f;        // 0-1 (envelope curvature)
+        float releaseMs = 20.0f;   // 5-80 ms (crossfade/tail duration)
+        float mix = 0.75f;         // 0-1 (wet/dry mix)
+    } slicer;
 };
