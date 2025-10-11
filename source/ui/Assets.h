@@ -46,6 +46,14 @@ struct UiAssets {
     std::unique_ptr<juce::Drawable> tabChorusIcon;
     std::unique_ptr<juce::Drawable> tabVerbIcon;
     std::unique_ptr<juce::Drawable> tabGranularIcon;
+    
+    // New consistent icons with uniform containing boxes
+    std::unique_ptr<juce::Drawable> tabSpaceIcon;      // Space_Icon.svg
+    std::unique_ptr<juce::Drawable> tabAutoPanIcon;    // AutoPan_Icon.svg
+    std::unique_ptr<juce::Drawable> tabDirtIconNew;    // Dirt_Icon.svg (rename to avoid conflict)
+    std::unique_ptr<juce::Drawable> tabChorusIconNew;  // Chorus_Icon.svg (rename to avoid conflict)
+    std::unique_ptr<juce::Drawable> tabHallIcon;       // Hall_Icon.svg (was reverb)
+    std::unique_ptr<juce::Drawable> tabGrainIcon;      // Grain_Icon.svg
     std::unique_ptr<juce::Drawable> fxPowerOn, stepPowerOn, knobDice, diceLarge, macroAssign;
     std::unique_ptr<juce::Drawable> macro1AssignButton, macro2AssignButton;
     std::unique_ptr<juce::Drawable> lockedIcon, unlockedIcon;

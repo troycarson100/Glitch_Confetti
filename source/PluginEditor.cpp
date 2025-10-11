@@ -261,17 +261,17 @@ void PluginEditor::paint (juce::Graphics& g)
         drawOrder = {0, 1, 2, 3}; // Cascade from left to right, ending with selected tab 4 on top
     }
     
-    // Helper lambda to get effect icon for a given slot (using existing assets with consistent sizing)
+    // Helper lambda to get effect icon for a given slot (using new consistent icons)
     auto getEffectIconForSlot = [&](int slotIndex) -> juce::Drawable* {
         EffectID effect = router.getEffectInSlot(static_cast<SlotID>(slotIndex));
         switch (effect)
         {
-            case EffectID::SpaceDelay: return assets.tabTitleSpaceDelay.get();  // Will be replaced with Space_Icon
-            case EffectID::AutoPan:    return assets.tabTitleAutoPan.get();     // Will be replaced with AutoPan_Icon
-            case EffectID::Dirt:       return assets.tabDirtIcon.get();         // Will be replaced with Dirt_Icon
-            case EffectID::Chorus:     return assets.tabChorusIcon.get();       // Will be replaced with Chorus_Icon
-            case EffectID::Reverb:     return assets.tabVerbIcon.get();         // Will be replaced with Hall_Icon
-            case EffectID::Granular:   return assets.tabGranularIcon.get();     // Will be replaced with Grain_Icon
+            case EffectID::SpaceDelay: return assets.tabSpaceIcon.get();      // Space_Icon
+            case EffectID::AutoPan:    return assets.tabAutoPanIcon.get();    // AutoPan_Icon
+            case EffectID::Dirt:       return assets.tabDirtIconNew.get();    // Dirt_Icon
+            case EffectID::Chorus:     return assets.tabChorusIconNew.get();  // Chorus_Icon
+            case EffectID::Reverb:     return assets.tabHallIcon.get();       // Hall_Icon (was reverb)
+            case EffectID::Granular:   return assets.tabGrainIcon.get();      // Grain_Icon
         }
         return nullptr;
     };
