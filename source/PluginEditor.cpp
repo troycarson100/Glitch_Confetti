@@ -322,27 +322,28 @@ void PluginEditor::paint (juce::Graphics& g)
                     continue; // Skip invalid slots
             }
             
-            // Use fixed height with variable width for consistent sizing
+            // Use fixed height with aspect ratio preservation for consistent sizing
             float iconHeight = 50.0f; // Fixed height for all icons
-            float iconWidth = 50.0f;  // Default width, will be adjusted per icon
-            float iconX = tabIconX + (tabW - iconWidth) / 2.0f - 16.0f; // Center horizontally, then move left 16px
+            float iconX = tabIconX + (tabW - 60.0f) / 2.0f - 16.0f; // Center horizontally, then move left 16px (use max width for centering)
             float iconY = 12.0f - 32.0f - 10.0f + 20.0f - 5.0f; // Move up 32px + 10px more, then down 20px, then up 5px from carrot Y position
             
-            // Adjust width based on effect type for better proportions
+            // Calculate width based on effect type, but maintain aspect ratio
             EffectID effect = router.getEffectInSlot(static_cast<SlotID>(slot));
+            float targetWidth;
             switch (effect)
             {
-                case EffectID::SpaceDelay: iconWidth = 60.0f; break;  // Wider for "SPACE DELAY"
-                case EffectID::AutoPan:    iconWidth = 55.0f; break;  // Medium for "AUTO PAN"
-                case EffectID::Dirt:       iconWidth = 45.0f; break;  // Narrower for "DIRT"
-                case EffectID::Chorus:     iconWidth = 55.0f; break;  // Medium for "CHORUS"
-                case EffectID::Reverb:     iconWidth = 50.0f; break;  // Default for "REVERB"
-                case EffectID::Granular:   iconWidth = 65.0f; break;  // Wider for "GRANULAR"
-                default: iconWidth = 50.0f; break;
+                case EffectID::SpaceDelay: targetWidth = 60.0f; break;  // Wider for "SPACE DELAY"
+                case EffectID::AutoPan:    targetWidth = 55.0f; break;  // Medium for "AUTO PAN"
+                case EffectID::Dirt:       targetWidth = 45.0f; break;  // Narrower for "DIRT"
+                case EffectID::Chorus:     targetWidth = 55.0f; break;  // Medium for "CHORUS"
+                case EffectID::Reverb:     targetWidth = 50.0f; break;  // Default for "REVERB"
+                case EffectID::Granular:   targetWidth = 65.0f; break;  // Wider for "GRANULAR"
+                default: targetWidth = 50.0f; break;
             }
             
-            auto iconBounds = juce::Rectangle<float>(iconX, iconY, iconWidth, iconHeight);
-            icon->drawWithin(g, iconBounds, juce::RectanglePlacement::centred, 1.0f);
+            // Create bounds with fixed height and calculated width, then draw with fit-to-height
+            auto iconBounds = juce::Rectangle<float>(iconX, iconY, targetWidth, iconHeight);
+            icon->drawWithin(g, iconBounds, juce::RectanglePlacement::centred | juce::RectanglePlacement::onlyReduceInSize, 1.0f);
         }
     }
     
