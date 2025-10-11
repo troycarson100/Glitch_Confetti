@@ -322,10 +322,10 @@ void PluginEditor::paint (juce::Graphics& g)
                     continue; // Skip invalid slots
             }
             
-            // Use 20% bigger icon size, move up 32px and left 16px
-            float iconSize = 84.0f; // 70px + 20% = 84px
+            // Make 25% smaller, move up 10px more and left 16px
+            float iconSize = 63.0f; // 84px - 25% = 63px
             float iconX = tabIconX + (tabW - iconSize) / 2.0f - 16.0f; // Center horizontally, then move left 16px
-            float iconY = 12.0f - 32.0f; // Move up 32px from carrot Y position
+            float iconY = 12.0f - 32.0f - 10.0f; // Move up 32px + 10px more from carrot Y position
             
             auto iconBounds = juce::Rectangle<float>(iconX, iconY, iconSize, iconSize);
             icon->drawWithin(g, iconBounds, juce::RectanglePlacement::centred, 1.0f);
