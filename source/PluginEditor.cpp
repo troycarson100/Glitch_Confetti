@@ -326,7 +326,7 @@ void PluginEditor::paint (juce::Graphics& g)
             float iconWidth = 250.0f * 0.4f * 0.78f * 0.9f;  // 60% reduction, then 22% smaller, then 10% smaller = 70.2px
             float iconHeight = 70.0f * 0.4f * 0.78f * 0.9f;  // 60% reduction, then 22% smaller, then 10% smaller = 19.66px
             float iconX = tabIconX + (tabW - iconWidth) / 2.0f - 16.0f; // Center horizontally, then move left 16px
-            float iconY = 12.0f - 32.0f - 10.0f + 20.0f - 5.0f + 25.0f - 4.0f; // Move up 32px + 10px more, then down 20px, then up 5px, then down 25px, then up 4px
+            float iconY = 12.0f - 32.0f - 10.0f + 20.0f - 5.0f + 25.0f - 4.0f + 3.0f; // Move up 32px + 10px more, then down 20px, then up 5px, then down 25px, then up 4px, then down 3px
             
             // Create bounds at reduced size
             auto iconBounds = juce::Rectangle<float>(iconX, iconY, iconWidth, iconHeight);
