@@ -34,6 +34,14 @@ void RhythmGateEngine::reset()
 
 void RhythmGateEngine::setTempoInfo(bool playing, double bpm_, double ppq, int tsNum_)
 {
+    // Detect play edge and reset phase for consistent start
+    if (playing && !wasPlaying) {
+        freeRunPhase = 0.0;
+        envSlewL.reset(0.0f);
+        envSlewR.reset(0.0f);
+    }
+    wasPlaying = playing;
+    
     isPlaying = playing;
     bpm = std::max(20.0, std::min(999.0, bpm_));
     ppqPos = ppq;
@@ -90,6 +98,9 @@ void RhythmGateEngine::process(juce::AudioBuffer<float>& buffer)
         ? (1.0 / (beatsPerCycle * (60.0 / bpm) * sampleRate))
         : (1.0 / (beatsPerCycle * 2.0 * sampleRate));
     
+    // PPQ increment per sample (for beat-locked mode)
+    const double ppqIncPerSample = (bpm > 0.0) ? ((bpm / 60.0) / sampleRate) : 0.0;
+    
     // Process each sample
     for (int i = 0; i < numSamples; ++i)
     {
@@ -97,13 +108,11 @@ void RhythmGateEngine::process(juce::AudioBuffer<float>& buffer)
         double phase = 0.0;
         
         if (sync && isPlaying && bpm > 0.0) {
-            // Beat-locked: use PPQ position
-            double beatInCycle = std::fmod(ppqPos, beatsPerCycle);
+            // Beat-locked: use PPQ position from host + sample offset
+            double currentPpq = ppqPos + (i * ppqIncPerSample);
+            double beatInCycle = std::fmod(currentPpq, beatsPerCycle);
             if (beatInCycle < 0.0) beatInCycle += beatsPerCycle;
             phase = beatInCycle / beatsPerCycle;
-            
-            // Advance PPQ by one sample
-            ppqPos += (bpm / 60.0) / sampleRate;
         } else {
             // Free-run mode
             phase = freeRunPhase;

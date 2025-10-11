@@ -502,7 +502,7 @@ public:
     std::unique_ptr<juce::ComboBox> slicerRateDropdown;
     std::unique_ptr<CircularToggleButton> slicerStdToggle;
     std::unique_ptr<juce::Label> slicerStepTitle;
-    std::unique_ptr<juce::DrawableButton> slicerStepDiceButton;
+    std::unique_ptr<CustomDiceButton> slicerStepDiceButton;
     std::unique_ptr<juce::DrawableButton> slicerStepPowerButton;
     bool slicerStepAreaEnabled = true;
     

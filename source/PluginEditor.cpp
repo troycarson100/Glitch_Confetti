@@ -7689,15 +7689,15 @@ void PluginEditor::setupSlicerEffectsArea()
     // Effect area bounds
     auto effectArea = juce::Rectangle<int>(25, 54, 413, 296);
     
-    // Create "SLICER" title label
+    // Create "EFFECT" title label (match other pages)
     slicerEffectsTitle = std::make_unique<juce::Label>();
-    slicerEffectsTitle->setText("SLICER", juce::dontSendNotification);
+    slicerEffectsTitle->setText("EFFECT", juce::dontSendNotification);
     slicerEffectsTitle->setFont(juce::Font(27.648f, juce::Font::bold));
     slicerEffectsTitle->setColour(juce::Label::textColourId, juce::Colours::white);
     slicerEffectsTitle->setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(slicerEffectsTitle.get());
     slicerEffectsTitle->setVisible(false);
-    slicerEffectsTitle->setBounds(effectArea.getX() + 12, effectArea.getY() + 10, 250, 30);
+    slicerEffectsTitle->setBounds(effectArea.getX() + 10, effectArea.getY() + 5, 100, 30);
     
     // FX Power button
     slicerFxPowerButton = std::make_unique<juce::DrawableButton>("slicerPower", juce::DrawableButton::ImageFitted);
@@ -8084,15 +8084,18 @@ void PluginEditor::setupSlicerSequencerArea()
     slicerStdToggle->setBounds(sequencerArea.getX() + 288, sequencerArea.getY() - 14, 30, 30);
     // STD toggle is visual only for Slicer (no functionality needed)
     
-    // Create step dice button
-    slicerStepDiceButton = std::make_unique<juce::DrawableButton>("slicerStepDice", juce::DrawableButton::ImageFitted);
-    if (assets.diceLarge) {
-        slicerStepDiceButton->setImages(assets.diceLarge.get());
-    }
+    // Create step dice button (EXACT same as AutoPan page)
+    slicerStepDiceButton = std::make_unique<CustomDiceButton>();
     addAndMakeVisible(slicerStepDiceButton.get());
     slicerStepDiceButton->setVisible(false);
-    int slicerStepDiceSize = 35; // Full size (not scaled down)
+    int slicerStepDiceSize = static_cast<int>(35 * 0.7); // 30% smaller than 35px = ~24px
     slicerStepDiceButton->setBounds(sequencerArea.getX() + 75, sequencerArea.getY() + 5, slicerStepDiceSize, slicerStepDiceSize);
+    
+    // Set up step dice button SVG (EXACT same as AutoPan page)
+    if (assets.diceLarge != nullptr)
+    {
+        slicerStepDiceButton->setDiceImage(assets.diceLarge->createCopy());
+    }
     
     slicerStepDiceButton->onClick = [this]() {
         DBG("[UI] Slicer step dice clicked - randomizing all 16 steps");

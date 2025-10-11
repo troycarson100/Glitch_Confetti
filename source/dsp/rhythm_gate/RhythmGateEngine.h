@@ -38,6 +38,7 @@ private:
     // Timing
     double sampleRate = 44100.0;
     bool   isPlaying = false, sync = true;
+    bool   wasPlaying = false; // For play edge detection
     double bpm = 120.0, ppqPos = 0.0;
     int    tsNum = 4;
     int    division = 3; // Unused in new system (uses PPQ directly)
