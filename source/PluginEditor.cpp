@@ -327,9 +327,9 @@ void PluginEditor::paint (juce::Graphics& g)
             float iconX = tabIconX + (tabW - iconSize) / 2.0f - 16.0f; // Center horizontally, then move left 16px
             float iconY = 12.0f - 32.0f - 10.0f + 20.0f - 5.0f; // Move up 32px + 10px more, then down 20px, then up 5px from carrot Y position
             
-            // Create bounds with same size for all icons
+            // Create bounds with same size for all icons and STRETCH to fill (ignore aspect ratio)
             auto iconBounds = juce::Rectangle<float>(iconX, iconY, iconSize, iconSize);
-            icon->drawWithin(g, iconBounds, juce::RectanglePlacement::centred, 1.0f);
+            icon->drawWithin(g, iconBounds, juce::RectanglePlacement::stretchToFit, 1.0f);
         }
     }
     
