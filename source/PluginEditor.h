@@ -17,7 +17,7 @@
 struct RandomizationManager;
 
 // Tab system enum
-enum class FxPageID { SpaceDelay, Panner, Dirt, Chorus, Reverb, Granular };
+enum class FxPageID { SpaceDelay, Panner, Dirt, Chorus, Reverb, Granular, RhythmGate };
 
 // Forward declaration
 class PluginProcessor;
@@ -475,6 +475,28 @@ public:
     
     std::vector<juce::Component*> granularGroup; // All Granular UI components for visibility toggling
     
+    // Rhythm Gate page components (8 knobs + sync toggle + LED strip)
+    std::array<std::unique_ptr<CustomKnob>, 8> gateKnobs;
+    std::array<std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>, 8> gateAttachments;
+    std::array<std::unique_ptr<juce::Label>, 8> gateKnobLabels;
+    std::array<std::unique_ptr<juce::Label>, 8> gateValueLabels;
+    std::array<std::unique_ptr<IndicatorBar>, 8> gateIndicatorBars;
+    
+    // Rhythm Gate effects area
+    std::unique_ptr<juce::Label> gateEffectsTitle;
+    std::unique_ptr<juce::DrawableButton> gateFxPowerButton;
+    bool gateFxAreaEnabled = true;
+    
+    // Rhythm Gate sync toggle (styled like granular density sync)
+    std::unique_ptr<CircularToggleButton> gateSyncToggle;
+    bool gateSyncEnabled = true;
+    
+    // LED strip for 16-step pattern visualization
+    std::array<std::unique_ptr<juce::Component>, 16> gateLEDStrip;
+    int gateCurrentStep = 0; // For LED playhead indicator
+    
+    std::vector<juce::Component*> gateGroup; // All Rhythm Gate UI components for visibility toggling
+    
         // Helper methods
         void setupKnobs();
         void setupMasterKnobs();
@@ -564,6 +586,13 @@ public:
         void updateGranularParameterFromKnob(int knobIndex);
         void onGranularStepButtonClicked(int stepIndex);
         void updateGranularSequencerUI();
+        
+        // Rhythm Gate page helper methods
+        void setupGateKnobs();
+        void setupGateEffectsArea();
+        void updateGateFxAreaVisibility();
+        void updateGateParameterFromKnob(int knobIndex);
+        void updateGateLEDStrip();
         
         void togglePlayback();
         

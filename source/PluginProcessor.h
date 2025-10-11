@@ -8,6 +8,7 @@
 #include "dsp/FxChorus.h"
 #include "dsp/SimpleHallReverb.h"
 #include "dsp/granular/GranularEngine.h"
+#include "dsp/rhythm_gate/RhythmGateEngine.h"
 #include "dsp/DspFlags.h"
 #include "StepSnapshot.h"
 #include "MeterTheme.h"
@@ -362,6 +363,9 @@ public:
     // Reverb DSP Implementation
     SimpleHallReverb hall;
     GranularEngine granular;
+    
+    // Rhythm Gate DSP Implementation
+    RhythmGateEngine rhythmGate;
     
     // PanMan-style visualizer clock
     struct PanVisClock {

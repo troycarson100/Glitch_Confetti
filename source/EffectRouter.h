@@ -16,7 +16,8 @@ enum class EffectID {
     Dirt = 2,
     Chorus = 3,
     Reverb = 4,
-    Granular = 5
+    Granular = 5,
+    RhythmGate = 6
 };
 
 enum class SlotID {
@@ -155,14 +156,14 @@ public:
     }
     
     // Validate assignment (ensure no duplicates in the 4 slots)
-    // Note: With 6 effects and 4 slots, two effects will always be unassigned
+    // Note: With 7 effects and 4 slots, three effects will always be unassigned
     bool isValid() const
     {
-        bool seen[6] = { false, false, false, false, false, false };
+        bool seen[7] = { false, false, false, false, false, false, false };
         for (int i = 0; i < 4; ++i)
         {
             int effectIdx = static_cast<int>(assignment[i]);
-            if (effectIdx < 0 || effectIdx > 5 || seen[effectIdx])
+            if (effectIdx < 0 || effectIdx > 6 || seen[effectIdx])
                 return false;
             seen[effectIdx] = true;
         }

@@ -218,6 +218,24 @@ juce::AudioProcessorValueTreeState::ParameterLayout PluginProcessor::createParam
     params.push_back(std::make_unique<juce::AudioParameterBool>("granEnabled", "Granular Enabled", true)); // Start enabled
     params.push_back(std::make_unique<juce::AudioParameterBool>("granDensitySync", "Granular Density Sync", false)); // Density sync mode
     
+    // Rhythm Gate Parameters (8 knobs + 1 toggle)
+    params.push_back(std::make_unique<juce::AudioParameterInt>("gatePattern", "Gate Pattern", 0, 7, 0)); // 8 patterns
+    params.push_back(std::make_unique<juce::AudioParameterInt>("gateDivision", "Gate Division", 0, 5, 3)); // 0=1/1, 1=1/2, 2=1/4, 3=1/8, 4=1/16, 5=1/32
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("gateOffset", "Gate Offset", 
+        juce::NormalisableRange<float>(0.0f, 1.0f, 0.0f, 1.0f), 0.0f)); // Pattern phase shift
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("gateShape", "Gate Shape", 
+        juce::NormalisableRange<float>(0.0f, 1.0f, 0.0f, 1.0f), 0.35f)); // 0=hard/exp, 1=smooth/sine
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("gatePitchSemi", "Gate Pitch", 
+        juce::NormalisableRange<float>(-12.0f, 12.0f, 0.01f, 1.0f), 0.0f)); // Varispeed pitch
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("gateReverse", "Gate Reverse", 
+        juce::NormalisableRange<float>(0.0f, 1.0f, 0.0f, 1.0f), 0.0f)); // Reverse probability/mix
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("gateGlitch", "Gate Glitch", 
+        juce::NormalisableRange<float>(0.0f, 1.0f, 0.0f, 1.0f), 0.0f)); // Micro-stutter amount
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("gateMix", "Gate Mix", 
+        juce::NormalisableRange<float>(0.0f, 1.0f, 0.0f, 1.0f), 0.75f)); // Wet/dry
+    params.push_back(std::make_unique<juce::AudioParameterBool>("gateSync", "Gate Sync", true)); // Tempo sync toggle
+    params.push_back(std::make_unique<juce::AudioParameterBool>("gateEnabled", "Gate Enabled", false)); // Start disabled to prevent crashes
+    
     return { params.begin(), params.end() };
 }
 
@@ -293,6 +311,7 @@ void PluginProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
     chorus.prepare(sampleRate, samplesPerBlock); // Prepare Chorus effect
     hall.prepare(sampleRate, samplesPerBlock, 300); // Prepare JUCE Hall (300ms max predelay)
     granular.prepare(sampleRate, samplesPerBlock, getTotalNumOutputChannels()); // Prepare Granular engine
+    rhythmGate.prepare(sampleRate, samplesPerBlock, getTotalNumOutputChannels()); // Prepare Rhythm Gate engine
     seq.prepare(sampleRate); // Initialize delay sequencer with sample rate
     autopanSeq.prepare(sampleRate); // Initialize AutoPan sequencer with sample rate
     dirtSeq.prepare(sampleRate); // Initialize Dirt sequencer with sample rate
@@ -927,6 +946,49 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                 // Set parameters and process
                 granular.setParameters(sizeMs, densityHz, position, sprayMs, pitchSemi, randomAmt, texture, mix);
                 granular.process(buffer);
+                break;
+            }
+            
+            case EffectID::RhythmGate:
+            {
+                // Check if effect is enabled
+                auto* gateEnabledParam = valueTreeState.getRawParameterValue("gateEnabled");
+                bool isGateEnabled = gateEnabledParam ? (gateEnabledParam->load() > 0.5f) : false;
+                
+                if (isGateEnabled)
+                {
+                    // Get parameters from APVTS
+                    auto* patternParam = valueTreeState.getRawParameterValue("gatePattern");
+                    auto* divisionParam = valueTreeState.getRawParameterValue("gateDivision");
+                    auto* offsetParam = valueTreeState.getRawParameterValue("gateOffset");
+                    auto* shapeParam = valueTreeState.getRawParameterValue("gateShape");
+                    auto* pitchParam = valueTreeState.getRawParameterValue("gatePitchSemi");
+                    auto* reverseParam = valueTreeState.getRawParameterValue("gateReverse");
+                    auto* glitchParam = valueTreeState.getRawParameterValue("gateGlitch");
+                    auto* mixParam = valueTreeState.getRawParameterValue("gateMix");
+                    auto* syncParam = valueTreeState.getRawParameterValue("gateSync");
+                    
+                    int patternIdx = patternParam ? static_cast<int>(patternParam->load()) : 0;
+                    int divisionIdx = divisionParam ? static_cast<int>(divisionParam->load()) : 3;
+                    float offset01 = offsetParam ? offsetParam->load() : 0.0f;
+                    float shape01 = shapeParam ? shapeParam->load() : 0.35f;
+                    float pitchSemi = pitchParam ? pitchParam->load() : 0.0f;
+                    float reverse01 = reverseParam ? reverseParam->load() : 0.0f;
+                    float glitch01 = glitchParam ? glitchParam->load() : 0.0f;
+                    float mix01 = mixParam ? mixParam->load() : 0.75f;
+                    bool syncOn = syncParam ? (syncParam->load() > 0.5f) : true;
+                    
+                    // Update tempo info
+                    rhythmGate.setTempoInfo(transportCache.playing.load(), transportCache.bpm.load(), 
+                                           transportCache.ppq.load(), transportCache.tsNum.load());
+                    
+                    // Set parameters
+                    rhythmGate.setParameters(patternIdx, divisionIdx, offset01, shape01, 
+                                           pitchSemi, reverse01, glitch01, mix01, syncOn);
+                    
+                    // Process
+                    rhythmGate.process(buffer);
+                }
                 break;
             }
         }

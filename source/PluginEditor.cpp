@@ -149,6 +149,22 @@ PluginEditor::PluginEditor (PluginProcessor& p)
             DBG("[UI] Granular FX power initialized: " + juce::String(granularFxAreaEnabled ? "ON" : "OFF"));
         }
         
+        // Setup Rhythm Gate page
+        DBG("[UI] Setting up Rhythm Gate page...");
+        setupGateKnobs();
+        setupGateEffectsArea();
+        
+        // Initialize Rhythm Gate FX power button state from parameter
+        auto* gateEnabledParam = processorRef.getAPVTS().getRawParameterValue("gateEnabled");
+        if (gateEnabledParam) {
+            gateFxAreaEnabled = gateEnabledParam->load() > 0.5f;
+            if (gateFxPowerButton) {
+                gateFxPowerButton->setToggleState(gateFxAreaEnabled, juce::dontSendNotification);
+            }
+            updateGateFxAreaVisibility();
+            DBG("[UI] Rhythm Gate FX power initialized: " + juce::String(gateFxAreaEnabled ? "ON" : "OFF"));
+        }
+        
         // Initialize Chorus FX power button state from parameter
         auto* chorusEnabledParam = processorRef.getAPVTS().getRawParameterValue("chorusEnabled");
         if (chorusEnabledParam) {
@@ -272,6 +288,7 @@ void PluginEditor::paint (juce::Graphics& g)
             case EffectID::Chorus:     return assets.tabChorusIconNew.get();  // Chorus_Icon
             case EffectID::Reverb:     return assets.tabHallIcon.get();       // Hall_Icon (was reverb)
             case EffectID::Granular:   return assets.tabGrainIcon.get();      // Grain_Icon
+            case EffectID::RhythmGate: return nullptr;                        // TODO: Add RhythmGate icon
         }
         return nullptr;
     };
@@ -435,6 +452,42 @@ void PluginEditor::paint (juce::Graphics& g)
                     } else {
                         if (assets.unlockedIcon != nullptr)
                             assets.unlockedIcon->drawWithin(g, b, juce::RectanglePlacement::centred, 1.0f);
+                    }
+                }
+            }
+            break;
+            
+        case EffectID::RhythmGate:
+            // No lock buttons for Rhythm Gate (real-time effect without per-step snapshots)
+            // But draw LED strip visualization
+            {
+                auto* patternParam = processorRef.getAPVTS().getRawParameterValue("gatePattern");
+                int patternIdx = patternParam ? static_cast<int>(patternParam->load()) : 0;
+                
+                // Draw LEDs based on current pattern
+                for (int i = 0; i < 16; ++i)
+                {
+                    if (gateLEDStrip[i] != nullptr && gateLEDStrip[i]->isVisible())
+                    {
+                        auto ledBounds = gateLEDStrip[i]->getBounds().toFloat();
+                        
+                        // Get pattern value (0 or 1) for this step
+                        float patternValue = 0.0f;
+                        // This will be implemented based on the pattern in RhythmGateEngine
+                        // For now, draw a simple on/off indicator
+                        bool isOn = (i % 2 == 0); // Placeholder
+                        bool isCurrent = (i == gateCurrentStep);
+                        
+                        // LED color: green if on, dim gray if off, bright white if current step
+                        juce::Colour ledColor = isCurrent ? juce::Colours::white : 
+                                               (isOn ? juce::Colour(0xff00ff00) : juce::Colour(0xff404040));
+                        
+                        g.setColour(ledColor);
+                        g.fillRoundedRectangle(ledBounds, 2.0f);
+                        
+                        // Border
+                        g.setColour(juce::Colours::white.withAlpha(0.3f));
+                        g.drawRoundedRectangle(ledBounds, 2.0f, 1.0f);
                     }
                 }
             }
@@ -2173,6 +2226,7 @@ void PluginEditor::setupSpaceDelayUI()
     effectTypeDropdown->addItem("Chorus", 4);
     effectTypeDropdown->addItem("Reverb", 5);
     effectTypeDropdown->addItem("Granular", 6);
+    effectTypeDropdown->addItem("Rhythm Gate", 7);
     effectTypeDropdown->setSelectedId(1, juce::dontSendNotification);
     
     // Position dropdown with proper height for closed control
@@ -3439,6 +3493,7 @@ void PluginEditor::showPage(FxPageID id)
     setVisibleVec(chorusGroup, false);
     setVisibleVec(reverbGroup, false);
     setVisibleVec(granularGroup, false);
+    setVisibleVec(gateGroup, false);
     
     // Show only the group for the effect assigned to this slot
     switch (assignedEffect)
@@ -3466,6 +3521,27 @@ void PluginEditor::showPage(FxPageID id)
         case EffectID::Granular:
             setVisibleVec(granularGroup, true);
             DBG("[ROUTER] Showing Granular UI for slot " << slotIndex);
+            break;
+        case EffectID::RhythmGate:
+            setVisibleVec(gateGroup, true);
+            DBG("[ROUTER] Showing Rhythm Gate UI for slot " << slotIndex);
+            
+            // Sync UI state with parameter
+            auto* gateEnabledParam = processorRef.getAPVTS().getRawParameterValue("gateEnabled");
+            if (gateEnabledParam) {
+                gateFxAreaEnabled = gateEnabledParam->load() > 0.5f;
+                if (gateFxPowerButton) {
+                    gateFxPowerButton->setToggleState(gateFxAreaEnabled, juce::dontSendNotification);
+                }
+            }
+            updateGateFxAreaVisibility();
+            
+            // Trigger initial value label updates
+            for (int i = 0; i < 8; ++i) {
+                if (gateKnobs[i]) {
+                    gateKnobs[i]->onValueChange();
+                }
+            }
             break;
     }
 
@@ -7303,5 +7379,338 @@ void PluginEditor::updateGranularParameterFromKnob(int knobIndex)
     
     float value = granularKnobs[knobIndex]->getValue();
     processorRef.updateGranularCurrentStepSnapshot(knobIndex, value);
+}
+
+//==============================================================================
+// Rhythm Gate Page Implementation
+//==============================================================================
+
+void PluginEditor::setupGateKnobs()
+{
+    DBG("[UI] Setting up Rhythm Gate knobs...");
+
+    // Rhythm Gate knob names (8 knobs)
+    std::vector<juce::String> gateKnobNames = {
+        "Pattern", "Division", "Offset", "Shape", "Pitch", "Reverse", "Glitch", "Mix"
+    };
+
+    // Effect area bounds (same as other pages)
+    auto effectArea = juce::Rectangle<int>(25, 54, 413, 296);
+    const int knobSize = 80;
+    const int knobSpacing = 20;
+    const int startX = effectArea.getX() + 15;
+    const int startY = effectArea.getY() + effectArea.getHeight() - 210;
+
+    for (int i = 0; i < 8; ++i)
+    {
+        gateKnobs[i] = std::make_unique<CustomKnob>();
+        addAndMakeVisible(gateKnobs[i].get());
+        gateKnobs[i]->setVisible(false);
+        
+        gateKnobs[i]->setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
+        gateKnobs[i]->setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
+
+        // Set parameter ranges based on knob index
+        switch (i) {
+            case 0: // Pattern (0-7)
+                gateKnobs[i]->setRange(0.0, 7.0, 1.0);
+                gateKnobs[i]->setValue(0.0, juce::dontSendNotification);
+                break;
+            case 1: // Division (0-5: 1/1, 1/2, 1/4, 1/8, 1/16, 1/32)
+                gateKnobs[i]->setRange(0.0, 5.0, 1.0);
+                gateKnobs[i]->setValue(3.0, juce::dontSendNotification); // 1/8 default
+                break;
+            case 2: // Offset (0-1)
+                gateKnobs[i]->setRange(0.0, 1.0, 0.01);
+                gateKnobs[i]->setValue(0.0, juce::dontSendNotification);
+                break;
+            case 3: // Shape (0-1)
+                gateKnobs[i]->setRange(0.0, 1.0, 0.01);
+                gateKnobs[i]->setValue(0.35, juce::dontSendNotification);
+                break;
+            case 4: // Pitch (-12 to +12 semitones)
+                gateKnobs[i]->setRange(-12.0, 12.0, 0.01);
+                gateKnobs[i]->setValue(0.0, juce::dontSendNotification);
+                break;
+            case 5: // Reverse (0-1)
+                gateKnobs[i]->setRange(0.0, 1.0, 0.01);
+                gateKnobs[i]->setValue(0.0, juce::dontSendNotification);
+                break;
+            case 6: // Glitch (0-1)
+                gateKnobs[i]->setRange(0.0, 1.0, 0.01);
+                gateKnobs[i]->setValue(0.0, juce::dontSendNotification);
+                break;
+            case 7: // Mix (0-1)
+                gateKnobs[i]->setRange(0.0, 1.0, 0.01);
+                gateKnobs[i]->setValue(0.75, juce::dontSendNotification);
+                break;
+        }
+        
+        // Add value change callback to update value label
+        gateKnobs[i]->onValueChange = [this, i]() {
+            if (gateKnobs[i] != nullptr) {
+                updateGateParameterFromKnob(i);
+                
+                // Update value label
+                if (gateValueLabels[i]) {
+                    float value = gateKnobs[i]->getValue();
+                    juce::String valueText;
+                    
+                    switch (i) {
+                        case 0: { // Pattern
+                            std::vector<juce::String> patternNames = {
+                                "Straight8", "Offbeat", "HalfTime", "Syncop", "Triplet", "BuildUp", "Choke16", "Gallop"
+                            };
+                            int patIdx = juce::jlimit(0, 7, (int)value);
+                            valueText = patternNames[patIdx];
+                            break;
+                        }
+                        case 1: { // Division
+                            std::vector<juce::String> divNames = {"1/1", "1/2", "1/4", "1/8", "1/16", "1/32"};
+                            int divIdx = juce::jlimit(0, 5, (int)value);
+                            valueText = divNames[divIdx];
+                            break;
+                        }
+                        case 2: valueText = juce::String(int(value * 100)) + "%"; break; // Offset
+                        case 3: valueText = juce::String(int(value * 100)) + "%"; break; // Shape
+                        case 4: valueText = juce::String(value, 1) + "st"; break; // Pitch (semitones)
+                        case 5: valueText = juce::String(int(value * 100)) + "%"; break; // Reverse
+                        case 6: valueText = juce::String(int(value * 100)) + "%"; break; // Glitch
+                        case 7: valueText = juce::String(int(value * 100)) + "%"; break; // Mix
+                    }
+                    
+                    gateValueLabels[i]->setText(valueText, juce::dontSendNotification);
+                }
+            }
+        };
+
+        // Set knob images
+        if (assets.knobRing != nullptr)
+            gateKnobs[i]->setRingImage(assets.knobRing->createCopy());
+        if (assets.knobInside != nullptr)
+            gateKnobs[i]->setInnerImage(assets.knobInside->createCopy());
+
+        int x = startX + (i % 4) * (knobSize + knobSpacing);
+        int y = startY + (i / 4) * (knobSize + 20);
+
+        if (i < 4)
+            y -= 23;
+        else
+            y -= 1;
+
+        gateKnobs[i]->setBounds(x, y, knobSize, knobSize);
+
+        // Create label
+        gateKnobLabels[i] = std::make_unique<juce::Label>();
+        gateKnobLabels[i]->setText(gateKnobNames[i], juce::dontSendNotification);
+        gateKnobLabels[i]->setFont(juce::Font(12.0f, juce::Font::bold));
+        gateKnobLabels[i]->setColour(juce::Label::textColourId, juce::Colours::white);
+        gateKnobLabels[i]->setJustificationType(juce::Justification::centred);
+        addAndMakeVisible(gateKnobLabels[i].get());
+        gateKnobLabels[i]->setVisible(false);
+        gateKnobLabels[i]->setBounds(x, y - 15, knobSize, 20);
+
+        // Create value label
+        gateValueLabels[i] = std::make_unique<juce::Label>();
+        gateValueLabels[i]->setText("0", juce::dontSendNotification);
+        gateValueLabels[i]->setFont(juce::Font(10.0f, juce::Font::plain));
+        gateValueLabels[i]->setColour(juce::Label::textColourId, juce::Colours::white);
+        gateValueLabels[i]->setJustificationType(juce::Justification::centred);
+        addAndMakeVisible(gateValueLabels[i].get());
+        gateValueLabels[i]->setVisible(false);
+        gateValueLabels[i]->setBounds(x, y + knobSize - 10, knobSize, 15);
+
+        // Create indicator bar
+        gateIndicatorBars[i] = std::make_unique<IndicatorBar>();
+        addAndMakeVisible(gateIndicatorBars[i].get());
+        gateIndicatorBars[i]->setVisible(false);
+        gateIndicatorBars[i]->setBounds(x + 10, y + knobSize + 8, knobSize - 20, 13);
+        gateIndicatorBars[i]->setValue(0.5f);
+    }
+
+    // Create Sync toggle (next to Division knob - knob 1)
+    gateSyncToggle = std::make_unique<CircularToggleButton>();
+    gateSyncToggle->setButtonText("S");
+    addAndMakeVisible(gateSyncToggle.get());
+    gateSyncToggle->setVisible(false);
+    
+    // Position it to the left of the Division knob label (knob 1)
+    int divisionKnobIndex = 1;
+    int divisionX = startX + (divisionKnobIndex % 4) * (knobSize + knobSpacing);
+    int divisionY = startY + (divisionKnobIndex / 4) * (knobSize + 20);
+    if (divisionKnobIndex < 4) divisionY -= 23;
+    else divisionY -= 1;
+    
+    gateSyncToggle->setBounds(divisionX - 22, divisionY - 13, 18, 18);
+    
+    auto* syncParam = processorRef.getAPVTS().getRawParameterValue("gateSync");
+    if (syncParam) {
+        gateSyncEnabled = syncParam->load() > 0.5f;
+        gateSyncToggle->setToggleState(gateSyncEnabled, juce::dontSendNotification);
+    }
+    
+    gateSyncToggle->onClick = [this]() {
+        // Toggle the state manually
+        gateSyncEnabled = !gateSyncEnabled;
+        gateSyncToggle->setToggleState(gateSyncEnabled, juce::dontSendNotification);
+        
+        auto* param = processorRef.getAPVTS().getParameter("gateSync");
+        if (param) {
+            param->setValueNotifyingHost(gateSyncEnabled ? 1.0f : 0.0f);
+        }
+        
+        DBG("[UI] Rhythm Gate sync: " << (gateSyncEnabled ? "ON" : "OFF"));
+    };
+    
+    gateGroup.push_back(gateSyncToggle.get());
+    
+    // Create parameter attachments to connect knobs to APVTS
+    std::vector<juce::String> gateParamIds = {
+        "gatePattern", "gateDivision", "gateOffset", "gateShape",
+        "gatePitchSemi", "gateReverse", "gateGlitch", "gateMix"
+    };
+
+    for (int i = 0; i < 8; ++i)
+    {
+        gateAttachments[i] = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+            processorRef.getAPVTS(), gateParamIds[i], *gateKnobs[i]);
+        
+        // Add to gateGroup for visibility toggling
+        gateGroup.push_back(gateKnobs[i].get());
+        gateGroup.push_back(gateKnobLabels[i].get());
+        gateGroup.push_back(gateValueLabels[i].get());
+        gateGroup.push_back(gateIndicatorBars[i].get());
+    }
+    
+    // Create LED strip for pattern visualization (16 small rectangles)
+    auto sequencerArea = juce::Rectangle<int>(25, 374, 413, 140);
+    const int ledWidth = 20;
+    const int ledHeight = 10;
+    const int ledSpacing = 5;
+    const int ledStartX = sequencerArea.getX() + 20;
+    const int ledStartY = sequencerArea.getY() + sequencerArea.getHeight() - 30;
+    
+    for (int i = 0; i < 16; ++i)
+    {
+        gateLEDStrip[i] = std::make_unique<juce::Component>();
+        addAndMakeVisible(gateLEDStrip[i].get());
+        gateLEDStrip[i]->setVisible(false);
+        
+        int x = ledStartX + i * (ledWidth + ledSpacing);
+        gateLEDStrip[i]->setBounds(x, ledStartY, ledWidth, ledHeight);
+        
+        gateGroup.push_back(gateLEDStrip[i].get());
+    }
+    
+    DBG("[UI] Rhythm Gate knobs setup complete");
+}
+
+void PluginEditor::setupGateEffectsArea()
+{
+    DBG("[UI] Setting up Rhythm Gate effects area...");
+    
+    // Effect area bounds
+    auto effectArea = juce::Rectangle<int>(25, 54, 413, 296);
+    
+    // Create "RHYTHM GATE" title label
+    gateEffectsTitle = std::make_unique<juce::Label>();
+    gateEffectsTitle->setText("RHYTHM GATE", juce::dontSendNotification);
+    gateEffectsTitle->setFont(juce::Font(27.648f, juce::Font::bold));
+    gateEffectsTitle->setColour(juce::Label::textColourId, juce::Colours::white);
+    gateEffectsTitle->setJustificationType(juce::Justification::centredLeft);
+    addAndMakeVisible(gateEffectsTitle.get());
+    gateEffectsTitle->setVisible(false);
+    gateEffectsTitle->setBounds(effectArea.getX() + 12, effectArea.getY() + 10, 250, 30);
+    
+    // FX Power button
+    gateFxPowerButton = std::make_unique<juce::DrawableButton>("gatePower", juce::DrawableButton::ImageFitted);
+    addAndMakeVisible(gateFxPowerButton.get());
+    gateFxPowerButton->setVisible(false);
+    gateFxPowerButton->setClickingTogglesState(true);
+    
+    if (assets.fxPowerOn) {
+        gateFxPowerButton->setImages(assets.fxPowerOn.get());
+    }
+    
+    const int powerButtonSize = 40;
+    int powerX = effectArea.getX() + effectArea.getWidth() - powerButtonSize - 5 + 15 - 5 - 1;
+    int powerY = effectArea.getY() - 5 - powerButtonSize + 25 + 5;
+    gateFxPowerButton->setBounds(powerX, powerY, powerButtonSize, powerButtonSize);
+    
+    gateFxPowerButton->onClick = [this]() {
+        gateFxAreaEnabled = gateFxPowerButton->getToggleState();
+        
+        // Update APVTS parameter
+        auto* param = processorRef.getAPVTS().getParameter("gateEnabled");
+        if (param) {
+            param->setValueNotifyingHost(gateFxAreaEnabled ? 1.0f : 0.0f);
+        }
+        
+        updateGateFxAreaVisibility();
+        DBG("[UI] Rhythm Gate FX power: " << (gateFxAreaEnabled ? "ON" : "OFF"));
+    };
+    
+    gateGroup.push_back(gateEffectsTitle.get());
+    gateGroup.push_back(gateFxPowerButton.get());
+    
+    DBG("[UI] Rhythm Gate effects area setup complete");
+}
+
+void PluginEditor::updateGateFxAreaVisibility()
+{
+    float alpha = gateFxAreaEnabled ? 1.0f : 0.3f;
+    
+    // Update knobs and labels alpha
+    for (int i = 0; i < 8; ++i) {
+        if (gateKnobs[i]) { 
+            gateKnobs[i]->setAlpha(alpha); 
+            gateKnobs[i]->setEnabled(gateFxAreaEnabled);
+        }
+        if (gateKnobLabels[i]) gateKnobLabels[i]->setAlpha(alpha);
+        if (gateValueLabels[i]) gateValueLabels[i]->setAlpha(alpha);
+        if (gateIndicatorBars[i]) gateIndicatorBars[i]->setAlpha(alpha);
+    }
+    
+    // Update sync toggle
+    if (gateSyncToggle) {
+        gateSyncToggle->setAlpha(alpha);
+        gateSyncToggle->setEnabled(gateFxAreaEnabled);
+    }
+    
+    // Update LED strip
+    for (int i = 0; i < 16; ++i) {
+        if (gateLEDStrip[i]) {
+            gateLEDStrip[i]->setAlpha(alpha);
+        }
+    }
+    
+    repaint();
+}
+
+void PluginEditor::updateGateParameterFromKnob(int knobIndex)
+{
+    if (knobIndex < 0 || knobIndex >= 8 || !gateKnobs[knobIndex])
+        return;
+    
+    float value = gateKnobs[knobIndex]->getValue();
+    
+    // Update APVTS directly (no sequencer snapshots for Rhythm Gate - it's a real-time effect)
+    std::vector<juce::String> gateParamIds = {
+        "gatePattern", "gateDivision", "gateOffset", "gateShape",
+        "gatePitchSemi", "gateReverse", "gateGlitch", "gateMix"
+    };
+    
+    auto* param = processorRef.getAPVTS().getParameter(gateParamIds[knobIndex]);
+    if (param) {
+        float normalizedValue = param->convertTo0to1(value);
+        param->setValueNotifyingHost(normalizedValue);
+    }
+}
+
+void PluginEditor::updateGateLEDStrip()
+{
+    // Update LED strip based on current pattern and playhead position
+    // This would be called from a timer or repaint callback
+    // For now, just a placeholder - the LEDs will be painted in the paint() method
 }
 
