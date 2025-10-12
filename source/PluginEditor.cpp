@@ -746,7 +746,13 @@ void PluginEditor::timerCallback()
                     int percentage = (int) std::round(knobValue * 100);
                     masterValueLabels[i]->setText(juce::String(percentage) + "%", juce::dontSendNotification);
                 } else { // Input and Output knobs - show as dB
-                    masterValueLabels[i]->setText(juce::String(knobValue, 1) + " dB", juce::dontSendNotification);
+                    // Special handling for 0.0 to avoid "-0.0"
+                    juce::String valueText;
+                    if (std::abs(knobValue) < 0.05f) // Close enough to 0.0
+                        valueText = "0.0 dB";
+                    else
+                        valueText = juce::String(knobValue, 1) + " dB";
+                    masterValueLabels[i]->setText(valueText, juce::dontSendNotification);
                 }
             }
         }
@@ -1410,6 +1416,40 @@ void LockButton::setAlpha(float alpha)
     {
         diceImage = std::move(dice);
         repaint();
+    }
+
+    //==============================================================================
+    // ResonanceKnobLNF Implementation
+    //==============================================================================
+    
+    void ResonanceKnobLNF::drawRotarySlider(juce::Graphics& g, int x, int y, int width, int height,
+                                           float sliderPosProportional, float rotaryStartAngle,
+                                           float rotaryEndAngle, juce::Slider& slider)
+    {
+        auto bounds = juce::Rectangle<int>(x, y, width, height).toFloat().reduced(2.0f);
+        auto radius = juce::jmin(bounds.getWidth(), bounds.getHeight()) / 2.0f;
+        auto centerX = bounds.getCentreX();
+        auto centerY = bounds.getCentreY();
+        auto angle = rotaryStartAngle + sliderPosProportional * (rotaryEndAngle - rotaryStartAngle);
+        
+        // Draw white circular outline (partial arc based on value)
+        g.setColour(juce::Colours::white.withAlpha(0.3f));
+        juce::Path backgroundArc;
+        backgroundArc.addCentredArc(centerX, centerY, radius, radius, 0.0f,
+                                    rotaryStartAngle, rotaryEndAngle, true);
+        g.strokePath(backgroundArc, juce::PathStrokeType(2.0f));
+        
+        // Draw value arc (filled portion)
+        g.setColour(juce::Colours::white);
+        juce::Path valueArc;
+        valueArc.addCentredArc(centerX, centerY, radius, radius, 0.0f,
+                              rotaryStartAngle, angle, true);
+        g.strokePath(valueArc, juce::PathStrokeType(2.0f));
+        
+        // Draw "R" label in the center
+        g.setColour(juce::Colours::white);
+        g.setFont(juce::Font(radius * 1.0f, juce::Font::bold));
+        g.drawText("R", bounds, juce::Justification::centred);
     }
 
     //==============================================================================
@@ -2393,9 +2433,13 @@ void PluginEditor::setupKnobs()
         inMeter->setBounds(startX - meterSpacing - meterWidth + 10, y + (knobSize - meterHeight) / 2, meterWidth, meterHeight);  // Move right 10px
         outMeter->setBounds(startX + totalKnobWidth + meterSpacing - 10, y + (knobSize - meterHeight) / 2, meterWidth, meterHeight);  // Move left 10px
         
-        // Position PanManBar above the master knobs
+        // Position PanManBar above the master knobs (70px wider [90-20], centered in master area, moved right 46px [30+16])
         const int panBarY = y - 285;
-        panBar->setBounds(startX - meterSpacing - meterWidth + 10, panBarY, (meterWidth * 2 + meterSpacing + totalKnobWidth - 20) - 90, 24);
+        const int originalVizWidth = (meterWidth * 2 + meterSpacing + totalKnobWidth - 20) - 90;
+        const int newVizWidth = originalVizWidth + 78; // 78px wider (was 90, now -12 = 78)
+        auto masterAreaFull = juce::Rectangle<int>(453, 54, 413, 296);
+        const int vizX = masterAreaFull.getX() + (masterAreaFull.getWidth() - newVizWidth) / 2 + 48; // Centered in master area + 48px right
+        panBar->setBounds(vizX, panBarY, newVizWidth, 24);
         
         // Create and position Output Visualizer (glowing waveform display)
         outputSpectrumView = std::make_unique<OutputSpectrumView>();
@@ -2404,12 +2448,10 @@ void PluginEditor::setupKnobs()
         // Connect spectrum analyzer to the view
         processorRef.spectrumAnalyzer.setOutputView(outputSpectrumView.get());
         
-        // Position visualizer below PanManBar with 10px gap
-        const int vizX = startX - meterSpacing - meterWidth + 10;
+        // Position visualizer below PanManBar with 10px gap (70px wider, centered, moved right 46px)
         const int vizY = panBarY + 24 + 10; // Below PanManBar + 10px gap
-        const int vizWidth = (meterWidth * 2 + meterSpacing + totalKnobWidth - 20) - 90;
         const int vizHeight = 190; // Reduced by 15px (was 205px) to move filter slider up
-        outputSpectrumView->setBounds(vizX, vizY, vizWidth, vizHeight);
+        outputSpectrumView->setBounds(vizX, vizY, newVizWidth, vizHeight);
         
         // Create and position spectrum filter slider (LP/HP control)
         spectrumFilterSlider = std::make_unique<SpectrumFilterSlider>();
@@ -2417,7 +2459,7 @@ void PluginEditor::setupKnobs()
         
         const int filterSliderY = vizY + vizHeight + 5; // 5px gap below spectrum
         const int filterSliderHeight = 20;
-        spectrumFilterSlider->setBounds(vizX, filterSliderY, vizWidth, filterSliderHeight);
+        spectrumFilterSlider->setBounds(vizX, filterSliderY, newVizWidth, filterSliderHeight);
         
         // Connect filter changes to both audio processor AND spectrum analyzer
         spectrumFilterSlider->onFilterChange = [this](float lowCut, float highCut) {
@@ -2433,6 +2475,34 @@ void PluginEditor::setupKnobs()
             // Also update spectrum analyzer visualization
             processorRef.spectrumAnalyzer.setFilterFrequencies(lowCut, highCut);
         };
+        
+        // Create resonance knobs (HP on left, LP on right)
+        const int resKnobSize = 30; // Small knobs
+        const int resKnobY = filterSliderY + (filterSliderHeight - resKnobSize) / 2; // Vertically centered with filter bar
+        
+        // HP Resonance Knob (left side)
+        hpResonanceKnob = std::make_unique<juce::Slider>();
+        hpResonanceKnob->setSliderStyle(juce::Slider::RotaryVerticalDrag);
+        hpResonanceKnob->setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
+        hpResonanceKnob->setRange(0.5, 10.0, 0.01);
+        hpResonanceKnob->setValue(0.707); // Butterworth default
+        hpResonanceKnob->setBounds(vizX - resKnobSize - 6, resKnobY, resKnobSize, resKnobSize); // 6px left of filter bar (was 10, now -4 = 6)
+        hpResonanceKnob->setLookAndFeel(&resonanceKnobLNF);
+        addAndMakeVisible(*hpResonanceKnob);
+        hpResonanceAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+            processorRef.getAPVTS(), "masterHPQ", *hpResonanceKnob);
+        
+        // LP Resonance Knob (right side)
+        lpResonanceKnob = std::make_unique<juce::Slider>();
+        lpResonanceKnob->setSliderStyle(juce::Slider::RotaryVerticalDrag);
+        lpResonanceKnob->setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
+        lpResonanceKnob->setRange(0.5, 10.0, 0.01);
+        lpResonanceKnob->setValue(0.707); // Butterworth default
+        lpResonanceKnob->setBounds(vizX + newVizWidth + 6, resKnobY, resKnobSize, resKnobSize); // 6px right of filter bar (was 10, now -4 = 6)
+        lpResonanceKnob->setLookAndFeel(&resonanceKnobLNF);
+        addAndMakeVisible(*lpResonanceKnob);
+        lpResonanceAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+            processorRef.getAPVTS(), "masterLPQ", *lpResonanceKnob);
         
         DBG("[UI] Master knobs and stereo meters setup complete");
     }
@@ -2461,6 +2531,7 @@ void PluginEditor::setupKnobs()
             // Create macro knob
             macroKnobs[i] = std::make_unique<CustomKnob>();
             addAndMakeVisible(macroKnobs[i].get());
+            macroKnobs[i]->setVisible(false); // Hide macro knobs for now
             
             // Set macro knob images (same as effect knobs)
             if (assets.knobRing != nullptr && assets.knobInside != nullptr) {
@@ -2484,10 +2555,12 @@ void PluginEditor::setupKnobs()
             macroLabels[i]->setJustificationType(juce::Justification::centred);
             addAndMakeVisible(macroLabels[i].get());
             macroLabels[i]->setBounds(startX, startY + i * spacing - 25 + yOffset, knobSize, 20);
+            macroLabels[i]->setVisible(false); // Hide macro labels for now
             
             // Create macro assign button (15px wide, centered to the right of title)
             macroAssignButtons[i] = std::make_unique<juce::DrawableButton>("MacroAssign" + juce::String(i + 1), juce::DrawableButton::ButtonStyle::ImageStretched);
             addAndMakeVisible(macroAssignButtons[i].get());
+            macroAssignButtons[i]->setVisible(false); // Hide macro assign buttons for now
             
             // Load the appropriate SVG for the assign button
             if (i == 0 && assets.macro1AssignButton != nullptr) {

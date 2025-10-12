@@ -103,6 +103,19 @@ private:
 };
 
 //==============================================================================
+// ResonanceKnobLNF - Custom LookAndFeel for small resonance knobs
+//==============================================================================
+class ResonanceKnobLNF : public juce::LookAndFeel_V4
+{
+public:
+    ResonanceKnobLNF() {}
+    
+    void drawRotarySlider(juce::Graphics& g, int x, int y, int width, int height,
+                         float sliderPosProportional, float rotaryStartAngle,
+                         float rotaryEndAngle, juce::Slider& slider) override;
+};
+
+//==============================================================================
 // CustomKnob class
 //==============================================================================
 class CustomKnob : public juce::Slider
@@ -253,6 +266,7 @@ public:
         
         // UI Assets
         UiAssets assets;
+        ResonanceKnobLNF resonanceKnobLNF;
         
         // Tab system
         FxPageID currentPage = FxPageID::SpaceDelay;
@@ -308,6 +322,10 @@ public:
     std::unique_ptr<PanManBar> panBar;
     std::unique_ptr<OutputSpectrumView> outputSpectrumView;
     std::unique_ptr<SpectrumFilterSlider> spectrumFilterSlider;
+    std::unique_ptr<juce::Slider> hpResonanceKnob;
+    std::unique_ptr<juce::Slider> lpResonanceKnob;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> hpResonanceAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> lpResonanceAttachment;
     
     // Effects area components
     std::unique_ptr<juce::Label> effectsTitle;

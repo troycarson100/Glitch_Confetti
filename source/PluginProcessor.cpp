@@ -196,6 +196,12 @@ juce::AudioProcessorValueTreeState::ParameterLayout PluginProcessor::createParam
     params.push_back(std::make_unique<juce::AudioParameterFloat>(
         "masterLPHz", "LPF",
         juce::NormalisableRange<float>(20.0f, 20000.0f, 0.0f, 0.5f), 20000.0f)); // Start at 20 kHz (bypass)
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(
+        "masterHPQ", "HPF Resonance",
+        juce::NormalisableRange<float>(0.5f, 10.0f, 0.0f, 0.5f), 0.707f)); // Default Butterworth Q
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(
+        "masterLPQ", "LPF Resonance",
+        juce::NormalisableRange<float>(0.5f, 10.0f, 0.0f, 0.5f), 0.707f)); // Default Butterworth Q
     
     // Reverb Parameters (8 knobs: Width, Size, Predelay, Damping, Diffusion, Early, Decay, Mix)
     params.push_back(std::make_unique<juce::AudioParameterFloat>(
@@ -1239,11 +1245,15 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
     // Apply master HP/LP filters to WET signal only (before dry/wet mix)
     auto* hpParam = valueTreeState.getRawParameterValue("masterHPHz");
     auto* lpParam = valueTreeState.getRawParameterValue("masterLPHz");
+    auto* hpQParam = valueTreeState.getRawParameterValue("masterHPQ");
+    auto* lpQParam = valueTreeState.getRawParameterValue("masterLPQ");
     
-    if (hpParam && lpParam)
+    if (hpParam && lpParam && hpQParam && lpQParam)
     {
         const float hpTarget = juce::jlimit(20.0f, 20000.0f, hpParam->load());
         const float lpTarget = juce::jlimit(20.0f, 20000.0f, lpParam->load());
+        const float hpQ = hpQParam->load();
+        const float lpQ = lpQParam->load();
         
         hpCutoffSmooth.setTargetValue(hpTarget);
         lpCutoffSmooth.setTargetValue(lpTarget);
@@ -1256,14 +1266,18 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
             const float hpHz = hpCutoffSmooth.getNextValue();
             const float lpHz = lpCutoffSmooth.getNextValue();
             
-            // Update both channels' cutoffs (per-sample for ultra-smooth sweeps)
+            // Update both channels' cutoffs and resonance (per-sample for ultra-smooth sweeps)
             masterHPF[0].setCutoffFrequency(hpHz);
             masterLPF[0].setCutoffFrequency(lpHz);
+            masterHPF[0].setResonance(hpQ);
+            masterLPF[0].setResonance(lpQ);
             
             if (numChannelsLocal > 1)
             {
                 masterHPF[1].setCutoffFrequency(hpHz);
                 masterLPF[1].setCutoffFrequency(lpHz);
+                masterHPF[1].setResonance(hpQ);
+                masterLPF[1].setResonance(lpQ);
             }
             
             // Process each channel (wet signal only)
