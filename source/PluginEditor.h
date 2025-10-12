@@ -16,7 +16,7 @@
 // Forward declarations
 struct RandomizationManager;
 class PresetManager;
-class PresetBrowserComponent;
+class PresetBrowserOverlay;
 
 // Tab system enum
 enum class FxPageID { SpaceDelay, Panner, Dirt, Chorus, Reverb, Granular, Slicer };
@@ -157,6 +157,36 @@ private:
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PlayButton)
 };
 
+//==============================================================================
+// PresetSelectorButton class
+//==============================================================================
+class PresetSelectorButton : public juce::Button
+{
+public:
+    PresetSelectorButton();
+    ~PresetSelectorButton() override = default;
+    
+    void paintButton(juce::Graphics& g, bool over, bool down) override;
+    void mouseUp(const juce::MouseEvent& event) override;
+    void setPresetName(const juce::String& name);
+    void setCarrotImage(std::unique_ptr<juce::Drawable> carrot);
+    void setDiceImage(std::unique_ptr<juce::Drawable> dice);
+    void setSaveIcon(std::unique_ptr<juce::Drawable> save);
+    
+    std::function<void()> onSaveClick;
+    std::function<void()> onDiceClick;
+    
+private:
+    juce::String presetName = "Default Preset";
+    std::unique_ptr<juce::Drawable> carrotImage;
+    std::unique_ptr<juce::Drawable> diceImage;
+    std::unique_ptr<juce::Drawable> saveIcon;
+    juce::Rectangle<float> saveIconBounds;
+    juce::Rectangle<float> diceBounds;
+    
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PresetSelectorButton)
+};
+
 
 
 
@@ -213,10 +243,10 @@ public:
         // Randomization manager (thread-safe)
         std::unique_ptr<RandomizationManager> randomizationManager;
         
-        // Preset management system
-        std::unique_ptr<PresetManager> presetManager;
-        std::unique_ptr<PresetBrowserComponent> presetBrowser;
-        std::unique_ptr<juce::TextButton> presetBrowserButton;
+    // Preset management system
+    std::unique_ptr<PresetManager> presetManager;
+    std::unique_ptr<PresetBrowserOverlay> presetBrowser;
+    std::unique_ptr<PresetSelectorButton> presetBrowserButton;
         
         // Flag to prevent onValueChange from saving snapshots during randomization reload
         std::atomic<bool> isLoadingFromSnapshot { false };

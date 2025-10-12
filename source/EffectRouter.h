@@ -121,13 +121,11 @@ public:
         juce::ValueTree tree("EffectRouter");
         tree.setProperty("version", routerVersion.load(), nullptr);
         
-        // Store assignment as array of ints
-        juce::Array<juce::var> assignmentArray;
-        for (int i = 0; i < 4; ++i)
-        {
-            assignmentArray.add(static_cast<int>(assignment[i]));
-        }
-        tree.setProperty("assignment", assignmentArray, nullptr);
+        // Store assignment as individual properties (XML-friendly)
+        tree.setProperty("slot0", static_cast<int>(assignment[0]), nullptr);
+        tree.setProperty("slot1", static_cast<int>(assignment[1]), nullptr);
+        tree.setProperty("slot2", static_cast<int>(assignment[2]), nullptr);
+        tree.setProperty("slot3", static_cast<int>(assignment[3]), nullptr);
         
         return tree;
     }
@@ -138,16 +136,28 @@ public:
         if (!tree.isValid() || tree.getType() != juce::Identifier("EffectRouter"))
             return;
         
-        auto assignmentVar = tree.getProperty("assignment");
-        if (assignmentVar.isArray())
+        // Restore assignment from individual properties (XML-friendly)
+        if (tree.hasProperty("slot0"))
         {
-            auto* arr = assignmentVar.getArray();
-            if (arr && arr->size() == 4)
+            assignment[0] = static_cast<EffectID>(juce::jlimit(0, 6, static_cast<int>(tree.getProperty("slot0", 0))));
+            assignment[1] = static_cast<EffectID>(juce::jlimit(0, 6, static_cast<int>(tree.getProperty("slot1", 1))));
+            assignment[2] = static_cast<EffectID>(juce::jlimit(0, 6, static_cast<int>(tree.getProperty("slot2", 2))));
+            assignment[3] = static_cast<EffectID>(juce::jlimit(0, 6, static_cast<int>(tree.getProperty("slot3", 3))));
+        }
+        else
+        {
+            // Fallback: try old Array format for backwards compatibility
+            auto assignmentVar = tree.getProperty("assignment");
+            if (assignmentVar.isArray())
             {
-                for (int i = 0; i < 4; ++i)
+                auto* arr = assignmentVar.getArray();
+                if (arr && arr->size() == 4)
                 {
-                    int effectID = static_cast<int>(arr->getReference(i));
-                    assignment[i] = static_cast<EffectID>(juce::jlimit(0, 3, effectID));
+                    for (int i = 0; i < 4; ++i)
+                    {
+                        int effectID = static_cast<int>(arr->getReference(i));
+                        assignment[i] = static_cast<EffectID>(juce::jlimit(0, 6, effectID));
+                    }
                 }
             }
         }

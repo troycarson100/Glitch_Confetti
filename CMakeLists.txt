@@ -7,10 +7,11 @@ set(CMAKE_CXX_STANDARD 17)
 # Use existing JUCE from PampleTest
 add_subdirectory(../PampleTest/JUCE ${CMAKE_CURRENT_BINARY_DIR}/JUCE)
 
-# Create binary data for assets (GUI XML + SVGs + Fonts)
+# Create binary data for assets (GUI XML + SVGs + PNGs + Fonts)
 file(GLOB UI_SVGS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/assets/ui/*.svg")
+file(GLOB UI_PNGS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/assets/ui/*.png")
 file(GLOB FONT_FILES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/assets/fonts/*.ttf" "${CMAKE_CURRENT_SOURCE_DIR}/assets/fonts/*.otf")
-juce_add_binary_data(Assets SOURCES assets/gui.xml ${UI_SVGS} ${FONT_FILES})
+juce_add_binary_data(Assets SOURCES assets/gui.xml ${UI_SVGS} ${UI_PNGS} ${FONT_FILES})
 
 # Add the plugin
 juce_add_plugin(Stepper

@@ -2,161 +2,159 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 #include "PresetManager.h"
 
-// Custom component for a preset item row (with star button)
-class PresetItemComponent : public juce::Component
+// Forward declarations
+class PresetBrowserOverlay;
+
+// Custom star button component (paints a 5-point star, no Unicode)
+class StarButton : public juce::Component
 {
 public:
-    PresetItemComponent();
+    StarButton();
     
-    void updateContent(const juce::String& name, bool isFavorite, bool isSelected);
-    
-    void resized() override;
     void paint(juce::Graphics& g) override;
     void mouseUp(const juce::MouseEvent& event) override;
     
-    std::function<void()> onPresetClick;
-    std::function<void(bool)> onFavoriteToggle;
+    void setToggleState(bool shouldBeOn);
+    bool getToggleState() const { return isOn; }
+    
+    std::function<void(bool)> onClick;
     
 private:
-    juce::Label nameLabel;
-    juce::DrawableButton starButton { "star", juce::DrawableButton::ImageFitted };
-    bool selected = false;
-    bool favorite = false;
+    bool isOn = false;
+    bool isHovered = false;
     
-    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PresetItemComponent)
+    void mouseEnter(const juce::MouseEvent&) override { isHovered = true; repaint(); }
+    void mouseExit(const juce::MouseEvent&) override { isHovered = false; repaint(); }
+    
+    juce::Path createStarPath(float cx, float cy, float outerRadius, float innerRadius) const;
+    
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(StarButton)
 };
 
-// Preset browser overlay component
-class PresetBrowserComponent : public juce::Component
+// Custom category button that shows a white bar when selected
+class CategoryButton : public juce::ImageButton
 {
 public:
-    PresetBrowserComponent(PresetManager& manager);
-    ~PresetBrowserComponent() override;
+    CategoryButton(const juce::String& name) : juce::ImageButton(name), buttonName(name) {}
+    
+    void paintButton(juce::Graphics& g, bool over, bool down) override;
+    void setSelected(bool shouldBeSelected) { isSelected = shouldBeSelected; repaint(); }
+    bool getSelected() const { return isSelected; }
+    
+private:
+    juce::String buttonName;
+    bool isSelected = false;
+    
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(CategoryButton)
+};
+
+// Custom preset row component (name + star button)
+class PresetRowComponent : public juce::Component
+{
+public:
+    PresetRowComponent();
+    
+    void updateContent(const juce::String& presetName, bool isFav, bool isSelected);
     
     void paint(juce::Graphics& g) override;
     void resized() override;
+    void mouseUp(const juce::MouseEvent& event) override;
+    void mouseDown(const juce::MouseEvent& event) override;
     
-    void refreshCategories();
-    void refreshPresets();
-    void selectCategory(int index);
+    std::function<void()> onPresetClick;
+    std::function<void(bool)> onStarClick;
+    std::function<void()> onShowInFinder;
+    std::function<void()> onDelete;
     
+private:
+    juce::String name;
+    bool favorite = false;
+    bool selected = false;
+    StarButton starButton;
+    
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PresetRowComponent)
+};
+
+// Forward declaration
+struct UiAssets;
+
+// Preset browser overlay (covers Master area only)
+class PresetBrowserOverlay : public juce::Component
+{
+public:
+    PresetBrowserOverlay(PresetManager& manager, const UiAssets& uiAssets);
+    ~PresetBrowserOverlay() override;
+    
+    void paint(juce::Graphics& g) override;
+    void resized() override;
+    void mouseDown(const juce::MouseEvent& event) override;
+    void mouseWheelMove(const juce::MouseEvent& event, const juce::MouseWheelDetails& wheel) override;
+    
+    // Show the overlay (scans presets and animates in)
+    void show();
+    
+    // Close handler
     std::function<void()> onClose;
+    
+    // Preset loaded handler (called when a preset is successfully loaded)
+    std::function<void(const juce::String&)> onPresetLoaded;
     
 private:
     PresetManager& presetManager;
+    const UiAssets& assets;
     
-    // UI Components
-    juce::ListBox categoryList;
-    juce::ListBox presetList;
-    juce::TextButton closeButton { "×" };
-    juce::TextButton saveButton { "Save Preset" };
-    juce::TextButton newCategoryButton { "+" };
-    juce::Label titleLabel;
-    
-    // Data
-    juce::StringArray categories;
-    juce::Array<PresetInfo> currentPresets;
-    juce::String selectedCategory;
-    int selectedCategoryIndex = 0;
-    
-    // List models
-    class CategoryListModel;
-    class PresetListModel;
-    std::unique_ptr<CategoryListModel> categoryModel;
-    std::unique_ptr<PresetListModel> presetModel;
-    
-    // Actions
-    void handleSavePreset();
-    void handleNewCategory();
-    void handleLoadPreset(int presetIndex);
-    void handleToggleFavorite(int presetIndex);
-    
-    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PresetBrowserComponent)
-};
-
-// Category list model (simple text list)
-class PresetBrowserComponent::CategoryListModel : public juce::ListBoxModel
-{
-public:
-    CategoryListModel(PresetBrowserComponent& owner) : browser(owner) {}
-    
-    int getNumRows() override { return browser.categories.size(); }
-    
-    void paintListBoxItem(int row, juce::Graphics& g, int width, int height, bool rowIsSelected) override
+    // Custom container that forwards mouse wheel events to parent viewport
+    class ScrollableContainer : public juce::Component
     {
-        if (row >= browser.categories.size()) return;
+    public:
+        ScrollableContainer(juce::Viewport* viewport) : parentViewport(viewport) {}
         
-        // Background
-        if (rowIsSelected)
-            g.fillAll(juce::Colour(0xff444444));
-        else
-            g.fillAll(juce::Colour(0xff2a2a2a));
-        
-        // Category name
-        g.setColour(rowIsSelected ? juce::Colours::white : juce::Colour(0xffaaaaaa));
-        g.setFont(14.0f);
-        
-        juce::String categoryName = browser.categories[row];
-        if (categoryName == "Favorites")
-            categoryName = "★ " + categoryName; // Add star icon
-        
-        g.drawText(categoryName, 10, 0, width - 20, height, juce::Justification::centredLeft);
-        
-        // Separator line
-        g.setColour(juce::Colour(0xff1a1a1a));
-        g.drawLine(0.0f, (float)height - 0.5f, (float)width, (float)height - 0.5f, 1.0f);
-    }
-    
-    void selectedRowsChanged(int lastRowSelected) override
-    {
-        if (lastRowSelected >= 0 && lastRowSelected < browser.categories.size())
-            browser.selectCategory(lastRowSelected);
-    }
-    
-private:
-    PresetBrowserComponent& browser;
-};
-
-// Preset list model (uses custom row components for star buttons)
-class PresetBrowserComponent::PresetListModel : public juce::ListBoxModel
-{
-public:
-    PresetListModel(PresetBrowserComponent& owner) : browser(owner) {}
-    
-    int getNumRows() override { return browser.currentPresets.size(); }
-    
-    juce::Component* refreshComponentForRow(int row, bool isSelected, juce::Component* existingComponent) override
-    {
-        if (row >= browser.currentPresets.size())
+        void mouseWheelMove(const juce::MouseEvent& event, const juce::MouseWheelDetails& wheel) override
         {
-            delete existingComponent;
-            return nullptr;
+            if (parentViewport)
+                parentViewport->mouseWheelMove(event, wheel);
         }
         
-        PresetItemComponent* item = dynamic_cast<PresetItemComponent*>(existingComponent);
-        if (item == nullptr)
-            item = new PresetItemComponent();
-        
-        const auto& preset = browser.currentPresets[row];
-        item->updateContent(preset.name, preset.isFavorite, isSelected);
-        
-        item->onPresetClick = [this, row]() {
-            browser.handleLoadPreset(row);
-        };
-        
-        item->onFavoriteToggle = [this, row](bool newState) {
-            browser.handleToggleFavorite(row);
-        };
-        
-        return item;
-    }
+    private:
+        juce::Viewport* parentViewport;
+    };
     
-    void paintListBoxItem(int, juce::Graphics&, int, int, bool) override
-    {
-        // Component handles its own painting
-    }
+    // Category tabs (left side, scrollable)
+    juce::Viewport categoryViewport;
+    ScrollableContainer categoryContainer;
+    std::vector<std::unique_ptr<juce::ImageButton>> categoryButtons;
+    juce::String selectedCategory = ""; // Empty = all presets
     
-private:
-    PresetBrowserComponent& browser;
+    // Presets list (center, full width)
+    juce::ListBox presetsList;
+    
+    // Data
+    juce::Array<PresetInfo> currentPresets;
+    
+    // List models
+    class PresetsListModel;
+    std::unique_ptr<PresetsListModel> presetsModel;
+    
+    // Actions
+    void handlePresetSelected(int index);
+    void handleStarToggle(int index);
+    void handleSavePreset();
+    void handleCloseButton();
+    void handleCategorySelected(const juce::String& category);
+    
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PresetBrowserOverlay)
 };
 
+// Presets list model (custom row components with star buttons)
+class PresetBrowserOverlay::PresetsListModel : public juce::ListBoxModel
+{
+public:
+    PresetsListModel(PresetBrowserOverlay& owner) : overlay(owner) {}
+    
+    int getNumRows() override;
+    void paintListBoxItem(int, juce::Graphics&, int, int, bool) override {}
+    juce::Component* refreshComponentForRow(int row, bool isSelected, juce::Component* existingComponent) override;
+    
+private:
+    PresetBrowserOverlay& overlay;
+};

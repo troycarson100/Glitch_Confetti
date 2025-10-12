@@ -91,6 +91,18 @@ bool UiAssets::loadAll()
     unlockedIcon      = loadSVG (Unlocked_svg, Unlocked_svgSize);
     fxTypeCarrotInactive = loadSVG (FX_Type_Carrot_Inactive_svg, FX_Type_Carrot_Inactive_svgSize);
     fxTypeCarrotActive   = loadSVG (FX_Type_Carrot_Active_svg, FX_Type_Carrot_Active_svgSize);
+    presetMenuBackground = loadSVG (PresetMenu_Background_svg, PresetMenu_Background_svgSize);
+    presetMenuCarrot     = loadSVG (PresetMenu_Carrot_svg, PresetMenu_Carrot_svgSize);
+    saveIcon             = loadSVG (Save_Icon_svg, Save_Icon_svgSize);
+    
+    // Load category menu tab PNGs
+    favoritesMenuTab = juce::ImageCache::getFromMemory(BinaryData::Favorites_MenuTab_png, BinaryData::Favorites_MenuTab_pngSize);
+    rhythmicMenuTab = juce::ImageCache::getFromMemory(BinaryData::Rhythmic_MenuTab_png, BinaryData::Rhythmic_MenuTab_pngSize);
+    distortMenuTab = juce::ImageCache::getFromMemory(BinaryData::Distort_MenuTab_png, BinaryData::Distort_MenuTab_pngSize);
+    lofiMenuTab = juce::ImageCache::getFromMemory(BinaryData::Lofi_MenuTab_png, BinaryData::Lofi_MenuTab_pngSize);
+    bassMenuTab = juce::ImageCache::getFromMemory(BinaryData::Bass_MenuTab_png, BinaryData::Bass_MenuTab_pngSize);
+    guitarSynthMenuTab = juce::ImageCache::getFromMemory(BinaryData::GuitarSynth_MenuTab_png, BinaryData::GuitarSynth_MenuTab_pngSize);
+    userMenuTab = juce::ImageCache::getFromMemory(BinaryData::User_MenuTab_png, BinaryData::User_MenuTab_pngSize);
 #else
     auto assetsDir = juce::File::getSpecialLocation(juce::File::currentApplicationFile)
                         .getSiblingFile ("assets"); // adjust if different

@@ -1378,8 +1378,178 @@ void PluginProcessor::getStateInformation (juce::MemoryBlock& destData)
     auto routerState = effectRouter.toValueTree();
     state.addChild(routerState, -1, nullptr);
     
-    // TODO: Save per-effect instance state (sequencer patterns, etc.)
-    // This will be added as we refactor effect instances
+    // Debug: show saved assignment
+    auto routingOrder = effectRouter.getRoutingOrder();
+    DBG("[State] Saving router: Slot1=" + juce::String(static_cast<int>(routingOrder[0])) + 
+        " Slot2=" + juce::String(static_cast<int>(routingOrder[1])) + 
+        " Slot3=" + juce::String(static_cast<int>(routingOrder[2])) + 
+        " Slot4=" + juce::String(static_cast<int>(routingOrder[3])));
+    
+    // Save sequencer settings for all effects
+    auto seqSettings = juce::ValueTree("SequencerSettings");
+    
+    // SpaceDelay sequencer
+    auto delaySeqTree = juce::ValueTree("DelaySequencer");
+    delaySeqTree.setProperty("enabled", seq.enabled.load(), nullptr);
+    delaySeqTree.setProperty("stepsUsed", seq.stepsUsed.load(), nullptr);
+    delaySeqTree.setProperty("divisionIndex", seq.divisionIndex.load(), nullptr);
+    delaySeqTree.setProperty("stdMode", seq.stdMode.load(), nullptr);
+    seqSettings.addChild(delaySeqTree, -1, nullptr);
+    
+    // AutoPan sequencer
+    auto autopanSeqTree = juce::ValueTree("AutoPanSequencer");
+    autopanSeqTree.setProperty("enabled", autopanSeq.enabled.load(), nullptr);
+    autopanSeqTree.setProperty("stepsUsed", autopanSeq.stepsUsed.load(), nullptr);
+    autopanSeqTree.setProperty("divisionIndex", autopanSeq.divisionIndex.load(), nullptr);
+    autopanSeqTree.setProperty("stdMode", autopanSeq.stdMode.load(), nullptr);
+    seqSettings.addChild(autopanSeqTree, -1, nullptr);
+    
+    // Dirt sequencer
+    auto dirtSeqTree = juce::ValueTree("DirtSequencer");
+    dirtSeqTree.setProperty("enabled", dirtSeq.enabled.load(), nullptr);
+    dirtSeqTree.setProperty("stepsUsed", dirtSeq.stepsUsed.load(), nullptr);
+    dirtSeqTree.setProperty("divisionIndex", dirtSeq.divisionIndex.load(), nullptr);
+    dirtSeqTree.setProperty("stdMode", dirtSeq.stdMode.load(), nullptr);
+    seqSettings.addChild(dirtSeqTree, -1, nullptr);
+    
+    // Chorus sequencer
+    auto chorusSeqTree = juce::ValueTree("ChorusSequencer");
+    chorusSeqTree.setProperty("enabled", chorusSeq.enabled.load(), nullptr);
+    chorusSeqTree.setProperty("stepsUsed", chorusSeq.stepsUsed.load(), nullptr);
+    chorusSeqTree.setProperty("divisionIndex", chorusSeq.divisionIndex.load(), nullptr);
+    chorusSeqTree.setProperty("stdMode", chorusSeq.stdMode.load(), nullptr);
+    seqSettings.addChild(chorusSeqTree, -1, nullptr);
+    
+    // Reverb sequencer
+    auto reverbSeqTree = juce::ValueTree("ReverbSequencer");
+    reverbSeqTree.setProperty("enabled", reverbSeq.enabled.load(), nullptr);
+    reverbSeqTree.setProperty("stepsUsed", reverbSeq.stepsUsed.load(), nullptr);
+    reverbSeqTree.setProperty("divisionIndex", reverbSeq.divisionIndex.load(), nullptr);
+    reverbSeqTree.setProperty("stdMode", reverbSeq.stdMode.load(), nullptr);
+    seqSettings.addChild(reverbSeqTree, -1, nullptr);
+    
+    // Granular sequencer
+    auto granularSeqTree = juce::ValueTree("GranularSequencer");
+    granularSeqTree.setProperty("enabled", granularSeq.enabled.load(), nullptr);
+    granularSeqTree.setProperty("stepsUsed", granularSeq.stepsUsed.load(), nullptr);
+    granularSeqTree.setProperty("divisionIndex", granularSeq.divisionIndex.load(), nullptr);
+    granularSeqTree.setProperty("stdMode", granularSeq.stdMode.load(), nullptr);
+    seqSettings.addChild(granularSeqTree, -1, nullptr);
+    
+    // Slicer sequencer
+    auto slicerSeqTree = juce::ValueTree("SlicerSequencer");
+    slicerSeqTree.setProperty("enabled", slicerSeq.enabled.load(), nullptr);
+    slicerSeqTree.setProperty("stepsUsed", slicerSeq.stepsUsed.load(), nullptr);
+    slicerSeqTree.setProperty("divisionIndex", slicerSeq.divisionIndex.load(), nullptr);
+    slicerSeqTree.setProperty("stdMode", slicerSeq.stdMode.load(), nullptr);
+    seqSettings.addChild(slicerSeqTree, -1, nullptr);
+    
+    state.addChild(seqSettings, -1, nullptr);
+    
+    // Save step snapshots for all effects
+    auto stepsnapshots = juce::ValueTree("StepSnapshots");
+    
+    // SpaceDelay snapshots
+    for (int i = 0; i < 16; ++i)
+    {
+        auto stepTree = juce::ValueTree("DelayStep" + juce::String(i));
+        stepTree.setProperty("timeMs", stepSnapshots[i].delay.timeMs, nullptr);
+        stepTree.setProperty("feedback", stepSnapshots[i].delay.feedback, nullptr);
+        stepTree.setProperty("wowDepth", stepSnapshots[i].delay.wowDepth, nullptr);
+        stepTree.setProperty("wowRate", stepSnapshots[i].delay.wowRate, nullptr);
+        stepTree.setProperty("saturation", stepSnapshots[i].delay.saturation, nullptr);
+        stepTree.setProperty("highCut", stepSnapshots[i].delay.highCut, nullptr);
+        stepTree.setProperty("lowCut", stepSnapshots[i].delay.lowCut, nullptr);
+        stepsnapshots.addChild(stepTree, -1, nullptr);
+    }
+    
+    // AutoPan snapshots
+    for (int i = 0; i < 16; ++i)
+    {
+        auto stepTree = juce::ValueTree("AutoPanStep" + juce::String(i));
+        stepTree.setProperty("rate", autopanStepSnapshots[i].autopan.rate, nullptr);
+        stepTree.setProperty("phase", autopanStepSnapshots[i].autopan.phase, nullptr);
+        stepTree.setProperty("waveType", autopanStepSnapshots[i].autopan.waveType, nullptr);
+        stepTree.setProperty("waveShape", autopanStepSnapshots[i].autopan.waveShape, nullptr);
+        stepTree.setProperty("inverted", autopanStepSnapshots[i].autopan.inverted, nullptr);
+        stepTree.setProperty("amount", autopanStepSnapshots[i].autopan.amount, nullptr);
+        stepsnapshots.addChild(stepTree, -1, nullptr);
+    }
+    
+    // Dirt snapshots
+    for (int i = 0; i < 16; ++i)
+    {
+        auto stepTree = juce::ValueTree("DirtStep" + juce::String(i));
+        stepTree.setProperty("drive", dirtStepSnapshots[i].dirt.drive, nullptr);
+        stepTree.setProperty("color", dirtStepSnapshots[i].dirt.color, nullptr);
+        stepTree.setProperty("asym", dirtStepSnapshots[i].dirt.asym, nullptr);
+        stepTree.setProperty("texture", dirtStepSnapshots[i].dirt.texture, nullptr);
+        stepTree.setProperty("lowCut", dirtStepSnapshots[i].dirt.lowCut, nullptr);
+        stepTree.setProperty("highCut", dirtStepSnapshots[i].dirt.highCut, nullptr);
+        stepTree.setProperty("tone", dirtStepSnapshots[i].dirt.tone, nullptr);
+        stepTree.setProperty("mix", dirtStepSnapshots[i].dirt.mix, nullptr);
+        stepsnapshots.addChild(stepTree, -1, nullptr);
+    }
+    
+    // Chorus snapshots
+    for (int i = 0; i < 16; ++i)
+    {
+        auto stepTree = juce::ValueTree("ChorusStep" + juce::String(i));
+        stepTree.setProperty("rate", chorusStepSnapshots[i].chorus.rate, nullptr);
+        stepTree.setProperty("depth", chorusStepSnapshots[i].chorus.depth, nullptr);
+        stepTree.setProperty("voices", chorusStepSnapshots[i].chorus.voices, nullptr);
+        stepTree.setProperty("delayTime", chorusStepSnapshots[i].chorus.delayTime, nullptr);
+        stepTree.setProperty("feedback", chorusStepSnapshots[i].chorus.feedback, nullptr);
+        stepTree.setProperty("width", chorusStepSnapshots[i].chorus.width, nullptr);
+        stepTree.setProperty("tone", chorusStepSnapshots[i].chorus.tone, nullptr);
+        stepTree.setProperty("mix", chorusStepSnapshots[i].chorus.mix, nullptr);
+        stepsnapshots.addChild(stepTree, -1, nullptr);
+    }
+    
+    // Reverb snapshots
+    for (int i = 0; i < 16; ++i)
+    {
+        auto stepTree = juce::ValueTree("ReverbStep" + juce::String(i));
+        stepTree.setProperty("type", reverbStepSnapshots[i].reverb.type, nullptr);
+        stepTree.setProperty("size", reverbStepSnapshots[i].reverb.size, nullptr);
+        stepTree.setProperty("predelayMs", reverbStepSnapshots[i].reverb.predelayMs, nullptr);
+        stepTree.setProperty("dampHz", reverbStepSnapshots[i].reverb.dampHz, nullptr);
+        stepTree.setProperty("diffusion", reverbStepSnapshots[i].reverb.diffusion, nullptr);
+        stepTree.setProperty("early", reverbStepSnapshots[i].reverb.early, nullptr);
+        stepTree.setProperty("decaySec", reverbStepSnapshots[i].reverb.decaySec, nullptr);
+        stepTree.setProperty("mix", reverbStepSnapshots[i].reverb.mix, nullptr);
+        stepsnapshots.addChild(stepTree, -1, nullptr);
+    }
+    
+    // Granular snapshots
+    for (int i = 0; i < 16; ++i)
+    {
+        auto stepTree = juce::ValueTree("GranularStep" + juce::String(i));
+        stepTree.setProperty("sizeMs", granularStepSnapshots[i].granular.sizeMs, nullptr);
+        stepTree.setProperty("densityHz", granularStepSnapshots[i].granular.densityHz, nullptr);
+        stepTree.setProperty("position", granularStepSnapshots[i].granular.position, nullptr);
+        stepTree.setProperty("sprayMs", granularStepSnapshots[i].granular.sprayMs, nullptr);
+        stepTree.setProperty("pitchSemi", granularStepSnapshots[i].granular.pitchSemi, nullptr);
+        stepTree.setProperty("random", granularStepSnapshots[i].granular.random, nullptr);
+        stepTree.setProperty("texture", granularStepSnapshots[i].granular.texture, nullptr);
+        stepTree.setProperty("mix", granularStepSnapshots[i].granular.mix, nullptr);
+        stepsnapshots.addChild(stepTree, -1, nullptr);
+    }
+    
+    // Slicer snapshots
+    for (int i = 0; i < 16; ++i)
+    {
+        auto stepTree = juce::ValueTree("SlicerStep" + juce::String(i));
+        stepTree.setProperty("pattern", slicerStepSnapshots[i].slicer.pattern, nullptr);
+        stepTree.setProperty("division", slicerStepSnapshots[i].slicer.division, nullptr);
+        stepTree.setProperty("offset", slicerStepSnapshots[i].slicer.offset, nullptr);
+        stepTree.setProperty("shape", slicerStepSnapshots[i].slicer.shape, nullptr);
+        stepTree.setProperty("releaseMs", slicerStepSnapshots[i].slicer.releaseMs, nullptr);
+        stepTree.setProperty("mix", slicerStepSnapshots[i].slicer.mix, nullptr);
+        stepsnapshots.addChild(stepTree, -1, nullptr);
+    }
+    
+    state.addChild(stepsnapshots, -1, nullptr);
     
     // Serialize to MemoryBlock
     juce::MemoryOutputStream stream(destData, false);
@@ -1404,7 +1574,15 @@ void PluginProcessor::setStateInformation (const void* data, int sizeInBytes)
         auto routerState = tree.getChildWithName("EffectRouter");
         if (routerState.isValid())
         {
+            DBG("[State] Restoring EffectRouter from preset");
             effectRouter.fromValueTree(routerState);
+            
+            // Debug: show restored assignment
+            auto routingOrder = effectRouter.getRoutingOrder();
+            DBG("[State] Restored router: Slot1=" + juce::String(static_cast<int>(routingOrder[0])) + 
+                " Slot2=" + juce::String(static_cast<int>(routingOrder[1])) + 
+                " Slot3=" + juce::String(static_cast<int>(routingOrder[2])) + 
+                " Slot4=" + juce::String(static_cast<int>(routingOrder[3])));
             
             // Validate router assignment
             if (!effectRouter.isValid())
@@ -1416,9 +1594,206 @@ void PluginProcessor::setStateInformation (const void* data, int sizeInBytes)
                 new (&effectRouter) EffectRouter();
             }
         }
+        else
+        {
+            DBG("[State] No EffectRouter found in preset tree!");
+        }
         
-        // TODO: Restore per-effect instance state
-        // This will be added as we refactor effect instances
+        // Restore sequencer settings
+        auto seqSettings = tree.getChildWithName("SequencerSettings");
+        if (seqSettings.isValid())
+        {
+            // SpaceDelay sequencer
+            auto delaySeqTree = seqSettings.getChildWithName("DelaySequencer");
+            if (delaySeqTree.isValid())
+            {
+                seq.enabled.store(delaySeqTree.getProperty("enabled", true));
+                seq.stepsUsed.store(delaySeqTree.getProperty("stepsUsed", 16));
+                seq.divisionIndex.store(delaySeqTree.getProperty("divisionIndex", 3));
+                seq.stdMode.store(delaySeqTree.getProperty("stdMode", 0));
+            }
+            
+            // AutoPan sequencer
+            auto autopanSeqTree = seqSettings.getChildWithName("AutoPanSequencer");
+            if (autopanSeqTree.isValid())
+            {
+                autopanSeq.enabled.store(autopanSeqTree.getProperty("enabled", true));
+                autopanSeq.stepsUsed.store(autopanSeqTree.getProperty("stepsUsed", 16));
+                autopanSeq.divisionIndex.store(autopanSeqTree.getProperty("divisionIndex", 5));
+                autopanSeq.stdMode.store(autopanSeqTree.getProperty("stdMode", 0));
+            }
+            
+            // Dirt sequencer
+            auto dirtSeqTree = seqSettings.getChildWithName("DirtSequencer");
+            if (dirtSeqTree.isValid())
+            {
+                dirtSeq.enabled.store(dirtSeqTree.getProperty("enabled", true));
+                dirtSeq.stepsUsed.store(dirtSeqTree.getProperty("stepsUsed", 16));
+                dirtSeq.divisionIndex.store(dirtSeqTree.getProperty("divisionIndex", 5));
+                dirtSeq.stdMode.store(dirtSeqTree.getProperty("stdMode", 0));
+            }
+            
+            // Chorus sequencer
+            auto chorusSeqTree = seqSettings.getChildWithName("ChorusSequencer");
+            if (chorusSeqTree.isValid())
+            {
+                chorusSeq.enabled.store(chorusSeqTree.getProperty("enabled", true));
+                chorusSeq.stepsUsed.store(chorusSeqTree.getProperty("stepsUsed", 16));
+                chorusSeq.divisionIndex.store(chorusSeqTree.getProperty("divisionIndex", 5));
+                chorusSeq.stdMode.store(chorusSeqTree.getProperty("stdMode", 0));
+            }
+            
+            // Reverb sequencer
+            auto reverbSeqTree = seqSettings.getChildWithName("ReverbSequencer");
+            if (reverbSeqTree.isValid())
+            {
+                reverbSeq.enabled.store(reverbSeqTree.getProperty("enabled", true));
+                reverbSeq.stepsUsed.store(reverbSeqTree.getProperty("stepsUsed", 16));
+                reverbSeq.divisionIndex.store(reverbSeqTree.getProperty("divisionIndex", 5));
+                reverbSeq.stdMode.store(reverbSeqTree.getProperty("stdMode", 0));
+            }
+            
+            // Granular sequencer
+            auto granularSeqTree = seqSettings.getChildWithName("GranularSequencer");
+            if (granularSeqTree.isValid())
+            {
+                granularSeq.enabled.store(granularSeqTree.getProperty("enabled", true));
+                granularSeq.stepsUsed.store(granularSeqTree.getProperty("stepsUsed", 16));
+                granularSeq.divisionIndex.store(granularSeqTree.getProperty("divisionIndex", 5));
+                granularSeq.stdMode.store(granularSeqTree.getProperty("stdMode", 0));
+            }
+            
+            // Slicer sequencer
+            auto slicerSeqTree = seqSettings.getChildWithName("SlicerSequencer");
+            if (slicerSeqTree.isValid())
+            {
+                slicerSeq.enabled.store(slicerSeqTree.getProperty("enabled", true));
+                slicerSeq.stepsUsed.store(slicerSeqTree.getProperty("stepsUsed", 16));
+                slicerSeq.divisionIndex.store(slicerSeqTree.getProperty("divisionIndex", 3));
+                slicerSeq.stdMode.store(slicerSeqTree.getProperty("stdMode", 0));
+            }
+        }
+        
+        // Restore step snapshots
+        auto stepsnapshots = tree.getChildWithName("StepSnapshots");
+        if (stepsnapshots.isValid())
+        {
+            // SpaceDelay snapshots
+            for (int i = 0; i < 16; ++i)
+            {
+                auto stepTree = stepsnapshots.getChildWithName("DelayStep" + juce::String(i));
+                if (stepTree.isValid())
+                {
+                    stepSnapshots[i].delay.timeMs = stepTree.getProperty("timeMs", 250.0f);
+                    stepSnapshots[i].delay.feedback = stepTree.getProperty("feedback", 0.2f);
+                    stepSnapshots[i].delay.wowDepth = stepTree.getProperty("wowDepth", 0.0f);
+                    stepSnapshots[i].delay.wowRate = stepTree.getProperty("wowRate", 1.0f);
+                    stepSnapshots[i].delay.saturation = stepTree.getProperty("saturation", 0.0f);
+                    stepSnapshots[i].delay.highCut = stepTree.getProperty("highCut", 20000.0f);
+                    stepSnapshots[i].delay.lowCut = stepTree.getProperty("lowCut", 20.0f);
+                }
+            }
+            
+            // AutoPan snapshots
+            for (int i = 0; i < 16; ++i)
+            {
+                auto stepTree = stepsnapshots.getChildWithName("AutoPanStep" + juce::String(i));
+                if (stepTree.isValid())
+                {
+                    autopanStepSnapshots[i].autopan.rate = stepTree.getProperty("rate", 0.43f);
+                    autopanStepSnapshots[i].autopan.phase = stepTree.getProperty("phase", 180.0f);
+                    autopanStepSnapshots[i].autopan.waveType = stepTree.getProperty("waveType", 0);
+                    autopanStepSnapshots[i].autopan.waveShape = stepTree.getProperty("waveShape", 0.5f);
+                    autopanStepSnapshots[i].autopan.inverted = stepTree.getProperty("inverted", false);
+                    autopanStepSnapshots[i].autopan.amount = stepTree.getProperty("amount", 1.0f);
+                }
+            }
+            
+            // Dirt snapshots
+            for (int i = 0; i < 16; ++i)
+            {
+                auto stepTree = stepsnapshots.getChildWithName("DirtStep" + juce::String(i));
+                if (stepTree.isValid())
+                {
+                    dirtStepSnapshots[i].dirt.drive = stepTree.getProperty("drive", 12.0f);
+                    dirtStepSnapshots[i].dirt.color = stepTree.getProperty("color", 0.0f);
+                    dirtStepSnapshots[i].dirt.asym = stepTree.getProperty("asym", 0.0f);
+                    dirtStepSnapshots[i].dirt.texture = stepTree.getProperty("texture", 0.35f);
+                    dirtStepSnapshots[i].dirt.lowCut = stepTree.getProperty("lowCut", 60.0f);
+                    dirtStepSnapshots[i].dirt.highCut = stepTree.getProperty("highCut", 12000.0f);
+                    dirtStepSnapshots[i].dirt.tone = stepTree.getProperty("tone", 0.0f);
+                    dirtStepSnapshots[i].dirt.mix = stepTree.getProperty("mix", 1.0f);
+                }
+            }
+            
+            // Chorus snapshots
+            for (int i = 0; i < 16; ++i)
+            {
+                auto stepTree = stepsnapshots.getChildWithName("ChorusStep" + juce::String(i));
+                if (stepTree.isValid())
+                {
+                    chorusStepSnapshots[i].chorus.rate = stepTree.getProperty("rate", 1.5f);
+                    chorusStepSnapshots[i].chorus.depth = stepTree.getProperty("depth", 40.0f);
+                    chorusStepSnapshots[i].chorus.voices = stepTree.getProperty("voices", 2.0f);
+                    chorusStepSnapshots[i].chorus.delayTime = stepTree.getProperty("delayTime", 20.0f);
+                    chorusStepSnapshots[i].chorus.feedback = stepTree.getProperty("feedback", 20.0f);
+                    chorusStepSnapshots[i].chorus.width = stepTree.getProperty("width", 100.0f);
+                    chorusStepSnapshots[i].chorus.tone = stepTree.getProperty("tone", 0.0f);
+                    chorusStepSnapshots[i].chorus.mix = stepTree.getProperty("mix", 50.0f);
+                }
+            }
+            
+            // Reverb snapshots
+            for (int i = 0; i < 16; ++i)
+            {
+                auto stepTree = stepsnapshots.getChildWithName("ReverbStep" + juce::String(i));
+                if (stepTree.isValid())
+                {
+                    reverbStepSnapshots[i].reverb.type = stepTree.getProperty("type", 0.0f);
+                    reverbStepSnapshots[i].reverb.size = stepTree.getProperty("size", 0.7f);
+                    reverbStepSnapshots[i].reverb.predelayMs = stepTree.getProperty("predelayMs", 20.0f);
+                    reverbStepSnapshots[i].reverb.dampHz = stepTree.getProperty("dampHz", 8000.0f);
+                    reverbStepSnapshots[i].reverb.diffusion = stepTree.getProperty("diffusion", 0.7f);
+                    reverbStepSnapshots[i].reverb.early = stepTree.getProperty("early", 0.35f);
+                    reverbStepSnapshots[i].reverb.decaySec = stepTree.getProperty("decaySec", 4.0f);
+                    reverbStepSnapshots[i].reverb.mix = stepTree.getProperty("mix", 0.25f);
+                }
+            }
+            
+            // Granular snapshots
+            for (int i = 0; i < 16; ++i)
+            {
+                auto stepTree = stepsnapshots.getChildWithName("GranularStep" + juce::String(i));
+                if (stepTree.isValid())
+                {
+                    granularStepSnapshots[i].granular.sizeMs = stepTree.getProperty("sizeMs", 50.0f);
+                    granularStepSnapshots[i].granular.densityHz = stepTree.getProperty("densityHz", 20.0f);
+                    granularStepSnapshots[i].granular.position = stepTree.getProperty("position", 0.0f);
+                    granularStepSnapshots[i].granular.sprayMs = stepTree.getProperty("sprayMs", 10.0f);
+                    granularStepSnapshots[i].granular.pitchSemi = stepTree.getProperty("pitchSemi", 0.0f);
+                    granularStepSnapshots[i].granular.random = stepTree.getProperty("random", 0.0f);
+                    granularStepSnapshots[i].granular.texture = stepTree.getProperty("texture", 0.5f);
+                    granularStepSnapshots[i].granular.mix = stepTree.getProperty("mix", 0.5f);
+                }
+            }
+            
+            // Slicer snapshots
+            for (int i = 0; i < 16; ++i)
+            {
+                auto stepTree = stepsnapshots.getChildWithName("SlicerStep" + juce::String(i));
+                if (stepTree.isValid())
+                {
+                    slicerStepSnapshots[i].slicer.pattern = stepTree.getProperty("pattern", 0.0f);
+                    slicerStepSnapshots[i].slicer.division = stepTree.getProperty("division", 3.0f);
+                    slicerStepSnapshots[i].slicer.offset = stepTree.getProperty("offset", 0.5f);
+                    slicerStepSnapshots[i].slicer.shape = stepTree.getProperty("shape", 0.5f);
+                    slicerStepSnapshots[i].slicer.releaseMs = stepTree.getProperty("releaseMs", 20.0f);
+                    slicerStepSnapshots[i].slicer.mix = stepTree.getProperty("mix", 0.75f);
+                }
+            }
+        }
+        
+        DBG("[Preset] Complete plugin state restored including all sequencer patterns");
     }
 }
 

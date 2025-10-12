@@ -5,98 +5,69 @@ PresetManager::PresetManager(juce::AudioProcessor& proc, juce::AudioProcessorVal
 {
 }
 
-void PresetManager::initialize()
+void PresetManager::refresh()
 {
-    // Ensure user presets folder exists
-    auto folder = getUserPresetsFolder();
-    if (!folder.exists())
-        folder.createDirectory();
+    jassert(juce::MessageManager::getInstance()->isThisTheMessageThread());
     
-    // Scan all presets from disk
-    scanPresets();
-    
-    DBG("[PRESETS] Initialized - found " << allPresets.size() << " presets");
-}
-
-juce::File PresetManager::getUserPresetsFolder() const
-{
-    juce::File root = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory);
-    
-    #ifdef JUCE_MAC
-    root = root.getChildFile("Audio").getChildFile("Presets");
-    #endif
-    
-    root = root.getChildFile("Stepper").getChildFile("Stepper");
-    return root;
-}
-
-void PresetManager::scanPresets()
-{
     allPresets.clear();
     
-    auto rootFolder = getUserPresetsFolder();
-    if (!rootFolder.exists())
-        return;
+    auto root = getUserPresetsRoot();
+    if (!root.exists())
+        root.createDirectory();
     
-    // Scan all category folders
-    for (const auto& categoryDir : rootFolder.findChildFiles(juce::File::findDirectories, false))
+    // Scan all folders in the root
+    for (auto& groupFolder : root.findChildFiles(juce::File::findDirectories, false))
     {
-        juce::String categoryName = categoryDir.getFileName();
+        juce::String groupName = groupFolder.getFileName();
         
-        // Scan all preset files in this category
-        for (const auto& presetFile : categoryDir.findChildFiles(juce::File::findFiles, false, "*.xml"))
+        // Scan all .xml files in this group
+        for (auto& presetFile : groupFolder.findChildFiles(juce::File::findFiles, false, "*.xml"))
         {
-            // Read preset metadata from file
-            auto xml = juce::XmlDocument::parse(presetFile);
-            if (xml != nullptr)
-            {
-                juce::String name = xml->getStringAttribute("name", presetFile.getFileNameWithoutExtension());
-                bool isFavorite = xml->getBoolAttribute("favorite", false);
-                
-                allPresets.add(PresetInfo(name, categoryName, presetFile, isFavorite));
-            }
+            auto info = parsePresetFile(presetFile);
+            if (info.name.isNotEmpty())
+                allPresets.add(info);
         }
     }
     
-    DBG("[PRESETS] Scanned " << allPresets.size() << " presets");
+    DBG("[PresetManager] Scanned " + juce::String(allPresets.size()) + " presets");
 }
 
-juce::StringArray PresetManager::getCategories() const
+juce::StringArray PresetManager::getGroups() const
 {
-    juce::StringArray categories;
+    juce::StringArray groups;
     
-    // Always include Favorites first
-    categories.add("Favorites");
+    // Always add "FAVORITES" first
+    groups.add("FAVORITES");
     
-    // Add all unique categories from presets
+    // Collect unique group names from scanned presets
     for (const auto& preset : allPresets)
     {
-        if (!categories.contains(preset.category))
-            categories.add(preset.category);
+        if (preset.group.isNotEmpty() && !groups.contains(preset.group))
+            groups.add(preset.group);
     }
     
-    return categories;
+    return groups;
 }
 
-juce::Array<PresetInfo> PresetManager::getPresetsForCategory(const juce::String& category) const
+juce::Array<PresetInfo> PresetManager::getPresetsInGroup(const juce::String& group) const
 {
     juce::Array<PresetInfo> result;
     
-    if (category == "Favorites")
+    if (group == "FAVORITES")
     {
-        // Return all favorite presets
+        // Virtual group: return all favorite presets
         for (const auto& preset : allPresets)
         {
-            if (preset.isFavorite)
+            if (preset.favorite)
                 result.add(preset);
         }
     }
     else
     {
-        // Return presets in this category
+        // Return presets in this group
         for (const auto& preset : allPresets)
         {
-            if (preset.category == category)
+            if (preset.group == group)
                 result.add(preset);
         }
     }
@@ -104,208 +75,241 @@ juce::Array<PresetInfo> PresetManager::getPresetsForCategory(const juce::String&
     return result;
 }
 
-juce::Result PresetManager::savePreset(const juce::String& name, const juce::String& category)
+juce::Result PresetManager::saveCurrentStateAsPreset(const juce::String& name, const juce::String& group)
 {
+    jassert(juce::MessageManager::getInstance()->isThisTheMessageThread());
+    
     if (name.isEmpty())
         return juce::Result::fail("Preset name cannot be empty");
     
-    if (category.isEmpty() || category == "Favorites")
-        return juce::Result::fail("Please select a valid category");
+    if (group.isEmpty() || group == "FAVORITES")
+        return juce::Result::fail("Please select a valid group");
     
-    // Create category folder if needed
-    auto categoryFolder = getUserPresetsFolder().getChildFile(category);
-    if (!categoryFolder.exists())
-        categoryFolder.createDirectory();
+    // Create group folder if needed (use full path creation)
+    auto rootFolder = getUserPresetsRoot();
+    if (!rootFolder.exists())
+    {
+        auto result = rootFolder.createDirectory();
+        if (!result.wasOk())
+            return juce::Result::fail("Failed to create presets root directory: " + result.getErrorMessage());
+    }
+    
+    auto groupFolder = rootFolder.getChildFile(group);
+    if (!groupFolder.exists())
+    {
+        auto result = groupFolder.createDirectory();
+        if (!result.wasOk())
+            return juce::Result::fail("Failed to create group folder: " + result.getErrorMessage());
+    }
     
     // Create preset file
-    juce::File presetFile = categoryFolder.getChildFile(name + ".xml");
+    auto presetFile = groupFolder.getChildFile(name + ".xml");
     
-    // Get current plugin state
-    juce::ValueTree state = apvts.copyState();
-    std::unique_ptr<juce::XmlElement> xml(state.createXml());
+    // Get complete plugin state via getStateInformation (includes EffectRouter, sequencers, etc.)
+    juce::MemoryBlock stateData;
+    processor.getStateInformation(stateData);
+    
+    DBG("[PresetManager] State data size: " + juce::String(stateData.getSize()) + " bytes");
+    
+    // Convert MemoryBlock to ValueTree
+    auto stateTree = juce::ValueTree::readFromData(stateData.getData(), stateData.getSize());
+    
+    if (!stateTree.isValid())
+        return juce::Result::fail("Failed to create state tree");
+    
+    DBG("[PresetManager] State tree type: " + stateTree.getType().toString());
+    DBG("[PresetManager] State tree has EffectRouter: " + juce::String(stateTree.getChildWithName("EffectRouter").isValid() ? "YES" : "NO"));
+    
+    // Convert to XML
+    auto xml = stateTree.createXml();
     
     if (xml == nullptr)
-        return juce::Result::fail("Failed to create state XML");
+        return juce::Result::fail("Failed to create XML from state");
     
-    // Add metadata
+    // Add metadata attributes
     xml->setAttribute("name", name);
-    xml->setAttribute("category", category);
-    xml->setAttribute("favorite", false); // New presets not favorited by default
+    xml->setAttribute("group", group);
+    xml->setAttribute("favorite", 0);
     
     // Write to file
-    bool success = xml->writeTo(presetFile);
+    if (!xml->writeTo(presetFile))
+        return juce::Result::fail("Failed to write preset file");
     
-    if (success)
-    {
-        // Add to our in-memory list
-        allPresets.add(PresetInfo(name, category, presetFile, false));
-        currentPresetName = name;
-        stateModified = false;
-        
-        DBG("[PRESETS] Saved preset: " << name << " in category: " << category);
-        return juce::Result::ok();
-    }
+    // Refresh and select
+    refresh();
     
-    return juce::Result::fail("Failed to write preset file");
+    DBG("[PresetManager] Saved complete preset: " + name + " in group: " + group);
+    return juce::Result::ok();
 }
 
-juce::Result PresetManager::loadPreset(const juce::File& presetFile)
+juce::Result PresetManager::loadPreset(const juce::File& file)
 {
-    if (!presetFile.existsAsFile())
+    jassert(juce::MessageManager::getInstance()->isThisTheMessageThread());
+    
+    if (!file.existsAsFile())
         return juce::Result::fail("Preset file does not exist");
     
-    auto xml = juce::XmlDocument::parse(presetFile);
-    if (xml == nullptr)
-        return juce::Result::fail("Failed to parse preset file");
-    
-    // Extract metadata
-    juce::String name = xml->getStringAttribute("name", presetFile.getFileNameWithoutExtension());
-    
-    // Convert XML to ValueTree and restore state
-    juce::ValueTree tree = juce::ValueTree::fromXml(*xml);
-    if (tree.isValid())
-    {
-        apvts.replaceState(tree);
-        currentPresetName = name;
-        stateModified = false;
-        
-        DBG("[PRESETS] Loaded preset: " << name);
-        return juce::Result::ok();
-    }
-    
-    return juce::Result::fail("Invalid preset data");
-}
-
-juce::Result PresetManager::loadPreset(const juce::String& category, const juce::String& name)
-{
-    auto* preset = findPreset(category, name);
-    if (preset == nullptr)
-        return juce::Result::fail("Preset not found");
-    
-    return loadPreset(preset->file);
-}
-
-juce::Result PresetManager::setPresetFavorite(const juce::String& category, const juce::String& name, bool isFavorite)
-{
-    auto* preset = findPreset(category, name);
-    if (preset == nullptr)
-        return juce::Result::fail("Preset not found");
-    
-    // Update in-memory
-    preset->isFavorite = isFavorite;
-    
-    // Update in file
-    return updatePresetFavoriteInFile(preset->file, isFavorite);
-}
-
-juce::Result PresetManager::deletePreset(const juce::String& category, const juce::String& name)
-{
-    auto* preset = findPreset(category, name);
-    if (preset == nullptr)
-        return juce::Result::fail("Preset not found");
-    
-    // Delete file
-    bool deleted = preset->file.deleteFile();
-    
-    if (deleted)
-    {
-        // Remove from in-memory list
-        for (int i = 0; i < allPresets.size(); ++i)
-        {
-            if (allPresets[i].file == preset->file)
-            {
-                allPresets.remove(i);
-                break;
-            }
-        }
-        
-        DBG("[PRESETS] Deleted preset: " << name);
-        return juce::Result::ok();
-    }
-    
-    return juce::Result::fail("Failed to delete preset file");
-}
-
-juce::Result PresetManager::createCategory(const juce::String& categoryName)
-{
-    if (categoryName.isEmpty() || categoryName == "Favorites")
-        return juce::Result::fail("Invalid category name");
-    
-    auto categoryFolder = getUserPresetsFolder().getChildFile(categoryName);
-    
-    if (categoryFolder.exists())
-        return juce::Result::fail("Category already exists");
-    
-    bool created = categoryFolder.createDirectory();
-    
-    if (created)
-    {
-        DBG("[PRESETS] Created category: " << categoryName);
-        return juce::Result::ok();
-    }
-    
-    return juce::Result::fail("Failed to create category folder");
-}
-
-juce::Result PresetManager::deleteCategory(const juce::String& categoryName)
-{
-    if (categoryName == "Favorites")
-        return juce::Result::fail("Cannot delete Favorites category");
-    
-    auto categoryFolder = getUserPresetsFolder().getChildFile(categoryName);
-    
-    if (!categoryFolder.exists())
-        return juce::Result::fail("Category does not exist");
-    
-    // Check if empty
-    int numFiles = categoryFolder.findChildFiles(juce::File::findFiles, false).size();
-    if (numFiles > 0)
-        return juce::Result::fail("Category is not empty - delete or move presets first");
-    
-    bool deleted = categoryFolder.deleteFile();
-    
-    if (deleted)
-    {
-        DBG("[PRESETS] Deleted category: " << categoryName);
-        return juce::Result::ok();
-    }
-    
-    return juce::Result::fail("Failed to delete category folder");
-}
-
-PresetInfo* PresetManager::findPreset(const juce::String& category, const juce::String& name)
-{
-    for (auto& preset : allPresets)
-    {
-        if (preset.name == name)
-        {
-            // For Favorites, just match by name
-            if (category == "Favorites" && preset.isFavorite)
-                return &preset;
-            // For other categories, match both category and name
-            else if (preset.category == category)
-                return &preset;
-        }
-    }
-    return nullptr;
-}
-
-juce::Result PresetManager::updatePresetFavoriteInFile(const juce::File& file, bool isFavorite)
-{
+    // Parse XML
     auto xml = juce::XmlDocument::parse(file);
     if (xml == nullptr)
-        return juce::Result::fail("Failed to parse preset file");
+        return juce::Result::fail("Failed to parse preset XML");
     
-    xml->setAttribute("favorite", isFavorite ? 1 : 0);
+    // Convert to ValueTree
+    auto tree = juce::ValueTree::fromXml(*xml);
+    if (!tree.isValid())
+        return juce::Result::fail("Invalid ValueTree from preset");
     
-    bool success = xml->writeTo(file);
+    DBG("[PresetManager] Loading preset tree type: " + tree.getType().toString());
+    DBG("[PresetManager] Tree has EffectRouter: " + juce::String(tree.getChildWithName("EffectRouter").isValid() ? "YES" : "NO"));
     
-    if (success)
-    {
-        DBG("[PRESETS] Updated favorite status for: " << file.getFileNameWithoutExtension());
-        return juce::Result::ok();
-    }
+    // Convert ValueTree to MemoryBlock
+    juce::MemoryOutputStream stream;
+    tree.writeToStream(stream);
     
-    return juce::Result::fail("Failed to write preset file");
+    // Load complete plugin state via setStateInformation (includes EffectRouter, sequencers, etc.)
+    processor.setStateInformation(stream.getData(), static_cast<int>(stream.getDataSize()));
+    
+    DBG("[PresetManager] Loaded complete preset: " + file.getFileNameWithoutExtension());
+    return juce::Result::ok();
 }
 
+void PresetManager::setFavorite(const juce::File& presetFile, bool fav)
+{
+    jassert(juce::MessageManager::getInstance()->isThisTheMessageThread());
+    
+    updateFavoriteInFile(presetFile, fav);
+    
+    // Update in-memory list
+    for (auto& preset : allPresets)
+    {
+        if (preset.file == presetFile)
+        {
+            preset.favorite = fav;
+            break;
+        }
+    }
+}
+
+juce::Result PresetManager::createGroup(const juce::String& groupName)
+{
+    if (groupName.isEmpty() || groupName == "FAVORITES")
+        return juce::Result::fail("Invalid group name");
+    
+    auto groupFolder = getUserPresetsRoot().getChildFile(groupName);
+    if (groupFolder.exists())
+        return juce::Result::fail("Group already exists");
+    
+    if (!groupFolder.createDirectory())
+        return juce::Result::fail("Failed to create group folder");
+    
+    refresh();
+    return juce::Result::ok();
+}
+
+juce::Result PresetManager::renameGroup(const juce::String& oldName, const juce::String& newName)
+{
+    if (oldName == "FAVORITES" || newName == "FAVORITES")
+        return juce::Result::fail("Cannot rename FAVORITES");
+    
+    auto oldFolder = getUserPresetsRoot().getChildFile(oldName);
+    auto newFolder = getUserPresetsRoot().getChildFile(newName);
+    
+    if (!oldFolder.exists())
+        return juce::Result::fail("Group does not exist");
+    
+    if (newFolder.exists())
+        return juce::Result::fail("Target group already exists");
+    
+    if (!oldFolder.moveFileTo(newFolder))
+        return juce::Result::fail("Failed to rename group folder");
+    
+    refresh();
+    return juce::Result::ok();
+}
+
+juce::Result PresetManager::deleteGroup(const juce::String& groupName, bool movePresetsToDefault)
+{
+    if (groupName == "FAVORITES")
+        return juce::Result::fail("Cannot delete FAVORITES");
+    
+    auto groupFolder = getUserPresetsRoot().getChildFile(groupName);
+    if (!groupFolder.exists())
+        return juce::Result::fail("Group does not exist");
+    
+    // Check if empty
+    auto presets = groupFolder.findChildFiles(juce::File::findFiles, false, "*.xml");
+    if (presets.size() > 0)
+    {
+        if (movePresetsToDefault)
+        {
+            // Move presets to "User" group
+            auto userFolder = getUserPresetsRoot().getChildFile("User");
+            userFolder.createDirectory();
+            
+            for (auto& preset : presets)
+                preset.moveFileTo(userFolder.getChildFile(preset.getFileName()));
+        }
+        else
+        {
+            return juce::Result::fail("Group is not empty");
+        }
+    }
+    
+    if (!groupFolder.deleteRecursively())
+        return juce::Result::fail("Failed to delete group folder");
+    
+    refresh();
+    return juce::Result::ok();
+}
+
+juce::File PresetManager::getUserPresetsRoot() const
+{
+    // Use Application Support directory to avoid permission issues
+    // macOS: ~/Library/Application Support/Stepper/Presets
+    auto root = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory);
+    
+    root = root.getChildFile("Stepper").getChildFile("Presets");
+    
+    // Ensure the full path exists (create all parent directories)
+    if (!root.exists())
+    {
+        auto result = root.createDirectory();
+        if (!result.wasOk())
+        {
+            DBG("[PresetManager] Failed to create presets directory: " + result.getErrorMessage());
+        }
+    }
+    
+    return root;
+}
+
+PresetInfo PresetManager::parsePresetFile(const juce::File& file) const
+{
+    PresetInfo info;
+    info.file = file;
+    info.group = file.getParentDirectory().getFileName();
+    
+    // Parse XML to extract metadata
+    auto xml = juce::XmlDocument::parse(file);
+    if (xml != nullptr)
+    {
+        info.name = xml->getStringAttribute("name", file.getFileNameWithoutExtension());
+        info.favorite = xml->getIntAttribute("favorite", 0) != 0;
+    }
+    else
+    {
+        info.name = file.getFileNameWithoutExtension();
+    }
+    
+    return info;
+}
+
+void PresetManager::updateFavoriteInFile(const juce::File& file, bool favorite)
+{
+    auto xml = juce::XmlDocument::parse(file);
+    if (xml != nullptr)
+    {
+        xml->setAttribute("favorite", favorite ? 1 : 0);
+        xml->writeTo(file);
+    }
+}

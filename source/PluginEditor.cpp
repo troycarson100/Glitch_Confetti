@@ -27,7 +27,6 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     
     // Initialize preset management system
     presetManager = std::make_unique<PresetManager>(processorRef, processorRef.getAPVTS());
-    presetManager->initialize();
     
     // Set the size to match our desired dimensions
     setSize (974, 532);
@@ -1563,6 +1562,117 @@ void PlayButton::paintButton(juce::Graphics& g, bool over, bool down)
 }
 
 //==============================================================================
+// PresetSelectorButton Implementation
+//==============================================================================
+
+PresetSelectorButton::PresetSelectorButton() : juce::Button("presetSelector")
+{
+    setClickingTogglesState(false);
+}
+
+void PresetSelectorButton::paintButton(juce::Graphics& g, bool over, bool down)
+{
+    auto bounds = getLocalBounds().toFloat();
+    
+    // Draw black background with 4px top corner radius (manually construct path)
+    juce::Path background;
+    const float cornerRadius = 4.0f;
+    const float x = bounds.getX();
+    const float y = bounds.getY();
+    const float w = bounds.getWidth();
+    const float h = bounds.getHeight();
+    
+    background.startNewSubPath(x + cornerRadius, y);
+    background.lineTo(x + w - cornerRadius, y);
+    background.addArc(x + w - cornerRadius * 2, y, cornerRadius * 2, cornerRadius * 2, 0, juce::MathConstants<float>::halfPi);
+    background.lineTo(x + w, y + h);
+    background.lineTo(x, y + h);
+    background.lineTo(x, y + cornerRadius);
+    background.addArc(x, y, cornerRadius * 2, cornerRadius * 2, juce::MathConstants<float>::pi, juce::MathConstants<float>::pi + juce::MathConstants<float>::halfPi);
+    background.closeSubPath();
+    
+    g.setColour(juce::Colour(0xff131313));
+    g.fillPath(background);
+    
+    // No hover highlight
+    
+    // Draw save icon on the left (16x16 size)
+    if (saveIcon != nullptr)
+    {
+        saveIconBounds = juce::Rectangle<float>(bounds.getX() + 15, bounds.getY() + (bounds.getHeight() - 16) * 0.5f, 16, 16);
+        saveIcon->drawWithin(g, saveIconBounds, juce::RectanglePlacement::centred, 1.0f);
+    }
+    
+    // Draw preset name after the save icon, moved right 30px
+    g.setColour(juce::Colours::white);
+    g.setFont(juce::Font(13.0f, juce::Font::plain));
+    auto textArea = juce::Rectangle<float>(bounds.getX() + 15 + 16 + 8 + 30, bounds.getY(), bounds.getWidth() - 80, bounds.getHeight());
+    auto textBounds = g.getCurrentFont().getStringWidth(presetName);
+    g.drawText(presetName, textArea, juce::Justification::centredLeft);
+    
+    // Draw carrot to the right of the text (12x12 size), moved right 30px with text
+    if (carrotImage != nullptr)
+    {
+        float carrotX = bounds.getX() + 15 + 16 + 8 + 30 + textBounds + 8; // 8px padding after text
+        auto carrotArea = juce::Rectangle<float>(carrotX, bounds.getY() + (bounds.getHeight() - 12) * 0.5f, 12, 12);
+        carrotImage->drawWithin(g, carrotArea, juce::RectanglePlacement::centred, 1.0f);
+    }
+    
+    // Draw large dice on the very right (22x22 size) - store bounds for click detection
+    if (diceImage != nullptr)
+    {
+        diceBounds = juce::Rectangle<float>(bounds.getRight() - 22 - 8, bounds.getY() + (bounds.getHeight() - 22) * 0.5f, 22, 22);
+        diceImage->drawWithin(g, diceBounds, juce::RectanglePlacement::centred, 1.0f);
+    }
+}
+
+void PresetSelectorButton::mouseUp(const juce::MouseEvent& event)
+{
+    // Check if click is on the save icon
+    if (saveIconBounds.contains(event.position))
+    {
+        if (onSaveClick)
+            onSaveClick();
+        return; // Don't trigger button click
+    }
+    
+    // Check if click is on the dice button
+    if (diceBounds.contains(event.position))
+    {
+        if (onDiceClick)
+            onDiceClick();
+        return; // Don't trigger button click
+    }
+    
+    // Otherwise, handle as normal button click
+    juce::Button::mouseUp(event);
+}
+
+void PresetSelectorButton::setPresetName(const juce::String& name)
+{
+    presetName = name;
+    repaint();
+}
+
+void PresetSelectorButton::setCarrotImage(std::unique_ptr<juce::Drawable> carrot)
+{
+    carrotImage = std::move(carrot);
+    repaint();
+}
+
+void PresetSelectorButton::setDiceImage(std::unique_ptr<juce::Drawable> dice)
+{
+    diceImage = std::move(dice);
+    repaint();
+}
+
+void PresetSelectorButton::setSaveIcon(std::unique_ptr<juce::Drawable> save)
+{
+    saveIcon = std::move(save);
+    repaint();
+}
+
+//==============================================================================
 // StepButton Implementation
 //==============================================================================
 
@@ -1845,14 +1955,17 @@ void PluginEditor::setupKnobs()
         // Master area bounds (positioned in master area)
         auto masterArea = juce::Rectangle<int>(453, 54, 413, 296);
         
+        // Full master area for preset browser overlay (separate from knob positioning)
+        auto fullMasterArea = juce::Rectangle<int>(460, 54, 495, 460);
+        
         // Create "MASTER" title in master area (top-left corner, 10px right)
         masterTitle = std::make_unique<juce::Label>();
         masterTitle->setText("MASTER", juce::dontSendNotification);
-        masterTitle->setFont(juce::Font(27.648f, juce::Font::bold)); // Same as EFFECT title
+        masterTitle->setFont(juce::Font(23.5f, juce::Font::bold)); // 15% smaller: 27.648 * 0.85 = 23.5
         masterTitle->setColour(juce::Label::textColourId, juce::Colours::white);
         masterTitle->setJustificationType(juce::Justification::centredLeft);
         addAndMakeVisible(masterTitle.get());
-        masterTitle->setBounds(masterArea.getX() + 20, masterArea.getY() + 5, 150, 30); // 20px from left (5px more right)
+        masterTitle->setBounds(masterArea.getX() + 20, masterArea.getY() + 5, 150, 30); // 20px from left, moved down 5px
         masterTitle->toFront(false);
         
         // Create Master Dice Button (randomizes all effects, all steps) 
@@ -1870,46 +1983,285 @@ void PluginEditor::setupKnobs()
             }
         };
         
-        // Position dice button 20px left from before (was 160, now 140)
-        const int diceSizeMaster = 32;
+        // Position dice button 20px left from before (was 160, now 140), 20% smaller
+        const int diceSizeMaster = 26; // 20% smaller: 32 * 0.8 = 25.6 ≈ 26
         masterDiceButton->setBounds(
             masterArea.getX() + 140,  // 20px left from before
             masterArea.getY() + 6,    // Aligned with MASTER title
             diceSizeMaster, diceSizeMaster
         );
         
-        // Preset Browser Button
-        presetBrowserButton = std::make_unique<juce::TextButton>("PRESETS");
+        // Preset Browser Button (shows current preset name)
+        presetBrowserButton = std::make_unique<PresetSelectorButton>();
         addAndMakeVisible(presetBrowserButton.get());
-        presetBrowserButton->setColour(juce::TextButton::buttonColourId, juce::Colour(0xff2a2a2a));
-        presetBrowserButton->setColour(juce::TextButton::textColourOffId, juce::Colours::white);
-        presetBrowserButton->setBounds(
-            masterArea.getX() + 10,
-            masterArea.getY() + 6,
-            100, 28
-        );
         
-        presetBrowserButton->onClick = [this, masterArea]() {
-            if (presetBrowser == nullptr) {
-                // Create browser overlay
-                presetBrowser = std::make_unique<PresetBrowserComponent>(*presetManager);
-                addAndMakeVisible(presetBrowser.get());
-                presetBrowser->setBounds(masterArea);
-                presetBrowser->toFront(true);
+        // Set the SVG images
+        if (assets.saveIcon != nullptr)
+        {
+            presetBrowserButton->setSaveIcon(assets.saveIcon->createCopy());
+        }
+        if (assets.diceLarge != nullptr)
+        {
+            presetBrowserButton->setDiceImage(assets.diceLarge->createCopy());
+        }
+        if (assets.presetMenuCarrot != nullptr)
+        {
+            presetBrowserButton->setCarrotImage(assets.presetMenuCarrot->createCopy());
+        }
+        
+        // Handle save icon clicks
+        presetBrowserButton->onSaveClick = [this]() {
+            DBG("[PresetBrowser] Save icon clicked");
+            
+            // Create and show alert window with text editor
+            auto* alertWindow = new juce::AlertWindow(
+                "Save Preset",
+                "Enter a name for your preset:",
+                juce::AlertWindow::NoIcon,
+                this
+            );
+            
+            alertWindow->addTextEditor("presetName", "My Preset", "Preset Name:");
+            alertWindow->getTextEditor("presetName")->setSelectAllWhenFocused(true);
+            alertWindow->addButton("Save New", 1, juce::KeyPress(juce::KeyPress::returnKey));
+            alertWindow->addButton("Overwrite", 2);
+            alertWindow->addButton("Cancel", 0, juce::KeyPress(juce::KeyPress::escapeKey));
+            
+            alertWindow->enterModalState(true, juce::ModalCallbackFunction::create([this, alertWindow](int result) {
+                if (result == 1) // Save New button clicked
+                {
+                    juce::String presetName = alertWindow->getTextEditorContents("presetName");
+                    
+                    if (presetName.isNotEmpty())
+                    {
+                        // Save to "User" category
+                        auto saveResult = presetManager->saveCurrentStateAsPreset(presetName, "User");
+                        
+                        if (saveResult.wasOk())
+                        {
+                            DBG("[PresetBrowser] Saved preset: " + presetName + " to User category");
+                            
+                            // Update button text
+                            presetBrowserButton->setPresetName(presetName);
+                            
+                            // Refresh preset browser if it's open
+                            if (presetBrowser != nullptr && presetBrowser->isVisible())
+                            {
+                                presetBrowser->show();
+                            }
+                        }
+                        else
+                        {
+                            juce::AlertWindow::showMessageBoxAsync(
+                                juce::AlertWindow::WarningIcon,
+                                "Save Error",
+                                saveResult.getErrorMessage()
+                            );
+                        }
+                    }
+                }
+                else if (result == 2) // Overwrite button clicked
+                {
+                    delete alertWindow;
+                    
+                    // Show list of User presets to overwrite
+                    auto userPresets = presetManager->getPresetsInGroup("User");
+                    
+                    if (userPresets.isEmpty())
+                    {
+                        juce::AlertWindow::showMessageBoxAsync(
+                            juce::AlertWindow::InfoIcon,
+                            "No Presets",
+                            "You don't have any saved presets to overwrite yet. Save a new preset first!"
+                        );
+                        return;
+                    }
+                    
+                    // Create list of preset names
+                    juce::StringArray presetNames;
+                    for (const auto& preset : userPresets)
+                    {
+                        presetNames.add(preset.name);
+                    }
+                    
+                    // Show selection dialog
+                    auto* overwriteWindow = new juce::AlertWindow(
+                        "Overwrite Preset",
+                        "Select a preset to overwrite:",
+                        juce::AlertWindow::NoIcon,
+                        this
+                    );
+                    
+                    overwriteWindow->addComboBox("presetSelect", presetNames, "Select Preset:");
+                    overwriteWindow->addButton("Overwrite", 1, juce::KeyPress(juce::KeyPress::returnKey));
+                    overwriteWindow->addButton("Cancel", 0, juce::KeyPress(juce::KeyPress::escapeKey));
+                    
+                    overwriteWindow->enterModalState(true, juce::ModalCallbackFunction::create([this, overwriteWindow, userPresets](int overwriteResult) {
+                        if (overwriteResult == 1) // Overwrite confirmed
+                        {
+                            int selectedIndex = overwriteWindow->getComboBoxComponent("presetSelect")->getSelectedItemIndex();
+                            
+                            if (selectedIndex >= 0 && selectedIndex < userPresets.size())
+                            {
+                                juce::String presetName = userPresets[selectedIndex].name;
+                                
+                                // Save with same name (overwrite)
+                                auto saveResult = presetManager->saveCurrentStateAsPreset(presetName, "User");
+                                
+                                if (saveResult.wasOk())
+                                {
+                                    DBG("[PresetBrowser] Overwritten preset: " + presetName);
+                                    
+                                    // Update button text
+                                    presetBrowserButton->setPresetName(presetName);
+                                    
+                                    // Refresh preset browser if it's open
+                                    if (presetBrowser != nullptr && presetBrowser->isVisible())
+                                    {
+                                        presetBrowser->show();
+                                    }
+                                }
+                                else
+                                {
+                                    juce::AlertWindow::showMessageBoxAsync(
+                                        juce::AlertWindow::WarningIcon,
+                                        "Save Error",
+                                        saveResult.getErrorMessage()
+                                    );
+                                }
+                            }
+                        }
+                        
+                        delete overwriteWindow;
+                    }), true);
+                    
+                    return; // Don't delete the first window yet
+                }
                 
-                presetBrowser->onClose = [this]() {
-                    presetBrowser->setVisible(false);
-                    presetBrowser.reset();
-                };
+                delete alertWindow;
+            }), true);
+        };
+        
+        // Handle dice clicks - load random preset from any category
+        presetBrowserButton->onDiceClick = [this]() {
+            DBG("[PresetBrowser] Dice clicked - loading random preset");
+            
+            // Get all presets from all groups
+            auto allPresets = presetManager->getAllPresets();
+            
+            if (allPresets.isEmpty())
+            {
+                DBG("[PresetBrowser] No presets available for randomization");
+                return;
+            }
+            
+            // Pick a random preset
+            int randomIndex = juce::Random::getSystemRandom().nextInt(allPresets.size());
+            const auto& randomPreset = allPresets[randomIndex];
+            
+            // Load it
+            auto result = presetManager->loadPreset(randomPreset.file);
+            if (result.wasOk())
+            {
+                DBG("[PresetBrowser] Loaded random preset: " + randomPreset.name);
+                presetBrowserButton->setPresetName(randomPreset.name);
+                
+                // Refresh effect selector dropdowns to reflect new router assignment
+                auto& router = processorRef.getEffectRouter();
+                if (effectSelector1) effectSelector1->setSelectedId(static_cast<int>(router.getEffectInSlot(SlotID::Slot1)) + 1, juce::dontSendNotification);
+                if (effectSelector2) effectSelector2->setSelectedId(static_cast<int>(router.getEffectInSlot(SlotID::Slot2)) + 1, juce::dontSendNotification);
+                if (effectSelector3) effectSelector3->setSelectedId(static_cast<int>(router.getEffectInSlot(SlotID::Slot3)) + 1, juce::dontSendNotification);
+                if (effectSelector4) effectSelector4->setSelectedId(static_cast<int>(router.getEffectInSlot(SlotID::Slot4)) + 1, juce::dontSendNotification);
+                repaint();
             }
             else
             {
-                presetBrowser->setVisible(!presetBrowser->isVisible());
-                if (presetBrowser->isVisible())
-                {
-                    presetBrowser->setBounds(masterArea);
-                    presetBrowser->refreshCategories();
+                DBG("[PresetBrowser] Failed to load random preset: " + result.getErrorMessage());
+            }
+        };
+        
+        // Size: 229 x 35 (457/2 x 70/2) positioned at top right of master area
+        presetBrowserButton->setBounds(
+            fullMasterArea.getX() + fullMasterArea.getWidth() - 229 - 10, // 10px from right edge
+            fullMasterArea.getY() + 10 - 24 + 5 - 1, // 10px from top, moved up 24px, then down 5px, then up 1px
+            229, 35
+        );
+        
+        presetBrowserButton->onClick = [this, fullMasterArea]() {
+            DBG("[PresetBrowser] Button clicked");
+            try {
+                // Calculate preset browser bounds to start at bottom of selector button and be 10px bigger
+                auto browserBounds = juce::Rectangle<int>(
+                    fullMasterArea.getX(),
+                    fullMasterArea.getY() + 28, // Start at bottom of button (button is at Y-10 with height 35) + 3px down
+                    fullMasterArea.getWidth(),
+                    fullMasterArea.getHeight() - 38 // Reduce by 28px for button offset + 10px bigger (was -48)
+                );
+                
+                if (presetBrowser == nullptr || !presetBrowser->isVisible()) {
+                    DBG("[PresetBrowser] Creating/showing overlay");
+                    // Create browser overlay if needed
+                    if (presetBrowser == nullptr) {
+                        presetBrowser = std::make_unique<PresetBrowserOverlay>(*presetManager, assets);
+                        addAndMakeVisible(presetBrowser.get());
+                        
+                        presetBrowser->onClose = [this]() {
+                            DBG("[PresetBrowser] Closing");
+                            presetBrowser->setVisible(false);
+                            
+                            // Restore MASTER text and show master dice
+                            if (masterTitle)
+                                masterTitle->setText("MASTER", juce::dontSendNotification);
+                            if (masterDiceButton)
+                                masterDiceButton->setVisible(true);
+                        };
+                        
+                        // Set up preset loaded callback (only once during creation)
+                        presetBrowser->onPresetLoaded = [this](const juce::String& presetName) {
+                        DBG("[PresetBrowser] Preset loaded: " + presetName);
+                        if (presetBrowserButton)
+                        {
+                            presetBrowserButton->setPresetName(presetName);
+                        }
+                        
+                        // Refresh effect selector dropdowns to reflect new router assignment
+                        auto& router = processorRef.getEffectRouter();
+                        if (effectSelector1) effectSelector1->setSelectedId(static_cast<int>(router.getEffectInSlot(SlotID::Slot1)) + 1, juce::dontSendNotification);
+                        if (effectSelector2) effectSelector2->setSelectedId(static_cast<int>(router.getEffectInSlot(SlotID::Slot2)) + 1, juce::dontSendNotification);
+                        if (effectSelector3) effectSelector3->setSelectedId(static_cast<int>(router.getEffectInSlot(SlotID::Slot3)) + 1, juce::dontSendNotification);
+                        if (effectSelector4) effectSelector4->setSelectedId(static_cast<int>(router.getEffectInSlot(SlotID::Slot4)) + 1, juce::dontSendNotification);
+                        
+                        // Refresh tab backgrounds to show correct effect icons
+                        repaint();
+                        
+                        DBG("[PresetBrowser] Effect selectors refreshed after preset load");
+                        };
+                    }
+                    
+                    // Show the overlay (scans and refreshes)
+                    presetBrowser->setBounds(browserBounds);
+                    presetBrowser->setVisible(true);
+                    presetBrowser->toFront(true);
+                    presetBrowser->show();
+                    
+                    // Change MASTER to PRESETS and hide master dice
+                    if (masterTitle)
+                        masterTitle->setText("PRESETS", juce::dontSendNotification);
+                    if (masterDiceButton)
+                        masterDiceButton->setVisible(false);
+                } else {
+                    DBG("[PresetBrowser] Hiding overlay");
+                    // Hide the overlay and restore MASTER title/dice
+                    presetBrowser->setVisible(false);
+                    
+                    // Restore MASTER text and show master dice
+                    if (masterTitle)
+                        masterTitle->setText("MASTER", juce::dontSendNotification);
+                    if (masterDiceButton)
+                        masterDiceButton->setVisible(true);
                 }
+            } catch (const std::exception& e) {
+                DBG("[PresetBrowser] Exception: " + juce::String(e.what()));
             }
         };
         

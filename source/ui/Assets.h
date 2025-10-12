@@ -64,6 +64,18 @@ struct UiAssets {
     std::unique_ptr<juce::Drawable> macro1AssignButton, macro2AssignButton;
     std::unique_ptr<juce::Drawable> lockedIcon, unlockedIcon;
     std::unique_ptr<juce::Drawable> fxTypeCarrotInactive, fxTypeCarrotActive;
+    std::unique_ptr<juce::Drawable> presetMenuBackground;
+    std::unique_ptr<juce::Drawable> presetMenuCarrot;
+    std::unique_ptr<juce::Drawable> saveIcon;
+    
+    // Category menu tabs (PNGs)
+    juce::Image favoritesMenuTab;
+    juce::Image rhythmicMenuTab;
+    juce::Image distortMenuTab;
+    juce::Image lofiMenuTab;
+    juce::Image bassMenuTab;
+    juce::Image guitarSynthMenuTab;
+    juce::Image userMenuTab;
     // … add only what Delay page & Sequencer need
 
     bool loadAll();

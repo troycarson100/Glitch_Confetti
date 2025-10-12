@@ -1,78 +1,72 @@
 #pragma once
 #include <juce_audio_processors/juce_audio_processors.h>
 
+// Forward declaration
+class PluginProcessor;
+
 // Metadata for a single preset
 struct PresetInfo {
     juce::String name;
-    juce::String category;
+    juce::String group;      // Folder name (e.g., "Bass", "Leads")
     juce::File file;
-    bool isFavorite = false;
+    bool favorite = false;
     
     PresetInfo() = default;
-    PresetInfo(const juce::String& n, const juce::String& cat, const juce::File& f, bool fav = false)
-        : name(n), category(cat), file(f), isFavorite(fav) {}
+    PresetInfo(const juce::String& n, const juce::String& g, const juce::File& f, bool fav = false)
+        : name(n), group(g), file(f), favorite(fav) {}
 };
 
-// Preset management system (file-based with categories)
+// Preset management system (thread-safe, runs on message thread)
 class PresetManager
 {
 public:
     PresetManager(juce::AudioProcessor& proc, juce::AudioProcessorValueTreeState& state);
     
-    // Initialize and scan presets from disk
-    void initialize();
+    // Scan presets from disk (call on message thread)
+    void refresh();
     
-    // Get list of all categories (including "Favorites")
-    juce::StringArray getCategories() const;
+    // Get list of all groups (includes "FAVORITES" first)
+    juce::StringArray getGroups() const;
     
-    // Get presets for a specific category
-    juce::Array<PresetInfo> getPresetsForCategory(const juce::String& category) const;
+    // Get presets for a specific group ("FAVORITES" returns all favorite presets)
+    juce::Array<PresetInfo> getPresetsInGroup(const juce::String& group) const;
     
-    // Save current state as a new preset
-    juce::Result savePreset(const juce::String& name, const juce::String& category);
+    // Get all presets from all groups
+    juce::Array<PresetInfo> getAllPresets() const { return allPresets; }
     
-    // Load a preset from file
-    juce::Result loadPreset(const juce::File& presetFile);
-    juce::Result loadPreset(const juce::String& category, const juce::String& name);
+    // Save current APVTS state as a preset
+    juce::Result saveCurrentStateAsPreset(const juce::String& name, const juce::String& group);
     
-    // Toggle favorite status of a preset
-    juce::Result setPresetFavorite(const juce::String& category, const juce::String& name, bool isFavorite);
+    // Load a preset from file (updates APVTS on message thread)
+    juce::Result loadPreset(const juce::File& file);
     
-    // Delete a preset file
-    juce::Result deletePreset(const juce::String& category, const juce::String& name);
+    // Toggle favorite status (updates XML attribute in file)
+    void setFavorite(const juce::File& presetFile, bool fav);
     
-    // Create a new category (folder)
-    juce::Result createCategory(const juce::String& categoryName);
+    // Create a new group (makes subfolder)
+    juce::Result createGroup(const juce::String& groupName);
     
-    // Delete a category (only if empty)
-    juce::Result deleteCategory(const juce::String& categoryName);
+    // Rename a group (renames folder)
+    juce::Result renameGroup(const juce::String& oldName, const juce::String& newName);
     
-    // Get current preset name (if any)
-    juce::String getCurrentPresetName() const { return currentPresetName; }
+    // Delete a group (prompts if non-empty)
+    juce::Result deleteGroup(const juce::String& groupName, bool movePresetsToDefault = false);
     
-    // Check if current state has been modified since last preset load
-    bool hasUnsavedChanges() const { return stateModified; }
-    
-    // Get user presets folder (public for UI access)
-    juce::File getUserPresetsFolder() const;
+    // Get user presets root folder
+    juce::File getUserPresetsRoot() const;
     
 private:
     juce::AudioProcessor& processor;
     juce::AudioProcessorValueTreeState& apvts;
     
-    juce::String currentPresetName;
-    bool stateModified = false;
-    
     // All scanned presets
     juce::Array<PresetInfo> allPresets;
     
-    // Scan all presets from disk
-    void scanPresets();
+    // Parse a preset file and extract metadata
+    PresetInfo parsePresetFile(const juce::File& file) const;
     
-    // Find preset by category and name
-    PresetInfo* findPreset(const juce::String& category, const juce::String& name);
+    // Update the "favorite" attribute in an XML preset file
+    void updateFavoriteInFile(const juce::File& file, bool favorite);
     
-    // Update favorite flag in preset file
-    juce::Result updatePresetFavoriteInFile(const juce::File& file, bool isFavorite);
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PresetManager)
 };
-
