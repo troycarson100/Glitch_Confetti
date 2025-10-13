@@ -80,6 +80,13 @@ bool UiAssets::loadAll()
     tabHallIcon       = loadSVG (Hall_Icon_svg, Hall_Icon_svgSize);
     tabGrainIcon      = loadSVG (Grain_Icon_svg, Grain_Icon_svgSize);
     tabSlicerIcon     = loadSVG (Slice_Icon_svg, Slice_Icon_svgSize);
+    tabDubDelayIcon   = loadSVG (DubEcho_Icon_svg, DubEcho_Icon_svgSize);
+    
+    dubdelayBackgroundTab1 = loadSVG (DubEcho_Background_Tab1_svg, DubEcho_Background_Tab1_svgSize);
+    dubdelayBackgroundTab2 = loadSVG (DubEcho_Background_Tab2_svg, DubEcho_Background_Tab2_svgSize);
+    dubdelayBackgroundTab3 = loadSVG (DubEcho_Background_Tab3_svg, DubEcho_Background_Tab3_svgSize);
+    dubdelayBackgroundTab4 = loadSVG (DubEcho_Background_Tab4_svg, DubEcho_Background_Tab4_svgSize);
+    
     fxPowerOn         = loadSVG (FX_Power_On_svg, FX_Power_On_svgSize);
     stepPowerOn       = loadSVG (Step_Power_On_svg, Step_Power_On_svgSize);
     knobDice          = loadSVG (Knob_Basic_Dice_svg, Knob_Basic_Dice_svgSize);

@@ -17,7 +17,8 @@ enum class EffectID {
     Chorus = 3,
     Reverb = 4,
     Granular = 5,
-    Slicer = 6
+    Slicer = 6,
+    DubDelay = 7
 };
 
 enum class SlotID {
@@ -139,10 +140,10 @@ public:
         // Restore assignment from individual properties (XML-friendly)
         if (tree.hasProperty("slot0"))
         {
-            assignment[0] = static_cast<EffectID>(juce::jlimit(0, 6, static_cast<int>(tree.getProperty("slot0", 0))));
-            assignment[1] = static_cast<EffectID>(juce::jlimit(0, 6, static_cast<int>(tree.getProperty("slot1", 1))));
-            assignment[2] = static_cast<EffectID>(juce::jlimit(0, 6, static_cast<int>(tree.getProperty("slot2", 2))));
-            assignment[3] = static_cast<EffectID>(juce::jlimit(0, 6, static_cast<int>(tree.getProperty("slot3", 3))));
+            assignment[0] = static_cast<EffectID>(juce::jlimit(0, 7, static_cast<int>(tree.getProperty("slot0", 0))));
+            assignment[1] = static_cast<EffectID>(juce::jlimit(0, 7, static_cast<int>(tree.getProperty("slot1", 1))));
+            assignment[2] = static_cast<EffectID>(juce::jlimit(0, 7, static_cast<int>(tree.getProperty("slot2", 2))));
+            assignment[3] = static_cast<EffectID>(juce::jlimit(0, 7, static_cast<int>(tree.getProperty("slot3", 3))));
         }
         else
         {
@@ -156,7 +157,7 @@ public:
                     for (int i = 0; i < 4; ++i)
                     {
                         int effectID = static_cast<int>(arr->getReference(i));
-                        assignment[i] = static_cast<EffectID>(juce::jlimit(0, 6, effectID));
+                        assignment[i] = static_cast<EffectID>(juce::jlimit(0, 7, effectID));
                     }
                 }
             }
@@ -166,14 +167,14 @@ public:
     }
     
     // Validate assignment (ensure no duplicates in the 4 slots)
-    // Note: With 7 effects and 4 slots, three effects will always be unassigned
+    // Note: With 8 effects and 4 slots, four effects will always be unassigned
     bool isValid() const
     {
-        bool seen[7] = { false, false, false, false, false, false, false };
+        bool seen[8] = { false, false, false, false, false, false, false, false };
         for (int i = 0; i < 4; ++i)
         {
             int effectIdx = static_cast<int>(assignment[i]);
-            if (effectIdx < 0 || effectIdx > 6 || seen[effectIdx])
+            if (effectIdx < 0 || effectIdx > 7 || seen[effectIdx])
                 return false;
             seen[effectIdx] = true;
         }

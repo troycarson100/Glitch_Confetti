@@ -153,6 +153,36 @@ private:
 };
 
 //==============================================================================
+// SyncToggleButton class (for "S" button on sync-able parameters)
+//==============================================================================
+class SyncToggleButton : public juce::Button
+{
+public:
+    SyncToggleButton() : juce::Button("SyncToggle") {}
+    ~SyncToggleButton() override = default;
+    
+    void paintButton(juce::Graphics& g, bool over, bool down) override
+    {
+        juce::ignoreUnused(over, down);
+        auto r = getLocalBounds().toFloat();
+        const float radius = juce::jmin(r.getWidth(), r.getHeight()) * 0.5f;
+        auto centre = r.getCentre();
+        g.setColour(juce::Colours::white);
+        if (getToggleState()) {
+            g.fillEllipse(centre.x - radius, centre.y - radius, radius*2, radius*2);
+            g.setColour(juce::Colours::black);
+        } else {
+            g.drawEllipse(centre.x - radius, centre.y - radius, radius*2, radius*2, 2.0f);
+        }
+        g.setFont(juce::Font(10.0f, juce::Font::bold));
+        g.drawText("S", r, juce::Justification::centred);
+    }
+
+private:
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (SyncToggleButton)
+};
+
+//==============================================================================
 // PlayButton class
 //==============================================================================
 class PlayButton : public juce::Button
@@ -276,6 +306,7 @@ public:
     std::unique_ptr<juce::DrawableButton> tabPanner;
     std::unique_ptr<juce::DrawableButton> tabDirt;
     std::unique_ptr<juce::DrawableButton> tabChorus;
+    std::unique_ptr<juce::DrawableButton> tabDubDelay;
     
     // Effect selector dropdowns (one per page/slot)
     std::unique_ptr<juce::ComboBox> effectSelector1;
@@ -571,6 +602,42 @@ public:
     
     std::vector<juce::Component*> slicerGroup; // All Slicer UI components for visibility toggling
     
+    // Dub Delay page components (8 knobs)
+    std::array<std::unique_ptr<CustomKnob>, 8> dubdelayKnobs;
+    std::array<std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>, 8> dubdelayAttachments;
+    std::array<std::unique_ptr<juce::Label>, 8> dubdelayKnobLabels;
+    std::array<std::unique_ptr<juce::Label>, 8> dubdelayValueLabels;
+    std::array<std::unique_ptr<IndicatorBar>, 8> dubdelayIndicatorBars;
+    std::array<std::unique_ptr<CustomDiceButton>, 8> dubdelayDiceButtons;
+    std::array<std::unique_ptr<LockButton>, 8> dubdelayLockButtons;
+    std::array<bool, 8> dubdelayKnobLocked { false, false, false, false, false, false, false, false };
+    
+    // Dub Delay effects area
+    std::unique_ptr<juce::Label> dubdelayEffectsTitle;
+    std::unique_ptr<CustomDiceButton> dubdelayDiceButton;
+    std::unique_ptr<juce::DrawableButton> dubdelayFxPowerButton;
+    std::unique_ptr<juce::Button> dubdelaySyncToggle; // S circle toggle for time sync
+    bool dubdelaySyncEnabled = false;
+    bool dubdelayFxAreaEnabled = true;
+    
+    // Dub Delay step sequencer area
+    std::array<std::unique_ptr<StepButton>, 16> dubdelayStepButtons;
+    int dubdelayUiSelectedStep = 0;
+    std::unique_ptr<juce::TextEditor> dubdelayStepAmountLabel;
+    std::unique_ptr<juce::ComboBox> dubdelayRateDropdown;
+    std::unique_ptr<CircularToggleButton> dubdelayStdToggle;
+    std::unique_ptr<juce::Label> dubdelayStepTitle;
+    std::unique_ptr<CustomDiceButton> dubdelayStepDiceButton;
+    std::unique_ptr<juce::DrawableButton> dubdelayStepPowerButton;
+    bool dubdelayStepAreaEnabled = true;
+    
+    // Dub Delay All Steps toggle
+    std::unique_ptr<AllStepsToggleButton> dubdelayAllStepsToggle;
+    std::unique_ptr<juce::Label> dubdelayAllStepsLabel;
+    bool dubdelayAllStepsEnabled = false;
+    
+    std::vector<juce::Component*> dubdelayGroup; // All Dub Delay UI components for visibility toggling
+    
         // Helper methods
         void setupKnobs();
         void setupMasterKnobs();
@@ -674,6 +741,21 @@ public:
         void updateSlicerSequencerUI();
         void onSlicerStepButtonClicked(int stepIndex);
         void updateSlicerLEDStrip();
+        
+        // Dub Delay page helper methods
+        void setupDubDelayKnobs();
+        void setupDubDelayEffectsArea();
+        void setupDubDelaySequencerArea();
+        void setupDubDelayAllStepsToggle();
+        void updateDubDelayFxAreaVisibility();
+        void updateDubDelayStepAreaVisibility();
+        void randomizeDubDelayKnobValues();
+        void randomizeIndividualDubDelayKnob(int knobIndex);
+        void updateDubDelayParameterFromKnob(int knobIndex);
+        void updateDubDelaySequencerUI();
+        void updateDubDelayTimeLabel(); // Update Time knob label based on sync mode
+        void onDubDelayStepButtonClicked(int stepIndex);
+        void updateDubDelayCurrentStepSnapshot(int knobIndex, float value);
         
         void togglePlayback();
         

@@ -163,6 +163,16 @@ PluginEditor::PluginEditor (PluginProcessor& p)
         
         // Sync Slicer sequencer state with processor on startup
         processorRef.setSlicerSequencerEnabled(slicerStepAreaEnabled);
+        
+        // Setup Dub Delay page - DEBUGGING UI CRASH
+        DBG("[UI] Setting up Dub Delay page...");
+        setupDubDelayKnobs();
+        setupDubDelayEffectsArea();
+        setupDubDelaySequencerArea();
+        setupDubDelayAllStepsToggle();
+        
+        // Sync Dub Delay sequencer state with processor on startup
+        // processorRef.setDubDelaySequencerEnabled(dubdelayStepAreaEnabled);
         DBG("[UI] Initial Slicer sequencer state synced: enabled=" + juce::String(slicerStepAreaEnabled ? 1 : 0));
         
         // Initialize Slicer step power button state
@@ -268,6 +278,26 @@ void PluginEditor::paint (juce::Graphics& g)
                 else if (tabNumber == 3 && assets.slicerBackgroundTab3) return assets.slicerBackgroundTab3.get();
                 else if (tabNumber == 4 && assets.slicerBackgroundTab4) return assets.slicerBackgroundTab4.get();
                 break;
+                
+            case EffectID::DubDelay:
+                if (tabNumber == 1 && assets.dubdelayBackgroundTab1) {
+                    DBG("[PAINT] DubDelay background tab 1 loaded");
+                    return assets.dubdelayBackgroundTab1.get();
+                }
+                else if (tabNumber == 2 && assets.dubdelayBackgroundTab2) {
+                    DBG("[PAINT] DubDelay background tab 2 loaded");
+                    return assets.dubdelayBackgroundTab2.get();
+                }
+                else if (tabNumber == 3 && assets.dubdelayBackgroundTab3) {
+                    DBG("[PAINT] DubDelay background tab 3 loaded");
+                    return assets.dubdelayBackgroundTab3.get();
+                }
+                else if (tabNumber == 4 && assets.dubdelayBackgroundTab4) {
+                    DBG("[PAINT] DubDelay background tab 4 loaded");
+                    return assets.dubdelayBackgroundTab4.get();
+                }
+                DBG("[PAINT] DubDelay background for tab " << tabNumber << " is null");
+                break;
         }
         return nullptr;
     };
@@ -310,7 +340,10 @@ void PluginEditor::paint (juce::Graphics& g)
             case EffectID::Chorus:     return assets.tabChorusIconNew.get();  // Chorus_Icon
             case EffectID::Reverb:     return assets.tabHallIcon.get();       // Hall_Icon (was reverb)
             case EffectID::Granular:   return assets.tabGrainIcon.get();      // Grain_Icon
-            case EffectID::Slicer: return assets.tabSlicerIcon.get();
+            case EffectID::Slicer:     return assets.tabSlicerIcon.get();      // Slicer_Icon
+            case EffectID::DubDelay:   
+                DBG("[PAINT] DubDelay icon: " << (assets.tabDubDelayIcon ? "loaded" : "null"));
+                return assets.tabDubDelayIcon.get();    // DubDelay_Icon
         }
         return nullptr;
     };
@@ -1206,6 +1239,12 @@ void PluginEditor::timerCallback()
     
     // Update Slicer sequencer UI
     updateSlicerSequencerUI();
+    
+    // Update Dub Delay sequencer UI
+    updateDubDelaySequencerUI();
+    
+    // Update Dub Delay time label (handles sync mode display)
+    updateDubDelayTimeLabel();
 }
 
 bool PluginEditor::keyPressed(const juce::KeyPress& key)
@@ -1224,6 +1263,9 @@ bool PluginEditor::keyPressed(const juce::KeyPress& key)
         return false; // Let the TextEditor handle it
     }
     if (granularStepAmountLabel && granularStepAmountLabel->hasKeyboardFocus(true)) {
+        return false; // Let the TextEditor handle it
+    }
+    if (dubdelayStepAmountLabel && dubdelayStepAmountLabel->hasKeyboardFocus(true)) {
         return false; // Let the TextEditor handle it
     }
     if (stepAmountLabel && stepAmountLabel->hasKeyboardFocus(true)) {
@@ -2241,13 +2283,13 @@ void PluginEditor::setupKnobs()
                 if (presetBrowser == nullptr || !presetBrowser->isVisible()) {
                     DBG("[PresetBrowser] Creating/showing overlay");
                     // Create browser overlay if needed
-                    if (presetBrowser == nullptr) {
-                        presetBrowser = std::make_unique<PresetBrowserOverlay>(*presetManager, assets);
-                        addAndMakeVisible(presetBrowser.get());
-                        
-                        presetBrowser->onClose = [this]() {
-                            DBG("[PresetBrowser] Closing");
-                            presetBrowser->setVisible(false);
+                if (presetBrowser == nullptr) {
+                    presetBrowser = std::make_unique<PresetBrowserOverlay>(*presetManager, assets);
+                    addAndMakeVisible(presetBrowser.get());
+                    
+                    presetBrowser->onClose = [this]() {
+                        DBG("[PresetBrowser] Closing");
+                        presetBrowser->setVisible(false);
                             
                             // Restore MASTER text and show master dice
                             if (masterTitle)
@@ -2713,6 +2755,7 @@ void PluginEditor::setupSpaceDelayUI()
     effectTypeDropdown->addItem("Hall", 5);
     effectTypeDropdown->addItem("Grain", 6);
     effectTypeDropdown->addItem("Slicer", 7);
+    effectTypeDropdown->addItem("Dub Echo", 8);
     effectTypeDropdown->setSelectedId(1, juce::dontSendNotification);
     
     // Position dropdown with proper height for closed control
@@ -3637,6 +3680,7 @@ void PluginEditor::setupTabSystem()
         selector->addItem("Hall", 5);
         selector->addItem("Grain", 6);
         selector->addItem("Slicer", 7);
+        selector->addItem("Dub Echo", 8);
         
         // Hide text when closed - just show carrot icon
         selector->setTextWhenNothingSelected("");
@@ -3983,6 +4027,7 @@ void PluginEditor::showPage(FxPageID id)
     setVisibleVec(reverbGroup, false);
     setVisibleVec(granularGroup, false);
     setVisibleVec(slicerGroup, false);
+    setVisibleVec(dubdelayGroup, false);
     
     // Show only the group for the effect assigned to this slot
     switch (assignedEffect)
@@ -4039,6 +4084,41 @@ void PluginEditor::showPage(FxPageID id)
                     slicerKnobs[i]->onValueChange();
                 }
             }
+            break;
+        case EffectID::DubDelay:
+            setVisibleVec(dubdelayGroup, true);
+            DBG("[ROUTER] Showing DubDelay UI for slot " << slotIndex);
+            
+            // Restore UI state from APVTS parameters
+            {
+                auto* fxEnabledParam = processorRef.getAPVTS().getRawParameterValue("dubEnabled");
+                dubdelayFxAreaEnabled = fxEnabledParam ? (fxEnabledParam->load() > 0.5f) : false;
+                if (dubdelayFxPowerButton) {
+                    dubdelayFxPowerButton->setToggleState(dubdelayFxAreaEnabled, juce::dontSendNotification);
+                }
+                
+                // Restore sequencer enabled state
+                dubdelayStepAreaEnabled = processorRef.getDubDelaySeqState().enabled.load();
+                if (dubdelayStepPowerButton) {
+                    dubdelayStepPowerButton->setToggleState(dubdelayStepAreaEnabled, juce::dontSendNotification);
+                }
+                
+                updateDubDelayFxAreaVisibility();
+                updateDubDelayStepAreaVisibility();
+            }
+            
+            // Trigger initial value label updates (8 knobs)
+            for (int i = 0; i < 8; ++i) {
+                if (dubdelayKnobs[i]) {
+                    dubdelayKnobs[i]->onValueChange();
+                }
+            }
+            
+            // Update sequencer UI to show first step as selected
+            dubdelayUiSelectedStep = 0;
+            processorRef.setDubDelaySelectedStep(0);
+            updateDubDelaySequencerUI();
+            
             break;
     }
 
@@ -6906,7 +6986,7 @@ void PluginEditor::onEffectSelectorChanged(int slotIndex)
     int selectedEffectID = selector->getSelectedId() - 1; // ComboBox IDs are 1-based
     DBG("[ROUTER] Selected effect ID: " << selectedEffectID);
     
-    if (selectedEffectID < 0 || selectedEffectID > 6) {
+    if (selectedEffectID < 0 || selectedEffectID > 7) {
         DBG("[ROUTER] ERROR: Invalid effect ID " << selectedEffectID);
         return;
     }
@@ -7008,6 +7088,7 @@ void PluginEditor::onEffectSelectorChanged(int slotIndex)
     setVisibleVec(reverbGroup, false);
     setVisibleVec(granularGroup, false);
     setVisibleVec(slicerGroup, false);
+    setVisibleVec(dubdelayGroup, false);
     DBG("[ROUTER] ✓ All groups hidden");
     
     // Show the correct effect for the current page based on new assignment
@@ -7073,6 +7154,37 @@ void PluginEditor::onEffectSelectorChanged(int slotIndex)
             }
             
             DBG("[ROUTER] ✓ Slicer group shown");
+            break;
+        case EffectID::DubDelay:
+            DBG("[ROUTER] Showing DubDelay group (" << dubdelayGroup.size() << " components)");
+            setVisibleVec(dubdelayGroup, true);
+            
+            // Restore UI state from APVTS parameters
+            {
+                auto* fxEnabledParam = processorRef.getAPVTS().getRawParameterValue("dubEnabled");
+                dubdelayFxAreaEnabled = fxEnabledParam ? (fxEnabledParam->load() > 0.5f) : false;
+                if (dubdelayFxPowerButton) {
+                    dubdelayFxPowerButton->setToggleState(dubdelayFxAreaEnabled, juce::dontSendNotification);
+                }
+                
+                // Restore sequencer enabled state
+                dubdelayStepAreaEnabled = processorRef.getDubDelaySeqState().enabled.load();
+                if (dubdelayStepPowerButton) {
+                    dubdelayStepPowerButton->setToggleState(dubdelayStepAreaEnabled, juce::dontSendNotification);
+                }
+                
+                updateDubDelayFxAreaVisibility();
+                updateDubDelayStepAreaVisibility();
+            }
+            
+            // Trigger initial value label updates (8 knobs)
+            for (int i = 0; i < 8; ++i) {
+                if (dubdelayKnobs[i]) {
+                    dubdelayKnobs[i]->onValueChange();
+                }
+            }
+            
+            DBG("[ROUTER] ✓ DubDelay group shown");
             break;
     }
     
@@ -8673,5 +8785,772 @@ void PluginEditor::setupSlicerAllStepsToggle()
     slicerGroup.push_back(slicerAllStepsLabel.get());
     
     DBG("[UI] Slicer All Steps toggle setup complete");
+}
+
+//==============================================================================
+// Dub Delay Page Implementation
+//==============================================================================
+
+void PluginEditor::setupDubDelayKnobs()
+{
+    DBG("[UI] Setting up Dub Delay knobs...");
+
+    // Dub Delay knob names (8 knobs)
+    std::vector<juce::String> dubdelayKnobNames = {
+        "Time", "Feedback", "Tone", "Drive", "PingPong", "WowFlut", "RegenDmp", "Mix"
+    };
+    
+    // Parameter IDs for APVTS attachments (CRITICAL: must match exact APVTS parameter names)
+    std::vector<juce::String> dubdelayParamIds = {
+        "dubTimeMs", "dubFeedback", "dubToneHz", "dubDrive", 
+        "dubPingPong", "dubWowFlutter", "dubRegenDamp", "dubMix"
+    };
+
+    // Effect area bounds (same as other pages)
+    auto effectArea = juce::Rectangle<int>(25, 54, 413, 296);
+    const int knobSize = 80;
+    const int knobSpacing = 20;
+    const int startX = effectArea.getX() + 15;
+    const int startY = effectArea.getY() + effectArea.getHeight() - 210;
+
+    for (int i = 0; i < 8; ++i)
+    {
+        dubdelayKnobs[i] = std::make_unique<CustomKnob>();
+        addAndMakeVisible(dubdelayKnobs[i].get());
+        dubdelayKnobs[i]->setVisible(false);
+        
+        dubdelayKnobs[i]->setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
+        dubdelayKnobs[i]->setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
+
+        // Set parameter ranges based on knob index
+        switch (i) {
+            case 0: // Time (1-2000 ms)
+                dubdelayKnobs[i]->setRange(1.0, 2000.0, 1.0);
+                dubdelayKnobs[i]->setValue(450.0, juce::dontSendNotification);
+                break;
+            case 1: // Feedback (0-0.98)
+                dubdelayKnobs[i]->setRange(0.0, 0.98, 0.01);
+                dubdelayKnobs[i]->setValue(0.45, juce::dontSendNotification);
+                break;
+            case 2: // Tone (200-20000 Hz)
+                dubdelayKnobs[i]->setRange(200.0, 20000.0, 1.0);
+                dubdelayKnobs[i]->setValue(6500.0, juce::dontSendNotification);
+                break;
+            case 3: // Drive (0-1)
+                dubdelayKnobs[i]->setRange(0.0, 1.0, 0.01);
+                dubdelayKnobs[i]->setValue(0.15, juce::dontSendNotification);
+                break;
+            case 4: // PingPong (0-1, boolean)
+                dubdelayKnobs[i]->setRange(0.0, 1.0, 1.0);
+                dubdelayKnobs[i]->setValue(1.0, juce::dontSendNotification);
+                break;
+            case 5: // WowFlutter (0-1)
+                dubdelayKnobs[i]->setRange(0.0, 1.0, 0.01);
+                dubdelayKnobs[i]->setValue(0.35, juce::dontSendNotification);
+                break;
+            case 6: // RegenDamp (0-1)
+                dubdelayKnobs[i]->setRange(0.0, 1.0, 0.01);
+                dubdelayKnobs[i]->setValue(0.25, juce::dontSendNotification);
+                break;
+            case 7: // Mix (0-1)
+                dubdelayKnobs[i]->setRange(0.0, 1.0, 0.01);
+                dubdelayKnobs[i]->setValue(0.35, juce::dontSendNotification);
+                break;
+        }
+        
+        // Add value change callback to update value label
+        dubdelayKnobs[i]->onValueChange = [this, i]() {
+            if (dubdelayKnobs[i] != nullptr) {
+                updateDubDelayParameterFromKnob(i);
+                
+                // Update value label
+                if (dubdelayValueLabels[i]) {
+                    float value = dubdelayKnobs[i]->getValue();
+                    juce::String valueText;
+                    
+                    switch (i) {
+                        case 0: { // Time - handle sync mode knob mapping
+                            if (dubdelaySyncEnabled && dubdelayKnobs[0]) {
+                                // Map knob position (0-1) to 27 divisions (9 base × 3 grids)
+                                float normPos = (dubdelayKnobs[0]->getValue() - dubdelayKnobs[0]->getMinimum()) / 
+                                               (dubdelayKnobs[0]->getMaximum() - dubdelayKnobs[0]->getMinimum());
+                                normPos = juce::jlimit(0.0f, 1.0f, normPos);
+                                
+                                int totalDivisions = 9 * 3; // 9 base divisions × 3 grid modes
+                                int divisionIndex = static_cast<int>(normPos * (totalDivisions - 1));
+                                divisionIndex = juce::jlimit(0, totalDivisions - 1, divisionIndex);
+                                
+                                int baseDivIdx = divisionIndex / 3; // 0-8 (4, 2, 1, ... 1/64)
+                                int gridMode = divisionIndex % 3; // 0=straight, 1=triplet, 2=dotted
+                                
+                                // Update APVTS parameters
+                                auto* divParam = dynamic_cast<juce::AudioParameterChoice*>(processorRef.getAPVTS().getParameter("dubTimeDiv"));
+                                auto* gridParam = dynamic_cast<juce::AudioParameterChoice*>(processorRef.getAPVTS().getParameter("dubTimeGrid"));
+                                
+                                if (divParam && divParam->getIndex() != baseDivIdx) {
+                                    divParam->setValueNotifyingHost(static_cast<float>(baseDivIdx) / 8.0f);
+                                }
+                                if (gridParam && gridParam->getIndex() != gridMode) {
+                                    gridParam->setValueNotifyingHost(static_cast<float>(gridMode) / 2.0f);
+                                }
+                                
+                                // Update label via updateDubDelayTimeLabel
+                                updateDubDelayTimeLabel();
+                                valueText = dubdelayValueLabels[0]->getText();
+                            } else {
+                                valueText = juce::String(int(value)) + "ms";
+                            }
+                            break;
+                        }
+                        case 1: valueText = juce::String(int(value * 100)) + "%"; break; // Feedback
+                        case 2: { // Tone (Hz)
+                            if (value >= 1000.0f)
+                                valueText = juce::String(value / 1000.0f, 1) + "kHz";
+                            else
+                                valueText = juce::String(int(value)) + "Hz";
+                            break;
+                        }
+                        case 3: valueText = juce::String(int(value * 100)) + "%"; break; // Drive
+                        case 4: valueText = (value > 0.5f) ? "ON" : "OFF"; break; // PingPong
+                        case 5: valueText = juce::String(int(value * 100)) + "%"; break; // WowFlutter
+                        case 6: valueText = juce::String(int(value * 100)) + "%"; break; // RegenDamp
+                        case 7: valueText = juce::String(int(value * 100)) + "%"; break; // Mix
+                    }
+                    
+                    dubdelayValueLabels[i]->setText(valueText, juce::dontSendNotification);
+                }
+                
+                // Update indicator bar
+                if (dubdelayIndicatorBars[i]) {
+                    float normValue = 0.0f;
+                    switch (i) {
+                        case 0: normValue = (dubdelayKnobs[i]->getValue() - 1.0f) / 1999.0f; break; // Time
+                        case 1: normValue = dubdelayKnobs[i]->getValue() / 0.98f; break; // Feedback
+                        case 2: normValue = (dubdelayKnobs[i]->getValue() - 200.0f) / 19800.0f; break; // Tone
+                        case 3: case 5: case 6: case 7: normValue = dubdelayKnobs[i]->getValue(); break; // 0-1 params
+                        case 4: normValue = dubdelayKnobs[i]->getValue(); break; // PingPong
+                    }
+                    dubdelayIndicatorBars[i]->setValue(normValue);
+                }
+            }
+        };
+
+        // Set knob images
+        if (assets.knobRing != nullptr)
+            dubdelayKnobs[i]->setRingImage(assets.knobRing->createCopy());
+        if (assets.knobInside != nullptr)
+            dubdelayKnobs[i]->setInnerImage(assets.knobInside->createCopy());
+
+        int x = startX + (i % 4) * (knobSize + knobSpacing);
+        int y = startY + (i / 4) * (knobSize + 20);
+
+        if (i < 4)
+            y -= 23;
+        else
+            y -= 1;
+
+        dubdelayKnobs[i]->setBounds(x, y, knobSize, knobSize);
+
+        // Create label
+        dubdelayKnobLabels[i] = std::make_unique<juce::Label>();
+        dubdelayKnobLabels[i]->setText(dubdelayKnobNames[i], juce::dontSendNotification);
+        dubdelayKnobLabels[i]->setFont(juce::Font(12.0f, juce::Font::bold));
+        dubdelayKnobLabels[i]->setColour(juce::Label::textColourId, juce::Colours::white);
+        dubdelayKnobLabels[i]->setJustificationType(juce::Justification::centred);
+        addAndMakeVisible(dubdelayKnobLabels[i].get());
+        dubdelayKnobLabels[i]->setVisible(false);
+        dubdelayKnobLabels[i]->setBounds(x, y - 15, knobSize, 20);
+
+        // Create value label
+        dubdelayValueLabels[i] = std::make_unique<juce::Label>();
+        dubdelayValueLabels[i]->setText("0", juce::dontSendNotification);
+        dubdelayValueLabels[i]->setFont(juce::Font(10.0f, juce::Font::plain));
+        dubdelayValueLabels[i]->setColour(juce::Label::textColourId, juce::Colours::white);
+        dubdelayValueLabels[i]->setJustificationType(juce::Justification::centred);
+        addAndMakeVisible(dubdelayValueLabels[i].get());
+        dubdelayValueLabels[i]->setVisible(false);
+        dubdelayValueLabels[i]->setBounds(x, y + knobSize - 10, knobSize, 15);
+
+        // Create indicator bar
+        dubdelayIndicatorBars[i] = std::make_unique<IndicatorBar>();
+        addAndMakeVisible(dubdelayIndicatorBars[i].get());
+        dubdelayIndicatorBars[i]->setVisible(false);
+        dubdelayIndicatorBars[i]->setBounds(x + 10, y + knobSize + 8, knobSize - 20, 13);
+        dubdelayIndicatorBars[i]->setValue(0.5f);
+        
+        // Create dice button (hidden like other pages - NOT added to component tree)
+        dubdelayDiceButtons[i] = std::make_unique<CustomDiceButton>();
+        // Do NOT call addAndMakeVisible - keep it hidden
+        dubdelayDiceButtons[i]->onClick = [this, i]() { randomizeIndividualDubDelayKnob(i); };
+
+        // Create lock button
+        dubdelayLockButtons[i] = std::make_unique<LockButton>();
+        addAndMakeVisible(dubdelayLockButtons[i].get());
+        dubdelayLockButtons[i]->setVisible(false);
+        
+        // Calculate the width of the knob title text
+        juce::Font labelFont(12.0f, juce::Font::bold);
+        int textWidth = labelFont.getStringWidth(dubdelayKnobNames[i]);
+        
+        // Use same sizing as space delay
+        const int lockSize = 10; // Same as space delay
+        const int lockSpacing = 5; // Fixed distance from end of title text
+        
+        // Position lock button at the end of the title text + fixed spacing
+        int lockX = x + (knobSize / 2) + (textWidth / 2) + lockSpacing;
+        int lockY = y - 10;
+        
+        dubdelayLockButtons[i]->setBounds(lockX, lockY, lockSize, lockSize);
+        
+        // Set lock button images
+        if (assets.unlockedIcon && assets.lockedIcon) {
+            auto imgUnlocked = assets.unlockedIcon->createCopy();
+            auto imgLocked = assets.lockedIcon->createCopy();
+            dubdelayLockButtons[i]->setImages(std::move(imgUnlocked), std::move(imgLocked));
+        }
+        dubdelayLockButtons[i]->setToggleState(dubdelayKnobLocked[i], juce::dontSendNotification);
+        
+        dubdelayLockButtons[i]->onClick = [this, i]() {
+            dubdelayKnobLocked[i] = !dubdelayKnobLocked[i];
+            dubdelayLockButtons[i]->setToggleState(dubdelayKnobLocked[i], juce::dontSendNotification);
+        };
+        
+        // Create APVTS attachment
+        dubdelayAttachments[i] = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+            processorRef.getAPVTS(), dubdelayParamIds[i], *dubdelayKnobs[i]);
+        
+        // Initialize lock state
+        dubdelayKnobLocked[i] = false;
+    }
+
+    DBG("[UI] Dub Delay knobs setup complete");
+}
+
+void PluginEditor::setupDubDelayEffectsArea()
+{
+    DBG("[UI] Setting up Dub Delay effects area...");
+    
+    auto effectArea = juce::Rectangle<int>(25, 54, 413, 296);
+    
+    // Effect title (ALWAYS "EFFECT", NOT the effect name!)
+    dubdelayEffectsTitle = std::make_unique<juce::Label>();
+    dubdelayEffectsTitle->setText("EFFECT", juce::dontSendNotification);
+    dubdelayEffectsTitle->setFont(juce::Font(27.648f, juce::Font::bold));
+    dubdelayEffectsTitle->setColour(juce::Label::textColourId, juce::Colours::white);
+    dubdelayEffectsTitle->setJustificationType(juce::Justification::centredLeft);
+    addAndMakeVisible(dubdelayEffectsTitle.get());
+    dubdelayEffectsTitle->setVisible(false);
+    dubdelayEffectsTitle->setBounds(effectArea.getX() + 10, effectArea.getY() + 5, 100, 30);
+    
+    // Dub Delay dice button (main randomize button - match Slicer/Grain page)
+    dubdelayDiceButton = std::make_unique<CustomDiceButton>();
+    addAndMakeVisible(dubdelayDiceButton.get());
+    dubdelayDiceButton->setVisible(false);
+    
+    const int diceSize = 32;
+    dubdelayDiceButton->setBounds(effectArea.getX() + 130, effectArea.getY() + 5, diceSize, diceSize);
+    if (assets.diceLarge != nullptr) {
+        dubdelayDiceButton->setDiceImage(assets.diceLarge->createCopy());
+    }
+    dubdelayDiceButton->onClick = [this]() {
+        randomizeDubDelayKnobValues();
+    };
+    
+    // FX Power Button
+    dubdelayFxPowerButton = std::make_unique<juce::DrawableButton>("DubDelayFxPower", juce::DrawableButton::ImageFitted);
+    addAndMakeVisible(dubdelayFxPowerButton.get());
+    dubdelayFxPowerButton->setVisible(false);
+    dubdelayFxPowerButton->setClickingTogglesState(true);
+    
+    // Make button background transparent (match Slicer)
+    dubdelayFxPowerButton->setColour(juce::DrawableButton::backgroundColourId, juce::Colours::transparentBlack);
+    dubdelayFxPowerButton->setColour(juce::DrawableButton::backgroundOnColourId, juce::Colours::transparentBlack);
+    
+    if (assets.fxPowerOn) {
+        dubdelayFxPowerButton->setImages(assets.fxPowerOn.get());
+    }
+    
+    const int buttonSize = 46;
+    dubdelayFxPowerButton->setBounds(effectArea.getX() + effectArea.getWidth() - buttonSize - 8 + 8 + 3, 
+                                     effectArea.getY() + 6 - 20 + 4, buttonSize, buttonSize);
+    dubdelayFxPowerButton->setToggleState(dubdelayFxAreaEnabled, juce::dontSendNotification);
+    dubdelayFxPowerButton->setClickingTogglesState(true);
+    dubdelayFxPowerButton->onClick = [this]() {
+        dubdelayFxAreaEnabled = dubdelayFxPowerButton->getToggleState();
+        updateDubDelayFxAreaVisibility();
+        auto* param = processorRef.getAPVTS().getParameter("dubEnabled");
+        if (param)
+            param->setValueNotifyingHost(dubdelayFxAreaEnabled ? 1.0f : 0.0f);
+    };
+    
+    // Time Sync Toggle Button (S circle - matches Space Delay style)
+    class DubDelaySyncButton : public juce::Button {
+    public:
+        DubDelaySyncButton() : juce::Button("DubDelaySync") {}
+        void paintButton(juce::Graphics& g, bool over, bool down) override {
+            juce::ignoreUnused(over, down);
+            auto r = getLocalBounds().toFloat();
+            const float radius = juce::jmin(r.getWidth(), r.getHeight()) * 0.5f;
+            auto centre = r.getCentre();
+            g.setColour(juce::Colours::white);
+            if (getToggleState()) {
+                g.fillEllipse(centre.x - radius, centre.y - radius, radius*2, radius*2);
+                g.setColour(juce::Colours::black);
+            } else {
+                g.drawEllipse(centre.x - radius, centre.y - radius, radius*2, radius*2, 2.0f);
+            }
+            g.setFont(juce::Font(10.0f, juce::Font::bold));
+            g.drawText("S", r, juce::Justification::centred);
+        }
+    };
+    
+    dubdelaySyncToggle = std::make_unique<DubDelaySyncButton>();
+    addAndMakeVisible(dubdelaySyncToggle.get());
+    dubdelaySyncToggle->setVisible(false);
+    
+    // Position relative to knob[0] label (Time knob)
+    if (dubdelayKnobLabels[0] != nullptr) {
+        auto lb = dubdelayKnobLabels[0]->getBounds();
+        dubdelaySyncToggle->setBounds(lb.getX() + 10, lb.getY() + 4, 12, 12);
+    } else {
+        dubdelaySyncToggle->setBounds(effectArea.getX() + 10, effectArea.getY() + 10, 12, 12);
+    }
+    
+    dubdelaySyncToggle->setClickingTogglesState(true);
+    dubdelaySyncToggle->onClick = [this]() {
+        if (!dubdelaySyncToggle) return;
+        
+        dubdelaySyncEnabled = dubdelaySyncToggle->getToggleState();
+        
+        // Update APVTS parameter
+        auto* syncParam = processorRef.getAPVTS().getParameter("dubSync");
+        if (syncParam) {
+            syncParam->setValueNotifyingHost(dubdelaySyncEnabled ? 1.0f : 0.0f);
+        }
+        
+        // Update the time knob value label
+        updateDubDelayTimeLabel();
+    };
+    
+    dubdelayGroup.push_back(dubdelayEffectsTitle.get());
+    dubdelayGroup.push_back(dubdelayDiceButton.get());
+    dubdelayGroup.push_back(dubdelayFxPowerButton.get());
+    dubdelayGroup.push_back(dubdelaySyncToggle.get());
+    
+    for (int i = 0; i < 8; ++i) {
+        dubdelayGroup.push_back(dubdelayKnobs[i].get());
+        dubdelayGroup.push_back(dubdelayKnobLabels[i].get());
+        dubdelayGroup.push_back(dubdelayValueLabels[i].get());
+        dubdelayGroup.push_back(dubdelayIndicatorBars[i].get());
+        dubdelayGroup.push_back(dubdelayLockButtons[i].get());
+    }
+    
+    DBG("[UI] Dub Delay effects area setup complete");
+}
+
+void PluginEditor::setupDubDelaySequencerArea()
+{
+    DBG("[UI] Setting up Dub Delay sequencer area...");
+    
+    auto sequencerArea = juce::Rectangle<int>(25, 374, 413, 140);
+    
+    // "STEP" title
+    dubdelayStepTitle = std::make_unique<juce::Label>();
+    dubdelayStepTitle->setText("STEP", juce::dontSendNotification);
+    dubdelayStepTitle->setFont(juce::Font(22.118f, juce::Font::bold));
+    dubdelayStepTitle->setColour(juce::Label::textColourId, juce::Colours::white);
+    dubdelayStepTitle->setJustificationType(juce::Justification::centredLeft);
+    addAndMakeVisible(dubdelayStepTitle.get());
+    dubdelayStepTitle->setVisible(false);
+    dubdelayStepTitle->setBounds(sequencerArea.getX() + 10, sequencerArea.getY(), 80, 30);
+    
+    // Step buttons (2x8 grid)
+    const int buttonSize = 40;
+    const int buttonSpacing = 8;
+    const int startX = sequencerArea.getX() + 20;
+    const int startY = sequencerArea.getY() + 35;
+    
+    for (int i = 0; i < 16; ++i)
+    {
+        dubdelayStepButtons[i] = std::make_unique<StepButton>(i);
+        addAndMakeVisible(dubdelayStepButtons[i].get());
+        dubdelayStepButtons[i]->setVisible(false);
+        
+        int col = i % 8;
+        int row = i / 8;
+        int x = startX + col * (buttonSize + buttonSpacing);
+        int y = startY + row * (buttonSize + buttonSpacing);
+        
+        dubdelayStepButtons[i]->setBounds(x, y, buttonSize, buttonSize);
+        
+        // Set images for step buttons
+        if (assets.stepActive != nullptr)
+            dubdelayStepButtons[i]->setActiveImage(assets.stepActive->createCopy());
+        if (assets.stepInactive != nullptr)
+            dubdelayStepButtons[i]->setInactiveImage(assets.stepInactive->createCopy());
+        
+        dubdelayStepButtons[i]->onClick = [this, i]() {
+            onDubDelayStepButtonClicked(i);
+        };
+    }
+    
+    // Step amount label (TextEditor - match Slicer with white outline)
+    dubdelayStepAmountLabel = std::make_unique<juce::TextEditor>();
+    dubdelayStepAmountLabel->setText("16");
+    dubdelayStepAmountLabel->setFont(juce::Font(16.0f, juce::Font::bold));
+    dubdelayStepAmountLabel->setColour(juce::TextEditor::textColourId, juce::Colours::white);
+    dubdelayStepAmountLabel->setColour(juce::TextEditor::backgroundColourId, juce::Colours::transparentBlack);
+    dubdelayStepAmountLabel->setColour(juce::TextEditor::outlineColourId, juce::Colours::white);
+    dubdelayStepAmountLabel->setColour(juce::TextEditor::focusedOutlineColourId, juce::Colours::white);
+    dubdelayStepAmountLabel->setJustification(juce::Justification::centred);
+    dubdelayStepAmountLabel->setBorder(juce::BorderSize<int>(2));
+    dubdelayStepAmountLabel->setIndents(0, 0);
+    dubdelayStepAmountLabel->setInputRestrictions(2, "0123456789");
+    addAndMakeVisible(dubdelayStepAmountLabel.get());
+    dubdelayStepAmountLabel->setVisible(false);
+    dubdelayStepAmountLabel->setBounds(sequencerArea.getX() + 180, sequencerArea.getY() - 10, 30, 25);
+    dubdelayStepAmountLabel->onReturnKey = [this]() {
+        int steps = dubdelayStepAmountLabel->getText().getIntValue();
+        steps = juce::jlimit(1, 16, steps);
+        processorRef.setDubDelayStepsUsed(steps);
+        dubdelayStepAmountLabel->setText(juce::String(steps), juce::dontSendNotification);
+        // TODO: Update sequencer UI to show/hide steps
+    };
+    
+    // Rate dropdown (match Slicer styling)
+    dubdelayRateDropdown = std::make_unique<juce::ComboBox>();
+    dubdelayRateDropdown->addItem("4", 1);
+    dubdelayRateDropdown->addItem("2", 2);
+    dubdelayRateDropdown->addItem("1", 3);
+    dubdelayRateDropdown->addItem("1/2", 4);
+    dubdelayRateDropdown->addItem("1/4", 5);
+    dubdelayRateDropdown->addItem("1/8", 6);
+    dubdelayRateDropdown->addItem("1/16", 7);
+    dubdelayRateDropdown->addItem("1/32", 8);
+    dubdelayRateDropdown->setColour(juce::ComboBox::backgroundColourId, juce::Colours::transparentBlack);
+    dubdelayRateDropdown->setColour(juce::ComboBox::outlineColourId, juce::Colours::transparentBlack);
+    dubdelayRateDropdown->setColour(juce::ComboBox::buttonColourId, juce::Colours::transparentBlack);
+    dubdelayRateDropdown->setColour(juce::ComboBox::textColourId, juce::Colours::white);
+    dubdelayRateDropdown->setColour(juce::ComboBox::arrowColourId, juce::Colours::white);
+    
+    int divIdx = processorRef.getDubDelaySeqState().divisionIndex.load();
+    dubdelayRateDropdown->setSelectedId(divIdx + 1, juce::dontSendNotification);
+    
+    addAndMakeVisible(dubdelayRateDropdown.get());
+    dubdelayRateDropdown->setVisible(false);
+    dubdelayRateDropdown->setBounds(sequencerArea.getX() + 220, sequencerArea.getY() - 10, 74, 25);
+    dubdelayRateDropdown->onChange = [this]() {
+        int selectedId = dubdelayRateDropdown->getSelectedId();
+        if (selectedId > 0) {
+            int divisionIndex = selectedId - 1;
+            processorRef.setDubDelayDivisionIndex(divisionIndex);
+            DBG("[UI] DubDelay rate changed to index: " << divisionIndex);
+        }
+    };
+    
+    // STD toggle (match Slicer)
+    dubdelayStdToggle = std::make_unique<CircularToggleButton>();
+    dubdelayStdToggle->setButtonText("-");
+    addAndMakeVisible(dubdelayStdToggle.get());
+    dubdelayStdToggle->setVisible(false);
+    dubdelayStdToggle->setBounds(sequencerArea.getX() + 288, sequencerArea.getY() - 14, 30, 30);
+    
+    // Step dice button (CRITICAL: CustomDiceButton, NOT DrawableButton! 30% smaller = ~24px)
+    dubdelayStepDiceButton = std::make_unique<CustomDiceButton>();
+    dubdelayStepDiceButton->setVisible(false);
+    int stepDiceSize = static_cast<int>(35 * 0.7);
+    dubdelayStepDiceButton->setBounds(sequencerArea.getX() + 75, sequencerArea.getY() + 5, stepDiceSize, stepDiceSize);
+    addAndMakeVisible(dubdelayStepDiceButton.get());
+    if (assets.diceLarge != nullptr) {
+        dubdelayStepDiceButton->setDiceImage(assets.diceLarge->createCopy());
+    }
+    dubdelayStepDiceButton->onClick = [this]() {
+        randomizeDubDelayKnobValues();
+    };
+    
+    // Step power button (match Slicer)
+    dubdelayStepPowerButton = std::make_unique<juce::DrawableButton>("DubDelayStepPower", juce::DrawableButton::ImageFitted);
+    
+    // Make button background transparent (match Slicer)
+    dubdelayStepPowerButton->setColour(juce::DrawableButton::backgroundColourId, juce::Colours::transparentBlack);
+    dubdelayStepPowerButton->setColour(juce::DrawableButton::backgroundOnColourId, juce::Colours::transparentBlack);
+    
+    if (assets.stepPowerOn) {
+        dubdelayStepPowerButton->setImages(assets.stepPowerOn.get());
+    }
+    addAndMakeVisible(dubdelayStepPowerButton.get());
+    dubdelayStepPowerButton->setVisible(false);
+    dubdelayStepPowerButton->setClickingTogglesState(true);
+    const int stepPowerSize = 40;
+    dubdelayStepPowerButton->setBounds(sequencerArea.getX() + sequencerArea.getWidth() - stepPowerSize - 5 + 15 - 5 - 1, sequencerArea.getY() - 5 - stepPowerSize + 25 + 5, stepPowerSize, stepPowerSize);
+    dubdelayStepPowerButton->setToggleState(dubdelayStepAreaEnabled, juce::dontSendNotification);
+    dubdelayStepPowerButton->setClickingTogglesState(true);
+    dubdelayStepPowerButton->onClick = [this]() {
+        dubdelayStepAreaEnabled = dubdelayStepPowerButton->getToggleState();
+        processorRef.setDubDelaySequencerEnabled(dubdelayStepAreaEnabled);
+        updateDubDelayStepAreaVisibility();
+    };
+    
+    dubdelayGroup.push_back(dubdelayStepTitle.get());
+    dubdelayGroup.push_back(dubdelayStepAmountLabel.get());
+    dubdelayGroup.push_back(dubdelayRateDropdown.get());
+    dubdelayGroup.push_back(dubdelayStdToggle.get());
+    dubdelayGroup.push_back(dubdelayStepDiceButton.get());
+    dubdelayGroup.push_back(dubdelayStepPowerButton.get());
+    
+    for (int i = 0; i < 16; ++i) {
+        dubdelayGroup.push_back(dubdelayStepButtons[i].get());
+    }
+    
+    DBG("[UI] Dub Delay sequencer area setup complete");
+}
+
+void PluginEditor::setupDubDelayAllStepsToggle()
+{
+    DBG("[UI] Setting up Dub Delay All Steps toggle...");
+    
+    auto effectArea = juce::Rectangle<int>(25, 54, 413, 296);
+    
+    dubdelayAllStepsToggle = std::make_unique<AllStepsToggleButton>();
+    addAndMakeVisible(dubdelayAllStepsToggle.get());
+    dubdelayAllStepsToggle->setVisible(false);
+    
+    const int buttonSize = 29;
+    dubdelayAllStepsToggle->setBounds(effectArea.getX() + effectArea.getWidth()/2 - buttonSize/2 + 30, 
+                                       effectArea.getY() - 1, buttonSize, buttonSize);
+    
+    if (assets.stepTopInactive && assets.stepTopActive) {
+        static_cast<AllStepsToggleButton*>(dubdelayAllStepsToggle.get())->setImages(
+            assets.stepTopInactive->createCopy(),
+            assets.stepTopActive->createCopy()
+        );
+    }
+    
+    dubdelayAllStepsToggle->setToggleState(false, juce::dontSendNotification);
+    dubdelayAllStepsToggle->onClick = [this]() {
+        dubdelayAllStepsEnabled = dubdelayAllStepsToggle->getToggleState();
+        DBG("[UI] DubDelay All Steps toggle: " << (dubdelayAllStepsEnabled ? "ON" : "OFF"));
+        dubdelayAllStepsLabel->setAlpha(dubdelayAllStepsEnabled ? 1.0f : 0.5f);
+    };
+    
+    dubdelayAllStepsLabel = std::make_unique<juce::Label>();
+    dubdelayAllStepsLabel->setText("All Steps", juce::dontSendNotification);
+    dubdelayAllStepsLabel->setFont(juce::Font(14.4f, juce::Font::bold));
+    dubdelayAllStepsLabel->setColour(juce::Label::textColourId, juce::Colours::white);
+    dubdelayAllStepsLabel->setJustificationType(juce::Justification::centredLeft);
+    addAndMakeVisible(dubdelayAllStepsLabel.get());
+    dubdelayAllStepsLabel->setVisible(false);
+    dubdelayAllStepsLabel->setAlpha(1.0f);
+    dubdelayAllStepsLabel->setBounds(effectArea.getX() + effectArea.getWidth()/2 + buttonSize/2 + 5 + 30, 
+                                      effectArea.getY() + 1, 80, 24);
+    
+    dubdelayGroup.push_back(dubdelayAllStepsToggle.get());
+    dubdelayGroup.push_back(dubdelayAllStepsLabel.get());
+    
+    DBG("[UI] Dub Delay All Steps toggle setup complete");
+}
+
+void PluginEditor::updateDubDelayFxAreaVisibility()
+{
+    float alpha = dubdelayFxAreaEnabled ? 1.0f : 0.3f;
+    
+    // Update knobs and labels alpha (match Slicer)
+    for (int i = 0; i < 8; ++i) {
+        if (dubdelayKnobs[i]) { 
+            dubdelayKnobs[i]->setAlpha(alpha); 
+            dubdelayKnobs[i]->setEnabled(dubdelayFxAreaEnabled);
+        }
+        if (dubdelayKnobLabels[i]) dubdelayKnobLabels[i]->setAlpha(alpha);
+        if (dubdelayValueLabels[i]) dubdelayValueLabels[i]->setAlpha(alpha);
+        if (dubdelayIndicatorBars[i]) dubdelayIndicatorBars[i]->setAlpha(alpha);
+    }
+    
+    if (dubdelayDiceButton) {
+        dubdelayDiceButton->setAlpha(alpha);
+        dubdelayDiceButton->setEnabled(dubdelayFxAreaEnabled);
+    }
+    if (dubdelayEffectsTitle) dubdelayEffectsTitle->setAlpha(alpha);
+    
+    // Grey the time sync button
+    if (dubdelaySyncToggle) { 
+        dubdelaySyncToggle->setAlpha(alpha); 
+        dubdelaySyncToggle->setEnabled(dubdelayFxAreaEnabled); 
+    }
+    
+    repaint();
+}
+
+void PluginEditor::updateDubDelayStepAreaVisibility()
+{
+    float alpha = dubdelayStepAreaEnabled ? 1.0f : 0.3f;
+    
+    // Update step buttons (match Slicer)
+    for (int i = 0; i < 16; ++i) {
+        if (dubdelayStepButtons[i]) {
+            dubdelayStepButtons[i]->setAlpha(alpha);
+            dubdelayStepButtons[i]->setEnabled(dubdelayStepAreaEnabled);
+        }
+    }
+    
+    // Update sequencer controls
+    if (dubdelayStepAmountLabel) {
+        dubdelayStepAmountLabel->setAlpha(alpha);
+        dubdelayStepAmountLabel->setEnabled(dubdelayStepAreaEnabled);
+    }
+    if (dubdelayRateDropdown) {
+        dubdelayRateDropdown->setAlpha(alpha);
+        dubdelayRateDropdown->setEnabled(dubdelayStepAreaEnabled);
+    }
+    if (dubdelayStdToggle) {
+        dubdelayStdToggle->setAlpha(alpha);
+        dubdelayStdToggle->setEnabled(dubdelayStepAreaEnabled);
+    }
+    if (dubdelayStepTitle) dubdelayStepTitle->setAlpha(alpha);
+    if (dubdelayStepDiceButton) {
+        dubdelayStepDiceButton->setAlpha(alpha);
+        dubdelayStepDiceButton->setEnabled(dubdelayStepAreaEnabled);
+    }
+    
+    repaint();
+}
+
+void PluginEditor::randomizeDubDelayKnobValues()
+{
+    DBG("[UI] Randomizing Dub Delay knob values...");
+    for (int i = 0; i < 8; ++i) {
+        if (i != 7 && dubdelayKnobs[i]) { // Skip Mix (knob 7)
+            randomizeIndividualDubDelayKnob(i);
+        }
+    }
+}
+
+void PluginEditor::randomizeIndividualDubDelayKnob(int knobIndex)
+{
+    if (knobIndex < 0 || knobIndex >= 8) return;
+    if (!dubdelayKnobs[knobIndex]) return;
+    
+    juce::Random rand;
+    float newValue = 0.0f;
+    
+    switch (knobIndex) {
+        case 0: newValue = 100.0f + rand.nextFloat() * 1400.0f; break; // Time: 100-1500ms
+        case 1: newValue = 0.2f + rand.nextFloat() * 0.65f; break; // Feedback: 0.2-0.85
+        case 2: newValue = 1000.0f + rand.nextFloat() * 14000.0f; break; // Tone: 1-15kHz
+        case 3: newValue = rand.nextFloat() * 0.6f; break; // Drive: 0-0.6
+        case 4: newValue = (rand.nextFloat() > 0.5f) ? 1.0f : 0.0f; break; // PingPong: random
+        case 5: newValue = rand.nextFloat() * 0.5f; break; // WowFlutter: 0-0.5
+        case 6: newValue = rand.nextFloat() * 0.6f; break; // RegenDamp: 0-0.6
+        case 7: newValue = 0.2f + rand.nextFloat() * 0.6f; break; // Mix: 0.2-0.8
+    }
+    
+    dubdelayKnobs[knobIndex]->setValue(newValue, juce::sendNotification);
+}
+
+void PluginEditor::updateDubDelayTimeLabel()
+{
+    if (!dubdelayValueLabels[0]) return;
+    
+    auto* syncParam = processorRef.getAPVTS().getRawParameterValue("dubSync");
+    bool syncEnabled = syncParam ? (*syncParam > 0.5f) : false;
+    
+    if (syncEnabled) {
+        // Show division label
+        auto* divParam = dynamic_cast<juce::AudioParameterChoice*>(processorRef.getAPVTS().getParameter("dubTimeDiv"));
+        auto* gridParam = dynamic_cast<juce::AudioParameterChoice*>(processorRef.getAPVTS().getParameter("dubTimeGrid"));
+        
+        int divIdx = divParam ? divParam->getIndex() : 4; // Default 1/4
+        int gridIdx = gridParam ? gridParam->getIndex() : 0; // Default Straight
+        
+        divIdx = juce::jlimit(0, 8, divIdx);
+        gridIdx = juce::jlimit(0, 2, gridIdx);
+        
+        static const char* divStrings[] = {"4", "2", "1", "1/2", "1/4", "1/8", "1/16", "1/32", "1/64"};
+        juce::String label = divStrings[divIdx];
+        
+        if (gridIdx == 1) label += "."; // Dotted
+        else if (gridIdx == 2) label += "T"; // Triplet
+        
+        dubdelayValueLabels[0]->setText(label, juce::dontSendNotification);
+    } else {
+        // Show ms
+        if (dubdelayKnobs[0]) {
+            float timeMs = dubdelayKnobs[0]->getValue();
+            dubdelayValueLabels[0]->setText(juce::String(int(timeMs)) + "ms", juce::dontSendNotification);
+        }
+    }
+}
+
+void PluginEditor::updateDubDelayParameterFromKnob(int knobIndex)
+{
+    if (knobIndex < 0 || knobIndex >= 8) return;
+    if (!dubdelayKnobs[knobIndex]) return;
+    
+    float value = dubdelayKnobs[knobIndex]->getValue();
+    
+    // Update snapshot if All Steps is OFF
+    if (!dubdelayAllStepsEnabled) {
+        updateDubDelayCurrentStepSnapshot(knobIndex, value);
+    }
+}
+
+void PluginEditor::updateDubDelayCurrentStepSnapshot(int knobIndex, float value)
+{
+    // This calls the processor method to update the current step snapshot
+    processorRef.updateDubDelayCurrentStepSnapshot(knobIndex, value);
+}
+
+void PluginEditor::onDubDelayStepButtonClicked(int stepIndex)
+{
+    dubdelayUiSelectedStep = stepIndex;
+    processorRef.setDubDelaySelectedStep(stepIndex);
+    
+    // Update button states
+    for (int i = 0; i < 16; ++i) {
+        if (dubdelayStepButtons[i]) {
+            dubdelayStepButtons[i]->setSelected(i == stepIndex);
+        }
+    }
+    
+    // Load snapshot into knobs
+    auto snapshot = processorRef.getDubDelaySafeSnapshot(stepIndex);
+    
+    // Temporarily disable All Steps to prevent overwriting all steps
+    bool wasAllSteps = dubdelayAllStepsEnabled;
+    dubdelayAllStepsEnabled = false;
+    
+    if (dubdelayKnobs[0]) dubdelayKnobs[0]->setValue(snapshot.dubdelay.timeMs, juce::sendNotification);
+    if (dubdelayKnobs[1]) dubdelayKnobs[1]->setValue(snapshot.dubdelay.feedback, juce::sendNotification);
+    if (dubdelayKnobs[2]) dubdelayKnobs[2]->setValue(snapshot.dubdelay.toneHz, juce::sendNotification);
+    if (dubdelayKnobs[3]) dubdelayKnobs[3]->setValue(snapshot.dubdelay.drive, juce::sendNotification);
+    if (dubdelayKnobs[4]) dubdelayKnobs[4]->setValue(snapshot.dubdelay.pingPong ? 1.0f : 0.0f, juce::sendNotification);
+    if (dubdelayKnobs[5]) dubdelayKnobs[5]->setValue(snapshot.dubdelay.wowFlutter, juce::sendNotification);
+    if (dubdelayKnobs[6]) dubdelayKnobs[6]->setValue(snapshot.dubdelay.regenDamp, juce::sendNotification);
+    // Mix (knob 7) is global - load from APVTS, not snapshot
+    
+    dubdelayAllStepsEnabled = wasAllSteps;
+}
+
+void PluginEditor::updateDubDelaySequencerUI()
+{
+    int selectedStep = dubdelayUiSelectedStep;
+    int playingStep = processorRef.getDubDelayCurrentStep();
+    const int stepsUsed = processorRef.getDubDelaySeqState().stepsUsed.load();
+    
+    for (int i = 0; i < 16; ++i) {
+        if (dubdelayStepButtons[i] != nullptr) {
+            dubdelayStepButtons[i]->setSelected(i == selectedStep);
+            bool sequencerEnabled = processorRef.getDubDelaySeqState().enabled.load();
+            dubdelayStepButtons[i]->setPlaying(sequencerEnabled && (i == playingStep));
+            bool shouldBeEnabled = i < stepsUsed;
+            dubdelayStepButtons[i]->setEnabledStep(shouldBeEnabled);
+        }
+    }
+    
+    // Update step amount display (don't overwrite if user is editing)
+    if (dubdelayStepAmountLabel != nullptr && !dubdelayStepAmountLabel->hasKeyboardFocus(true)) {
+        dubdelayStepAmountLabel->setText(juce::String(stepsUsed), false);
+    }
+    
+    repaint();
 }
 

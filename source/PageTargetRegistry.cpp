@@ -120,6 +120,43 @@ void PageTargetRegistry::buildRegistry()
         targets.maxSteps = 16;
         registry[EffectID::Granular] = targets;
     }
+    
+    // Slicer Page
+    {
+        PageTargets targets;
+        targets.pageId = "Slicer";
+        targets.knobParamIds = {
+            "slicerPattern",   // Knob 0: Pattern
+            "slicerDivision",  // Knob 1: Division
+            "slicerOffset",    // Knob 2: Offset
+            "slicerShape",     // Knob 3: Shape
+            "slicerReleaseMs", // Knob 4: Release
+            "slicerMix"        // Knob 5: Mix
+            // Note: Slicer only has 6 knobs
+        };
+        targets.sequencerStepsUsedKey = "slicerStepsUsed";
+        targets.maxSteps = 16;
+        registry[EffectID::Slicer] = targets;
+    }
+    
+    // Dub Delay Page
+    {
+        PageTargets targets;
+        targets.pageId = "DubDelay";
+        targets.knobParamIds = {
+            "dubTimeMs",      // Knob 0: Time
+            "dubFeedback",    // Knob 1: Feedback
+            "dubToneHz",      // Knob 2: Tone
+            "dubDrive",       // Knob 3: Drive
+            "dubPingPong",    // Knob 4: PingPong
+            "dubWowFlutter",  // Knob 5: WowFlutter
+            "dubRegenDamp",   // Knob 6: RegenDamp
+            "dubMix"          // Knob 7: Mix
+        };
+        targets.sequencerStepsUsedKey = "dubdelayStepsUsed";
+        targets.maxSteps = 16;
+        registry[EffectID::DubDelay] = targets;
+    }
 }
 
 std::array<PageTargets, 4> PageTargetRegistry::getActivePages(

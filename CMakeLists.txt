@@ -56,6 +56,8 @@ set(SourceFiles
     ${CMAKE_CURRENT_SOURCE_DIR}/source/dsp/granular/GranularEngine.h
     ${CMAKE_CURRENT_SOURCE_DIR}/source/dsp/rhythm_gate/RhythmGateEngine.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/source/dsp/rhythm_gate/RhythmGateEngine.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/source/dsp/DubDelayProcessor.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/source/dsp/DubDelayProcessor.h
     ${CMAKE_CURRENT_SOURCE_DIR}/source/ui/UiFlags.h
     ${CMAKE_CURRENT_SOURCE_DIR}/source/ui/Assets.h
     ${CMAKE_CURRENT_SOURCE_DIR}/source/ui/Assets.cpp

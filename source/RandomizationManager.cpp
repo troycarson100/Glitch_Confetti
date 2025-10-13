@@ -265,6 +265,26 @@ void RandomizationManager::applyParamChanges()
                 break;
             }
             
+            case EffectID::DubDelay:
+            {
+                int step = editor->dubdelayUiSelectedStep;
+                if (step >= 0 && step < 16) {
+                    auto s = processor.getDubDelaySafeSnapshot(step);
+                    // Load into knobs (8 knobs)
+                    if (editor->dubdelayKnobs[0]) editor->dubdelayKnobs[0]->setValue(s.dubdelay.timeMs, juce::sendNotification);
+                    if (editor->dubdelayKnobs[1]) editor->dubdelayKnobs[1]->setValue(s.dubdelay.feedback, juce::sendNotification);
+                    if (editor->dubdelayKnobs[2]) editor->dubdelayKnobs[2]->setValue(s.dubdelay.toneHz, juce::sendNotification);
+                    if (editor->dubdelayKnobs[3]) editor->dubdelayKnobs[3]->setValue(s.dubdelay.drive, juce::sendNotification);
+                    // Knob 4 is PingPong toggle - represented as 0 or 1
+                    if (editor->dubdelayKnobs[4]) editor->dubdelayKnobs[4]->setValue(s.dubdelay.pingPong ? 1.0f : 0.0f, juce::sendNotification);
+                    if (editor->dubdelayKnobs[5]) editor->dubdelayKnobs[5]->setValue(s.dubdelay.wowFlutter, juce::sendNotification);
+                    if (editor->dubdelayKnobs[6]) editor->dubdelayKnobs[6]->setValue(s.dubdelay.regenDamp, juce::sendNotification);
+                    if (editor->dubdelayKnobs[7]) editor->dubdelayKnobs[7]->setValue(s.dubdelay.mix, juce::sendNotification);
+                    DBG("[RAND]   DubDelay step " + juce::String(step) + " reloaded");
+                }
+                break;
+            }
+            
             default:
                 break;
         }
@@ -391,6 +411,21 @@ void RandomizationManager::applyStepChanges()
                 snapshot.slicer.releaseMs = 10.0f + rand01() * 50.0f; // 10-60ms (musical range)
                 snapshot.slicer.mix = 0.3f + rand01() * 0.7f; // 0.3-1.0 (audible range)
                 processor.setSlicerStepSnapshot(target.stepIndex, snapshot);
+                break;
+            }
+            
+            case EffectID::DubDelay:
+            {
+                auto snapshot = processor.getDubDelaySafeSnapshot(target.stepIndex);
+                snapshot.dubdelay.timeMs = 100.0f + rand01() * 1400.0f; // 100-1500ms (musical range)
+                snapshot.dubdelay.feedback = 0.2f + rand01() * 0.65f; // 0.2-0.85 (safe musical range)
+                snapshot.dubdelay.toneHz = 1000.0f + rand01() * 14000.0f; // 1-15 kHz (musical range)
+                snapshot.dubdelay.drive = rand01() * 0.6f; // 0-0.6 (gentle to moderate)
+                snapshot.dubdelay.pingPong = (rand01() > 0.5f); // Random ping-pong
+                snapshot.dubdelay.wowFlutter = rand01() * 0.5f; // 0-0.5 (subtle to moderate)
+                snapshot.dubdelay.regenDamp = rand01() * 0.6f; // 0-0.6 (subtle to moderate damping)
+                snapshot.dubdelay.mix = 0.2f + rand01() * 0.6f; // 0.2-0.8 (audible range)
+                processor.setDubDelayStepSnapshot(target.stepIndex, snapshot);
                 break;
             }
             

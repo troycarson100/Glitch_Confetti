@@ -74,4 +74,15 @@ struct StepSnapshot {
         float releaseMs = 20.0f;   // 5-80 ms (crossfade/tail duration)
         float mix = 0.75f;         // 0-1 (wet/dry mix)
     } slicer;
+    
+    struct {
+        float timeMs = 450.0f;     // 1-2000 ms (delay time)
+        float feedback = 0.45f;    // 0-0.98 (feedback amount)
+        float toneHz = 6500.0f;    // 200-20000 Hz (tone LPF cutoff)
+        float drive = 0.15f;       // 0-1 (pre-delay soft clip)
+        bool pingPong = true;      // Ping-pong mode
+        float wowFlutter = 0.35f;  // 0-1 (wow/flutter depth)
+        float regenDamp = 0.25f;   // 0-1 (regen damping)
+        float mix = 0.35f;         // 0-1 (dry/wet mix)
+    } dubdelay;
 };

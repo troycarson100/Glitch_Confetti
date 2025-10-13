@@ -65,6 +65,25 @@ PluginProcessor::PluginProcessor()
     }
     DBG("[Stepper] Initialized Slicer step snapshots with default values");
     
+    // Initialize Dub Delay sequencer
+    dubdelaySeq.enabled.store(true); // Start enabled
+    dubdelaySeq.stepsUsed.store(16);
+    dubdelaySeq.divisionIndex.store(5); // 1/8 default
+    dubdelaySeq.playingStep.store(0);
+    
+    // Initialize Dub Delay step snapshots with defaults
+    for (int i = 0; i < 16; ++i) {
+        dubdelayStepSnapshots[i].dubdelay.timeMs = 450.0f;
+        dubdelayStepSnapshots[i].dubdelay.feedback = 0.45f;
+        dubdelayStepSnapshots[i].dubdelay.toneHz = 6500.0f;
+        dubdelayStepSnapshots[i].dubdelay.drive = 0.15f;
+        dubdelayStepSnapshots[i].dubdelay.pingPong = true;
+        dubdelayStepSnapshots[i].dubdelay.wowFlutter = 0.35f;
+        dubdelayStepSnapshots[i].dubdelay.regenDamp = 0.25f;
+        dubdelayStepSnapshots[i].dubdelay.mix = 0.35f;
+    }
+    DBG("[Stepper] Initialized Dub Delay step snapshots with default values");
+    
     // Initialize UI state
     uiSelectedStep.store(0);
     autopanUiSelectedStep.store(0);
@@ -256,6 +275,29 @@ juce::AudioProcessorValueTreeState::ParameterLayout PluginProcessor::createParam
         params.push_back(std::make_unique<juce::AudioParameterBool>("slicerSync", "Slicer Sync", true)); // Tempo sync toggle
         params.push_back(std::make_unique<juce::AudioParameterBool>("slicerEnabled", "Slicer Enabled", true)); // Start enabled
     
+    // Dub Delay Parameters (8 knobs + enable)
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("dubTimeMs", "Dub Time", 
+        juce::NormalisableRange<float>(1.0f, 2000.0f, 0.0f, 0.5f), 450.0f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("dubFeedback", "Dub Feedback", 
+        juce::NormalisableRange<float>(0.0f, 0.98f, 0.0f, 1.0f), 0.45f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("dubToneHz", "Dub Tone", 
+        juce::NormalisableRange<float>(200.0f, 20000.0f, 0.0f, 0.5f), 6500.0f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("dubDrive", "Dub Drive", 
+        juce::NormalisableRange<float>(0.0f, 1.0f, 0.0f, 1.0f), 0.15f));
+    params.push_back(std::make_unique<juce::AudioParameterBool>("dubPingPong", "Dub PingPong", true));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("dubWowFlutter", "Dub WowFlutter", 
+        juce::NormalisableRange<float>(0.0f, 1.0f, 0.0f, 1.0f), 0.35f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("dubRegenDamp", "Dub RegenDamp", 
+        juce::NormalisableRange<float>(0.0f, 1.0f, 0.0f, 1.0f), 0.25f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("dubMix", "Dub Mix", 
+        juce::NormalisableRange<float>(0.0f, 1.0f, 0.0f, 1.0f), 0.35f));
+    params.push_back(std::make_unique<juce::AudioParameterBool>("dubEnabled", "Dub Delay Enabled", true)); // Enabled by default
+    params.push_back(std::make_unique<juce::AudioParameterBool>("dubSync", "Dub Delay Sync", false)); // Sync disabled by default
+    params.push_back(std::make_unique<juce::AudioParameterChoice>("dubTimeDiv", "Dub Time Division", 
+        juce::StringArray{"4", "2", "1", "1/2", "1/4", "1/8", "1/16", "1/32", "1/64"}, 5)); // Default 1/8
+    params.push_back(std::make_unique<juce::AudioParameterChoice>("dubTimeGrid", "Dub Time Grid", 
+        juce::StringArray{"Straight", "Dotted", "Triplet"}, 0)); // Default Straight
+    
     return { params.begin(), params.end() };
 }
 
@@ -339,6 +381,10 @@ void PluginProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
     reverbSeq.prepare(sampleRate); // Initialize Reverb sequencer with sample rate
     granularSeq.prepare(sampleRate); // Initialize Granular sequencer with sample rate
     slicerSeq.prepare(sampleRate); // Initialize Slicer sequencer with sample rate
+    
+    // Prepare Dub Delay DSP
+    dubDelay.prepare(sampleRate, samplesPerBlock);
+    dubdelaySeq.prepare(sampleRate); // Initialize Dub Delay sequencer with sample rate
     
     // Prepare output visualizer buffer (store ~1 second of downsampled audio)
     const int bufferSize = (int)(sampleRate / downsampleRate); // ~1 second at downsample rate
@@ -446,6 +492,7 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                 reverbSeq.resetPhase();    // Reverb sequencer phase reset
                 granularSeq.resetPhase();  // Granular sequencer phase reset
                 slicerSeq.resetPhase();    // Slicer sequencer phase reset
+                dubdelaySeq.resetPhase();  // Dub Delay sequencer phase reset
                 
                 // Auto-enable delay sequencer on DAW play (user can still disable with power button)
                 if (followHost.load()) {
@@ -488,6 +535,12 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                 if (slicerSeq.enabled.load()) {
                     slicerSeq.active.store(true);  // Activate Slicer sequencer
                     DBG("[SLICER SEQ] ✓ Activated on play edge");
+                }
+                
+                // Dub Delay sequencer activates if enabled (independent of followHost)
+                if (dubdelaySeq.enabled.load()) {
+                    dubdelaySeq.active.store(true);  // Activate Dub Delay sequencer
+                    DBG("[DUBDELAY SEQ] ✓ Activated on play edge");
                 }
                 
                 DBG("[SEQ] Play edge detected");
@@ -548,6 +601,13 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                     slicerSeq.currentStep.store(slicerStep);
                     slicerSeq.playingStep.store(slicerStep);
                     DBG("[SLICER SEQ] Lock-in at PPQ=" << ppq << " -> step " << slicerStep);
+                }
+                
+                if (dubdelaySeq.enabled.load() && dubdelaySeq.active.load()) {
+                    const int dubdelayStep = dubdelaySeq.computeStepFromPPQ(ppq);
+                    dubdelaySeq.currentStep.store(dubdelayStep);
+                    dubdelaySeq.playingStep.store(dubdelayStep);
+                    DBG("[DUBDELAY SEQ] Lock-in at PPQ=" << ppq << " -> step " << dubdelayStep);
                 }
                 
                 armPending.store(false);
@@ -631,6 +691,16 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                     slicerSeq.currentStep.store(slicerStep);
                     slicerSeq.playingStep.store(slicerStep);
                     DBG("[SLICER SEQ] ★ Step changed to: " << slicerStep << " PPQ: " << ppq);
+                }
+            }
+            
+            // Dub Delay sequencer stepping (shares same PPQ/transport, independent timing)
+            if (isPlaying && ppqValid && dubdelaySeq.active.load()) {
+                const int dubdelayStep = dubdelaySeq.computeStepFromPPQ(ppq);
+                if (dubdelayStep != dubdelaySeq.currentStep.load()) {
+                    dubdelaySeq.currentStep.store(dubdelayStep);
+                    dubdelaySeq.playingStep.store(dubdelayStep);
+                    DBG("[DUBDELAY SEQ] ★ Step changed to: " << dubdelayStep << " PPQ: " << ppq);
                 }
             }
             
@@ -1064,6 +1134,127 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                     
                     // Process
                     slicer.process(buffer);
+                }
+                break;
+            }
+            
+            case EffectID::DubDelay:
+            {
+                // Check if effect is enabled
+                auto* dubEnabledParam = valueTreeState.getRawParameterValue("dubEnabled");
+                bool isDubEnabled = dubEnabledParam ? (dubEnabledParam->load() > 0.5f) : false;
+                
+                if (isDubEnabled)
+                {
+                    // Check if sequencer is enabled and active
+                    bool seqEnabled = dubdelaySeq.enabled.load();
+                    bool seqActive = dubdelaySeq.active.load();
+                    int playingStep = dubdelaySeq.playingStep.load();
+                    
+                    // Get parameters from sequencer snapshot OR APVTS
+                    float timeMs, feedback, toneHz, drive, wowFlutter, regenDamp, mix;
+                    bool pingPong;
+                    
+                    if (seqEnabled && seqActive && playingStep >= 0 && playingStep < 16) {
+                        // Read from step snapshot
+                        StepSnapshot snapshot = dubdelayStepSnapshots[playingStep];
+                        timeMs = snapshot.dubdelay.timeMs;
+                        feedback = snapshot.dubdelay.feedback;
+                        toneHz = snapshot.dubdelay.toneHz;
+                        drive = snapshot.dubdelay.drive;
+                        pingPong = snapshot.dubdelay.pingPong;
+                        wowFlutter = snapshot.dubdelay.wowFlutter;
+                        regenDamp = snapshot.dubdelay.regenDamp;
+                        mix = snapshot.dubdelay.mix;
+                    } else {
+                        // Read from APVTS (global)
+                        auto* timeParam = valueTreeState.getRawParameterValue("dubTimeMs");
+                        auto* feedbackParam = valueTreeState.getRawParameterValue("dubFeedback");
+                        auto* toneParam = valueTreeState.getRawParameterValue("dubToneHz");
+                        auto* driveParam = valueTreeState.getRawParameterValue("dubDrive");
+                        auto* pingPongParam = valueTreeState.getRawParameterValue("dubPingPong");
+                        auto* wowFlutterParam = valueTreeState.getRawParameterValue("dubWowFlutter");
+                        auto* regenDampParam = valueTreeState.getRawParameterValue("dubRegenDamp");
+                        auto* mixParam = valueTreeState.getRawParameterValue("dubMix");
+                        
+                        timeMs = timeParam ? timeParam->load() : 450.0f;
+                        feedback = feedbackParam ? feedbackParam->load() : 0.45f;
+                        toneHz = toneParam ? toneParam->load() : 6500.0f;
+                        drive = driveParam ? driveParam->load() : 0.15f;
+                        pingPong = pingPongParam ? (pingPongParam->load() > 0.5f) : true;
+                        wowFlutter = wowFlutterParam ? wowFlutterParam->load() : 0.35f;
+                        regenDamp = regenDampParam ? regenDampParam->load() : 0.25f;
+                        mix = mixParam ? mixParam->load() : 0.35f;
+                    }
+                    
+                    // Check if sync is enabled
+                    auto* syncParam = valueTreeState.getRawParameterValue("dubSync");
+                    bool syncEnabled = syncParam ? (syncParam->load() > 0.5f) : false;
+                    
+                    if (syncEnabled) {
+                        // Tempo-synced mode: compute delay time from BPM + division + grid
+                        
+                        // Get safe BPM (with fallback)
+                        double bpmSafe = transportCache.bpm.load();
+                        if (bpmSafe < 20.0 || bpmSafe > 300.0) {
+                            bpmSafe = 120.0; // Fallback
+                        }
+                        
+                        // Get division and grid indices
+                        auto* divParam = dynamic_cast<juce::AudioParameterChoice*>(valueTreeState.getParameter("dubTimeDiv"));
+                        auto* gridParam = dynamic_cast<juce::AudioParameterChoice*>(valueTreeState.getParameter("dubTimeGrid"));
+                        
+                        int divIdx = divParam ? divParam->getIndex() : 5; // Default 1/8 (index 5)
+                        int gridIdx = gridParam ? gridParam->getIndex() : 0; // Default straight
+                        
+                        // Clamp indices
+                        divIdx = juce::jlimit(0, 8, divIdx);
+                        gridIdx = juce::jlimit(0, 2, gridIdx);
+                        
+                        // Division beats (4, 2, 1, 1/2, 1/4, 1/8, 1/16, 1/32, 1/64)
+                        static const double kDivBeats[] = {4.0, 2.0, 1.0, 0.5, 0.25, 0.125, 0.0625, 0.03125, 0.015625};
+                        double beats = kDivBeats[divIdx];
+                        
+                        // Grid multiplier (straight=1.0, dotted=1.5, triplet=2/3)
+                        static const double kGridMult[] = {1.0, 1.5, 2.0/3.0};
+                        double gridMult = kGridMult[gridIdx];
+                        
+                        // Compute seconds
+                        double seconds = (beats * gridMult) * (60.0 / bpmSafe);
+                        seconds = juce::jlimit(0.001, 20.0, seconds); // Clamp to safe range
+                        
+                        // Use setTargetDelaySec for smooth/crossfaded transition
+                        dubDelay.setTargetDelaySec(static_cast<float>(seconds));
+                    } else {
+                        // Free mode: use timeMs directly
+                        DubDelayProcessor::Targets targets;
+                        targets.timeMs = timeMs;
+                        targets.feedback = feedback;
+                        targets.toneHz = toneHz;
+                        targets.drive = drive;
+                        targets.pingPong = pingPong;
+                        targets.wowFlutterDepth = wowFlutter;
+                        targets.regenDamp = regenDamp;
+                        targets.mix = mix;
+                        
+                        dubDelay.setTargets(targets);
+                    }
+                    
+                    // Set non-time parameters (always needed)
+                    DubDelayProcessor::Targets targets;
+                    targets.timeMs = timeMs; // Will be overridden by setTargetDelaySec if sync is on
+                    targets.feedback = feedback;
+                    targets.toneHz = toneHz;
+                    targets.drive = drive;
+                    targets.pingPong = pingPong;
+                    targets.wowFlutterDepth = wowFlutter;
+                    targets.regenDamp = regenDamp;
+                    targets.mix = mix;
+                    
+                    dubDelay.setTargets(targets);
+                    
+                    // Process
+                    dubDelay.process(buffer, buffer.getNumSamples());
                 }
                 break;
             }
@@ -2224,6 +2415,56 @@ void PluginProcessor::updateSlicerCurrentStepSnapshot(int knobIndex, float value
             break;
         case 4: // Release (ms)
             slicerStepSnapshots[currentStep].slicer.releaseMs = value;
+            break;
+    }
+}
+
+// Dub Delay snapshot accessors
+StepSnapshot PluginProcessor::getDubDelaySafeSnapshot(int step) const
+{
+    if (step >= 0 && step < 16) {
+        return dubdelayStepSnapshots[step];
+    }
+    return dubdelayStepSnapshots[0];
+}
+
+void PluginProcessor::setDubDelayStepSnapshot(int step, const StepSnapshot& snapshot) noexcept
+{
+    if (step >= 0 && step < 16) {
+        dubdelayStepSnapshots[step] = snapshot;
+    }
+}
+
+void PluginProcessor::updateDubDelayCurrentStepSnapshot(int knobIndex, float value)
+{
+    int currentStep = dubdelayUiSelectedStep.load();
+    if (currentStep < 0 || currentStep >= 16) return;
+    
+    // Mix (knob 7) is global, not saved to snapshots
+    if (knobIndex == 7) return;
+    
+    // Update the specific Dub Delay parameter in the snapshot
+    switch (knobIndex) {
+        case 0: // Time (ms)
+            dubdelayStepSnapshots[currentStep].dubdelay.timeMs = value;
+            break;
+        case 1: // Feedback
+            dubdelayStepSnapshots[currentStep].dubdelay.feedback = value;
+            break;
+        case 2: // Tone (Hz)
+            dubdelayStepSnapshots[currentStep].dubdelay.toneHz = value;
+            break;
+        case 3: // Drive
+            dubdelayStepSnapshots[currentStep].dubdelay.drive = value;
+            break;
+        case 4: // PingPong (bool stored as float 0 or 1)
+            dubdelayStepSnapshots[currentStep].dubdelay.pingPong = (value > 0.5f);
+            break;
+        case 5: // WowFlutter
+            dubdelayStepSnapshots[currentStep].dubdelay.wowFlutter = value;
+            break;
+        case 6: // RegenDamp
+            dubdelayStepSnapshots[currentStep].dubdelay.regenDamp = value;
             break;
     }
 }

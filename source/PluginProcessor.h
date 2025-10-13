@@ -9,6 +9,7 @@
 #include "dsp/SimpleHallReverb.h"
 #include "dsp/granular/GranularEngine.h"
 #include "dsp/rhythm_gate/RhythmGateEngine.h"
+#include "dsp/DubDelayProcessor.h"
 #include "dsp/DspFlags.h"
 #include "StepSnapshot.h"
 #include "MeterTheme.h"
@@ -252,6 +253,18 @@ public:
     void setSlicerStepsUsed(int steps) noexcept { slicerSeq.stepsUsed.store(juce::jlimit(1, 16, steps)); }
     void setSlicerDivisionIndex(int idx) noexcept { slicerSeq.divisionIndex.store(juce::jlimit(0, 7, idx)); }
     
+    // Dub Delay sequencer accessors
+    const SeqState& getDubDelaySeqState() const { return dubdelaySeq; }
+    int getDubDelayPlayingStep() const noexcept { return dubdelaySeq.playingStep.load(); }
+    int getDubDelayCurrentStep() const noexcept { return dubdelaySeq.currentStep.load(); }
+    void setDubDelaySelectedStep(int step) noexcept { dubdelayUiSelectedStep.store(step); }
+    void setDubDelaySequencerEnabled(bool enabled) noexcept {
+        dubdelaySeq.enabled.store(enabled);
+        dubdelaySeq.active.store(enabled);
+    }
+    void setDubDelayStepsUsed(int steps) noexcept { dubdelaySeq.stepsUsed.store(juce::jlimit(1, 16, steps)); }
+    void setDubDelayDivisionIndex(int idx) noexcept { dubdelaySeq.divisionIndex.store(juce::jlimit(0, 7, idx)); }
+    
     StepSnapshot getGranularSafeSnapshot(int step) const;
     void setGranularStepSnapshot(int step, const StepSnapshot& snapshot) noexcept;
     void updateGranularCurrentStepSnapshot(int knobIndex, float value);
@@ -260,6 +273,11 @@ public:
     StepSnapshot getSlicerSafeSnapshot(int step) const;
     void setSlicerStepSnapshot(int step, const StepSnapshot& snapshot) noexcept;
     void updateSlicerCurrentStepSnapshot(int knobIndex, float value);
+    
+    // Dub Delay snapshot accessors
+    StepSnapshot getDubDelaySafeSnapshot(int step) const;
+    void setDubDelayStepSnapshot(int step, const StepSnapshot& snapshot) noexcept;
+    void updateDubDelayCurrentStepSnapshot(int knobIndex, float value);
     
     void setSequencerEnabled(bool enabled) noexcept { 
         seq.enabled.store(enabled); 
@@ -338,6 +356,10 @@ private:
     SeqState slicerSeq;
     std::atomic<int> slicerUiSelectedStep { 0 };  // Slicer editor's selected step
     
+    // Dub Delay Sequencer State (independent from all other sequencers)
+    SeqState dubdelaySeq;
+    std::atomic<int> dubdelayUiSelectedStep { 0 };  // Dub Delay editor's selected step
+    
     // Step snapshots storage (shared structure, independent sequencing)
     std::array<StepSnapshot, 16> stepSnapshots;
     std::array<StepSnapshot, 16> autopanStepSnapshots;
@@ -346,6 +368,7 @@ private:
     std::array<StepSnapshot, 16> reverbStepSnapshots;
     std::array<StepSnapshot, 16> granularStepSnapshots;
     std::array<StepSnapshot, 16> slicerStepSnapshots;
+    std::array<StepSnapshot, 16> dubdelayStepSnapshots;
     
     // Level tracking for meters
     std::atomic<float> inputLevel { -60.0f };
@@ -388,6 +411,9 @@ public:
     
     // Slicer DSP Implementation
     RhythmGateEngine slicer;
+    
+    // Dub Delay DSP Implementation
+    DubDelayProcessor dubDelay;
     
     // PanMan-style visualizer clock
     struct PanVisClock {
