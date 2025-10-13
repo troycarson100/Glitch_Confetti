@@ -48,8 +48,8 @@ void RhythmGateEngine::setTempoInfo(bool playing, double bpm_, double ppq, int t
     tsNum = tsNum_;
 }
 
-void RhythmGateEngine::setParameters(int patternIdx, int divisionIdx, float offset01, float shape01,
-                                     float releaseMs_, float mix01, bool syncOn)
+void RhythmGateEngine::setParameters(int patternIdx, float divisionVal, float offset01, float shape01,
+                                     float releaseMs_, float mix01, bool syncOn, int gridIdx)
 {
     // Queue pattern change (build envelope on next block start)
     if (patternIdx != queuedPatternIndex) {
@@ -57,6 +57,8 @@ void RhythmGateEngine::setParameters(int patternIdx, int divisionIdx, float offs
     }
     
     sync = syncOn;
+    divisionValue = std::clamp(divisionVal, 0.0f, 8.0f); // Continuous 0-8 range
+    gridIndex = std::clamp(gridIdx, 0, 2); // 0=straight, 1=dotted, 2=triplet
     
     // Convert Shape from 0..1 UI to -1..+1 bipolar (0.5 = 0)
     float shapeBipolar = (shape01 - 0.5f) * 2.0f;
@@ -92,8 +94,19 @@ void RhythmGateEngine::process(juce::AudioBuffer<float>& buffer)
     const float mixValue = mixSm.getCurrentValue();
     const float attackMs = std::min(releaseValue, 5.0f); // Attack capped at 5ms
     
-    // Compute phase increment for free-run mode
-    const double beatsPerCycle = 4.0; // 1 bar in 4/4
+    // Compute beats per cycle based on division and grid (always tempo-synced)
+    // Array order: slowest to fastest (4 bars → 1/64 note)
+    // Knob at 0 (divisionValue=0) = 4 bars (slowest), knob at 8 (divisionValue=8) = 1/64 note (fastest)
+    static const double kDivBeats[] = {4.0, 2.0, 1.0, 0.5, 0.25, 0.125, 0.0625, 0.03125, 0.015625};
+    int divIdx = std::clamp(static_cast<int>(std::round(divisionValue)), 0, 8);
+    double divBeats = kDivBeats[divIdx];
+    
+    // Grid multiplier: straight=1.0, dotted=1.5, triplet=2/3
+    static const double kGridMult[] = {1.0, 1.5, 2.0/3.0};
+    double gridMult = kGridMult[std::clamp(gridIndex, 0, 2)];
+    
+    double beatsPerCycle = divBeats * gridMult;
+    
     const double phaseIncPerSample = (bpm > 0.0) 
         ? (1.0 / (beatsPerCycle * (60.0 / bpm) * sampleRate))
         : (1.0 / (beatsPerCycle * 2.0 * sampleRate));

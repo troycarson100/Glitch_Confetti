@@ -261,9 +261,12 @@ juce::AudioProcessorValueTreeState::ParameterLayout PluginProcessor::createParam
     params.push_back(std::make_unique<juce::AudioParameterBool>("granEnabled", "Granular Enabled", true)); // Start enabled
     params.push_back(std::make_unique<juce::AudioParameterBool>("granDensitySync", "Granular Density Sync", false)); // Density sync mode
     
-        // Slicer Parameters (6 knobs + 1 toggle)
+        // Slicer Parameters (6 knobs + 2 toggles)
         params.push_back(std::make_unique<juce::AudioParameterInt>("slicerPattern", "Slicer Pattern", 0, 7, 0)); // 8 patterns
-        params.push_back(std::make_unique<juce::AudioParameterInt>("slicerDivision", "Slicer Division", 0, 5, 3)); // 0=1/1, 1=1/2, 2=1/4, 3=1/8, 4=1/16, 5=1/32
+        params.push_back(std::make_unique<juce::AudioParameterChoice>("slicerDivision", "Slicer Division",
+            juce::StringArray{"4", "2", "1", "1/2", "1/4", "1/8", "1/16", "1/32", "1/64"}, 5)); // Default 1/8 (index 5)
+        params.push_back(std::make_unique<juce::AudioParameterChoice>("slicerGrid", "Slicer Grid",
+            juce::StringArray{"Straight", "Dotted", "Triplet"}, 0)); // Default Straight
         params.push_back(std::make_unique<juce::AudioParameterFloat>("slicerOffset", "Slicer Offset", 
             juce::NormalisableRange<float>(0.0f, 1.0f, 0.0f, 1.0f), 0.5f)); // Bipolar: 0.5=center (0%), 0=early, 1=late
         params.push_back(std::make_unique<juce::AudioParameterFloat>("slicerShape", "Slicer Shape", 
@@ -1078,14 +1081,14 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                     int playingStep = slicerSeq.playingStep.load();
                     
                     // Get parameters from sequencer snapshot OR APVTS
-                    int patternIdx, divisionIdx;
-                    float offset01, shape01, releaseMs, mix01;
+                    int patternIdx;
+                    float divisionValue, offset01, shape01, releaseMs, mix01;
                     
                     if (seqEnabled && seqActive && playingStep >= 0 && playingStep < 16) {
                         // Read from step snapshot
                         StepSnapshot snapshot = slicerStepSnapshots[playingStep];
                         patternIdx = static_cast<int>(snapshot.slicer.pattern);
-                        divisionIdx = static_cast<int>(snapshot.slicer.division);
+                        divisionValue = snapshot.slicer.division; // Keep as float for smooth control
                         offset01 = snapshot.slicer.offset;
                         shape01 = snapshot.slicer.shape;
                         releaseMs = snapshot.slicer.releaseMs;
@@ -1100,30 +1103,36 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                         auto* mixParam = valueTreeState.getRawParameterValue("slicerMix");
                         
                         patternIdx = patternParam ? static_cast<int>(patternParam->load()) : 0;
-                        divisionIdx = divisionParam ? static_cast<int>(divisionParam->load()) : 3;
+                        divisionValue = divisionParam ? divisionParam->load() : 5.0f; // Keep as float
                         offset01 = offsetParam ? offsetParam->load() : 0.5f;
                         shape01 = shapeParam ? shapeParam->load() : 0.5f;
                         releaseMs = releaseParam ? releaseParam->load() : 20.0f;
                         mix01 = mixParam ? mixParam->load() : 0.75f;
                     }
                     
-                    // Sync toggle (always from APVTS)
+                    // Sync toggle and grid (always from APVTS)
                     auto* syncParam = valueTreeState.getRawParameterValue("slicerSync");
                     bool syncOn = syncParam ? (syncParam->load() > 0.5f) : true;
+                    
+                    auto* gridParam = dynamic_cast<juce::AudioParameterChoice*>(valueTreeState.getParameter("slicerGrid"));
+                    int gridIdx = gridParam ? gridParam->getIndex() : 0;
                     
                     // Update tempo info
                     slicer.setTempoInfo(transportCache.playing.load(), transportCache.bpm.load(), 
                                        transportCache.ppq.load(), transportCache.tsNum.load());
                     
                     // Set parameters
-                    slicer.setParameters(patternIdx, divisionIdx, offset01, shape01, 
-                                       releaseMs, mix01, syncOn);
+                    slicer.setParameters(patternIdx, divisionValue, offset01, shape01, 
+                                       releaseMs, mix01, syncOn, gridIdx);
                     
                     // Debug log (throttled)
                     static int slicerDebugCounter = 0;
                     if ((slicerDebugCounter++ % 500) == 0) {  // Every 500 blocks
                         float offsetBP = (offset01 - 0.5f) * 2.0f;
-                        DBG("[SLICER] pat=" << patternIdx << " div=" << divisionIdx 
+                        int divIdx = std::clamp(static_cast<int>(std::round(divisionValue)), 0, 8);
+                        static const char* divNames[] = {"4", "2", "1", "1/2", "1/4", "1/8", "1/16", "1/32", "1/64"};
+                        DBG("[SLICER] pat=" << patternIdx << " divValue=" << juce::String(divisionValue, 2) 
+                            << " divIdx=" << divIdx << " divName=" << divNames[divIdx] << " grid=" << gridIdx
                             << " offsetBP=" << juce::String(offsetBP, 2)
                             << " shape=" << juce::String(shape01, 2)
                             << " rel=" << juce::String(releaseMs, 1) << "ms"
@@ -1191,6 +1200,9 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                     auto* syncParam = valueTreeState.getRawParameterValue("dubSync");
                     bool syncEnabled = syncParam ? (syncParam->load() > 0.5f) : false;
                     
+                    // Compute final delay time (sync or free mode)
+                    float finalTimeMs = timeMs;
+                    
                     if (syncEnabled) {
                         // Tempo-synced mode: compute delay time from BPM + division + grid
                         
@@ -1219,30 +1231,14 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                         static const double kGridMult[] = {1.0, 1.5, 2.0/3.0};
                         double gridMult = kGridMult[gridIdx];
                         
-                        // Compute seconds
+                        // Compute seconds and convert to ms
                         double seconds = (beats * gridMult) * (60.0 / bpmSafe);
-                        seconds = juce::jlimit(0.001, 20.0, seconds); // Clamp to safe range
-                        
-                        // Use setTargetDelaySec for smooth/crossfaded transition
-                        dubDelay.setTargetDelaySec(static_cast<float>(seconds));
-                    } else {
-                        // Free mode: use timeMs directly
-                        DubDelayProcessor::Targets targets;
-                        targets.timeMs = timeMs;
-                        targets.feedback = feedback;
-                        targets.toneHz = toneHz;
-                        targets.drive = drive;
-                        targets.pingPong = pingPong;
-                        targets.wowFlutterDepth = wowFlutter;
-                        targets.regenDamp = regenDamp;
-                        targets.mix = mix;
-                        
-                        dubDelay.setTargets(targets);
+                        finalTimeMs = static_cast<float>(juce::jlimit(1.0, 20000.0, seconds * 1000.0));
                     }
                     
-                    // Set non-time parameters (always needed)
+                    // Set all parameters (including computed time)
                     DubDelayProcessor::Targets targets;
-                    targets.timeMs = timeMs; // Will be overridden by setTargetDelaySec if sync is on
+                    targets.timeMs = finalTimeMs;
                     targets.feedback = feedback;
                     targets.toneHz = toneHz;
                     targets.drive = drive;

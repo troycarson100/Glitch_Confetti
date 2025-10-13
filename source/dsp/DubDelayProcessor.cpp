@@ -21,8 +21,8 @@ void DubDelayProcessor::prepare(double sampleRate, int maxBlockSize)
     delayBufferR.resize(bufferSize, 0.0f);
     writePos = 0;
     
-    // Initialize smoothed parameters (15ms ramp time)
-    timeMsSmooth.reset(sampleRate, 0.015);
+    // Initialize smoothed parameters (100ms ramp time for time to prevent scratchy sounds)
+    timeMsSmooth.reset(sampleRate, 0.100); // Longer ramp for smooth time changes
     feedbackSmooth.reset(sampleRate, 0.015);
     toneCutoffSmooth.reset(sampleRate, 0.015);
     driveSmooth.reset(sampleRate, 0.015);
@@ -197,6 +197,10 @@ void DubDelayProcessor::process(juce::AudioBuffer<float>& buffer, int numSamples
             inR = softClip(inR, drive);
         }
         
+        // Store clean delayed signal for output (before feedback processing)
+        float wetL = delayedL;
+        float wetR = delayedR;
+        
         // Feedback path processing
         // HPF (fixed 40 Hz to remove DC/sub buildup)
         delayedL = hpfL.process(delayedL);
@@ -210,16 +214,16 @@ void DubDelayProcessor::process(juce::AudioBuffer<float>& buffer, int numSamples
         delayedL = shelfL.process(delayedL);
         delayedR = shelfR.process(delayedR);
         
-        // Apply feedback gain
-        delayedL *= fb;
-        delayedR *= fb;
+        // Apply feedback gain (reduced by 40% to prevent overbearing feedback)
+        delayedL *= fb * 0.6f;
+        delayedR *= fb * 0.6f;
         
-        // Ping-pong cross-feedback (orthonormal matrix)
+        // Ping-pong cross-feedback
         float fbL, fbR;
         if (pingPongEnabled) {
-            // Cross-feed with phase inversion for width
-            fbL = -delayedR;  // Right feedback to left (inverted)
-            fbR = delayedL;   // Left feedback to right
+            // Cross-feed: L→R and R→L
+            fbL = delayedR;   // Right feedback goes to left delay
+            fbR = delayedL;   // Left feedback goes to right delay
         } else {
             // Same-channel feedback
             fbL = delayedL;
@@ -233,12 +237,12 @@ void DubDelayProcessor::process(juce::AudioBuffer<float>& buffer, int numSamples
         // Advance write position
         writePos = (writePos + 1) & bufferMask;
         
-        // Equal-power crossfade (wet/dry mix)
-        const float wetGain = std::sin(juce::MathConstants<float>::halfPi * mixParam);
+        // Equal-power crossfade (wet/dry mix) with boosted wet signal for prominence
+        const float wetGain = std::sin(juce::MathConstants<float>::halfPi * mixParam) * 1.5f; // Boost wet by 1.5x
         const float dryGain = std::cos(juce::MathConstants<float>::halfPi * mixParam);
         
-        dataL[i] = dryGain * dataL[i] + wetGain * delayedL / std::max(0.1f, fb);  // Compensate for FB gain in wet
-        dataR[i] = dryGain * dataR[i] + wetGain * delayedR / std::max(0.1f, fb);
+        dataL[i] = dryGain * dataL[i] + wetGain * wetL;
+        dataR[i] = dryGain * dataR[i] + wetGain * wetR;
         
         // Denormal protection
         if (std::abs(dataL[i]) < 1e-15f) dataL[i] = 0.0f;

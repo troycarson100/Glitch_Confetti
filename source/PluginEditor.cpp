@@ -7136,10 +7136,10 @@ void PluginEditor::onEffectSelectorChanged(int slotIndex)
                     slicerFxPowerButton->setToggleState(slicerFxAreaEnabled, juce::dontSendNotification);
                 }
                 
-                // Step power is always on (no APVTS param for it)
-                slicerStepAreaEnabled = true;
+                // Restore sequencer enabled state from processor
+                slicerStepAreaEnabled = processorRef.getSlicerSeqState().enabled.load();
                 if (slicerStepPowerButton) {
-                    slicerStepPowerButton->setToggleState(true, juce::dontSendNotification);
+                    slicerStepPowerButton->setToggleState(slicerStepAreaEnabled, juce::dontSendNotification);
                 }
                 
                 updateSlicerFxAreaVisibility();
@@ -8072,9 +8072,9 @@ void PluginEditor::setupSlicerKnobs()
                 slicerKnobs[i]->setRange(0.0, 7.0, 1.0);
                 slicerKnobs[i]->setValue(0.0, juce::dontSendNotification);
                 break;
-            case 1: // Division (0-5: 1/1, 1/2, 1/4, 1/8, 1/16, 1/32)
-                slicerKnobs[i]->setRange(0.0, 5.0, 1.0);
-                slicerKnobs[i]->setValue(3.0, juce::dontSendNotification); // 1/8 default
+            case 1: // Division - 27 discrete positions (9 divisions × 3 grids)
+                slicerKnobs[i]->setRange(0.0, 26.0, 1.0); // 0-26 = 27 positions
+                slicerKnobs[i]->setValue(15.0, juce::dontSendNotification); // 1/8 straight default (5*3+0=15)
                 break;
             case 2: // Offset (0-1, bipolar: 0.5=center)
                 slicerKnobs[i]->setRange(0.0, 1.0, 0.01);
@@ -8113,15 +8113,31 @@ void PluginEditor::setupSlicerKnobs()
                             valueText = patternNames[patIdx];
                             break;
                         }
-                        case 1: { // Division
-                            int divIdx = juce::jlimit(0, 5, (int)value);
-                            if (slicerSyncEnabled) {
-                                std::vector<juce::String> divNames = {"1/1", "1/2", "1/4", "1/8", "1/16", "1/32"};
-                                valueText = divNames[divIdx];
-                            } else {
-                                // Show ms values when not synced (at 120 BPM baseline)
-                                std::vector<juce::String> msValues = {"2000ms", "1000ms", "500ms", "250ms", "125ms", "62ms"};
-                                valueText = msValues[divIdx];
+                        case 1: { // Division - 27 discrete positions (0-26)
+                            if (slicerKnobs[1]) {
+                                // Direct mapping: knob value 0-26 → division index 0-26
+                                int divisionIndex = static_cast<int>(value);
+                                divisionIndex = juce::jlimit(0, 26, divisionIndex);
+                                
+                                int baseDivIdx = divisionIndex / 3; // 0-8 (4, 2, 1, 1/2, 1/4, 1/8, 1/16, 1/32, 1/64)
+                                int gridMode = divisionIndex % 3; // 0=straight, 1=triplet, 2=dotted
+                                
+                                // Update APVTS parameters
+                                auto* divParam = dynamic_cast<juce::AudioParameterChoice*>(processorRef.getAPVTS().getParameter("slicerDivision"));
+                                auto* gridParam = dynamic_cast<juce::AudioParameterChoice*>(processorRef.getAPVTS().getParameter("slicerGrid"));
+                                
+                                if (divParam && divParam->getIndex() != baseDivIdx) {
+                                    divParam->setValueNotifyingHost(static_cast<float>(baseDivIdx) / 8.0f);
+                                }
+                                if (gridParam && gridParam->getIndex() != gridMode) {
+                                    gridParam->setValueNotifyingHost(static_cast<float>(gridMode) / 2.0f);
+                                }
+                                
+                                // Display label (knob left=slow/4 bars, right=fast/1/64)
+                                static const char* divStrings[] = {"4", "2", "1", "1/2", "1/4", "1/8", "1/16", "1/32", "1/64"};
+                                valueText = divStrings[baseDivIdx];
+                                if (gridMode == 1) valueText += "T"; // Triplet
+                                else if (gridMode == 2) valueText += "."; // Dotted
                             }
                             break;
                         }
@@ -8184,71 +8200,22 @@ void PluginEditor::setupSlicerKnobs()
         slicerIndicatorBars[i]->setValue(0.5f);
     }
 
-    // Create Sync toggle (next to Division knob - knob 1) - using SSyncButton like delay page
-    struct SlicerSSyncButton : public juce::Button {
-        SlicerSSyncButton() : juce::Button("SlicerSSync") {}
-        void paintButton(juce::Graphics& g, bool over, bool down) override {
-            juce::ignoreUnused(over, down);
-            auto r = getLocalBounds().toFloat();
-            const float radius = juce::jmin(r.getWidth(), r.getHeight()) * 0.5f;
-            auto centre = r.getCentre();
-            g.setColour(juce::Colours::white);
-            if (getToggleState()) {
-                g.fillEllipse(centre.x - radius, centre.y - radius, radius*2, radius*2);
-                g.setColour(juce::Colours::black);
-            } else {
-                g.drawEllipse(centre.x - radius, centre.y - radius, radius*2, radius*2, 2.0f);
-            }
-            g.setFont(juce::Font(10.0f, juce::Font::bold));
-            g.drawText("S", r, juce::Justification::centred);
-        }
-    };
-    slicerSyncToggle = std::make_unique<SlicerSSyncButton>();
-    addAndMakeVisible(slicerSyncToggle.get());
-    slicerSyncToggle->setVisible(false);
-    
-    // Position relative to Division knob label (knob 1) - moved left 5px from delay page
-    if (slicerKnobLabels[1] != nullptr) {
-        auto lb = slicerKnobLabels[1]->getBounds();
-        slicerSyncToggle->setBounds(lb.getX() + 5, lb.getY() + 4, 12, 12);
-    }
-    
-    auto* syncParam = processorRef.getAPVTS().getRawParameterValue("slicerSync");
-    if (syncParam) {
-        slicerSyncEnabled = syncParam->load() > 0.5f;
-        slicerSyncToggle->setToggleState(slicerSyncEnabled, juce::dontSendNotification);
-    }
-    
-    slicerSyncToggle->setClickingTogglesState(true);
-    slicerSyncToggle->onClick = [this]() {
-        slicerSyncEnabled = slicerSyncToggle->getToggleState();
-        
-        auto* param = processorRef.getAPVTS().getParameter("slicerSync");
-        if (param) {
-            param->setValueNotifyingHost(slicerSyncEnabled ? 1.0f : 0.0f);
-        }
-        
-        // Trigger Division knob value change to update display (shows beat divisions or ms)
-        if (slicerKnobs[1]) {
-            slicerKnobs[1]->onValueChange();
-        }
-        
-        DBG("[UI] Slicer sync: " << (slicerSyncEnabled ? "ON" : "OFF"));
-        repaint();
-    };
-    
-    slicerGroup.push_back(slicerSyncToggle.get());
+    // Slicer division is always tempo-synced (no sync toggle needed)
     
     // Create parameter attachments to connect knobs to APVTS
+    // Note: Division knob (index 1) has NO attachment - it manually updates dubDivision + dubGrid in onValueChange
     std::vector<juce::String> slicerParamIds = {
-        "slicerPattern", "slicerDivision", "slicerOffset", "slicerShape",
+        "slicerPattern", "", "slicerOffset", "slicerShape",  // Empty string for division (no attachment)
         "slicerReleaseMs", "slicerMix"
     };
     
     for (int i = 0; i < 6; ++i)
     {
-        slicerAttachments[i] = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
-            processorRef.getAPVTS(), slicerParamIds[i], *slicerKnobs[i]);
+        // Create attachment only if paramId is not empty
+        if (!slicerParamIds[i].isEmpty()) {
+            slicerAttachments[i] = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+                processorRef.getAPVTS(), slicerParamIds[i], *slicerKnobs[i]);
+        }
         
         // Add to slicerGroup for visibility toggling
         slicerGroup.push_back(slicerKnobs[i].get());
@@ -8348,11 +8315,7 @@ void PluginEditor::updateSlicerFxAreaVisibility()
         if (slicerIndicatorBars[i]) slicerIndicatorBars[i]->setAlpha(alpha);
     }
     
-    // Update sync toggle
-    if (slicerSyncToggle) {
-        slicerSyncToggle->setAlpha(alpha);
-        slicerSyncToggle->setEnabled(slicerFxAreaEnabled);
-    }
+    // Slicer division is always tempo-synced (no sync toggle)
     
     // Update LED strip
     for (int i = 0; i < 16; ++i) {

@@ -29,8 +29,8 @@ struct RhythmGateEngine
     void reset();
 
     void setTempoInfo(bool playing, double bpm, double ppq, int tsNum);
-    void setParameters(int patternIdx, int divisionIdx, float offset01, float shape01,
-                       float releaseMs, float mix01, bool syncOn);
+    void setParameters(int patternIdx, float divisionValue, float offset01, float shape01,
+                       float releaseMs, float mix01, bool syncOn, int gridIdx = 0);
 
     void process(juce::AudioBuffer<float>& buffer);
 
@@ -41,7 +41,8 @@ private:
     bool   wasPlaying = false; // For play edge detection
     double bpm = 120.0, ppqPos = 0.0;
     int    tsNum = 4;
-    int    division = 3; // Unused in new system (uses PPQ directly)
+    float  divisionValue = 5.0f; // Continuous 0-8 (quantized to int in sync mode, smooth in free mode)
+    int    gridIndex = 0; // 0=straight, 1=dotted, 2=triplet
     int    patternIndex = 0;
     int    queuedPatternIndex = 0;
     

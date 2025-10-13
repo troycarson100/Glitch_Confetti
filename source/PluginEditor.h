@@ -573,9 +573,7 @@ public:
     std::unique_ptr<juce::DrawableButton> slicerFxPowerButton;
     bool slicerFxAreaEnabled = true;
     
-    // Slicer sync toggle (styled like granular density sync)
-    std::unique_ptr<juce::Button> slicerSyncToggle;
-    bool slicerSyncEnabled = true;
+    // Slicer sync toggle removed - division is always tempo-synced
     
     // LED strip for 16-step pattern visualization
     std::array<std::unique_ptr<juce::Component>, 16> slicerLEDStrip;
