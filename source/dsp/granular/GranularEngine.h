@@ -56,6 +56,7 @@ private:
         float envLevel = 0.0f;
         float microDelay = 0.0f; // Stereo decorrelation delay (samples)
         float windowType = 0.2f; // Cached texture for this grain
+        float phaseSmoother = 0.0f; // For smooth phase transitions
     };
     
     std::array<Voice, kMaxVoices> voices;
@@ -82,6 +83,10 @@ private:
     // AGC state
     float wetRms = 0.0f;
     float agcGain = 1.0f;
+    
+    // Anti-aliasing filters (one per channel)
+    float aaFilterL = 0.0f;
+    float aaFilterR = 0.0f;
     
     // PRNG
     uint32_t rngState = 0x12345678u;

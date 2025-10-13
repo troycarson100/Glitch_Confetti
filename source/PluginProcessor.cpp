@@ -134,7 +134,7 @@ PluginProcessor::PluginProcessor()
     
     // Initialize Chorus step snapshots with default values
     for (int i = 0; i < 16; ++i) {
-        chorusStepSnapshots[i].chorus.rate = 1.5f;       // 1.5 Hz
+        chorusStepSnapshots[i].chorus.rate = 0.8f;       // 0.8 Hz (matches parameter default)
         chorusStepSnapshots[i].chorus.depth = 40.0f;     // 40%
         chorusStepSnapshots[i].chorus.voices = 2.0f;     // 2 voices
         chorusStepSnapshots[i].chorus.delayTime = 20.0f; // 20 ms
@@ -185,7 +185,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout PluginProcessor::createParam
     
     // Chorus Parameters (best-in-class 8-knob DSP)
     params.push_back(std::make_unique<juce::AudioParameterFloat>("chorusDelayMs",  "Ch Delay",   juce::NormalisableRange<float>(5.0f, 50.0f, 0.01f, 0.4f), 18.0f)); // base delay
-    params.push_back(std::make_unique<juce::AudioParameterFloat>("chorusRateHz",   "Ch Rate",    juce::NormalisableRange<float>(0.02f, 8.0f, 0.0f, 0.3f),    0.8f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("chorusRateHz",   "Ch Rate",    juce::NormalisableRange<float>(0.02f, 4.0f, 0.0f, 0.5f),    0.8f)); // Compressed range focusing on lower values
     params.push_back(std::make_unique<juce::AudioParameterFloat>("chorusDepthMs",  "Ch Depth",   juce::NormalisableRange<float>(0.0f,  12.0f, 0.0f, 0.5f),    5.0f)); // modulation amplitude in ms
     params.push_back(std::make_unique<juce::AudioParameterFloat>("chorusFeedback", "Ch Fdbk",    juce::NormalisableRange<float>(0.0f,  0.9f,  0.0f, 1.0f),     0.15f));
     params.push_back(std::make_unique<juce::AudioParameterInt  >("chorusVoices",   "Ch Voices",  2, 8, 4));
@@ -1942,7 +1942,7 @@ void PluginProcessor::setStateInformation (const void* data, int sizeInBytes)
                 auto stepTree = stepsnapshots.getChildWithName("ChorusStep" + juce::String(i));
                 if (stepTree.isValid())
                 {
-                    chorusStepSnapshots[i].chorus.rate = stepTree.getProperty("rate", 1.5f);
+                    chorusStepSnapshots[i].chorus.rate = stepTree.getProperty("rate", 0.8f);
                     chorusStepSnapshots[i].chorus.depth = stepTree.getProperty("depth", 40.0f);
                     chorusStepSnapshots[i].chorus.voices = stepTree.getProperty("voices", 2.0f);
                     chorusStepSnapshots[i].chorus.delayTime = stepTree.getProperty("delayTime", 20.0f);

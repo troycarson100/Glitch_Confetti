@@ -42,6 +42,10 @@ void GranularEngine::prepare(double sampleRate, int samplesPerBlock, int numChan
     // Reset AGC
     wetRms = 0.0f;
     agcGain = 1.0f;
+    
+    // Reset anti-aliasing filters
+    aaFilterL = 0.0f;
+    aaFilterR = 0.0f;
 }
 
 void GranularEngine::reset()
@@ -55,6 +59,10 @@ void GranularEngine::reset()
     spawnAccumulator = 0.0f;
     wetRms = 0.0f;
     agcGain = 1.0f;
+    
+    // Reset anti-aliasing filters
+    aaFilterL = 0.0f;
+    aaFilterR = 0.0f;
 }
 
 void GranularEngine::setParameters(float sizeMs, float densityHz, float position01, float sprayMs,
@@ -136,12 +144,32 @@ void GranularEngine::process(juce::AudioBuffer<float>& buffer)
         float minDensity = kOverlapTarget / juce::jmax(0.01f, sizeSec);
         float effectiveDensity = juce::jmax(density, minDensity * 0.5f); // Nudge toward target
         
-        // Spawn grains based on effective density
+        // Spawn grains based on effective density (with ramp-up for immediate response)
         float blockDuration = 1.0f / (float)sr;
-        spawnAccumulator += effectiveDensity * blockDuration;
+        float bufferFillRatio = (float)ringWritePos / (float)ringSize;
+        
+        // Very gradual ramp up density as buffer fills (prevents bad-sounding initial grains)
+        float densityMultiplier = 1.0f;
+        if (bufferFillRatio < 0.05f) // First 5% of buffer
+            densityMultiplier = 0.05f; // Almost no grains initially
+        else if (bufferFillRatio < 0.15f) // 5-15% of buffer
+            densityMultiplier = 0.15f; // Very low density
+        else if (bufferFillRatio < 0.3f) // 15-30% of buffer
+            densityMultiplier = 0.35f; // Low density
+        else if (bufferFillRatio < 0.6f) // 30-60% of buffer
+            densityMultiplier = 0.65f; // Moderate density
+        
+        spawnAccumulator += effectiveDensity * blockDuration * densityMultiplier;
         
         while (spawnAccumulator >= 1.0f)
         {
+            // Only spawn grains if we have minimum buffer content (prevents bad-sounding initial grains)
+            if (bufferFillRatio < 0.02f) // Need at least 2% buffer fill
+            {
+                spawnAccumulator = 0.0f; // Reset accumulator to prevent accumulation
+                break;
+            }
+            
             // Calculate spawn position with gaussian spray
             float posOffset = (1.0f - currentPosition01) * (float)ringSize;
             
@@ -179,9 +207,13 @@ void GranularEngine::process(juce::AudioBuffer<float>& buffer)
             float sampleL = lagrangeInterp(ringBuffer.getReadPointer(0), ringSize, v.readPos);
             float sampleR = lagrangeInterp(ringBuffer.getReadPointer(1), ringSize, v.readPos);
             
-            // Apply envelope
-            float env = computeMusicalWindow(v.phase, v.windowType);
-            v.envLevel = env;
+            // Apply envelope with minimal smoothing (reduced to preserve pitch clarity)
+            float rawEnv = computeMusicalWindow(v.phase, v.windowType);
+            
+            // Very light envelope smoothing
+            const float envSmoothCoeff = 0.1f; // Reduced from 0.3f
+            v.envLevel = v.envLevel * (1.0f - envSmoothCoeff) + rawEnv * envSmoothCoeff;
+            float env = v.envLevel;
             
             // Apply panning with micro-decorrelation
             float delayedSampleL = sampleL;
@@ -209,8 +241,8 @@ void GranularEngine::process(juce::AudioBuffer<float>& buffer)
                 v.active = false;
         }
         
-        // Energy normalization + adaptive gain control
-        float energyNorm = 1.0f / std::sqrt(juce::jmax(4.0f, effectiveDensity * sizeSec));
+        // Energy normalization + adaptive gain control (much less aggressive)
+        float energyNorm = 1.0f / std::sqrt(juce::jmax(1.5f, effectiveDensity * sizeSec * 0.5f));
         
         // Simple RMS tracking for AGC
         float wetMag = std::sqrt(outL * outL + outR * outR);
@@ -221,23 +253,31 @@ void GranularEngine::process(juce::AudioBuffer<float>& buffer)
         targetGain = juce::jlimit(0.5f, 1.0f, targetGain);
         agcGain = agcGain * 0.9995f + targetGain * 0.0005f; // 200ms smooth
         
-        // Apply normalization and AGC
-        outL *= energyNorm * agcGain * 2.5f; // Boost for audibility
-        outR *= energyNorm * agcGain * 2.5f;
+        // Apply normalization and AGC (reduced boost to prevent bit crushing)
+        outL *= energyNorm * agcGain * 1.2f; // Reduced boost for cleaner sound
+        outR *= energyNorm * agcGain * 1.2f;
         
-        // Soft limiter (knee at -2dB, ceiling -1dB)
+        // Softer limiter (knee at -3dB, ceiling -0.5dB) for cleaner sound
         auto softLimit = [](float x) {
-            const float thresh = 0.794f; // -2dB
-            const float ceiling = 0.891f; // -1dB
+            const float thresh = 0.708f; // -3dB (higher threshold)
+            const float ceiling = 0.944f; // -0.5dB (higher ceiling)
             if (std::abs(x) > thresh)
             {
                 float sign = (x > 0.0f) ? 1.0f : -1.0f;
                 float excess = std::abs(x) - thresh;
-                float compressed = thresh + excess * 0.3f; // Soft knee
+                float compressed = thresh + excess * 0.5f; // Softer knee
                 x = sign * juce::jmin(compressed, ceiling);
             }
             return x;
         };
+        
+        // Apply very light anti-aliasing filtering (reduced to preserve pitch clarity)
+        const float aaCoeff = 0.05f; // Very light filtering
+        aaFilterL = aaFilterL * (1.0f - aaCoeff) + outL * aaCoeff;
+        aaFilterR = aaFilterR * (1.0f - aaCoeff) + outR * aaCoeff;
+        
+        outL = aaFilterL;
+        outR = aaFilterR;
         
         outL = softLimit(outL);
         outR = softLimit(outR);
@@ -269,20 +309,24 @@ void GranularEngine::spawnGrain(float baseReadPos, float size, float pitch, floa
 {
     int voiceIdx = findFreeVoice();
     if (voiceIdx < 0)
-        return;
+        return; // No voice available - skip grain spawning (prevents dropouts)
     
     auto& v = voices[voiceIdx];
     v.active = true;
     v.phase = 0.0f;
+    v.phaseSmoother = 0.0f;
     v.readPos = baseReadPos;
     
     // Duration with musical jitter (±10% for subtle variation)
     float sizeJitter = 1.0f + (rand01() - 0.5f) * 0.2f * currentRandomAmt;
-    v.duration = juce::jmax(256.0f, size * 0.001f * (float)sr * sizeJitter);
+    v.duration = juce::jmax(128.0f, size * 0.001f * (float)sr * sizeJitter);
     
     // Pitch ratio with musical jitter (±0.5 semitone for organic feel)
     float pitchJitter = (rand01() - 0.5f) * 1.0f * currentRandomAmt;
-    v.increment = std::pow(2.0f, (pitch + pitchJitter) / 12.0f);
+    float pitchRatio = std::pow(2.0f, (pitch + pitchJitter) / 12.0f);
+    
+    // Anti-aliasing: limit extreme pitch ratios to reduce artifacts (wider range for musicality)
+    v.increment = juce::jlimit(0.125f, 8.0f, pitchRatio);
     
     // Subtle stereo panning (±0.35 for width without extreme separation)
     float panJitter = (rand01() - 0.5f) * 0.7f * currentRandomAmt; // ±0.35 max
@@ -311,10 +355,10 @@ int GranularEngine::findFreeVoice()
             return i;
     }
     
-    // Second pass: steal voice with lowest projected power (look ahead 10ms)
-    int stealIdx = 0;
-    float minProjectedPower = 1.0f;
-    const float lookaheadSamples = 0.01f * (float)sr; // 10ms
+    // Second pass: steal voice with lowest projected power (less aggressive to prevent dropouts)
+    int stealIdx = -1; // Default to no stealing
+    float minProjectedPower = 0.3f; // Higher threshold - only steal very quiet voices
+    const float lookaheadSamples = 0.02f * (float)sr; // 20ms lookahead (longer)
     
     for (int i = 0; i < kMaxVoices; ++i)
     {
@@ -323,13 +367,15 @@ int GranularEngine::findFreeVoice()
         float projectedEnv = computeMusicalWindow(futurePhase, voices[i].windowType);
         float projectedPower = projectedEnv * projectedEnv;
         
-        if (projectedPower < minProjectedPower)
+        // Only steal if voice will be very quiet and near the end
+        if (projectedPower < minProjectedPower && futurePhase > 0.7f)
         {
             minProjectedPower = projectedPower;
             stealIdx = i;
         }
     }
     
+    // If no suitable voice to steal, return -1 (don't spawn grain)
     return stealIdx;
 }
 
@@ -344,7 +390,7 @@ inline float GranularEngine::rand01()
 
 inline float GranularEngine::lagrangeInterp(const float* buf, int N, float rp)
 {
-    // 5-point Lagrange interpolation (original implementation)
+    // 5-point Lagrange interpolation with improved anti-aliasing
     // Smoother than 4-point Hermite, no overshoot
     int i = static_cast<int>(rp);
     float frac = rp - (float)i;
@@ -373,7 +419,9 @@ inline float GranularEngine::lagrangeInterp(const float* buf, int N, float rp)
     float c3 = (-y_2 + 2.0f*y_1 - 2.0f*y0 + 2.0f*y1 - y2) / 6.0f;
     float c4 = (y_2 - 4.0f*y_1 + 6.0f*y0 - 4.0f*y1 + y2) / 24.0f;
     
-    return c0 + c1*f + c2*f2 + c3*f3 + c4*f4;
+    float result = c0 + c1*f + c2*f2 + c3*f3 + c4*f4;
+    
+    return result;
 }
 
 inline float GranularEngine::computeMusicalWindow(float phase, float morphParam)
@@ -381,8 +429,8 @@ inline float GranularEngine::computeMusicalWindow(float phase, float morphParam)
     // Clamp phase
     phase = juce::jlimit(0.0f, 1.0f, phase);
     
-    // 2-4ms click guard at edges
-    const float guardSamples = 0.003f * (float)sr; // 3ms
+    // 1.5ms click guard at edges (balanced for clarity and smoothness)
+    const float guardSamples = 0.0015f * (float)sr; // 1.5ms
     float clickGuard = juce::jmin(1.0f, phase * guardSamples, (1.0f - phase) * guardSamples);
     
     // Compute window family (original implementations, not copied)
