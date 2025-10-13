@@ -567,6 +567,8 @@ public:
     std::array<std::unique_ptr<juce::Label>, 6> slicerKnobLabels;
     std::array<std::unique_ptr<juce::Label>, 6> slicerValueLabels;
     std::array<std::unique_ptr<IndicatorBar>, 6> slicerIndicatorBars;
+    std::array<std::unique_ptr<LockButton>, 6> slicerLockButtons;
+    std::array<bool, 6> slicerKnobLocked { false, false, false, false, false, false };
     
     // Slicer effects area
     std::unique_ptr<juce::Label> slicerEffectsTitle;

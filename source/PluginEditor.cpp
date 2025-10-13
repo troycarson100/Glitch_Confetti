@@ -175,10 +175,13 @@ PluginEditor::PluginEditor (PluginProcessor& p)
         // processorRef.setDubDelaySequencerEnabled(dubdelayStepAreaEnabled);
         DBG("[UI] Initial Slicer sequencer state synced: enabled=" + juce::String(slicerStepAreaEnabled ? 1 : 0));
         
-        // Initialize Slicer step power button state
-        if (slicerStepPowerButton) {
-            slicerStepPowerButton->setToggleState(true, juce::dontSendNotification);
-            slicerStepAreaEnabled = true;
+        // Initialize Slicer step power button state from processor
+        {
+            const bool enabled = processorRef.getSlicerSeqState().enabled.load();
+            slicerStepAreaEnabled = enabled;
+            if (slicerStepPowerButton) {
+                slicerStepPowerButton->setToggleState(enabled, juce::dontSendNotification);
+            }
         }
         
         // Initialize Slicer FX power button state - start enabled
@@ -513,8 +516,23 @@ void PluginEditor::paint (juce::Graphics& g)
             break;
             
         case EffectID::Slicer:
-            // No lock buttons for Rhythm Gate (real-time effect without per-step snapshots)
-            // But draw LED strip visualization
+            // Draw lock buttons for slicer knobs (6 knobs)
+            for (int i = 0; i < 6; ++i)
+            {
+                if (slicerLockButtons[i] != nullptr)
+                {
+                    auto b = slicerLockButtons[i]->getBounds().toFloat();
+                    if (slicerKnobLocked[i]) {
+                        if (assets.lockedIcon != nullptr)
+                            assets.lockedIcon->drawWithin(g, b, juce::RectanglePlacement::centred, 1.0f);
+                    } else {
+                        if (assets.unlockedIcon != nullptr)
+                            assets.unlockedIcon->drawWithin(g, b, juce::RectanglePlacement::centred, 1.0f);
+                    }
+                }
+            }
+            
+            // Draw LED strip visualization
             {
                 auto* patternParam = processorRef.getAPVTS().getRawParameterValue("slicerPattern");
                 int patternIdx = patternParam ? static_cast<int>(patternParam->load()) : 0;
@@ -2254,6 +2272,9 @@ void PluginEditor::setupKnobs()
                 if (effectSelector2) effectSelector2->setSelectedId(static_cast<int>(router.getEffectInSlot(SlotID::Slot2)) + 1, juce::dontSendNotification);
                 if (effectSelector3) effectSelector3->setSelectedId(static_cast<int>(router.getEffectInSlot(SlotID::Slot3)) + 1, juce::dontSendNotification);
                 if (effectSelector4) effectSelector4->setSelectedId(static_cast<int>(router.getEffectInSlot(SlotID::Slot4)) + 1, juce::dontSendNotification);
+                
+                // Refresh UI to show correct effect controls for current page
+                showPage(currentPage);
                 repaint();
             }
             else
@@ -2312,6 +2333,9 @@ void PluginEditor::setupKnobs()
                         if (effectSelector2) effectSelector2->setSelectedId(static_cast<int>(router.getEffectInSlot(SlotID::Slot2)) + 1, juce::dontSendNotification);
                         if (effectSelector3) effectSelector3->setSelectedId(static_cast<int>(router.getEffectInSlot(SlotID::Slot3)) + 1, juce::dontSendNotification);
                         if (effectSelector4) effectSelector4->setSelectedId(static_cast<int>(router.getEffectInSlot(SlotID::Slot4)) + 1, juce::dontSendNotification);
+                        
+                        // Refresh UI to show correct effect controls for current page
+                        showPage(currentPage);
                         
                         // Refresh tab backgrounds to show correct effect icons
                         repaint();
@@ -4060,20 +4084,20 @@ void PluginEditor::showPage(FxPageID id)
             setVisibleVec(slicerGroup, true);
             DBG("[ROUTER] Showing Slicer UI for slot " << slotIndex);
             
-            // Restore UI state from APVTS parameters
+            // Restore UI state from processor/APVTS parameters
             {
                 auto* fxEnabledParam = processorRef.getAPVTS().getRawParameterValue("slicerEnabled");
                 slicerFxAreaEnabled = fxEnabledParam ? (fxEnabledParam->load() > 0.5f) : true;
                 if (slicerFxPowerButton) {
                     slicerFxPowerButton->setToggleState(slicerFxAreaEnabled, juce::dontSendNotification);
                 }
-                
-                // Step power is always on (no APVTS param for it)
-                slicerStepAreaEnabled = true;
+
+                // Step power reflects processor sequencer enabled state
+                slicerStepAreaEnabled = processorRef.getSlicerSeqState().enabled.load();
                 if (slicerStepPowerButton) {
-                    slicerStepPowerButton->setToggleState(true, juce::dontSendNotification);
+                    slicerStepPowerButton->setToggleState(slicerStepAreaEnabled, juce::dontSendNotification);
                 }
-                
+
                 updateSlicerFxAreaVisibility();
                 updateSlicerStepAreaVisibility();
             }
@@ -8198,6 +8222,33 @@ void PluginEditor::setupSlicerKnobs()
         slicerIndicatorBars[i]->setVisible(false);
         slicerIndicatorBars[i]->setBounds(x + 10, y + knobSize + 8, knobSize - 20, 13);
         slicerIndicatorBars[i]->setValue(0.5f);
+        
+        // Create lock button
+        slicerLockButtons[i] = std::make_unique<LockButton>();
+        addAndMakeVisible(slicerLockButtons[i].get());
+        slicerLockButtons[i]->setVisible(false);
+        
+        // Position lock button at end of title text (same as other effects)
+        juce::Font labelFont(12.0f, juce::Font::bold);
+        int textWidth = labelFont.getStringWidth(slicerKnobNames[i]);
+        const int lockSize = 10; // Same size as other effects
+        const int lockSpacing = 5; // Fixed distance from end of title text
+        int lockX = x + (knobSize / 2) + (textWidth / 2) + lockSpacing;
+        int lockY = y - 10; // Same position as other effects
+        slicerLockButtons[i]->setBounds(lockX, lockY, lockSize, lockSize);
+        
+        // Set lock button images
+        if (assets.unlockedIcon && assets.lockedIcon) {
+            auto imgUnlocked = assets.unlockedIcon->createCopy();
+            auto imgLocked = assets.lockedIcon->createCopy();
+            slicerLockButtons[i]->setImages(std::move(imgUnlocked), std::move(imgLocked));
+        }
+        
+        // Add click handler
+        slicerLockButtons[i]->onClick = [this, i]() {
+            slicerKnobLocked[i] = slicerLockButtons[i]->getToggleState();
+            DBG("[UI] Slicer knob " << i << " locked: " << (slicerKnobLocked[i] ? "YES" : "NO"));
+        };
     }
 
     // Slicer division is always tempo-synced (no sync toggle needed)
@@ -8222,6 +8273,7 @@ void PluginEditor::setupSlicerKnobs()
         slicerGroup.push_back(slicerKnobLabels[i].get());
         slicerGroup.push_back(slicerValueLabels[i].get());
         slicerGroup.push_back(slicerIndicatorBars[i].get());
+        slicerGroup.push_back(slicerLockButtons[i].get());
     }
     
     DBG("[UI] Slicer knobs setup complete");
@@ -8313,6 +8365,7 @@ void PluginEditor::updateSlicerFxAreaVisibility()
         if (slicerKnobLabels[i]) slicerKnobLabels[i]->setAlpha(alpha);
         if (slicerValueLabels[i]) slicerValueLabels[i]->setAlpha(alpha);
         if (slicerIndicatorBars[i]) slicerIndicatorBars[i]->setAlpha(alpha);
+        if (slicerLockButtons[i]) slicerLockButtons[i]->setAlpha(alpha);
     }
     
     // Slicer division is always tempo-synced (no sync toggle)

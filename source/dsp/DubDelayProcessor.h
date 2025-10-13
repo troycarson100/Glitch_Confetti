@@ -44,6 +44,10 @@ private:
     juce::SmoothedValue<float> regenDampSmooth;
     juce::SmoothedValue<float> mixSmooth;
     
+    // Additional smoothing for delay samples to prevent read position jumps
+    juce::SmoothedValue<float> delaySampsSmoothL;
+    juce::SmoothedValue<float> delaySampsSmoothR;
+    
     // Crossfade state for big time jumps
     bool isCrossfading = false;
     int crossfadeSamplesRemaining = 0;

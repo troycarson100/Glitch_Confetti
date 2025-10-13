@@ -24,6 +24,7 @@ void RhythmGateEngine::reset()
     releaseSm.setCurrentAndTargetValue(20.0f);  // Release 5-80ms, default 20ms
     offsetSm.setCurrentAndTargetValue(0.5f);    // Offset 0..1, default 0.5 (center)
     mixSm.setCurrentAndTargetValue(0.75f);      // Mix 0..1, default 0.75
+    divisionSm.setCurrentAndTargetValue(2.0f);  // Division 0-8, default 2 (1 bar)
     
     envSlewL.reset(0.0f);
     envSlewR.reset(0.0f);
@@ -32,7 +33,7 @@ void RhythmGateEngine::reset()
     buildEnvelopeFromPattern(0);
 }
 
-void RhythmGateEngine::setTempoInfo(bool playing, double bpm_, double ppq, int tsNum_)
+void RhythmGateEngine::setTempoInfo(bool playing, double bpm_, double ppq, int tsNum_, int tsDen_)
 {
     // Detect play edge and reset phase for consistent start
     if (playing && !wasPlaying) {
@@ -46,6 +47,7 @@ void RhythmGateEngine::setTempoInfo(bool playing, double bpm_, double ppq, int t
     bpm = std::max(20.0, std::min(999.0, bpm_));
     ppqPos = ppq;
     tsNum = tsNum_;
+    tsDen = tsDen_ > 0 ? tsDen_ : 4;
 }
 
 void RhythmGateEngine::setParameters(int patternIdx, float divisionVal, float offset01, float shape01,
@@ -57,7 +59,7 @@ void RhythmGateEngine::setParameters(int patternIdx, float divisionVal, float of
     }
     
     sync = syncOn;
-    divisionValue = std::clamp(divisionVal, 0.0f, 8.0f); // Continuous 0-8 range
+    divisionSm.setTargetValue(std::clamp(divisionVal, 0.0f, 8.0f)); // Smooth division changes
     gridIndex = std::clamp(gridIdx, 0, 2); // 0=straight, 1=dotted, 2=triplet
     
     // Convert Shape from 0..1 UI to -1..+1 bipolar (0.5 = 0)
@@ -92,27 +94,41 @@ void RhythmGateEngine::process(juce::AudioBuffer<float>& buffer)
     const float releaseValue = releaseSm.getCurrentValue();
     const float offsetValue = offsetSm.getCurrentValue();
     const float mixValue = mixSm.getCurrentValue();
+    const float divisionValue = divisionSm.getCurrentValue(); // Smooth division changes
     const float attackMs = std::min(releaseValue, 5.0f); // Attack capped at 5ms
     
-    // Compute beats per cycle based on division and grid (always tempo-synced)
-    // Array order: slowest to fastest (4 bars → 1/64 note)
-    // Knob at 0 (divisionValue=0) = 4 bars (slowest), knob at 8 (divisionValue=8) = 1/64 note (fastest)
-    static const double kDivBeats[] = {4.0, 2.0, 1.0, 0.5, 0.25, 0.125, 0.0625, 0.03125, 0.015625};
-    int divIdx = std::clamp(static_cast<int>(std::round(divisionValue)), 0, 8);
-    double divBeats = kDivBeats[divIdx];
+    // BAR-based division mapping (UI labels are bar fractions)
+    // UI: { "4", "2", "1", "1/2", "1/4", "1/8", "1/16", "1/32", "1/64" }
+    // Values: { 4.0, 2.0, 1.0, 0.5, 0.25, 0.125, 0.0625, 0.03125, 0.015625 } bars
+    // Note values in beats (not bar fractions)
+    // UI labels: "4", "2", "1", "1/2", "1/4", "1/8", "1/16", "1/32", "1/64"
+    static const double kDivBars[] = {4.0, 2.0, 1.0, 0.5, 0.25, 0.125, 0.0625, 0.03125, 0.015625};
+    static const char* kDivLabels[] = {"4","2","1","1/2","1/4","1/8","1/16","1/32","1/64"};
+    const int divIdx = std::clamp(static_cast<int>(std::round(divisionValue)), 0, 8);
     
-    // Grid multiplier: straight=1.0, dotted=1.5, triplet=2/3
+    // Grid multiplier: apply to PERIOD (duration)
     static const double kGridMult[] = {1.0, 1.5, 2.0/3.0};
-    double gridMult = kGridMult[std::clamp(gridIndex, 0, 2)];
+    const int safeGridIdx = std::clamp(gridIndex, 0, 2);
+    const double gridMult = kGridMult[safeGridIdx];
+    const char* gridLabel = (safeGridIdx == 0 ? "Straight" : (safeGridIdx == 1 ? "Dotted" : "Triplet"));
     
-    double beatsPerCycle = divBeats * gridMult;
+    // BPM and time signature guards
+    double bpmSafe = bpm;
+    if (!(bpmSafe > 0.0)) bpmSafe = 120.0;
+    bpmSafe = std::clamp(bpmSafe, 20.0, 300.0);
     
-    const double phaseIncPerSample = (bpm > 0.0) 
-        ? (1.0 / (beatsPerCycle * (60.0 / bpm) * sampleRate))
-        : (1.0 / (beatsPerCycle * 2.0 * sampleRate));
+    // Time signature numerator (beats per bar)
+    const int tsNumSafe = (tsNum > 0) ? tsNum : 4;
     
-    // PPQ increment per sample (for beat-locked mode)
-    const double ppqIncPerSample = (bpm > 0.0) ? ((bpm / 60.0) / sampleRate) : 0.0;
+    // Convert BARs → BEATs using time signature
+    const double barsPerCycle = kDivBars[divIdx];
+    const double beatsPerCycle = barsPerCycle * tsNumSafe;
+    const double periodSec = (beatsPerCycle * gridMult) * (60.0 / bpmSafe);
+    
+    const double phaseIncPerSample = (periodSec > 0.0) ? (1.0 / (periodSec * sampleRate)) : 0.0;
+    
+    // PPQ increment per sample (for beat-locked mode), PPQ is in quarter notes (beats)
+    const double ppqIncPerSample = (bpmSafe > 0.0) ? ((bpmSafe / 60.0) / sampleRate) : 0.0;
     
     // Process each sample
     for (int i = 0; i < numSamples; ++i)
@@ -120,7 +136,7 @@ void RhythmGateEngine::process(juce::AudioBuffer<float>& buffer)
         // Compute phase (0..1 within cycle)
         double phase = 0.0;
         
-        if (sync && isPlaying && bpm > 0.0) {
+        if (sync && isPlaying && bpmSafe > 0.0) {
             // Beat-locked: use PPQ position from host + sample offset
             double currentPpq = ppqPos + (i * ppqIncPerSample);
             double beatInCycle = std::fmod(currentPpq, beatsPerCycle);
@@ -136,7 +152,7 @@ void RhythmGateEngine::process(juce::AudioBuffer<float>& buffer)
         phase = std::fmod(phase + static_cast<double>(offsetValue), 1.0);
         if (phase < 0.0) phase += 1.0;
         
-        // Evaluate raw envelope at current phase
+        // Evaluate raw envelope at current phase (cycle = note duration)
         float rawEnvL = evalEnvelope(static_cast<float>(phase), shapeValue);
         
         // Stereo micro-offset (±0.25ms at |offsetBP| > 0.2)
@@ -158,6 +174,7 @@ void RhythmGateEngine::process(juce::AudioBuffer<float>& buffer)
         releaseSm.skip(1);
         offsetSm.skip(1);
         mixSm.skip(1);
+        divisionSm.skip(1);
         
         // Store dry
         float dryL = L[i];
@@ -170,6 +187,17 @@ void RhythmGateEngine::process(juce::AudioBuffer<float>& buffer)
         // Wet/dry mix
         L[i] = dryL * (1.0f - mixValue) + wetL * mixValue;
         R[i] = dryR * (1.0f - mixValue) + wetR * mixValue;
+    }
+
+    // Debug (throttled): bars→beats validation
+    static int slicerDbgCounter = 0;
+    if ((slicerDbgCounter++ % 500) == 0) {
+        const char* divLabel = kDivLabels[divIdx];
+        DBG("SLICER DEBUG: div=" << divLabel << " bars=" << juce::String(barsPerCycle, 3) 
+            << " ts=" << tsNumSafe << " beats=" << juce::String(beatsPerCycle, 3)
+            << " bpm=" << juce::String(bpmSafe, 1) << " periodSec=" << juce::String(periodSec, 6)
+            << " sync=" << (sync ? "ON" : "OFF") << " playing=" << (isPlaying ? "YES" : "NO")
+            << " ppqPos=" << juce::String(ppqPos, 3));
     }
 }
 

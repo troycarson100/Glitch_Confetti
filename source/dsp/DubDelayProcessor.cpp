@@ -22,13 +22,17 @@ void DubDelayProcessor::prepare(double sampleRate, int maxBlockSize)
     writePos = 0;
     
     // Initialize smoothed parameters (100ms ramp time for time to prevent scratchy sounds)
-    timeMsSmooth.reset(sampleRate, 0.100); // Longer ramp for smooth time changes
+    timeMsSmooth.reset(sampleRate, 0.300); // Much longer ramp for smooth time changes (300ms)
     feedbackSmooth.reset(sampleRate, 0.015);
     toneCutoffSmooth.reset(sampleRate, 0.015);
     driveSmooth.reset(sampleRate, 0.015);
     wowFlutterSmooth.reset(sampleRate, 0.015);
     regenDampSmooth.reset(sampleRate, 0.015);
     mixSmooth.reset(sampleRate, 0.015);
+    
+    // More aggressive smoothing for delay samples to prevent read position jumps
+    delaySampsSmoothL.reset(sampleRate, 0.200); // 200ms smoothing for read position
+    delaySampsSmoothR.reset(sampleRate, 0.200); // 200ms smoothing for read position
     
     // Set initial values
     timeMsSmooth.setCurrentAndTargetValue(450.0f);
@@ -38,6 +42,10 @@ void DubDelayProcessor::prepare(double sampleRate, int maxBlockSize)
     wowFlutterSmooth.setCurrentAndTargetValue(0.35f);
     regenDampSmooth.setCurrentAndTargetValue(0.25f);
     mixSmooth.setCurrentAndTargetValue(0.35f);
+    
+    // Initialize delay samples smoothers (faster smoothing for read position)
+    delaySampsSmoothL.setCurrentAndTargetValue(450.0f * static_cast<float>(sampleRate) * 0.001f);
+    delaySampsSmoothR.setCurrentAndTargetValue(450.0f * static_cast<float>(sampleRate) * 0.001f);
     
     // Prepare filters
     hpfL.setCutoff(40.0f, sampleRate);  // Fixed 40 Hz HPF in feedback path
@@ -175,10 +183,27 @@ void DubDelayProcessor::process(juce::AudioBuffer<float>& buffer, int numSamples
         const float modR = wfDepth * maxModMs * (0.7f * wowLFO + 0.2f * randomWalkSmooth + 0.1f * flutterR);
         
         // Calculate delay time in samples with modulation
-        const float delaySampsL = juce::jlimit(1.0f, static_cast<float>(bufferMask), 
-                                                 (timeMs + modL) * static_cast<float>(sr) * 0.001f);
-        const float delaySampsR = juce::jlimit(1.0f, static_cast<float>(bufferMask), 
-                                                 (timeMs + modR) * static_cast<float>(sr) * 0.001f);
+        // For ping-pong: offset the channels to create stereo effect
+        float timeL = timeMs + modL;
+        float timeR = timeMs + modR;
+        
+        if (pingPongEnabled) {
+            // Add stereo offset for ping-pong effect (25% of delay time)
+            const float stereoOffset = timeMs * 0.25f;
+            timeL += stereoOffset;
+            timeR -= stereoOffset;
+        }
+        
+        const float targetDelaySampsL = juce::jlimit(1.0f, static_cast<float>(bufferMask), 
+                                                      timeL * static_cast<float>(sr) * 0.001f);
+        const float targetDelaySampsR = juce::jlimit(1.0f, static_cast<float>(bufferMask), 
+                                                      timeR * static_cast<float>(sr) * 0.001f);
+        
+        // Smooth the delay samples to prevent read position jumps
+        delaySampsSmoothL.setTargetValue(targetDelaySampsL);
+        delaySampsSmoothR.setTargetValue(targetDelaySampsR);
+        const float delaySampsL = delaySampsSmoothL.getNextValue();
+        const float delaySampsR = delaySampsSmoothR.getNextValue();
         
         // Read from delay lines with fractional interpolation
         const float readPosL = static_cast<float>(writePos) - delaySampsL;

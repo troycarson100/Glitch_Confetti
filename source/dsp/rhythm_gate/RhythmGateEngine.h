@@ -16,7 +16,15 @@ struct SlewFilter {
     
     inline float process(float target, float attackMs, float releaseMs, double sr) {
         const float aA = std::exp(-1.f / (float)((attackMs * 0.001) * sr));
-        const float aR = std::exp(-1.f / (float)((releaseMs * 0.001) * sr));
+        
+        // Make release more prominent by applying a curve that emphasizes longer releases
+        float enhancedReleaseMs = releaseMs;
+        if (releaseMs > 20.0f) {
+            // Apply exponential scaling for releases > 20ms to make them more prominent
+            enhancedReleaseMs = 20.0f + (releaseMs - 20.0f) * 2.5f;
+        }
+        
+        const float aR = std::exp(-1.f / (float)((enhancedReleaseMs * 0.001) * sr));
         float a = (target > z) ? aA : aR;
         z = target - (target - z) * a;
         return z;
@@ -28,7 +36,7 @@ struct RhythmGateEngine
     void prepare(double sr, int maxBlock, int numCh);
     void reset();
 
-    void setTempoInfo(bool playing, double bpm, double ppq, int tsNum);
+    void setTempoInfo(bool playing, double bpm, double ppq, int tsNum, int tsDen);
     void setParameters(int patternIdx, float divisionValue, float offset01, float shape01,
                        float releaseMs, float mix01, bool syncOn, int gridIdx = 0);
 
@@ -41,6 +49,7 @@ private:
     bool   wasPlaying = false; // For play edge detection
     double bpm = 120.0, ppqPos = 0.0;
     int    tsNum = 4;
+    int    tsDen = 4;
     float  divisionValue = 5.0f; // Continuous 0-8 (quantized to int in sync mode, smooth in free mode)
     int    gridIndex = 0; // 0=straight, 1=dotted, 2=triplet
     int    patternIndex = 0;
@@ -51,7 +60,7 @@ private:
     double lastPpqPos = -1.0;
 
     // Smoothing
-    juce::SmoothedValue<float> shapeSm, releaseSm, offsetSm, mixSm;
+    juce::SmoothedValue<float> shapeSm, releaseSm, offsetSm, mixSm, divisionSm;
     
     // Envelope slew filter (per-channel for stereo micro-offset)
     SlewFilter envSlewL, envSlewR;
@@ -86,14 +95,15 @@ private:
     void buildEnvelopeFromPattern(int patternIdx);
     
     // Patterns (16 steps, 0..1 per step) - convert to envelope nodes
-    static constexpr float P_STRAIGHT_8TH[16]   = {1,0,1,0, 1,0,1,0, 1,0,1,0, 1,0,1,0};
-    static constexpr float P_OFFBEAT[16]        = {0,1,0,1, 0,1,0,1, 0,1,0,1, 0,1,0,1};
-    static constexpr float P_HALF_TIME[16]      = {1,1,0,0, 1,1,0,0, 1,1,0,0, 1,1,0,0};
-    static constexpr float P_SYNCOP[16]         = {1,0,1,1, 0,1,0,1, 1,0,1,1, 0,1,0,1};
-    static constexpr float P_TRIPLET_12[16]     = {1,0,0,1, 0,0,1,0, 0,1,0,0, 1,0,0,1};
-    static constexpr float P_BUILD[16]          = {0,0,0,0, 0,0,1,0, 0,1,0,1, 1,1,1,1};
-    static constexpr float P_CHOKE_16[16]       = {1,0,0,0, 1,0,0,0, 1,0,0,0, 1,0,0,0};
-    static constexpr float P_GALLOP[16]         = {1,0,1,0, 0,1,0,1, 1,0,1,0, 0,1,0,1};
+    static constexpr float P_STRAIGHT[16]       = {1,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0}; // 1 chop per bar
+    static constexpr float P_STRAIGHT_8TH[16]   = {1,0,1,0, 1,0,1,0, 1,0,1,0, 1,0,1,0}; // 8 chops per bar
+    static constexpr float P_OFFBEAT[16]        = {0,1,0,0, 0,1,0,0, 0,1,0,0, 0,1,0,0}; // 4 chops per bar (slower)
+    static constexpr float P_HALF_TIME[16]      = {1,0,0,0, 1,0,0,0, 1,0,0,0, 1,0,0,0}; // 4 chops per bar (slower)
+    static constexpr float P_SYNCOP[16]         = {1,0,0,1, 0,1,0,0, 1,0,0,1, 0,1,0,0}; // 6 chops per bar (slower)
+    static constexpr float P_TRIPLET_12[16]     = {1,0,0,0, 0,0,1,0, 0,1,0,0, 1,0,0,0}; // 4 chops per bar (slower)
+    static constexpr float P_BUILD[16]          = {0,0,0,0, 0,0,0,0, 0,0,1,0, 1,1,1,0}; // 4 chops per bar (slower)
+    static constexpr float P_CHOKE_16[16]       = {1,0,0,0, 0,0,0,0, 1,0,0,0, 0,0,0,0}; // 2 chops per bar (slower)
+    static constexpr float P_GALLOP[16]         = {1,0,0,0, 0,1,0,0, 1,0,0,0, 0,1,0,0}; // 4 chops per bar (slower)
 
     struct Pattern {
         const char* name;
@@ -101,6 +111,7 @@ private:
     };
     
     static constexpr Pattern patterns[] = {
+        {"Straight", P_STRAIGHT},
         {"Straight 8th", P_STRAIGHT_8TH},
         {"Offbeat", P_OFFBEAT},
         {"Half Time", P_HALF_TIME},
@@ -111,6 +122,6 @@ private:
         {"Gallop", P_GALLOP}
     };
     
-    static constexpr int numPatterns = 8;
+    static constexpr int numPatterns = 9;
 };
 

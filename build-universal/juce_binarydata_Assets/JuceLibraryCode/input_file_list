@@ -15,6 +15,11 @@
 /Users/troycarson/Documents/JUCE Projects/Stepper/assets/ui/Dirt_Background_Tab4.svg
 /Users/troycarson/Documents/JUCE Projects/Stepper/assets/ui/Dirt_Icon.svg
 /Users/troycarson/Documents/JUCE Projects/Stepper/assets/ui/Drive.svg
+/Users/troycarson/Documents/JUCE Projects/Stepper/assets/ui/DubEcho_Background_Tab1.svg
+/Users/troycarson/Documents/JUCE Projects/Stepper/assets/ui/DubEcho_Background_Tab2.svg
+/Users/troycarson/Documents/JUCE Projects/Stepper/assets/ui/DubEcho_Background_Tab3.svg
+/Users/troycarson/Documents/JUCE Projects/Stepper/assets/ui/DubEcho_Background_Tab4.svg
+/Users/troycarson/Documents/JUCE Projects/Stepper/assets/ui/DubEcho_Icon.svg
 /Users/troycarson/Documents/JUCE Projects/Stepper/assets/ui/Effect_Background_Plate.svg
 /Users/troycarson/Documents/JUCE Projects/Stepper/assets/ui/FX_Power_On.svg
 /Users/troycarson/Documents/JUCE Projects/Stepper/assets/ui/FX_Type_Carrot_Active.svg
@@ -26,6 +31,7 @@
 /Users/troycarson/Documents/JUCE Projects/Stepper/assets/ui/Granular_Background_Tab3.svg
 /Users/troycarson/Documents/JUCE Projects/Stepper/assets/ui/Granular_Background_Tab4.svg
 /Users/troycarson/Documents/JUCE Projects/Stepper/assets/ui/Granular_Icon.svg
+/Users/troycarson/Documents/JUCE Projects/Stepper/assets/ui/Group 220.svg
 /Users/troycarson/Documents/JUCE Projects/Stepper/assets/ui/Hall_Icon.svg
 /Users/troycarson/Documents/JUCE Projects/Stepper/assets/ui/High-Cut.svg
 /Users/troycarson/Documents/JUCE Projects/Stepper/assets/ui/Knob_Basic_Dice.svg
@@ -47,15 +53,28 @@
 /Users/troycarson/Documents/JUCE Projects/Stepper/assets/ui/Panner_Background_Tab2.svg
 /Users/troycarson/Documents/JUCE Projects/Stepper/assets/ui/Panner_Background_Tab3.svg
 /Users/troycarson/Documents/JUCE Projects/Stepper/assets/ui/Panner_Background_Tab4.svg
+/Users/troycarson/Documents/JUCE Projects/Stepper/assets/ui/PresetMenu_Background.svg
+/Users/troycarson/Documents/JUCE Projects/Stepper/assets/ui/PresetMenu_Carrot.svg
 /Users/troycarson/Documents/JUCE Projects/Stepper/assets/ui/Reverb1_Background_Tab1.svg
 /Users/troycarson/Documents/JUCE Projects/Stepper/assets/ui/Reverb1_Background_Tab2.svg
 /Users/troycarson/Documents/JUCE Projects/Stepper/assets/ui/Reverb1_Background_Tab3.svg
 /Users/troycarson/Documents/JUCE Projects/Stepper/assets/ui/Reverb1_Background_Tab4.svg
+/Users/troycarson/Documents/JUCE Projects/Stepper/assets/ui/Save_Icon.svg
+/Users/troycarson/Documents/JUCE Projects/Stepper/assets/ui/Slice_Icon.svg
+/Users/troycarson/Documents/JUCE Projects/Stepper/assets/ui/Slicer_Background_Tab1.svg
+/Users/troycarson/Documents/JUCE Projects/Stepper/assets/ui/Slicer_Background_Tab2.svg
+/Users/troycarson/Documents/JUCE Projects/Stepper/assets/ui/Slicer_Background_Tab3.svg
+/Users/troycarson/Documents/JUCE Projects/Stepper/assets/ui/Slicer_Background_Tab4.svg
 /Users/troycarson/Documents/JUCE Projects/Stepper/assets/ui/SpaceDelay_Background_Tab1.svg
 /Users/troycarson/Documents/JUCE Projects/Stepper/assets/ui/SpaceDelay_Background_Tab2.svg
 /Users/troycarson/Documents/JUCE Projects/Stepper/assets/ui/SpaceDelay_Background_Tab3.svg
 /Users/troycarson/Documents/JUCE Projects/Stepper/assets/ui/SpaceDelay_Background_Tab4.svg
 /Users/troycarson/Documents/JUCE Projects/Stepper/assets/ui/Space_Icon.svg
+/Users/troycarson/Documents/JUCE Projects/Stepper/assets/ui/SpectralFilter_Background_Tab1.svg
+/Users/troycarson/Documents/JUCE Projects/Stepper/assets/ui/SpectralFilter_Background_Tab2.svg
+/Users/troycarson/Documents/JUCE Projects/Stepper/assets/ui/SpectralFilter_Background_Tab3.svg
+/Users/troycarson/Documents/JUCE Projects/Stepper/assets/ui/SpectralFilter_Background_Tab4.svg
+/Users/troycarson/Documents/JUCE Projects/Stepper/assets/ui/SpectralFilter_Icon.svg
 /Users/troycarson/Documents/JUCE Projects/Stepper/assets/ui/Step_Active.svg
 /Users/troycarson/Documents/JUCE Projects/Stepper/assets/ui/Step_Background_Plate.svg
 /Users/troycarson/Documents/JUCE Projects/Stepper/assets/ui/Step_Inactive.svg
@@ -68,6 +87,13 @@
 /Users/troycarson/Documents/JUCE Projects/Stepper/assets/ui/Verb_Icon.svg
 /Users/troycarson/Documents/JUCE Projects/Stepper/assets/ui/Wow Depth.svg
 /Users/troycarson/Documents/JUCE Projects/Stepper/assets/ui/Wow Rate.svg
+/Users/troycarson/Documents/JUCE Projects/Stepper/assets/ui/Bass_MenuTab.png
+/Users/troycarson/Documents/JUCE Projects/Stepper/assets/ui/Distort_MenuTab.png
+/Users/troycarson/Documents/JUCE Projects/Stepper/assets/ui/Favorites_MenuTab.png
+/Users/troycarson/Documents/JUCE Projects/Stepper/assets/ui/GuitarSynth_MenuTab.png
+/Users/troycarson/Documents/JUCE Projects/Stepper/assets/ui/Lofi_MenuTab.png
+/Users/troycarson/Documents/JUCE Projects/Stepper/assets/ui/Rhythmic_MenuTab.png
+/Users/troycarson/Documents/JUCE Projects/Stepper/assets/ui/User_MenuTab.png
 /Users/troycarson/Documents/JUCE Projects/Stepper/assets/fonts/Akira Expanded.otf
 /Users/troycarson/Documents/JUCE Projects/Stepper/assets/fonts/AlteHaasGroteskBold.ttf
 /Users/troycarson/Documents/JUCE Projects/Stepper/assets/fonts/AlteHaasGroteskRegular.ttf

@@ -74,7 +74,7 @@ PluginProcessor::PluginProcessor()
     // Initialize Dub Delay step snapshots with defaults
     for (int i = 0; i < 16; ++i) {
         dubdelayStepSnapshots[i].dubdelay.timeMs = 450.0f;
-        dubdelayStepSnapshots[i].dubdelay.feedback = 0.45f;
+        dubdelayStepSnapshots[i].dubdelay.feedback = 0.5625f; // Increased by 25%
         dubdelayStepSnapshots[i].dubdelay.toneHz = 6500.0f;
         dubdelayStepSnapshots[i].dubdelay.drive = 0.15f;
         dubdelayStepSnapshots[i].dubdelay.pingPong = true;
@@ -282,7 +282,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout PluginProcessor::createParam
     params.push_back(std::make_unique<juce::AudioParameterFloat>("dubTimeMs", "Dub Time", 
         juce::NormalisableRange<float>(1.0f, 2000.0f, 0.0f, 0.5f), 450.0f));
     params.push_back(std::make_unique<juce::AudioParameterFloat>("dubFeedback", "Dub Feedback", 
-        juce::NormalisableRange<float>(0.0f, 0.98f, 0.0f, 1.0f), 0.45f));
+        juce::NormalisableRange<float>(0.0f, 0.98f, 0.0f, 1.0f), 0.5625f)); // Increased by 25%
     params.push_back(std::make_unique<juce::AudioParameterFloat>("dubToneHz", "Dub Tone", 
         juce::NormalisableRange<float>(200.0f, 20000.0f, 0.0f, 0.5f), 6500.0f));
     params.push_back(std::make_unique<juce::AudioParameterFloat>("dubDrive", "Dub Drive", 
@@ -1073,6 +1073,13 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                 auto* slicerEnabledParam = valueTreeState.getRawParameterValue("slicerEnabled");
                 bool isSlicerEnabled = slicerEnabledParam ? (slicerEnabledParam->load() > 0.5f) : false;
                 
+                // Debug: Check if slicer is enabled
+                static int slicerEnabledDebugCounter = 0;
+                if ((slicerEnabledDebugCounter++ % 1000) == 0) {
+                    DBG("[SLICER ENABLED CHECK] enabled=" << (isSlicerEnabled ? "YES" : "NO") 
+                        << " param=" << (slicerEnabledParam ? juce::String(slicerEnabledParam->load(), 3) : "NULL"));
+                }
+                
                 if (isSlicerEnabled)
                 {
                     // Check if sequencer is enabled and active
@@ -1096,14 +1103,16 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                     } else {
                         // Read from APVTS (global)
                         auto* patternParam = valueTreeState.getRawParameterValue("slicerPattern");
-                        auto* divisionParam = valueTreeState.getRawParameterValue("slicerDivision");
                         auto* offsetParam = valueTreeState.getRawParameterValue("slicerOffset");
                         auto* shapeParam = valueTreeState.getRawParameterValue("slicerShape");
                         auto* releaseParam = valueTreeState.getRawParameterValue("slicerReleaseMs");
                         auto* mixParam = valueTreeState.getRawParameterValue("slicerMix");
                         
                         patternIdx = patternParam ? static_cast<int>(patternParam->load()) : 0;
-                        divisionValue = divisionParam ? divisionParam->load() : 5.0f; // Keep as float
+                        
+                        // Get division as choice index (not raw float)
+                        auto* divisionChoiceParam = dynamic_cast<juce::AudioParameterChoice*>(valueTreeState.getParameter("slicerDivision"));
+                        divisionValue = divisionChoiceParam ? static_cast<float>(divisionChoiceParam->getIndex()) : 5.0f; // Default to index 5 (1/8)
                         offset01 = offsetParam ? offsetParam->load() : 0.5f;
                         shape01 = shapeParam ? shapeParam->load() : 0.5f;
                         releaseMs = releaseParam ? releaseParam->load() : 20.0f;
@@ -1117,9 +1126,9 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                     auto* gridParam = dynamic_cast<juce::AudioParameterChoice*>(valueTreeState.getParameter("slicerGrid"));
                     int gridIdx = gridParam ? gridParam->getIndex() : 0;
                     
-                    // Update tempo info
+                    // Update tempo info (use full time signature)
                     slicer.setTempoInfo(transportCache.playing.load(), transportCache.bpm.load(), 
-                                       transportCache.ppq.load(), transportCache.tsNum.load());
+                                       transportCache.ppq.load(), transportCache.tsNum.load(), transportCache.tsDen.load());
                     
                     // Set parameters
                     slicer.setParameters(patternIdx, divisionValue, offset01, shape01, 
