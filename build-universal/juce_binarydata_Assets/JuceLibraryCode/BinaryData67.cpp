@@ -9,12 +9,13 @@
 namespace BinaryData
 {
 
-//================== Unlocked.svg ==================
+//================== Save_Icon.svg ==================
 static const unsigned char temp_binary_data_66[] =
-"<svg width=\"55\" height=\"76\" viewBox=\"0 0 55 76\" fill=\"none\" xmlns=\"http://www.w3.org/2000/svg\">\n"
-"<path d=\"M28 0C37.8265 0 46.0752 6.74956 48.3662 15.8652L41.1133 16.0869C39.1235 10.7785 34.0032 7 28 7C20.268 7 14 13.268 14 21V31H51C53.2091 31 55 32.7909 55 35V72C55 74.2091 53.2091 76 51 76H4C1.79086 76 5.23466e-08 74.2091 0 72V35C0 32.7909 1.79"
-"086 31 4 31H7V21C7 9.40202 16.402 0 28 0Z\" fill=\"#E7E7E7\"/>\n"
-"</svg>\n";
+"<svg width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" xmlns=\"http://www.w3.org/2000/svg\">\n"
+"  <path d=\"M17 3H5C3.89 3 3 3.9 3 5V19C3 20.1 3.89 21 5 21H19C20.1 21 21 20.1 21 19V7L17 3ZM19 19H5V5H16.17L19 7.83V19ZM12 12C10.34 12 9 13.34 9 15C9 16.66 10.34 18 12 18C13.66 18 15 16.66 15 15C15 13.34 13.66 12 12 12ZM6 6H15V10H6V6Z\" fill=\"white"
+"\"/>\n"
+"</svg>\n"
+"\n";
 
-const char* Unlocked_svg = (const char*) temp_binary_data_66;
+const char* Save_Icon_svg = (const char*) temp_binary_data_66;
 }

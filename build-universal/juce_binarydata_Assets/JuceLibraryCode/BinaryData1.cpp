@@ -272,7 +272,7 @@ const char* getNamedResource (const char* resourceNameUTF8, int& numBytes)
     switch (hash)
     {
         case 0x163d7b13:  numBytes = 14169; return gui_xml;
-        case 0xc1a2f28f:  numBytes = 3321; return AutoPan_Icon_svg;
+        case 0xc1a2f28f:  numBytes = 7155; return AutoPan_Icon_svg;
         case 0xe214babe:  numBytes = 3904; return Background_Mustard_svg;
         case 0x187f005b:  numBytes = 308; return Button_Step_Top_Active_svg;
         case 0x2759b740:  numBytes = 217; return Button_Step_Top_Inactive_svg;
@@ -288,18 +288,24 @@ const char* getNamedResource (const char* resourceNameUTF8, int& numBytes)
         case 0xce531abd:  numBytes = 5269; return Dirt_Background_Tab4_svg;
         case 0x5f124556:  numBytes = 3153; return Dirt_Icon_svg;
         case 0x25f9d20f:  numBytes = 18163; return Drive_svg;
+        case 0x3923a0a9:  numBytes = 4991; return DubEcho_Background_Tab1_svg;
+        case 0x3931b82a:  numBytes = 5183; return DubEcho_Background_Tab2_svg;
+        case 0x393fcfab:  numBytes = 5248; return DubEcho_Background_Tab3_svg;
+        case 0x394de72c:  numBytes = 5257; return DubEcho_Background_Tab4_svg;
+        case 0xfbfae847:  numBytes = 2710; return DubEcho_Icon_svg;
         case 0xcf336db8:  numBytes = 1235; return Effect_Background_Plate_svg;
         case 0x2d6c2f0b:  numBytes = 1573; return FX_Power_On_svg;
         case 0x1988464f:  numBytes = 203; return FX_Type_Carrot_Active_svg;
         case 0x0b295034:  numBytes = 343; return FX_Type_Carrot_Inactive_svg;
         case 0xa2f2e2ca:  numBytes = 37363; return Feedback_svg;
-        case 0xabd04122:  numBytes = 2036; return Grain_Icon_svg;
+        case 0xabd04122:  numBytes = 6736; return Grain_Icon_svg;
         case 0xb122bf93:  numBytes = 4979; return Granular_Background_Tab1_svg;
         case 0xb130d714:  numBytes = 5169; return Granular_Background_Tab2_svg;
         case 0xb13eee95:  numBytes = 5236; return Granular_Background_Tab3_svg;
         case 0xb14d0616:  numBytes = 5251; return Granular_Background_Tab4_svg;
         case 0x3cf9f79d:  numBytes = 2046; return Granular_Icon_svg;
-        case 0xbbe97ae4:  numBytes = 3819; return Hall_Icon_svg;
+        case 0xdfc815b5:  numBytes = 6736; return Group_220_svg;
+        case 0xbbe97ae4:  numBytes = 4551; return Hall_Icon_svg;
         case 0x93eca6c5:  numBytes = 29926; return HighCut_svg;
         case 0xfba89bc6:  numBytes = 418; return Knob_Basic_Dice_svg;
         case 0xb81a971b:  numBytes = 759; return Knob_Basic_Inside_svg;
@@ -320,15 +326,33 @@ const char* getNamedResource (const char* resourceNameUTF8, int& numBytes)
         case 0x55ab1c92:  numBytes = 5296; return Panner_Background_Tab2_svg;
         case 0x55b93413:  numBytes = 5209; return Panner_Background_Tab3_svg;
         case 0x55c74b94:  numBytes = 5265; return Panner_Background_Tab4_svg;
+        case 0xc55f9954:  numBytes = 199; return PresetMenu_Background_svg;
+        case 0xa78433a9:  numBytes = 204; return PresetMenu_Carrot_svg;
+        case 0xf4d1f0e7:  numBytes = 4958; return Redux_Background_Tab1_svg;
+        case 0xf4e00868:  numBytes = 5186; return Redux_Background_Tab2_svg;
+        case 0xf4ee1fe9:  numBytes = 5220; return Redux_Background_Tab3_svg;
+        case 0xf4fc376a:  numBytes = 5212; return Redux_Background_Tab4_svg;
+        case 0xe05c52c9:  numBytes = 4678; return Redux_Icon_svg;
         case 0x36af5f12:  numBytes = 4946; return Reverb1_Background_Tab1_svg;
         case 0x36bd7693:  numBytes = 5178; return Reverb1_Background_Tab2_svg;
         case 0x36cb8e14:  numBytes = 5215; return Reverb1_Background_Tab3_svg;
         case 0x36d9a595:  numBytes = 5233; return Reverb1_Background_Tab4_svg;
+        case 0x1e77a620:  numBytes = 355; return Save_Icon_svg;
+        case 0xd4bf8deb:  numBytes = 1983; return Slice_Icon_svg;
+        case 0xed12ed53:  numBytes = 4970; return Slicer_Background_Tab1_svg;
+        case 0xed2104d4:  numBytes = 5188; return Slicer_Background_Tab2_svg;
+        case 0xed2f1c55:  numBytes = 5241; return Slicer_Background_Tab3_svg;
+        case 0xed3d33d6:  numBytes = 5235; return Slicer_Background_Tab4_svg;
         case 0x051b93d0:  numBytes = 5003; return SpaceDelay_Background_Tab1_svg;
         case 0x0529ab51:  numBytes = 5192; return SpaceDelay_Background_Tab2_svg;
         case 0x0537c2d2:  numBytes = 5217; return SpaceDelay_Background_Tab3_svg;
         case 0x0545da53:  numBytes = 5245; return SpaceDelay_Background_Tab4_svg;
-        case 0x513e7cf7:  numBytes = 3016; return Space_Icon_svg;
+        case 0x513e7cf7:  numBytes = 5614; return Space_Icon_svg;
+        case 0xfbbe842f:  numBytes = 4982; return SpectralFilter_Background_Tab1_svg;
+        case 0xfbcc9bb0:  numBytes = 5210; return SpectralFilter_Background_Tab2_svg;
+        case 0xfbdab331:  numBytes = 5244; return SpectralFilter_Background_Tab3_svg;
+        case 0xfbe8cab2:  numBytes = 5235; return SpectralFilter_Background_Tab4_svg;
+        case 0x9e8afc81:  numBytes = 4352; return SpectralFilter_Icon_svg;
         case 0x239664fe:  numBytes = 309; return Step_Active_svg;
         case 0x0e90bb5d:  numBytes = 1222; return Step_Background_Plate_svg;
         case 0xca2a7f23:  numBytes = 218; return Step_Inactive_svg;
@@ -341,6 +365,13 @@ const char* getNamedResource (const char* resourceNameUTF8, int& numBytes)
         case 0xd85830be:  numBytes = 4565; return Verb_Icon_svg;
         case 0x90b4bb08:  numBytes = 41683; return Wow_Depth_svg;
         case 0xdd1caa65:  numBytes = 39199; return Wow_Rate_svg;
+        case 0x09e052c0:  numBytes = 571776; return Bass_MenuTab_png;
+        case 0x8c69252c:  numBytes = 315151; return Distort_MenuTab_png;
+        case 0xe1d54df8:  numBytes = 690654; return Favorites_MenuTab_png;
+        case 0x7f223bf3:  numBytes = 294819; return GuitarSynth_MenuTab_png;
+        case 0xfa314ee7:  numBytes = 571765; return Lofi_MenuTab_png;
+        case 0x35f0ce91:  numBytes = 274948; return Rhythmic_MenuTab_png;
+        case 0xd07d35ac:  numBytes = 197682; return User_MenuTab_png;
         case 0x2b192f8c:  numBytes = 26320; return Akira_Expanded_otf;
         case 0x38dbefb2:  numBytes = 144556; return AlteHaasGroteskBold_ttf;
         case 0x156c7e7d:  numBytes = 143896; return AlteHaasGroteskRegular_ttf;
@@ -370,6 +401,11 @@ const char* namedResourceList[] =
     "Dirt_Background_Tab4_svg",
     "Dirt_Icon_svg",
     "Drive_svg",
+    "DubEcho_Background_Tab1_svg",
+    "DubEcho_Background_Tab2_svg",
+    "DubEcho_Background_Tab3_svg",
+    "DubEcho_Background_Tab4_svg",
+    "DubEcho_Icon_svg",
     "Effect_Background_Plate_svg",
     "FX_Power_On_svg",
     "FX_Type_Carrot_Active_svg",
@@ -381,6 +417,7 @@ const char* namedResourceList[] =
     "Granular_Background_Tab3_svg",
     "Granular_Background_Tab4_svg",
     "Granular_Icon_svg",
+    "Group_220_svg",
     "Hall_Icon_svg",
     "HighCut_svg",
     "Knob_Basic_Dice_svg",
@@ -402,15 +439,33 @@ const char* namedResourceList[] =
     "Panner_Background_Tab2_svg",
     "Panner_Background_Tab3_svg",
     "Panner_Background_Tab4_svg",
+    "PresetMenu_Background_svg",
+    "PresetMenu_Carrot_svg",
+    "Redux_Background_Tab1_svg",
+    "Redux_Background_Tab2_svg",
+    "Redux_Background_Tab3_svg",
+    "Redux_Background_Tab4_svg",
+    "Redux_Icon_svg",
     "Reverb1_Background_Tab1_svg",
     "Reverb1_Background_Tab2_svg",
     "Reverb1_Background_Tab3_svg",
     "Reverb1_Background_Tab4_svg",
+    "Save_Icon_svg",
+    "Slice_Icon_svg",
+    "Slicer_Background_Tab1_svg",
+    "Slicer_Background_Tab2_svg",
+    "Slicer_Background_Tab3_svg",
+    "Slicer_Background_Tab4_svg",
     "SpaceDelay_Background_Tab1_svg",
     "SpaceDelay_Background_Tab2_svg",
     "SpaceDelay_Background_Tab3_svg",
     "SpaceDelay_Background_Tab4_svg",
     "Space_Icon_svg",
+    "SpectralFilter_Background_Tab1_svg",
+    "SpectralFilter_Background_Tab2_svg",
+    "SpectralFilter_Background_Tab3_svg",
+    "SpectralFilter_Background_Tab4_svg",
+    "SpectralFilter_Icon_svg",
     "Step_Active_svg",
     "Step_Background_Plate_svg",
     "Step_Inactive_svg",
@@ -423,6 +478,13 @@ const char* namedResourceList[] =
     "Verb_Icon_svg",
     "Wow_Depth_svg",
     "Wow_Rate_svg",
+    "Bass_MenuTab_png",
+    "Distort_MenuTab_png",
+    "Favorites_MenuTab_png",
+    "GuitarSynth_MenuTab_png",
+    "Lofi_MenuTab_png",
+    "Rhythmic_MenuTab_png",
+    "User_MenuTab_png",
     "Akira_Expanded_otf",
     "AlteHaasGroteskBold_ttf",
     "AlteHaasGroteskRegular_ttf"
@@ -447,6 +509,11 @@ const char* originalFilenames[] =
     "Dirt_Background_Tab4.svg",
     "Dirt_Icon.svg",
     "Drive.svg",
+    "DubEcho_Background_Tab1.svg",
+    "DubEcho_Background_Tab2.svg",
+    "DubEcho_Background_Tab3.svg",
+    "DubEcho_Background_Tab4.svg",
+    "DubEcho_Icon.svg",
     "Effect_Background_Plate.svg",
     "FX_Power_On.svg",
     "FX_Type_Carrot_Active.svg",
@@ -458,6 +525,7 @@ const char* originalFilenames[] =
     "Granular_Background_Tab3.svg",
     "Granular_Background_Tab4.svg",
     "Granular_Icon.svg",
+    "Group 220.svg",
     "Hall_Icon.svg",
     "High-Cut.svg",
     "Knob_Basic_Dice.svg",
@@ -479,15 +547,33 @@ const char* originalFilenames[] =
     "Panner_Background_Tab2.svg",
     "Panner_Background_Tab3.svg",
     "Panner_Background_Tab4.svg",
+    "PresetMenu_Background.svg",
+    "PresetMenu_Carrot.svg",
+    "Redux_Background_Tab1.svg",
+    "Redux_Background_Tab2.svg",
+    "Redux_Background_Tab3.svg",
+    "Redux_Background_Tab4.svg",
+    "Redux_Icon.svg",
     "Reverb1_Background_Tab1.svg",
     "Reverb1_Background_Tab2.svg",
     "Reverb1_Background_Tab3.svg",
     "Reverb1_Background_Tab4.svg",
+    "Save_Icon.svg",
+    "Slice_Icon.svg",
+    "Slicer_Background_Tab1.svg",
+    "Slicer_Background_Tab2.svg",
+    "Slicer_Background_Tab3.svg",
+    "Slicer_Background_Tab4.svg",
     "SpaceDelay_Background_Tab1.svg",
     "SpaceDelay_Background_Tab2.svg",
     "SpaceDelay_Background_Tab3.svg",
     "SpaceDelay_Background_Tab4.svg",
     "Space_Icon.svg",
+    "SpectralFilter_Background_Tab1.svg",
+    "SpectralFilter_Background_Tab2.svg",
+    "SpectralFilter_Background_Tab3.svg",
+    "SpectralFilter_Background_Tab4.svg",
+    "SpectralFilter_Icon.svg",
     "Step_Active.svg",
     "Step_Background_Plate.svg",
     "Step_Inactive.svg",
@@ -500,6 +586,13 @@ const char* originalFilenames[] =
     "Verb_Icon.svg",
     "Wow Depth.svg",
     "Wow Rate.svg",
+    "Bass_MenuTab.png",
+    "Distort_MenuTab.png",
+    "Favorites_MenuTab.png",
+    "GuitarSynth_MenuTab.png",
+    "Lofi_MenuTab.png",
+    "Rhythmic_MenuTab.png",
+    "User_MenuTab.png",
     "Akira Expanded.otf",
     "AlteHaasGroteskBold.ttf",
     "AlteHaasGroteskRegular.ttf"

@@ -64,7 +64,6 @@ public:
         p.drive = juce::jlimit(0.0f, 10.0f, drive);
         p.emphasisFreq = juce::jlimit(0.0f, 1.0f, emphasisFreq);
         
-        // Update filter coefficients
         updateFilters();
     }
     
@@ -140,23 +139,6 @@ private:
     juce::dsp::IIR::Filter<float> postFilter;
     juce::dsp::IIR::Filter<float> emphasisFilter;
     
-    void updateFilters()
-    {
-        // Pre-filter: Low-pass before crushing
-        auto preCoeffs = juce::dsp::IIR::Coefficients<float>::makeLowPass(p.sampleRate, p.preFilterCutoff);
-        preFilter.coefficients = preCoeffs;
-        
-        // Post-filter: Low-pass after crushing
-        auto postCoeffs = juce::dsp::IIR::Coefficients<float>::makeLowPass(p.sampleRate, p.postFilterCutoff);
-        postFilter.coefficients = postCoeffs;
-        
-        // Emphasis filter: High-pass for brightness control
-        // Map emphasisFreq (0-1) to cutoff (20-2000 Hz)
-        const float emphasisCutoff = juce::jmap(p.emphasisFreq, 0.0f, 1.0f, 20.0f, 2000.0f);
-        auto emphasisCoeffs = juce::dsp::IIR::Coefficients<float>::makeHighPass(p.sampleRate, emphasisCutoff);
-        emphasisFilter.coefficients = emphasisCoeffs;
-    }
-    
     float applyBitDepthReduction(float sample)
     {
         if (p.bitDepth >= 24)
@@ -174,5 +156,21 @@ private:
         // Convert back to -1 to 1 range
         return quantized01 * 2.0f - 1.0f;
     }
+    
+    void updateFilters()
+    {
+        // Pre-filter: Low-pass before crushing
+        auto preCoeffs = juce::dsp::IIR::Coefficients<float>::makeLowPass(p.sampleRate, p.preFilterCutoff);
+        preFilter.coefficients = preCoeffs;
+        
+        // Post-filter: Low-pass after crushing
+        auto postCoeffs = juce::dsp::IIR::Coefficients<float>::makeLowPass(p.sampleRate, p.postFilterCutoff);
+        postFilter.coefficients = postCoeffs;
+        
+        // Emphasis filter: High-pass for brightness control
+        // Map emphasisFreq (0-1) to cutoff (20-2000 Hz)
+        const float emphasisCutoff = juce::jmap(p.emphasisFreq, 0.0f, 1.0f, 20.0f, 2000.0f);
+        auto emphasisCoeffs = juce::dsp::IIR::Coefficients<float>::makeHighPass(p.sampleRate, emphasisCutoff);
+        emphasisFilter.coefficients = emphasisCoeffs;
+    }
 };
-

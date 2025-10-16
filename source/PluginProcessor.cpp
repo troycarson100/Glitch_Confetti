@@ -302,8 +302,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout PluginProcessor::createParam
     params.push_back(std::make_unique<juce::AudioParameterChoice>("dubTimeGrid", "Dub Time Grid", 
         juce::StringArray{"Straight", "Dotted", "Triplet"}, 0)); // Default Straight
     
-    // Redux Parameters - 8 knobs
-    params.push_back(std::make_unique<juce::AudioParameterFloat>("reduxMix", "Redux Mix", 0.0f, 1.0f, 0.5f));
+    // Redux Parameters - 8 knobs (must match UI order)
     params.push_back(std::make_unique<juce::AudioParameterInt>("reduxBitDepth", "Redux Bit Depth", 1, 16, 8));
     params.push_back(std::make_unique<juce::AudioParameterInt>("reduxSampleRateReduction", "Redux Sample Rate Reduction", 1, 32, 1));
     params.push_back(std::make_unique<juce::AudioParameterFloat>("reduxJitter", "Redux Jitter", 0.0f, 1.0f, 0.0f));
@@ -313,6 +312,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout PluginProcessor::createParam
         juce::NormalisableRange<float>(20.0f, 20000.0f, 1.0f, 0.5f), 20000.0f));
     params.push_back(std::make_unique<juce::AudioParameterFloat>("reduxDrive", "Redux Drive", 0.0f, 10.0f, 1.0f));
     params.push_back(std::make_unique<juce::AudioParameterFloat>("reduxEmphasis", "Redux Emphasis", 0.0f, 1.0f, 0.5f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("reduxMix", "Redux Mix", 0.0f, 1.0f, 0.5f));
     params.push_back(std::make_unique<juce::AudioParameterBool>("reduxEnabled", "Redux Enabled", true));
     params.push_back(std::make_unique<juce::AudioParameterBool>("reduxStepEnabled", "Redux Step Enabled", true));
     
@@ -1284,8 +1284,7 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
             
             case EffectID::Redux:
             {
-                // Read Redux parameters from APVTS
-                auto* mixParam = valueTreeState.getRawParameterValue("reduxMix");
+                // Read Redux parameters from APVTS (in UI order)
                 auto* bitDepthParam = valueTreeState.getRawParameterValue("reduxBitDepth");
                 auto* sampleRateReductionParam = valueTreeState.getRawParameterValue("reduxSampleRateReduction");
                 auto* jitterParam = valueTreeState.getRawParameterValue("reduxJitter");
@@ -1293,11 +1292,12 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                 auto* postFilterParam = valueTreeState.getRawParameterValue("reduxPostFilter");
                 auto* driveParam = valueTreeState.getRawParameterValue("reduxDrive");
                 auto* emphasisParam = valueTreeState.getRawParameterValue("reduxEmphasis");
+                auto* mixParam = valueTreeState.getRawParameterValue("reduxMix");
                 
                 if (mixParam && bitDepthParam && sampleRateReductionParam && jitterParam &&
                     preFilterParam && postFilterParam && driveParam && emphasisParam)
                 {
-                    // Set Redux parameters
+                    // Set Redux parameters (in order: mix, bitDepth, sampleRateReduction, jitter, preFilter, postFilter, drive, emphasis)
                     reduxBank.setParams(
                         mixParam->load(),
                         static_cast<int>(bitDepthParam->load()),

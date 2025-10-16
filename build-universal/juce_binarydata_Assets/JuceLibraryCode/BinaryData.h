@@ -12,7 +12,7 @@ namespace BinaryData
     const int            gui_xmlSize = 14169;
 
     extern const char*   AutoPan_Icon_svg;
-    const int            AutoPan_Icon_svgSize = 3321;
+    const int            AutoPan_Icon_svgSize = 7155;
 
     extern const char*   Background_Mustard_svg;
     const int            Background_Mustard_svgSize = 3904;
@@ -59,6 +59,21 @@ namespace BinaryData
     extern const char*   Drive_svg;
     const int            Drive_svgSize = 18163;
 
+    extern const char*   DubEcho_Background_Tab1_svg;
+    const int            DubEcho_Background_Tab1_svgSize = 4991;
+
+    extern const char*   DubEcho_Background_Tab2_svg;
+    const int            DubEcho_Background_Tab2_svgSize = 5183;
+
+    extern const char*   DubEcho_Background_Tab3_svg;
+    const int            DubEcho_Background_Tab3_svgSize = 5248;
+
+    extern const char*   DubEcho_Background_Tab4_svg;
+    const int            DubEcho_Background_Tab4_svgSize = 5257;
+
+    extern const char*   DubEcho_Icon_svg;
+    const int            DubEcho_Icon_svgSize = 2710;
+
     extern const char*   Effect_Background_Plate_svg;
     const int            Effect_Background_Plate_svgSize = 1235;
 
@@ -75,7 +90,7 @@ namespace BinaryData
     const int            Feedback_svgSize = 37363;
 
     extern const char*   Grain_Icon_svg;
-    const int            Grain_Icon_svgSize = 2036;
+    const int            Grain_Icon_svgSize = 6736;
 
     extern const char*   Granular_Background_Tab1_svg;
     const int            Granular_Background_Tab1_svgSize = 4979;
@@ -92,8 +107,11 @@ namespace BinaryData
     extern const char*   Granular_Icon_svg;
     const int            Granular_Icon_svgSize = 2046;
 
+    extern const char*   Group_220_svg;
+    const int            Group_220_svgSize = 6736;
+
     extern const char*   Hall_Icon_svg;
-    const int            Hall_Icon_svgSize = 3819;
+    const int            Hall_Icon_svgSize = 4551;
 
     extern const char*   HighCut_svg;
     const int            HighCut_svgSize = 29926;
@@ -155,6 +173,27 @@ namespace BinaryData
     extern const char*   Panner_Background_Tab4_svg;
     const int            Panner_Background_Tab4_svgSize = 5265;
 
+    extern const char*   PresetMenu_Background_svg;
+    const int            PresetMenu_Background_svgSize = 199;
+
+    extern const char*   PresetMenu_Carrot_svg;
+    const int            PresetMenu_Carrot_svgSize = 204;
+
+    extern const char*   Redux_Background_Tab1_svg;
+    const int            Redux_Background_Tab1_svgSize = 4958;
+
+    extern const char*   Redux_Background_Tab2_svg;
+    const int            Redux_Background_Tab2_svgSize = 5186;
+
+    extern const char*   Redux_Background_Tab3_svg;
+    const int            Redux_Background_Tab3_svgSize = 5220;
+
+    extern const char*   Redux_Background_Tab4_svg;
+    const int            Redux_Background_Tab4_svgSize = 5212;
+
+    extern const char*   Redux_Icon_svg;
+    const int            Redux_Icon_svgSize = 4678;
+
     extern const char*   Reverb1_Background_Tab1_svg;
     const int            Reverb1_Background_Tab1_svgSize = 4946;
 
@@ -166,6 +205,24 @@ namespace BinaryData
 
     extern const char*   Reverb1_Background_Tab4_svg;
     const int            Reverb1_Background_Tab4_svgSize = 5233;
+
+    extern const char*   Save_Icon_svg;
+    const int            Save_Icon_svgSize = 355;
+
+    extern const char*   Slice_Icon_svg;
+    const int            Slice_Icon_svgSize = 1983;
+
+    extern const char*   Slicer_Background_Tab1_svg;
+    const int            Slicer_Background_Tab1_svgSize = 4970;
+
+    extern const char*   Slicer_Background_Tab2_svg;
+    const int            Slicer_Background_Tab2_svgSize = 5188;
+
+    extern const char*   Slicer_Background_Tab3_svg;
+    const int            Slicer_Background_Tab3_svgSize = 5241;
+
+    extern const char*   Slicer_Background_Tab4_svg;
+    const int            Slicer_Background_Tab4_svgSize = 5235;
 
     extern const char*   SpaceDelay_Background_Tab1_svg;
     const int            SpaceDelay_Background_Tab1_svgSize = 5003;
@@ -180,7 +237,22 @@ namespace BinaryData
     const int            SpaceDelay_Background_Tab4_svgSize = 5245;
 
     extern const char*   Space_Icon_svg;
-    const int            Space_Icon_svgSize = 3016;
+    const int            Space_Icon_svgSize = 5614;
+
+    extern const char*   SpectralFilter_Background_Tab1_svg;
+    const int            SpectralFilter_Background_Tab1_svgSize = 4982;
+
+    extern const char*   SpectralFilter_Background_Tab2_svg;
+    const int            SpectralFilter_Background_Tab2_svgSize = 5210;
+
+    extern const char*   SpectralFilter_Background_Tab3_svg;
+    const int            SpectralFilter_Background_Tab3_svgSize = 5244;
+
+    extern const char*   SpectralFilter_Background_Tab4_svg;
+    const int            SpectralFilter_Background_Tab4_svgSize = 5235;
+
+    extern const char*   SpectralFilter_Icon_svg;
+    const int            SpectralFilter_Icon_svgSize = 4352;
 
     extern const char*   Step_Active_svg;
     const int            Step_Active_svgSize = 309;
@@ -218,6 +290,27 @@ namespace BinaryData
     extern const char*   Wow_Rate_svg;
     const int            Wow_Rate_svgSize = 39199;
 
+    extern const char*   Bass_MenuTab_png;
+    const int            Bass_MenuTab_pngSize = 571776;
+
+    extern const char*   Distort_MenuTab_png;
+    const int            Distort_MenuTab_pngSize = 315151;
+
+    extern const char*   Favorites_MenuTab_png;
+    const int            Favorites_MenuTab_pngSize = 690654;
+
+    extern const char*   GuitarSynth_MenuTab_png;
+    const int            GuitarSynth_MenuTab_pngSize = 294819;
+
+    extern const char*   Lofi_MenuTab_png;
+    const int            Lofi_MenuTab_pngSize = 571765;
+
+    extern const char*   Rhythmic_MenuTab_png;
+    const int            Rhythmic_MenuTab_pngSize = 274948;
+
+    extern const char*   User_MenuTab_png;
+    const int            User_MenuTab_pngSize = 197682;
+
     extern const char*   Akira_Expanded_otf;
     const int            Akira_Expanded_otfSize = 26320;
 
@@ -228,7 +321,7 @@ namespace BinaryData
     const int            AlteHaasGroteskRegular_ttfSize = 143896;
 
     // Number of elements in the namedResourceList and originalFileNames arrays.
-    const int namedResourceListSize = 73;
+    const int namedResourceListSize = 104;
 
     // Points to the start of a list of resource names.
     extern const char* namedResourceList[];

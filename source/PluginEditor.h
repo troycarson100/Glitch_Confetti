@@ -19,7 +19,7 @@ class PresetManager;
 class PresetBrowserOverlay;
 
 // Tab system enum
-enum class FxPageID { SpaceDelay, Panner, Dirt, Chorus, Reverb, Granular, Slicer };
+enum class FxPageID { SpaceDelay, Panner, Dirt, Chorus, Reverb, Granular, Slicer, Redux };
 
 // Forward declaration
 class PluginProcessor;
@@ -638,6 +638,43 @@ public:
     
     std::vector<juce::Component*> dubdelayGroup; // All Dub Delay UI components for visibility toggling
     
+    // Redux page components (8 knobs)
+    std::array<std::unique_ptr<CustomKnob>, 8> reduxKnobs;
+    std::array<std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>, 8> reduxAttachments;
+    std::array<std::unique_ptr<juce::Label>, 8> reduxKnobLabels;
+    std::array<std::unique_ptr<juce::Label>, 8> reduxValueLabels;
+    std::array<std::unique_ptr<IndicatorBar>, 8> reduxIndicatorBars;
+    std::array<std::unique_ptr<CustomDiceButton>, 8> reduxDiceButtons;
+    std::array<std::unique_ptr<LockButton>, 8> reduxLockButtons;
+    std::array<bool, 8> reduxKnobLocked { false, false, false, false, false, false, false, false };
+    
+    // Redux effects area
+    std::unique_ptr<juce::Label> reduxEffectsTitle;
+    std::unique_ptr<CustomDiceButton> reduxDiceButton;
+    std::unique_ptr<juce::DrawableButton> reduxFxPowerButton;
+    bool reduxFxAreaEnabled = true;
+    
+    // Redux step sequencer area
+    std::array<std::unique_ptr<StepButton>, 16> reduxStepButtons;
+    int reduxUiSelectedStep = 0;
+    std::unique_ptr<juce::TextEditor> reduxStepAmountLabel;
+    std::unique_ptr<juce::ComboBox> reduxRateDropdown;
+    std::unique_ptr<CircularToggleButton> reduxStdToggle;
+    std::unique_ptr<juce::Label> reduxStepTitle;
+    std::unique_ptr<CustomDiceButton> reduxStepDiceButton;
+    std::unique_ptr<juce::DrawableButton> reduxStepPowerButton;
+    bool reduxStepAreaEnabled = true;
+    
+    // Redux All Steps toggle
+    std::unique_ptr<AllStepsToggleButton> reduxAllStepsToggle;
+    std::unique_ptr<juce::Label> reduxAllStepsLabel;
+    bool reduxAllStepsEnabled = false;
+    
+    std::vector<juce::Component*> reduxGroup; // All Redux UI components for visibility toggling
+    
+    // Redux page container for isolation
+    std::unique_ptr<juce::Component> reduxPage;
+    
         // Helper methods
         void setupKnobs();
         void setupMasterKnobs();
@@ -757,6 +794,21 @@ public:
         void onDubDelayStepButtonClicked(int stepIndex);
         void updateDubDelayCurrentStepSnapshot(int knobIndex, float value);
         
+        // Redux page helper methods
+        void setupReduxKnobs();
+        void setupReduxEffectsArea();
+        void setupReduxSequencerArea();
+        void setupReduxAllStepsToggle();
+        void updateReduxFxAreaVisibility();
+        void updateReduxStepAreaVisibility();
+        void randomizeReduxKnobValues();
+        void randomizeIndividualReduxKnob(int knobIndex);
+        void updateReduxParameterFromKnob(int knobIndex);
+        void updateReduxSequencerUI();
+        void onReduxStepButtonClicked(int stepIndex);
+        void ensureReduxAttachments();
+        void rebindReduxAttachments();
+        
         void togglePlayback();
         
         // Tab system helpers
@@ -768,6 +820,7 @@ public:
     // Effect router UI helpers
     void onEffectSelectorChanged(int slotIndex);
     void updateAllEffectSelectors();
+    void updateAllEffectSelectors(int skipSlot);
     void updateBackgroundsAfterSwap();
     void updateTabButtonImages();
     juce::ComboBox* getEffectSelectorForSlot(int slotIndex);

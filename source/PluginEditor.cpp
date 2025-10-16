@@ -7198,8 +7198,8 @@ void PluginEditor::onEffectSelectorChanged(int slotIndex)
     router.assignEffectToSlot(targetEffect, targetSlot);
     DBG("[ROUTER] ✓ Router assignment complete");
     
-    // Update all dropdowns to reflect the swap
-    updateAllEffectSelectors();
+    // Update all dropdowns to reflect the swap (skip the one that was just changed)
+    updateAllEffectSelectors(slotIndex);
     DBG("[ROUTER] ✓ Dropdowns updated");
     
     // Update backgrounds for affected slots
@@ -7364,11 +7364,18 @@ void PluginEditor::onEffectSelectorChanged(int slotIndex)
 
 void PluginEditor::updateAllEffectSelectors()
 {
+    updateAllEffectSelectors(-1); // -1 means update all
+}
+
+void PluginEditor::updateAllEffectSelectors(int skipSlot)
+{
     auto& router = processorRef.getEffectRouter();
     
     // Update each dropdown to show its current assignment (without triggering onChange)
     for (int i = 0; i < 4; ++i)
     {
+        if (i == skipSlot) continue; // Skip the slot that was just changed
+        
         auto* selector = getEffectSelectorForSlot(i);
         if (selector)
         {
@@ -9731,7 +9738,7 @@ void PluginEditor::setupReduxKnobs()
         "Mix"
     };
     
-    // Redux parameter IDs
+    // Redux parameter IDs (must match APVTS order)
     const juce::StringArray reduxParamIDs = {
         "reduxBitDepth",
         "reduxSampleRateReduction",
@@ -9772,7 +9779,7 @@ void PluginEditor::setupReduxKnobs()
         reduxKnobs[i]->setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
         reduxKnobs[i]->setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
         
-        // Set knob ranges based on parameter
+        // Set knob ranges based on parameter (UI order)
         switch (i) {
             case 0: // Bit Depth (1-16)
                 reduxKnobs[i]->setRange(1.0, 16.0, 1.0);
