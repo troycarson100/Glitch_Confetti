@@ -39,6 +39,10 @@ public:
         postFilter.prepare({ sampleRate, (juce::uint32)maxBlockSize, 1 });
         emphasisFilter.prepare({ sampleRate, (juce::uint32)maxBlockSize, 1 });
         
+        // Setup smoothed bit depth (10ms smoothing to prevent clicks)
+        smoothedBitDepth.reset(sampleRate, 0.01);
+        smoothedBitDepth.setCurrentAndTargetValue(8.0f); // Default to 8 bits
+        
         // Reset state
         reset();
     }
@@ -56,7 +60,11 @@ public:
                    float preFilterCutoff, float postFilterCutoff, float drive, float emphasisFreq)
     {
         p.mix = juce::jlimit(0.0f, 1.0f, mix);
-        p.bitDepth = juce::jlimit(1, 24, bitDepth);
+        
+        // Use bit depth directly (1-12 range)
+        int actualBits = juce::jlimit(1, 12, bitDepth);
+        smoothedBitDepth.setTargetValue((float)actualBits);
+        
         p.sampleRateReduction = juce::jlimit(1, 32, sampleRateReduction);
         p.jitter = juce::jlimit(0.0f, 1.0f, jitter);
         p.preFilterCutoff = juce::jlimit(20.0f, 20000.0f, preFilterCutoff);
@@ -96,7 +104,7 @@ public:
             holdCounter = baseCounter;
         }
         
-        // 4. Bit Depth Reduction
+        // 4. Bit Depth Reduction (using smoothed value to prevent clicks)
         const float quantized = applyBitDepthReduction(heldSample);
         
         // 5. Post-Filter
@@ -134,6 +142,9 @@ private:
     int holdCounter = 0;
     float heldSample = 0.0f;
     
+    // Smoothed parameter to prevent clicking
+    juce::SmoothedValue<float> smoothedBitDepth;
+    
     // Filters
     juce::dsp::IIR::Filter<float> preFilter;
     juce::dsp::IIR::Filter<float> postFilter;
@@ -141,14 +152,18 @@ private:
     
     float applyBitDepthReduction(float sample)
     {
-        if (p.bitDepth >= 24)
-            return sample; // No reduction
+        // Get smoothed bit depth value and clamp for safety (1-12 range)
+        const float smoothedDisplay = smoothedBitDepth.getNextValue();
+        const int actualBits = juce::jlimit(1, 12, (int)smoothedDisplay);
+        
+        if (actualBits >= 12)
+            return sample; // No reduction at maximum quality
+        
+        // Calculate quantization levels using actual bits
+        const int levels = (1 << actualBits) - 1;
         
         // Convert to 0-1 range
         const float x01 = 0.5f * (sample + 1.0f);
-        
-        // Calculate quantization levels
-        const int levels = (1 << p.bitDepth) - 1;
         
         // Quantize
         const float quantized01 = std::floor(x01 * levels + 0.5f) / levels;

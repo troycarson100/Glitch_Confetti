@@ -7347,8 +7347,25 @@ void PluginEditor::onEffectSelectorChanged(int slotIndex)
             for (int i = 0; i < 8; ++i) {
                 if (reduxKnobs[i] && reduxAttachments[i]) {
                     reduxKnobs[i]->onValueChange();
+                } else if (i == 0 && reduxKnobs[i]) {
+                    // Bit depth knob - manually trigger value change without APVTS
+                    reduxKnobs[i]->onValueChange();
                 }
             }
+            
+            // Load current snapshot values into knobs with proper conversion
+            StepSnapshot currentSnapshot = processorRef.getReduxSafeSnapshot(0); // Load step 0
+            if (reduxKnobs[0]) {
+                float uiBitDepth = (float)currentSnapshot.redux.bitDepth - 3.0f;
+                reduxKnobs[0]->setValue(uiBitDepth, juce::dontSendNotification);
+            }
+            if (reduxKnobs[1]) reduxKnobs[1]->setValue((float)currentSnapshot.redux.sampleRateReduction, juce::dontSendNotification);
+            if (reduxKnobs[2]) reduxKnobs[2]->setValue(currentSnapshot.redux.jitter, juce::dontSendNotification);
+            if (reduxKnobs[3]) reduxKnobs[3]->setValue(currentSnapshot.redux.preFilter, juce::dontSendNotification);
+            if (reduxKnobs[4]) reduxKnobs[4]->setValue(currentSnapshot.redux.postFilter, juce::dontSendNotification);
+            if (reduxKnobs[5]) reduxKnobs[5]->setValue(currentSnapshot.redux.drive, juce::dontSendNotification);
+            if (reduxKnobs[6]) reduxKnobs[6]->setValue(currentSnapshot.redux.emphasis, juce::dontSendNotification);
+            if (reduxKnobs[7]) reduxKnobs[7]->setValue(currentSnapshot.redux.mix, juce::dontSendNotification);
             
             DBG("[ROUTER] ✓ Redux group shown");
             break;
@@ -9781,9 +9798,9 @@ void PluginEditor::setupReduxKnobs()
         
         // Set knob ranges based on parameter (UI order)
         switch (i) {
-            case 0: // Bit Depth (1-16)
-                reduxKnobs[i]->setRange(1.0, 16.0, 1.0);
-                reduxKnobs[i]->setValue(8.0, juce::dontSendNotification);
+            case 0: // Bit Depth (1-12 range)
+                reduxKnobs[i]->setRange(1.0, 12.0, 1.0);
+                reduxKnobs[i]->setValue(8.0, juce::dontSendNotification); // Default to 8 bits
                 break;
             case 1: // Sample Rate (1-32)
                 reduxKnobs[i]->setRange(1.0, 32.0, 1.0);
@@ -9892,7 +9909,7 @@ void PluginEditor::setupReduxKnobs()
                 juce::String valueText;
                 
                 switch (i) {
-                    case 0: valueText = juce::String((int)value); break; // Bit Depth
+                    case 0: valueText = juce::String((int)value + 3); break; // Bit Depth (UI 1-12 maps to 4-16)
                     case 1: valueText = juce::String((int)value); break; // Sample Rate
                     case 2: valueText = juce::String(value, 2); break; // Jitter
                     case 3: valueText = juce::String((int)value) + " Hz"; break; // Pre Filter
@@ -9905,12 +9922,26 @@ void PluginEditor::setupReduxKnobs()
                 reduxValueLabels[i]->setText(valueText, juce::dontSendNotification);
                 
                 // Update parameter in processor
-                updateReduxParameterFromKnob(i);
+                if (i == 0) {
+                    // Use setValueNotifyingHost to avoid clicks for bit depth
+                    auto* param = processorRef.getAPVTS().getParameter("reduxBitDepth");
+                    if (param != nullptr) {
+                        param->setValueNotifyingHost(value / 12.0f);
+                    }
+                    processorRef.updateReduxCurrentStepSnapshot(i, value);
+                } else {
+                    updateReduxParameterFromKnob(i);
+                }
+                
+                // Update all steps if enabled
+                if (reduxAllStepsEnabled) {
+                    // TODO: Implement updateReduxAllStepsSnapshot in processor
+                }
                 
                 if (reduxIndicatorBars[i]) {
                     float normValue = 0.5f;
                     switch (i) {
-                        case 0: normValue = (value - 1.0f) / 15.0f; break; // Bit depth 1-16
+                        case 0: normValue = (value - 1.0f) / 11.0f; break; // Bit depth UI 1-12
                         case 1: normValue = (value - 1.0f) / 31.0f; break; // Sample rate 1-32
                         case 2: case 6: case 7: 
                             normValue = value; break; // 0-1 params (Jitter, Emphasis, Mix)
@@ -9923,15 +9954,21 @@ void PluginEditor::setupReduxKnobs()
             }
         };
         
-        // Attach to parameter
-        auto* param = processorRef.getAPVTS().getParameter(reduxParamIDs[i]);
-        if (param != nullptr) {
-            reduxAttachments[i] = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
-                processorRef.getAPVTS(), reduxParamIDs[i], *reduxKnobs[i]);
-            DBG("[Redux] Successfully attached knob " << i << " to parameter " << reduxParamIDs[i]);
-        } else {
-            DBG("[Redux] ERROR: Parameter " << reduxParamIDs[i] << " not found!");
+        // Attach to parameter (skip bit depth to avoid range conflicts)
+        if (i == 0) {
+            // Bit depth handled manually to avoid APVTS range conflicts
             reduxAttachments[i] = nullptr;
+            DBG("[Redux] Bit depth knob handled manually (no APVTS attachment)");
+        } else {
+            auto* param = processorRef.getAPVTS().getParameter(reduxParamIDs[i]);
+            if (param != nullptr) {
+                reduxAttachments[i] = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+                    processorRef.getAPVTS(), reduxParamIDs[i], *reduxKnobs[i]);
+                DBG("[Redux] Successfully attached knob " << i << " to parameter " << reduxParamIDs[i]);
+            } else {
+                DBG("[Redux] ERROR: Parameter " << reduxParamIDs[i] << " not found!");
+                reduxAttachments[i] = nullptr;
+            }
         }
         
         DBG("[Redux] Created knob " << i << ": " << reduxKnobTitles[i] << " -> " << reduxParamIDs[i]);
@@ -10296,8 +10333,8 @@ void PluginEditor::randomizeIndividualReduxKnob(int knobIndex)
     
     float randomValue = 0.0f;
     switch (knobIndex) {
-        case 0: // Bit Depth (1-16)
-            randomValue = 1.0f + juce::Random::getSystemRandom().nextFloat() * 15.0f;
+        case 0: // Bit Depth (UI 1-12, internal 4-16)
+            randomValue = 1.0f + juce::Random::getSystemRandom().nextFloat() * 11.0f;
             break;
         case 1: // Sample Rate (1-32)
             randomValue = 1.0f + juce::Random::getSystemRandom().nextFloat() * 31.0f;
@@ -10335,13 +10372,13 @@ void PluginEditor::updateReduxParameterFromKnob(int knobIndex)
 void PluginEditor::updateReduxSequencerUI()
 {
     int selectedStep = reduxUiSelectedStep;
-    int playingStep = 0; // TODO: Implement getReduxCurrentStep in processor
-    const int stepsUsed = 16; // Redux uses fixed 16 steps
+    int playingStep = processorRef.getReduxCurrentStep();
+    const int stepsUsed = processorRef.getReduxSeqState().stepsUsed.load();
     
     for (int i = 0; i < 16; ++i) {
         if (reduxStepButtons[i] != nullptr) {
             reduxStepButtons[i]->setSelected(i == selectedStep);
-            bool sequencerEnabled = true; // TODO: Get from processor
+            bool sequencerEnabled = processorRef.getReduxSeqState().enabled.load();
             reduxStepButtons[i]->setPlaying(sequencerEnabled && (i == playingStep));
             bool shouldBeEnabled = i < stepsUsed;
             reduxStepButtons[i]->setEnabledStep(shouldBeEnabled);
@@ -10382,14 +10419,18 @@ void PluginEditor::onReduxStepButtonClicked(int stepIndex)
     
     // Load new step's snapshot into knobs
     StepSnapshot newSnapshot = processorRef.getReduxSafeSnapshot(stepIndex);
-    if (reduxKnobs[0]) reduxKnobs[0]->setValue(newSnapshot.redux.mix, juce::sendNotification);
-    if (reduxKnobs[1]) reduxKnobs[1]->setValue((float)newSnapshot.redux.bitDepth, juce::sendNotification);
-    if (reduxKnobs[2]) reduxKnobs[2]->setValue((float)newSnapshot.redux.sampleRateReduction, juce::sendNotification);
-    if (reduxKnobs[3]) reduxKnobs[3]->setValue(newSnapshot.redux.jitter, juce::sendNotification);
-    if (reduxKnobs[4]) reduxKnobs[4]->setValue(newSnapshot.redux.preFilter, juce::sendNotification);
-    if (reduxKnobs[5]) reduxKnobs[5]->setValue(newSnapshot.redux.postFilter, juce::sendNotification);
-    if (reduxKnobs[6]) reduxKnobs[6]->setValue(newSnapshot.redux.drive, juce::sendNotification);
-    if (reduxKnobs[7]) reduxKnobs[7]->setValue(newSnapshot.redux.emphasis, juce::sendNotification);
+    if (reduxKnobs[0]) {
+        // Convert internal bit depth (4-16) to UI value (1-12)
+        float uiBitDepth = (float)newSnapshot.redux.bitDepth - 3.0f;
+        reduxKnobs[0]->setValue(uiBitDepth, juce::sendNotification);
+    }
+    if (reduxKnobs[1]) reduxKnobs[1]->setValue((float)newSnapshot.redux.sampleRateReduction, juce::sendNotification);
+    if (reduxKnobs[2]) reduxKnobs[2]->setValue(newSnapshot.redux.jitter, juce::sendNotification);
+    if (reduxKnobs[3]) reduxKnobs[3]->setValue(newSnapshot.redux.preFilter, juce::sendNotification);
+    if (reduxKnobs[4]) reduxKnobs[4]->setValue(newSnapshot.redux.postFilter, juce::sendNotification);
+    if (reduxKnobs[5]) reduxKnobs[5]->setValue(newSnapshot.redux.drive, juce::sendNotification);
+    if (reduxKnobs[6]) reduxKnobs[6]->setValue(newSnapshot.redux.emphasis, juce::sendNotification);
+    if (reduxKnobs[7]) reduxKnobs[7]->setValue(newSnapshot.redux.mix, juce::sendNotification);
     
     updateReduxSequencerUI();
     

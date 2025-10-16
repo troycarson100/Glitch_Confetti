@@ -33,7 +33,7 @@ echo ""
 # Install AU plugin
 echo "Installing AU plugin..."
 mkdir -p ~/Library/Audio/Plug-Ins/Components/
-cp -rf build-universal/Stepper_artefacts/Release/AU/Stepper.component ~/Library/Audio/Plug-Ins/Components/
+cp -rf build-universal/Stepper_artefacts/Debug/AU/Stepper.component ~/Library/Audio/Plug-Ins/Components/
 
 if [ $? -eq 0 ]; then
     echo "✓ AU plugin installed"

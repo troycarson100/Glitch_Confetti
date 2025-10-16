@@ -303,7 +303,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout PluginProcessor::createParam
         juce::StringArray{"Straight", "Dotted", "Triplet"}, 0)); // Default Straight
     
     // Redux Parameters - 8 knobs (must match UI order)
-    params.push_back(std::make_unique<juce::AudioParameterInt>("reduxBitDepth", "Redux Bit Depth", 1, 16, 8));
+    params.push_back(std::make_unique<juce::AudioParameterInt>("reduxBitDepth", "Redux Bit Depth", 1, 12, 8));
     params.push_back(std::make_unique<juce::AudioParameterInt>("reduxSampleRateReduction", "Redux Sample Rate Reduction", 1, 32, 1));
     params.push_back(std::make_unique<juce::AudioParameterFloat>("reduxJitter", "Redux Jitter", 0.0f, 1.0f, 0.0f));
     params.push_back(std::make_unique<juce::AudioParameterFloat>("reduxPreFilter", "Redux Pre Filter", 
@@ -1298,9 +1298,11 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                     preFilterParam && postFilterParam && driveParam && emphasisParam)
                 {
                     // Set Redux parameters (in order: mix, bitDepth, sampleRateReduction, jitter, preFilter, postFilter, drive, emphasis)
+                    // Convert UI bit depth (1-12) to internal bit depth (4-16)
+                    int internalBitDepth = static_cast<int>(bitDepthParam->load()) + 3;
                     reduxBank.setParams(
                         mixParam->load(),
-                        static_cast<int>(bitDepthParam->load()),
+                        internalBitDepth,
                         static_cast<int>(sampleRateReductionParam->load()),
                         jitterParam->load(),
                         preFilterParam->load(),
@@ -2305,8 +2307,8 @@ void PluginProcessor::updateReduxCurrentStepSnapshot(int knobIndex, float value)
     // Update the specific Redux parameter in the snapshot
     // Note: knob order matches UI: Bit Depth, Rate, Jitter, Pre Filter, Post Filter, Drive, Emphasis, Mix
     switch (knobIndex) {
-        case 0: // Bit Depth
-            reduxStepSnapshots[currentStep].redux.bitDepth = (int)value;
+        case 0: // Bit Depth (UI 1-12 -> internal 4-16)
+            reduxStepSnapshots[currentStep].redux.bitDepth = (int)value + 3;
             break;
         case 1: // Sample Rate Reduction (Rate)
             reduxStepSnapshots[currentStep].redux.sampleRateReduction = (int)value;
