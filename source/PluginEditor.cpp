@@ -175,6 +175,46 @@ PluginEditor::PluginEditor (PluginProcessor& p)
         // processorRef.setDubDelaySequencerEnabled(dubdelayStepAreaEnabled);
         DBG("[UI] Initial Slicer sequencer state synced: enabled=" + juce::String(slicerStepAreaEnabled ? 1 : 0));
         
+        // Setup Redux page
+        DBG("[UI] Setting up Redux page...");
+        setupReduxKnobs();
+        setupReduxEffectsArea();
+        setupReduxSequencerArea();
+        setupReduxAllStepsToggle();
+        
+        // Populate Redux group for visibility management (same pattern as other effects)
+        reduxGroup.clear();
+        
+        // Add all Redux components to the group
+        for (int i = 0; i < 8; ++i) {
+            if (reduxKnobs[i]) reduxGroup.push_back(reduxKnobs[i].get());
+            if (reduxKnobLabels[i]) reduxGroup.push_back(reduxKnobLabels[i].get());
+            if (reduxValueLabels[i]) reduxGroup.push_back(reduxValueLabels[i].get());
+            if (reduxIndicatorBars[i]) reduxGroup.push_back(reduxIndicatorBars[i].get());
+            if (reduxDiceButtons[i]) reduxGroup.push_back(reduxDiceButtons[i].get());
+            if (reduxLockButtons[i]) reduxGroup.push_back(reduxLockButtons[i].get());
+        }
+        
+        // Add other Redux components to group
+        if (reduxEffectsTitle) reduxGroup.push_back(reduxEffectsTitle.get());
+        if (reduxDiceButton) reduxGroup.push_back(reduxDiceButton.get());
+        if (reduxFxPowerButton) reduxGroup.push_back(reduxFxPowerButton.get());
+        if (reduxStepTitle) reduxGroup.push_back(reduxStepTitle.get());
+        if (reduxStepPowerButton) reduxGroup.push_back(reduxStepPowerButton.get());
+        if (reduxStepAmountLabel) reduxGroup.push_back(reduxStepAmountLabel.get());
+        if (reduxRateDropdown) reduxGroup.push_back(reduxRateDropdown.get());
+        if (reduxStdToggle) reduxGroup.push_back(reduxStdToggle.get());
+        if (reduxStepDiceButton) reduxGroup.push_back(reduxStepDiceButton.get());
+        if (reduxAllStepsToggle) reduxGroup.push_back(reduxAllStepsToggle.get());
+        if (reduxAllStepsLabel) reduxGroup.push_back(reduxAllStepsLabel.get());
+        
+        // Add step buttons to group
+        for (int i = 0; i < 16; ++i) {
+            if (reduxStepButtons[i]) reduxGroup.push_back(reduxStepButtons[i].get());
+        }
+        
+        DBG("[UI] Redux page setup complete");
+        
         // Initialize Slicer step power button state from processor
         {
             const bool enabled = processorRef.getSlicerSeqState().enabled.load();
@@ -299,7 +339,21 @@ void PluginEditor::paint (juce::Graphics& g)
                     DBG("[PAINT] DubDelay background tab 4 loaded");
                     return assets.dubdelayBackgroundTab4.get();
                 }
-                DBG("[PAINT] DubDelay background for tab " << tabNumber << " is null");
+                // DBG("[PAINT] DubDelay background for tab " << tabNumber << " is null");
+                break;
+            case EffectID::Redux:
+                if (tabNumber == 1 && assets.reduxBackgroundTab1) {
+                    return assets.reduxBackgroundTab1.get();
+                }
+                else if (tabNumber == 2 && assets.reduxBackgroundTab2) {
+                    return assets.reduxBackgroundTab2.get();
+                }
+                else if (tabNumber == 3 && assets.reduxBackgroundTab3) {
+                    return assets.reduxBackgroundTab3.get();
+                }
+                else if (tabNumber == 4 && assets.reduxBackgroundTab4) {
+                    return assets.reduxBackgroundTab4.get();
+                }
                 break;
         }
         return nullptr;
@@ -347,6 +401,7 @@ void PluginEditor::paint (juce::Graphics& g)
             case EffectID::DubDelay:   
                 DBG("[PAINT] DubDelay icon: " << (assets.tabDubDelayIcon ? "loaded" : "null"));
                 return assets.tabDubDelayIcon.get();    // DubDelay_Icon
+            case EffectID::Redux:       return assets.tabReduxIcon.get();       // Redux_Icon
         }
         return nullptr;
     };
@@ -1094,6 +1149,9 @@ void PluginEditor::timerCallback()
     
     // Update Dirt sequencer UI
     updateDirtSequencerUI();
+    
+    // Update Redux sequencer UI
+    updateReduxSequencerUI();
     
     // Update Chorus sequencer UI
     updateChorusSequencerUI();
@@ -2780,6 +2838,7 @@ void PluginEditor::setupSpaceDelayUI()
     effectTypeDropdown->addItem("Grain", 6);
     effectTypeDropdown->addItem("Slicer", 7);
     effectTypeDropdown->addItem("Dub Echo", 8);
+    effectTypeDropdown->addItem("Redux", 9);
     effectTypeDropdown->setSelectedId(1, juce::dontSendNotification);
     
     // Position dropdown with proper height for closed control
@@ -3705,6 +3764,7 @@ void PluginEditor::setupTabSystem()
         selector->addItem("Grain", 6);
         selector->addItem("Slicer", 7);
         selector->addItem("Dub Echo", 8);
+        selector->addItem("Redux", 9);
         
         // Hide text when closed - just show carrot icon
         selector->setTextWhenNothingSelected("");
@@ -3958,8 +4018,10 @@ void PluginEditor::showPage(FxPageID id)
         if (id == FxPageID::Panner) pageValue = 1.0f;
         else if (id == FxPageID::Dirt) pageValue = 2.0f;
         else if (id == FxPageID::Chorus) pageValue = 3.0f;
-            else if (id == FxPageID::Reverb) pageValue = 4.0f;
-            else if (id == FxPageID::Granular) pageValue = 5.0f;
+        else if (id == FxPageID::Reverb) pageValue = 4.0f;
+        else if (id == FxPageID::Granular) pageValue = 5.0f;
+        else if (id == FxPageID::Slicer) pageValue = 6.0f;
+        else if (id == FxPageID::Redux) pageValue = 8.0f; // Redux is index 8 in the parameter array
         currentPageParam->setValueNotifyingHost(pageValue);
         }
     }
@@ -4034,7 +4096,15 @@ void PluginEditor::showPage(FxPageID id)
     // Show/Hide without touching parents or bounds
     auto setVisibleVec = [](const std::vector<juce::Component*>& v, bool vis)
     {
-        for (auto* c : v) if (c) c->setVisible(vis);
+        DBG("[setVisibleVec] Setting " << std::to_string(v.size()) << " components to visible=" << (vis ? "true" : "false"));
+        for (auto* c : v) {
+            if (c) {
+                DBG("[setVisibleVec] Setting component to visible=" << (vis ? "true" : "false"));
+                c->setVisible(vis);
+            } else {
+                DBG("[setVisibleVec] Warning: null component in vector");
+            }
+        }
     };
 
     // === ROUTER-AWARE VISIBILITY ===
@@ -4052,6 +4122,7 @@ void PluginEditor::showPage(FxPageID id)
     setVisibleVec(granularGroup, false);
     setVisibleVec(slicerGroup, false);
     setVisibleVec(dubdelayGroup, false);
+    setVisibleVec(reduxGroup, false);
     
     // Show only the group for the effect assigned to this slot
     switch (assignedEffect)
@@ -4142,6 +4213,45 @@ void PluginEditor::showPage(FxPageID id)
             dubdelayUiSelectedStep = 0;
             processorRef.setDubDelaySelectedStep(0);
             updateDubDelaySequencerUI();
+            
+            break;
+        case EffectID::Redux:
+            DBG("[ROUTER] Redux case triggered for slot " << slotIndex);
+            DBG("[ROUTER] reduxGroup size: " << reduxGroup.size());
+            setVisibleVec(reduxGroup, true);
+            DBG("[ROUTER] Showing Redux UI for slot " << slotIndex);
+            
+            // Restore UI state from APVTS parameters
+            {
+                auto* fxEnabledParam = processorRef.getAPVTS().getRawParameterValue("reduxEnabled");
+                reduxFxAreaEnabled = fxEnabledParam ? (fxEnabledParam->load() > 0.5f) : true;
+                // DBG("[ROUTER] Redux FX area enabled: " << reduxFxAreaEnabled);
+                
+                if (reduxFxPowerButton) {
+                    reduxFxPowerButton->setToggleState(reduxFxAreaEnabled, juce::dontSendNotification);
+                }
+                
+                // Restore sequencer enabled state
+                reduxStepAreaEnabled = true; // Start enabled
+                if (reduxStepPowerButton) {
+                    reduxStepPowerButton->setToggleState(reduxStepAreaEnabled, juce::dontSendNotification);
+                }
+                
+                updateReduxFxAreaVisibility();
+                updateReduxStepAreaVisibility();
+            }
+            
+            
+            // Trigger initial value label updates (8 knobs)
+            for (int i = 0; i < 8; ++i) {
+                if (reduxKnobs[i]) {
+                    reduxKnobs[i]->onValueChange();
+                }
+            }
+            
+            // Update sequencer UI to show first step as selected
+            reduxUiSelectedStep = 0;
+            updateReduxSequencerUI();
             
             break;
     }
@@ -7010,7 +7120,7 @@ void PluginEditor::onEffectSelectorChanged(int slotIndex)
     int selectedEffectID = selector->getSelectedId() - 1; // ComboBox IDs are 1-based
     DBG("[ROUTER] Selected effect ID: " << selectedEffectID);
     
-    if (selectedEffectID < 0 || selectedEffectID > 7) {
+    if (selectedEffectID < 0 || selectedEffectID > 8) {
         DBG("[ROUTER] ERROR: Invalid effect ID " << selectedEffectID);
         return;
     }
@@ -7113,6 +7223,7 @@ void PluginEditor::onEffectSelectorChanged(int slotIndex)
     setVisibleVec(granularGroup, false);
     setVisibleVec(slicerGroup, false);
     setVisibleVec(dubdelayGroup, false);
+    setVisibleVec(reduxGroup, false);
     DBG("[ROUTER] ✓ All groups hidden");
     
     // Show the correct effect for the current page based on new assignment
@@ -7209,6 +7320,37 @@ void PluginEditor::onEffectSelectorChanged(int slotIndex)
             }
             
             DBG("[ROUTER] ✓ DubDelay group shown");
+            break;
+        case EffectID::Redux:
+            DBG("[ROUTER] Showing Redux group (" << reduxGroup.size() << " components)");
+            setVisibleVec(reduxGroup, true);
+            
+            // Restore UI state from APVTS parameters
+            {
+                auto* fxEnabledParam = processorRef.getAPVTS().getRawParameterValue("reduxEnabled");
+                reduxFxAreaEnabled = fxEnabledParam ? (fxEnabledParam->load() > 0.5f) : true;
+                if (reduxFxPowerButton) {
+                    reduxFxPowerButton->setToggleState(reduxFxAreaEnabled, juce::dontSendNotification);
+                }
+                
+                // Restore sequencer enabled state
+                reduxStepAreaEnabled = true; // Start enabled
+                if (reduxStepPowerButton) {
+                    reduxStepPowerButton->setToggleState(reduxStepAreaEnabled, juce::dontSendNotification);
+                }
+                
+                updateReduxFxAreaVisibility();
+                updateReduxStepAreaVisibility();
+            }
+            
+            // Trigger initial value label updates (8 knobs)
+            for (int i = 0; i < 8; ++i) {
+                if (reduxKnobs[i] && reduxAttachments[i]) {
+                    reduxKnobs[i]->onValueChange();
+                }
+            }
+            
+            DBG("[ROUTER] ✓ Redux group shown");
             break;
     }
     
@@ -9563,10 +9705,688 @@ void PluginEditor::updateDubDelaySequencerUI()
     }
     
     // Update step amount display (don't overwrite if user is editing)
-    if (dubdelayStepAmountLabel != nullptr && !dubdelayStepAmountLabel->hasKeyboardFocus(true)) {
+    if (dubdelayStepAmountLabel != nullptr && !dubdelayStepAmountLabel->hasKeyboardFocus(true)) {                                                               
         dubdelayStepAmountLabel->setText(juce::String(stepsUsed), false);
     }
     
     repaint();
 }
 
+
+//==============================================================================
+// Redux Page Setup Methods
+//==============================================================================
+
+void PluginEditor::setupReduxKnobs()
+{
+    // Redux knob titles for bitcrusher controls
+    const juce::StringArray reduxKnobTitles = {
+        "Bit Depth",
+        "Rate",
+        "Jitter",
+        "Pre Filter",
+        "Post Filter",
+        "Drive",
+        "Emphasis",
+        "Mix"
+    };
+    
+    // Redux parameter IDs
+    const juce::StringArray reduxParamIDs = {
+        "reduxBitDepth",
+        "reduxSampleRateReduction",
+        "reduxJitter",
+        "reduxPreFilter",
+        "reduxPostFilter",
+        "reduxDrive",
+        "reduxEmphasis",
+        "reduxMix"
+    };
+    
+    DBG("[UI] Setting up Redux knobs...");
+
+    // Effect area bounds (same as other pages)
+    auto effectArea = juce::Rectangle<int>(25, 54, 413, 296);
+    const int knobSize = 80;
+    const int knobSpacing = 20;
+    const int startX = effectArea.getX() + 15;
+    const int startY = effectArea.getY() + effectArea.getHeight() - 210;
+
+    // Create and setup knobs
+    for (int i = 0; i < 8; ++i)
+    {
+        // Position 8 knobs in 2 rows of 4 (EXACT same as other effects)
+        int x = startX + (i % 4) * (knobSize + knobSpacing);
+        int y = startY + (i / 4) * (knobSize + 20);
+        
+        // Move all knob groups up 6px from current position, then top 4 down 8px (EXACT same as other effects)
+        if (i < 4)
+            y -= 23; // Moved up 6px from -25 to -31, then down 8px to -23
+        else
+            y -= 1; // Moved up 6px from +5 to -1
+        
+        // Create knob
+        reduxKnobs[i] = std::make_unique<CustomKnob>();
+        addAndMakeVisible(reduxKnobs[i].get());
+        reduxKnobs[i]->setVisible(false);
+        reduxKnobs[i]->setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
+        reduxKnobs[i]->setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
+        
+        // Set knob ranges based on parameter
+        switch (i) {
+            case 0: // Bit Depth (1-16)
+                reduxKnobs[i]->setRange(1.0, 16.0, 1.0);
+                reduxKnobs[i]->setValue(8.0, juce::dontSendNotification);
+                break;
+            case 1: // Sample Rate (1-32)
+                reduxKnobs[i]->setRange(1.0, 32.0, 1.0);
+                reduxKnobs[i]->setValue(1.0, juce::dontSendNotification);
+                break;
+            case 2: // Jitter (0-1)
+                reduxKnobs[i]->setRange(0.0, 1.0, 0.01);
+                reduxKnobs[i]->setValue(0.0, juce::dontSendNotification);
+                break;
+            case 3: // Pre Filter (20-20000 Hz, log scale)
+                reduxKnobs[i]->setRange(20.0, 20000.0, 1.0);
+                reduxKnobs[i]->setSkewFactorFromMidPoint(1000.0);
+                reduxKnobs[i]->setValue(20000.0, juce::dontSendNotification);
+                break;
+            case 4: // Post Filter (20-20000 Hz, log scale)
+                reduxKnobs[i]->setRange(20.0, 20000.0, 1.0);
+                reduxKnobs[i]->setSkewFactorFromMidPoint(1000.0);
+                reduxKnobs[i]->setValue(20000.0, juce::dontSendNotification);
+                break;
+            case 5: // Drive (0-10)
+                reduxKnobs[i]->setRange(0.0, 10.0, 0.01);
+                reduxKnobs[i]->setValue(1.0, juce::dontSendNotification);
+                break;
+            case 6: // Emphasis (0-1)
+                reduxKnobs[i]->setRange(0.0, 1.0, 0.01);
+                reduxKnobs[i]->setValue(0.5, juce::dontSendNotification);
+                break;
+            case 7: // Mix (0-1)
+                reduxKnobs[i]->setRange(0.0, 1.0, 0.01);
+                reduxKnobs[i]->setValue(0.5, juce::dontSendNotification);
+                break;
+        }
+        
+        // Set knob images (CRITICAL - this makes them look like proper knobs!)
+        if (assets.knobRing != nullptr)
+            reduxKnobs[i]->setRingImage(assets.knobRing->createCopy());
+        if (assets.knobInside != nullptr)
+            reduxKnobs[i]->setInnerImage(assets.knobInside->createCopy());
+
+        // Position knob
+        reduxKnobs[i]->setBounds(x, y, knobSize, knobSize);
+        
+        // Create knob label
+        reduxKnobLabels[i] = std::make_unique<juce::Label>();
+        addAndMakeVisible(reduxKnobLabels[i].get());
+        reduxKnobLabels[i]->setVisible(false);
+        reduxKnobLabels[i]->setText(reduxKnobTitles[i], juce::dontSendNotification);
+        reduxKnobLabels[i]->setJustificationType(juce::Justification::centred);
+        reduxKnobLabels[i]->setColour(juce::Label::textColourId, juce::Colours::white);
+        reduxKnobLabels[i]->setFont(juce::Font(12.0f, juce::Font::bold));
+        reduxKnobLabels[i]->setBounds(x, y - 15, knobSize, 20); // Moved down 5px from -20 to -15 (same as other effects)
+        
+        // Create value label
+        reduxValueLabels[i] = std::make_unique<juce::Label>();
+        addAndMakeVisible(reduxValueLabels[i].get());
+        reduxValueLabels[i]->setVisible(false);
+        reduxValueLabels[i]->setText("0", juce::dontSendNotification);
+        reduxValueLabels[i]->setJustificationType(juce::Justification::centred);
+        reduxValueLabels[i]->setColour(juce::Label::textColourId, juce::Colours::white);
+        reduxValueLabels[i]->setFont(juce::Font(10.0f, juce::Font::plain));
+        reduxValueLabels[i]->setBounds(x, y + knobSize - 10, knobSize, 15); // Same as other effects
+        
+        // Create indicator bar
+        reduxIndicatorBars[i] = std::make_unique<IndicatorBar>();
+        addAndMakeVisible(reduxIndicatorBars[i].get());
+        reduxIndicatorBars[i]->setVisible(false);
+        reduxIndicatorBars[i]->setValue(0.5f);
+        reduxIndicatorBars[i]->setBounds(x + 10, y + knobSize + 8, knobSize - 20, 13); // Same as other effects
+        
+        // Create dice button
+        reduxDiceButtons[i] = std::make_unique<CustomDiceButton>();
+        addAndMakeVisible(reduxDiceButtons[i].get());
+        reduxDiceButtons[i]->setVisible(false);
+        
+        // Create lock button (positioned at end of title text like other effects)
+        reduxLockButtons[i] = std::make_unique<LockButton>();
+        addAndMakeVisible(reduxLockButtons[i].get());
+        reduxLockButtons[i]->setVisible(false);
+        
+        // Position lock button at end of title text (same as other effects)
+        juce::Font labelFont(12.0f, juce::Font::bold);
+        int textWidth = labelFont.getStringWidth(reduxKnobTitles[i]);
+        const int lockSize = 10; // Same size as other effects
+        const int lockSpacing = 5; // Fixed distance from end of title text
+        int lockX = x + (knobSize / 2) + (textWidth / 2) + lockSpacing;
+        int lockY = y - 10; // Same position as other effects
+        
+        reduxLockButtons[i]->setBounds(lockX, lockY, lockSize, lockSize);
+        
+        // Set lock button images
+        if (assets.unlockedIcon && assets.lockedIcon) {
+            auto imgUnlocked = assets.unlockedIcon->createCopy();
+            auto imgLocked = assets.lockedIcon->createCopy();
+            reduxLockButtons[i]->setImages(std::move(imgUnlocked), std::move(imgLocked));
+        }
+        reduxLockButtons[i]->setToggleState(reduxKnobLocked[i], juce::dontSendNotification);
+        reduxLockButtons[i]->onClick = [this, i]() {
+            reduxKnobLocked[i] = reduxLockButtons[i]->getToggleState();
+            // DBG("[UI] Redux knob " << i << " lock: " << (reduxKnobLocked[i] ? "LOCKED" : "UNLOCKED"));
+        };
+        
+        // Add value change callback to update value label
+        reduxKnobs[i]->onValueChange = [this, i]() {
+            if (reduxKnobs[i] && reduxValueLabels[i]) {
+                float value = reduxKnobs[i]->getValue();
+                juce::String valueText;
+                
+                switch (i) {
+                    case 0: valueText = juce::String((int)value); break; // Bit Depth
+                    case 1: valueText = juce::String((int)value); break; // Sample Rate
+                    case 2: valueText = juce::String(value, 2); break; // Jitter
+                    case 3: valueText = juce::String((int)value) + " Hz"; break; // Pre Filter
+                    case 4: valueText = juce::String((int)value) + " Hz"; break; // Post Filter
+                    case 5: valueText = juce::String(value, 2); break; // Drive
+                    case 6: valueText = juce::String(value, 2); break; // Emphasis
+                    case 7: valueText = juce::String(value, 2); break; // Mix
+                }
+                
+                reduxValueLabels[i]->setText(valueText, juce::dontSendNotification);
+                
+                // Update parameter in processor
+                updateReduxParameterFromKnob(i);
+                
+                if (reduxIndicatorBars[i]) {
+                    float normValue = 0.5f;
+                    switch (i) {
+                        case 0: normValue = (value - 1.0f) / 15.0f; break; // Bit depth 1-16
+                        case 1: normValue = (value - 1.0f) / 31.0f; break; // Sample rate 1-32
+                        case 2: case 6: case 7: 
+                            normValue = value; break; // 0-1 params (Jitter, Emphasis, Mix)
+                        case 3: case 4: 
+                            normValue = (value - 20.0f) / 19980.0f; break; // Filters 20-20000
+                        case 5: normValue = value / 10.0f; break; // Drive 0-10
+                    }
+                    reduxIndicatorBars[i]->setValue(normValue);
+                }
+            }
+        };
+        
+        // Attach to parameter
+        auto* param = processorRef.getAPVTS().getParameter(reduxParamIDs[i]);
+        if (param != nullptr) {
+            reduxAttachments[i] = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+                processorRef.getAPVTS(), reduxParamIDs[i], *reduxKnobs[i]);
+            DBG("[Redux] Successfully attached knob " << i << " to parameter " << reduxParamIDs[i]);
+        } else {
+            DBG("[Redux] ERROR: Parameter " << reduxParamIDs[i] << " not found!");
+            reduxAttachments[i] = nullptr;
+        }
+        
+        DBG("[Redux] Created knob " << i << ": " << reduxKnobTitles[i] << " -> " << reduxParamIDs[i]);
+    }
+    
+    DBG("[Redux] Redux knobs setup complete");
+}
+
+void PluginEditor::setupReduxEffectsArea()
+{
+    DBG("[UI] Setting up Redux effects area...");
+    
+    // Effect area bounds (match other pages exactly)
+    auto effectArea = juce::Rectangle<int>(25, 54, 413, 296);
+    
+    // Create "EFFECT" title label (ALWAYS "EFFECT", NOT the effect name!)
+    reduxEffectsTitle = std::make_unique<juce::Label>();
+    reduxEffectsTitle->setText("EFFECT", juce::dontSendNotification);
+    reduxEffectsTitle->setFont(juce::Font(27.648f, juce::Font::bold));
+    reduxEffectsTitle->setColour(juce::Label::textColourId, juce::Colours::white);
+    reduxEffectsTitle->setJustificationType(juce::Justification::centredLeft);
+    addAndMakeVisible(reduxEffectsTitle.get());
+    reduxEffectsTitle->setVisible(false);
+    reduxEffectsTitle->setBounds(effectArea.getX() + 10, effectArea.getY() + 5, 100, 30);
+    
+    // FX Power button
+    reduxFxPowerButton = std::make_unique<juce::DrawableButton>("reduxPower", juce::DrawableButton::ImageFitted);
+    addAndMakeVisible(reduxFxPowerButton.get());
+    reduxFxPowerButton->setVisible(false);
+    reduxFxPowerButton->setClickingTogglesState(true);
+    
+    // Make button background transparent (match other pages)
+    reduxFxPowerButton->setColour(juce::DrawableButton::backgroundColourId, juce::Colours::transparentBlack);
+    reduxFxPowerButton->setColour(juce::DrawableButton::backgroundOnColourId, juce::Colours::transparentBlack);
+    
+    if (assets.fxPowerOn) {
+        reduxFxPowerButton->setImages(assets.fxPowerOn.get());
+    }
+    
+    const int buttonSize = 46;
+    reduxFxPowerButton->setBounds(effectArea.getX() + effectArea.getWidth() - buttonSize - 8 + 8 + 3, 
+                                 effectArea.getY() + 6 - 20 + 4, buttonSize, buttonSize);
+    
+    reduxFxPowerButton->onClick = [this]() {
+        reduxFxAreaEnabled = reduxFxPowerButton->getToggleState();
+        
+        // Update APVTS parameter
+        auto* param = processorRef.getAPVTS().getParameter("reduxEnabled");
+        if (param) {
+            param->setValueNotifyingHost(reduxFxAreaEnabled ? 1.0f : 0.0f);
+        }
+        
+        updateReduxFxAreaVisibility();
+        DBG("[UI] Redux FX power: " << (reduxFxAreaEnabled ? "ON" : "OFF"));
+    };
+    
+    // Main dice button (randomize all unlocked knobs)
+    reduxDiceButton = std::make_unique<CustomDiceButton>();
+    addAndMakeVisible(reduxDiceButton.get());
+    reduxDiceButton->setVisible(false);
+    
+    const int diceSize = 32;
+    reduxDiceButton->setBounds(effectArea.getX() + 130, effectArea.getY() + 5, diceSize, diceSize);
+    if (assets.diceLarge != nullptr) {
+        reduxDiceButton->setDiceImage(assets.diceLarge->createCopy());
+    }
+    reduxDiceButton->onClick = [this]() {
+        randomizeReduxKnobValues();
+    };
+    
+    DBG("[UI] Redux effects area setup complete");
+}
+
+void PluginEditor::setupReduxSequencerArea()
+{
+    DBG("[UI] Setting up Redux sequencer area...");
+    
+    // Sequencer area bounds (EXACT same as other pages)
+    auto sequencerArea = juce::Rectangle<int>(25, 374, 413, 140);
+    
+    // Create step title
+    reduxStepTitle = std::make_unique<juce::Label>();
+    reduxStepTitle->setText("STEP", juce::dontSendNotification);
+    reduxStepTitle->setFont(juce::Font(22.118f, juce::Font::bold));
+    reduxStepTitle->setColour(juce::Label::textColourId, juce::Colours::white);
+    reduxStepTitle->setJustificationType(juce::Justification::centredLeft);
+    addAndMakeVisible(reduxStepTitle.get());
+    reduxStepTitle->setVisible(false);
+    reduxStepTitle->setBounds(sequencerArea.getX() + 10, sequencerArea.getY(), 80, 30);
+    
+    // Create step buttons (2 rows of 8)
+    const int buttonSize = 40;
+    const int buttonSpacing = 8;
+    const int startX = sequencerArea.getX() + 20;
+    const int startY = sequencerArea.getY() + 35;
+    
+    for (int i = 0; i < 16; ++i) {
+        reduxStepButtons[i] = std::make_unique<StepButton>(i);
+        addAndMakeVisible(reduxStepButtons[i].get());
+        reduxStepButtons[i]->setVisible(false);
+        
+        int x = startX + (i % 8) * (buttonSize + buttonSpacing);
+        int y = startY + (i / 8) * (buttonSize + buttonSpacing);
+        
+        reduxStepButtons[i]->setBounds(x, y, buttonSize, buttonSize);
+        
+        if (assets.stepActive) {
+            reduxStepButtons[i]->setActiveImage(assets.stepActive->createCopy());
+        }
+        if (assets.stepInactive) {
+            reduxStepButtons[i]->setInactiveImage(assets.stepInactive->createCopy());
+        }
+        
+        // Wire up step button click handler
+        reduxStepButtons[i]->onClick = [this, i]() {
+            onReduxStepButtonClicked(i);
+        };
+    }
+    
+    // Create step amount editor
+    reduxStepAmountLabel = std::make_unique<juce::TextEditor>();
+    reduxStepAmountLabel->setText("16");
+    reduxStepAmountLabel->setFont(juce::Font(16.0f, juce::Font::bold));
+    reduxStepAmountLabel->setColour(juce::TextEditor::textColourId, juce::Colours::white);
+    reduxStepAmountLabel->setColour(juce::TextEditor::backgroundColourId, juce::Colours::transparentBlack);
+    reduxStepAmountLabel->setColour(juce::TextEditor::outlineColourId, juce::Colours::white);
+    reduxStepAmountLabel->setColour(juce::TextEditor::focusedOutlineColourId, juce::Colours::white);
+    reduxStepAmountLabel->setJustification(juce::Justification::centred);
+    reduxStepAmountLabel->setBorder(juce::BorderSize<int>(2));
+    reduxStepAmountLabel->setIndents(0, 0);
+    reduxStepAmountLabel->setInputRestrictions(2, "0123456789");
+    reduxStepAmountLabel->setReadOnly(true); // Read-only for now as Redux uses fixed 16-step patterns
+    addAndMakeVisible(reduxStepAmountLabel.get());
+    reduxStepAmountLabel->setVisible(false);
+    reduxStepAmountLabel->setBounds(sequencerArea.getX() + 180, sequencerArea.getY() - 10, 30, 25);
+    
+    // Create rate dropdown
+    reduxRateDropdown = std::make_unique<juce::ComboBox>();
+    reduxRateDropdown->addItem("4", 1);
+    reduxRateDropdown->addItem("2", 2);
+    reduxRateDropdown->addItem("1", 3);
+    reduxRateDropdown->addItem("1/2", 4);
+    reduxRateDropdown->addItem("1/4", 5);
+    reduxRateDropdown->addItem("1/8", 6);
+    reduxRateDropdown->addItem("1/16", 7);
+    reduxRateDropdown->addItem("1/32", 8);
+    reduxRateDropdown->setSelectedId(4); // Default to 1/8
+    reduxRateDropdown->setColour(juce::ComboBox::backgroundColourId, juce::Colours::transparentBlack);
+    reduxRateDropdown->setColour(juce::ComboBox::outlineColourId, juce::Colours::transparentBlack);
+    reduxRateDropdown->setColour(juce::ComboBox::buttonColourId, juce::Colours::transparentBlack);
+    reduxRateDropdown->setColour(juce::ComboBox::textColourId, juce::Colours::white);
+    reduxRateDropdown->setColour(juce::ComboBox::arrowColourId, juce::Colours::white);
+    reduxRateDropdown->onChange = [this]() {
+        if (reduxRateDropdown) {
+            int selectedId = reduxRateDropdown->getSelectedId();
+            DBG("[UI] Redux rate changed to: " << selectedId);
+            // TODO: Update processor with new rate
+        }
+    };
+    addAndMakeVisible(reduxRateDropdown.get());
+    reduxRateDropdown->setVisible(false);
+    reduxRateDropdown->setBounds(sequencerArea.getX() + 220, sequencerArea.getY() - 10, 60, 25);
+    
+    // Create std toggle (EXACT same as other effects)
+    reduxStdToggle = std::make_unique<CircularToggleButton>();
+    reduxStdToggle->setButtonText("-");
+    addAndMakeVisible(reduxStdToggle.get());
+    reduxStdToggle->setVisible(false);
+    reduxStdToggle->setBounds(sequencerArea.getX() + 288, sequencerArea.getY() - 14, 30, 30);
+    
+    // Set up toggle handler (EXACT same as other effects)
+    reduxStdToggle->onClick = [this]() {
+        // Cycle through -/t/. states
+        static int stdState = 0; // 0=-, 1=t, 2=.
+        stdState = (stdState + 1) % 3;
+        
+        switch (stdState) {
+            case 0: reduxStdToggle->setButtonText("-"); break;
+            case 1: reduxStdToggle->setButtonText("t"); break;
+            case 2: reduxStdToggle->setButtonText("."); break;
+        }
+    };
+    
+    // Create step dice button (EXACT same positioning as other effects)
+    reduxStepDiceButton = std::make_unique<CustomDiceButton>();
+    addAndMakeVisible(reduxStepDiceButton.get());
+    reduxStepDiceButton->setVisible(false);
+    int reduxStepDiceSize = static_cast<int>(35 * 0.7); // 30% smaller than 35px = ~24px
+    reduxStepDiceButton->setBounds(sequencerArea.getX() + 75, sequencerArea.getY() + 5, reduxStepDiceSize, reduxStepDiceSize);
+    
+    // Set up step dice button SVG (EXACT same as other effects)
+    if (assets.diceLarge != nullptr)
+    {
+        reduxStepDiceButton->setDiceImage(assets.diceLarge->createCopy());
+    }
+    reduxStepDiceButton->onClick = [this]() {
+        DBG("[UI] Redux step dice clicked");
+        // TODO: Randomize step pattern
+    };
+    
+    // Create step power button
+    reduxStepPowerButton = std::make_unique<juce::DrawableButton>("ReduxStepPower", juce::DrawableButton::ImageFitted);
+    addAndMakeVisible(reduxStepPowerButton.get());
+    reduxStepPowerButton->setVisible(false);
+    reduxStepPowerButton->setClickingTogglesState(true);
+    
+    // Make button background transparent (match other pages)
+    reduxStepPowerButton->setColour(juce::DrawableButton::backgroundColourId, juce::Colours::transparentBlack);
+    reduxStepPowerButton->setColour(juce::DrawableButton::backgroundOnColourId, juce::Colours::transparentBlack);
+    
+    if (assets.stepPowerOn) {
+        reduxStepPowerButton->setImages(assets.stepPowerOn.get());
+    }
+    
+    // Position at top right corner of step area, 20% smaller than 50px and adjusted position (EXACT same as other effects)
+    const int powerButtonSize = 40; // 50 * 0.8 = 40 (20% smaller)
+    reduxStepPowerButton->setBounds(sequencerArea.getX() + sequencerArea.getWidth() - powerButtonSize - 5 + 15 - 5 - 1, sequencerArea.getY() - 5 - 40 + 25 + 5, powerButtonSize, powerButtonSize); // 1px right, 5px up
+    
+    // Remove background colors (EXACT same as other effects)
+    reduxStepPowerButton->setColour(juce::DrawableButton::backgroundColourId, juce::Colours::transparentBlack);
+    reduxStepPowerButton->setColour(juce::DrawableButton::backgroundOnColourId, juce::Colours::transparentBlack);
+    
+    reduxStepPowerButton->onClick = [this]() {
+        reduxStepAreaEnabled = reduxStepPowerButton->getToggleState();
+        
+        // Update sequencer state
+        processorRef.setReduxSequencerEnabled(reduxStepAreaEnabled);
+        
+        // Update APVTS parameter if it exists
+        auto* param = processorRef.getAPVTS().getParameter("reduxStepEnabled");
+        if (param) {
+            param->setValueNotifyingHost(reduxStepAreaEnabled ? 1.0f : 0.0f);
+        }
+        
+        updateReduxStepAreaVisibility();
+        DBG("[UI] Redux step power: " << (reduxStepAreaEnabled ? "ON" : "OFF"));
+    };
+    
+    DBG("[UI] Redux sequencer area setup complete");
+}
+
+void PluginEditor::setupReduxAllStepsToggle()
+{
+    DBG("[UI] Setting up Redux all steps toggle...");
+    
+    // Effect area bounds (same as other pages)
+    auto effectArea = juce::Rectangle<int>(25, 54, 413, 296);
+    
+    // Create all steps toggle (EXACT same positioning as other effects)
+    reduxAllStepsToggle = std::make_unique<AllStepsToggleButton>();
+    addAndMakeVisible(reduxAllStepsToggle.get());
+    reduxAllStepsToggle->setVisible(false);
+    
+    // Position button in EXACT same location as other effects
+    const int buttonSize = 29; // 24 * 1.2 = 28.8, rounded to 29
+    reduxAllStepsToggle->setBounds(effectArea.getX() + effectArea.getWidth()/2 - buttonSize/2 + 30, effectArea.getY() - 1, buttonSize, buttonSize);
+    
+    // Set up images (EXACT same as other effects)
+    if (assets.stepTopInactive != nullptr && assets.stepTopActive != nullptr)
+    {
+        static_cast<AllStepsToggleButton*>(reduxAllStepsToggle.get())->setImages(
+            assets.stepTopInactive->createCopy(),
+            assets.stepTopActive->createCopy()
+        );
+    }
+    
+    reduxAllStepsToggle->setToggleState(false, juce::dontSendNotification);
+    reduxAllStepsToggle->onClick = [this]() {
+        bool allStepsOn = reduxAllStepsToggle->getToggleState();
+        DBG("[UI] Redux all steps toggle: " << (allStepsOn ? "ON" : "OFF"));
+        // TODO: Handle all steps toggle
+    };
+    
+    // Create all steps label (EXACT same positioning as other effects)
+    reduxAllStepsLabel = std::make_unique<juce::Label>();
+    reduxAllStepsLabel->setText("ALL STEPS", juce::dontSendNotification);
+    reduxAllStepsLabel->setFont(juce::Font(14.4f, juce::Font::bold));
+    reduxAllStepsLabel->setColour(juce::Label::textColourId, juce::Colours::white);
+    reduxAllStepsLabel->setJustificationType(juce::Justification::centredLeft);
+    addAndMakeVisible(reduxAllStepsLabel.get());
+    reduxAllStepsLabel->setVisible(false);
+    reduxAllStepsLabel->setBounds(effectArea.getX() + effectArea.getWidth()/2 + buttonSize/2 + 5 + 30, effectArea.getY() + 1, 80, 24);
+    
+    DBG("[UI] Redux all steps toggle setup complete");
+}
+
+void PluginEditor::updateReduxFxAreaVisibility() 
+{
+    float alpha = reduxFxAreaEnabled ? 1.0f : 0.3f;
+
+    // Grey title, dice
+    if (reduxEffectsTitle) reduxEffectsTitle->setAlpha(alpha);
+    if (reduxDiceButton) { reduxDiceButton->setAlpha(alpha); reduxDiceButton->setEnabled(reduxFxAreaEnabled); }
+
+    // Grey knobs, labels, values, indicators, locks
+    for (int i = 0; i < 8; ++i) {
+        if (reduxKnobs[i]) { reduxKnobs[i]->setAlpha(alpha); reduxKnobs[i]->setEnabled(reduxFxAreaEnabled); }
+        if (reduxKnobLabels[i]) reduxKnobLabels[i]->setAlpha(alpha);
+        if (reduxValueLabels[i]) reduxValueLabels[i]->setAlpha(alpha);
+        if (reduxIndicatorBars[i]) reduxIndicatorBars[i]->setAlpha(alpha);
+        if (reduxDiceButtons[i]) { 
+            reduxDiceButtons[i]->setEnabled(reduxFxAreaEnabled);
+            reduxDiceButtons[i]->setAlpha(alpha);
+        }
+        if (reduxLockButtons[i]) { 
+            reduxLockButtons[i]->setEnabled(reduxFxAreaEnabled);
+            reduxLockButtons[i]->setAlpha(alpha);
+        }
+    }
+    
+    // Power button always visible
+    if (reduxFxPowerButton)
+        reduxFxPowerButton->setVisible(true);
+    
+    DBG("[Redux] Redux FX area visibility updated");
+}
+void PluginEditor::updateReduxStepAreaVisibility()
+{
+    float alpha = reduxStepAreaEnabled ? 1.0f : 0.3f;
+
+    // Grey step area components
+    if (reduxStepTitle) { reduxStepTitle->setAlpha(alpha); reduxStepTitle->setVisible(true); }
+    if (reduxStepAmountLabel) { reduxStepAmountLabel->setAlpha(alpha); reduxStepAmountLabel->setVisible(true); }
+    if (reduxRateDropdown) { reduxRateDropdown->setAlpha(alpha); reduxRateDropdown->setEnabled(reduxStepAreaEnabled); }
+    if (reduxStdToggle) { reduxStdToggle->setAlpha(alpha); reduxStdToggle->setEnabled(reduxStepAreaEnabled); }
+    if (reduxStepDiceButton) { 
+        reduxStepDiceButton->setAlpha(alpha); 
+        reduxStepDiceButton->setEnabled(reduxStepAreaEnabled);
+        reduxStepDiceButton->setVisible(true);
+    }
+    
+    // Grey step buttons
+    for (int i = 0; i < 16; ++i) {
+        if (reduxStepButtons[i]) {
+            reduxStepButtons[i]->setAlpha(alpha);
+            reduxStepButtons[i]->setEnabled(reduxStepAreaEnabled);
+            reduxStepButtons[i]->setVisible(true);
+        }
+    }
+    
+    // Power button always visible
+    if (reduxStepPowerButton) reduxStepPowerButton->setVisible(true);
+}
+void PluginEditor::randomizeReduxKnobValues()
+{
+    DBG("[UI] Randomizing Redux knob values...");
+    
+    for (int i = 0; i < 8; ++i)
+    {
+        if (reduxKnobLocked[i]) {
+            continue; // Skip locked knobs
+        }
+        
+        randomizeIndividualReduxKnob(i);
+    }
+}
+
+void PluginEditor::randomizeIndividualReduxKnob(int knobIndex)
+{
+    if (knobIndex < 0 || knobIndex >= 8 || reduxKnobs[knobIndex] == nullptr) return;
+    if (reduxKnobLocked[knobIndex]) return;
+    
+    float randomValue = 0.0f;
+    switch (knobIndex) {
+        case 0: // Bit Depth (1-16)
+            randomValue = 1.0f + juce::Random::getSystemRandom().nextFloat() * 15.0f;
+            break;
+        case 1: // Sample Rate (1-32)
+            randomValue = 1.0f + juce::Random::getSystemRandom().nextFloat() * 31.0f;
+            break;
+        case 2: // Jitter (0-1)
+            randomValue = juce::Random::getSystemRandom().nextFloat();
+            break;
+        case 3: // Pre Filter (20-20000 Hz, log scale)
+            randomValue = 20.0f + juce::Random::getSystemRandom().nextFloat() * 19980.0f;
+            break;
+        case 4: // Post Filter (20-20000 Hz, log scale)
+            randomValue = 20.0f + juce::Random::getSystemRandom().nextFloat() * 19980.0f;
+            break;
+        case 5: // Drive (0-10)
+            randomValue = juce::Random::getSystemRandom().nextFloat() * 10.0f;
+            break;
+        case 6: // Emphasis (0-1)
+            randomValue = juce::Random::getSystemRandom().nextFloat();
+            break;
+        case 7: // Mix (0-1)
+            randomValue = juce::Random::getSystemRandom().nextFloat();
+            break;
+    }
+    
+    reduxKnobs[knobIndex]->setValue(randomValue, juce::sendNotification);
+    DBG("[UI] Redux knob " << knobIndex << " randomized to " << randomValue);
+}
+void PluginEditor::updateReduxParameterFromKnob(int knobIndex)
+{
+    if (knobIndex < 0 || knobIndex >= 8 || reduxKnobs[knobIndex] == nullptr) return;
+    
+    float value = reduxKnobs[knobIndex]->getValue();
+    processorRef.updateReduxCurrentStepSnapshot(knobIndex, value);
+}
+void PluginEditor::updateReduxSequencerUI()
+{
+    int selectedStep = reduxUiSelectedStep;
+    int playingStep = 0; // TODO: Implement getReduxCurrentStep in processor
+    const int stepsUsed = 16; // Redux uses fixed 16 steps
+    
+    for (int i = 0; i < 16; ++i) {
+        if (reduxStepButtons[i] != nullptr) {
+            reduxStepButtons[i]->setSelected(i == selectedStep);
+            bool sequencerEnabled = true; // TODO: Get from processor
+            reduxStepButtons[i]->setPlaying(sequencerEnabled && (i == playingStep));
+            bool shouldBeEnabled = i < stepsUsed;
+            reduxStepButtons[i]->setEnabledStep(shouldBeEnabled);
+        }
+    }
+    
+    // Update step amount display (don't overwrite if user is editing)
+    if (reduxStepAmountLabel != nullptr && !reduxStepAmountLabel->hasKeyboardFocus(true)) {
+        reduxStepAmountLabel->setText(juce::String(stepsUsed), false);
+    }
+}
+
+void PluginEditor::onReduxStepButtonClicked(int stepIndex)
+{
+    DBG("[UI] Redux step button " << stepIndex << " clicked");
+    
+    // Save current step's snapshot before switching
+    int currentStep = reduxUiSelectedStep;
+    if (currentStep >= 0 && currentStep < 16) {
+        StepSnapshot currentSnapshot;
+        // Read current Redux knob values and save to snapshot
+        if (reduxKnobs[0]) currentSnapshot.redux.mix = reduxKnobs[0]->getValue();
+        if (reduxKnobs[1]) currentSnapshot.redux.bitDepth = (int)reduxKnobs[1]->getValue();
+        if (reduxKnobs[2]) currentSnapshot.redux.sampleRateReduction = (int)reduxKnobs[2]->getValue();
+        if (reduxKnobs[3]) currentSnapshot.redux.jitter = reduxKnobs[3]->getValue();
+        if (reduxKnobs[4]) currentSnapshot.redux.preFilter = reduxKnobs[4]->getValue();
+        if (reduxKnobs[5]) currentSnapshot.redux.postFilter = reduxKnobs[5]->getValue();
+        if (reduxKnobs[6]) currentSnapshot.redux.drive = reduxKnobs[6]->getValue();
+        if (reduxKnobs[7]) currentSnapshot.redux.emphasis = reduxKnobs[7]->getValue();
+        
+        processorRef.setReduxStepSnapshot(currentStep, currentSnapshot);
+        DBG("[UI] Saved Redux snapshot for step " << currentStep);
+    }
+    
+    // Switch to new step (both UI and processor tracking)
+    reduxUiSelectedStep = stepIndex;
+    processorRef.setReduxSelectedStep(stepIndex);
+    
+    // Load new step's snapshot into knobs
+    StepSnapshot newSnapshot = processorRef.getReduxSafeSnapshot(stepIndex);
+    if (reduxKnobs[0]) reduxKnobs[0]->setValue(newSnapshot.redux.mix, juce::sendNotification);
+    if (reduxKnobs[1]) reduxKnobs[1]->setValue((float)newSnapshot.redux.bitDepth, juce::sendNotification);
+    if (reduxKnobs[2]) reduxKnobs[2]->setValue((float)newSnapshot.redux.sampleRateReduction, juce::sendNotification);
+    if (reduxKnobs[3]) reduxKnobs[3]->setValue(newSnapshot.redux.jitter, juce::sendNotification);
+    if (reduxKnobs[4]) reduxKnobs[4]->setValue(newSnapshot.redux.preFilter, juce::sendNotification);
+    if (reduxKnobs[5]) reduxKnobs[5]->setValue(newSnapshot.redux.postFilter, juce::sendNotification);
+    if (reduxKnobs[6]) reduxKnobs[6]->setValue(newSnapshot.redux.drive, juce::sendNotification);
+    if (reduxKnobs[7]) reduxKnobs[7]->setValue(newSnapshot.redux.emphasis, juce::sendNotification);
+    
+    updateReduxSequencerUI();
+    
+    DBG("[UI] Switched to Redux step " << stepIndex);
+}
+void PluginEditor::ensureReduxAttachments() {}
+void PluginEditor::rebindReduxAttachments() {}

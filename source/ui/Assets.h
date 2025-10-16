@@ -61,9 +61,13 @@ struct UiAssets {
     std::unique_ptr<juce::Drawable> tabGrainIcon;      // Grain_Icon.svg
     std::unique_ptr<juce::Drawable> tabSlicerIcon;     // Slice_Icon.svg
     std::unique_ptr<juce::Drawable> tabDubDelayIcon;   // DubDelay_Icon.svg
+    std::unique_ptr<juce::Drawable> tabReduxIcon;      // Redux_Icon.svg
     
     // Dub Delay backgrounds
     std::unique_ptr<juce::Drawable> dubdelayBackgroundTab1, dubdelayBackgroundTab2, dubdelayBackgroundTab3, dubdelayBackgroundTab4;
+    
+    // Redux backgrounds
+    std::unique_ptr<juce::Drawable> reduxBackgroundTab1, reduxBackgroundTab2, reduxBackgroundTab3, reduxBackgroundTab4;
     
     std::unique_ptr<juce::Drawable> fxPowerOn, stepPowerOn, knobDice, diceLarge, macroAssign;
     std::unique_ptr<juce::Drawable> macro1AssignButton, macro2AssignButton;

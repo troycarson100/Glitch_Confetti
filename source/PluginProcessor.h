@@ -10,6 +10,7 @@
 #include "dsp/granular/GranularEngine.h"
 #include "dsp/rhythm_gate/RhythmGateEngine.h"
 #include "dsp/DubDelayProcessor.h"
+#include "Effects/Redux/ReduxBank.h"
 #include "dsp/DspFlags.h"
 #include "StepSnapshot.h"
 #include "MeterTheme.h"
@@ -165,6 +166,16 @@ public:
     int getDirtPlayingStep() const noexcept { return dirtSeq.playingStep.load(); }
     int getDirtCurrentStep() const noexcept { return dirtSeq.currentStep.load(); }
     void setDirtSelectedStep(int step) noexcept { dirtUiSelectedStep.store(step); }
+    void setReduxSelectedStep(int step) noexcept { reduxUiSelectedStep.store(step); }
+    void setReduxSequencerEnabled(bool enabled) noexcept {
+        reduxSeq.enabled.store(enabled);
+        if (enabled) {
+            reduxSeq.active.store(true);
+        }
+    }
+    const SeqState& getReduxSeqState() const { return reduxSeq; }
+    int getReduxPlayingStep() const noexcept { return reduxSeq.playingStep.load(); }
+    int getReduxCurrentStep() const noexcept { return reduxSeq.currentStep.load(); }
     void setDirtSequencerEnabled(bool enabled) noexcept {
         dirtSeq.enabled.store(enabled);
         if (enabled) {
@@ -207,6 +218,11 @@ public:
     StepSnapshot getDirtSafeSnapshot(int step) const;
     void setDirtStepSnapshot(int step, const StepSnapshot& snapshot) noexcept;
     void updateDirtCurrentStepSnapshot(int knobIndex, float value);
+    
+    // Step snapshot access (Redux)
+    StepSnapshot getReduxSafeSnapshot(int step) const;
+    void setReduxStepSnapshot(int step, const StepSnapshot& snapshot) noexcept;
+    void updateReduxCurrentStepSnapshot(int knobIndex, float value);
     
     // Chorus snapshot access
     StepSnapshot getChorusSafeSnapshot(int step) const;
@@ -340,6 +356,10 @@ private:
     SeqState dirtSeq;
     std::atomic<int> dirtUiSelectedStep { 0 };  // Dirt editor's selected step
     
+    // Redux sequencer state (independent from other effects)
+    SeqState reduxSeq;
+    std::atomic<int> reduxUiSelectedStep { 0 };  // Redux editor's selected step
+    
     // Chorus Sequencer State (independent from Delay, AutoPan, and Dirt)
     SeqState chorusSeq;
     std::atomic<int> chorusUiSelectedStep { 0 };  // Chorus editor's selected step
@@ -364,6 +384,7 @@ private:
     std::array<StepSnapshot, 16> stepSnapshots;
     std::array<StepSnapshot, 16> autopanStepSnapshots;
     std::array<StepSnapshot, 16> dirtStepSnapshots;
+    std::array<StepSnapshot, 16> reduxStepSnapshots;
     std::array<StepSnapshot, 16> chorusStepSnapshots;
     std::array<StepSnapshot, 16> reverbStepSnapshots;
     std::array<StepSnapshot, 16> granularStepSnapshots;
@@ -414,6 +435,9 @@ public:
     
     // Dub Delay DSP Implementation
     DubDelayProcessor dubDelay;
+    
+    // Redux DSP Implementation
+    ReduxBank reduxBank;
     
     // PanMan-style visualizer clock
     struct PanVisClock {

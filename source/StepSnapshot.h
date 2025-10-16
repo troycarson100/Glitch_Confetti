@@ -85,4 +85,15 @@ struct StepSnapshot {
         float regenDamp = 0.25f;   // 0-1 (regen damping)
         float mix = 0.35f;         // 0-1 (dry/wet mix)
     } dubdelay;
+    
+    struct {
+        float mix = 0.5f;                    // 0-1 (dry/wet blend)
+        int bitDepth = 8;                    // 1-24 bits
+        int sampleRateReduction = 1;         // 1-32 (hold every Nth sample)
+        float jitter = 0.0f;                 // 0-1 (randomize held sample timing)
+        float preFilter = 20000.0f;          // 20-20000 Hz (low-pass before crushing)
+        float postFilter = 20000.0f;         // 20-20000 Hz (low-pass after crushing)
+        float drive = 1.0f;                  // 0-10 (pre-saturation gain)
+        float emphasis = 0.5f;               // 0-1 (frequency emphasis/tilt EQ)
+    } redux;
 };

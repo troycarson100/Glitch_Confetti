@@ -87,6 +87,13 @@ bool UiAssets::loadAll()
     dubdelayBackgroundTab3 = loadSVG (DubEcho_Background_Tab3_svg, DubEcho_Background_Tab3_svgSize);
     dubdelayBackgroundTab4 = loadSVG (DubEcho_Background_Tab4_svg, DubEcho_Background_Tab4_svgSize);
     
+    tabReduxIcon      = loadSVG (Redux_Icon_svg, Redux_Icon_svgSize);
+    
+    reduxBackgroundTab1 = loadSVG (Redux_Background_Tab1_svg, Redux_Background_Tab1_svgSize);
+    reduxBackgroundTab2 = loadSVG (Redux_Background_Tab2_svg, Redux_Background_Tab2_svgSize);
+    reduxBackgroundTab3 = loadSVG (Redux_Background_Tab3_svg, Redux_Background_Tab3_svgSize);
+    reduxBackgroundTab4 = loadSVG (Redux_Background_Tab4_svg, Redux_Background_Tab4_svgSize);
+    
     fxPowerOn         = loadSVG (FX_Power_On_svg, FX_Power_On_svgSize);
     stepPowerOn       = loadSVG (Step_Power_On_svg, Step_Power_On_svgSize);
     knobDice          = loadSVG (Knob_Basic_Dice_svg, Knob_Basic_Dice_svgSize);
@@ -116,6 +123,14 @@ bool UiAssets::loadAll()
     backgroundMustard = loadSVGFromFile (assetsDir.getChildFile ("Background_Mustard.svg"));
     spaceDelayBackgroundTab1 = loadSVGFromFile (assetsDir.getChildFile ("SpaceDelay_Background_Tab1.svg"));
     effectPlate       = loadSVGFromFile (assetsDir.getChildFile ("Effect_Background_Plate.svg"));
+    
+    // Redux assets
+    tabReduxIcon = loadSVGFromFile (assetsDir.getChildFile ("ui/Redux_Icon.svg"));
+    reduxBackgroundTab1 = loadSVGFromFile (assetsDir.getChildFile ("ui/Redux_Background_Tab1.svg"));
+    reduxBackgroundTab2 = loadSVGFromFile (assetsDir.getChildFile ("ui/Redux_Background_Tab2.svg"));
+    reduxBackgroundTab3 = loadSVGFromFile (assetsDir.getChildFile ("ui/Redux_Background_Tab3.svg"));
+    reduxBackgroundTab4 = loadSVGFromFile (assetsDir.getChildFile ("ui/Redux_Background_Tab4.svg"));
+    
     // … repeat
 #endif
 

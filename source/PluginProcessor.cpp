@@ -195,7 +195,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout PluginProcessor::createParam
     
     // Page and effect enable parameters
     params.push_back(std::make_unique<juce::AudioParameterChoice>("currentPage", "Current Page", 
-        juce::StringArray {"SpaceDelay", "AutoPan", "Dirt", "Chorus"}, 0)); // 0 = SpaceDelay, 1 = AutoPan, 2 = Dirt, 3 = Chorus
+        juce::StringArray {"SpaceDelay", "AutoPan", "Dirt", "Chorus", "Reverb", "Granular", "Slicer", "DubDelay", "Redux"}, 0)); // Effect page selection
     params.push_back(std::make_unique<juce::AudioParameterBool>("autopanEnabled", "AutoPan Enabled", true)); // AutoPan effect enabled - ON by default
     params.push_back(std::make_unique<juce::AudioParameterBool>("autopanTimeSync", "AutoPan Time Sync", true)); // AutoPan sync mode enabled - ON by default
     params.push_back(std::make_unique<juce::AudioParameterBool>("dirtEnabled", "Dirt Enabled", true)); // Dirt effect enabled - ON by default
@@ -296,10 +296,25 @@ juce::AudioProcessorValueTreeState::ParameterLayout PluginProcessor::createParam
         juce::NormalisableRange<float>(0.0f, 1.0f, 0.0f, 1.0f), 0.35f));
     params.push_back(std::make_unique<juce::AudioParameterBool>("dubEnabled", "Dub Delay Enabled", true)); // Enabled by default
     params.push_back(std::make_unique<juce::AudioParameterBool>("dubSync", "Dub Delay Sync", false)); // Sync disabled by default
+    
     params.push_back(std::make_unique<juce::AudioParameterChoice>("dubTimeDiv", "Dub Time Division", 
         juce::StringArray{"4", "2", "1", "1/2", "1/4", "1/8", "1/16", "1/32", "1/64"}, 5)); // Default 1/8
     params.push_back(std::make_unique<juce::AudioParameterChoice>("dubTimeGrid", "Dub Time Grid", 
         juce::StringArray{"Straight", "Dotted", "Triplet"}, 0)); // Default Straight
+    
+    // Redux Parameters - 8 knobs
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("reduxMix", "Redux Mix", 0.0f, 1.0f, 0.5f));
+    params.push_back(std::make_unique<juce::AudioParameterInt>("reduxBitDepth", "Redux Bit Depth", 1, 16, 8));
+    params.push_back(std::make_unique<juce::AudioParameterInt>("reduxSampleRateReduction", "Redux Sample Rate Reduction", 1, 32, 1));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("reduxJitter", "Redux Jitter", 0.0f, 1.0f, 0.0f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("reduxPreFilter", "Redux Pre Filter", 
+        juce::NormalisableRange<float>(20.0f, 20000.0f, 1.0f, 0.5f), 20000.0f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("reduxPostFilter", "Redux Post Filter", 
+        juce::NormalisableRange<float>(20.0f, 20000.0f, 1.0f, 0.5f), 20000.0f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("reduxDrive", "Redux Drive", 0.0f, 10.0f, 1.0f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("reduxEmphasis", "Redux Emphasis", 0.0f, 1.0f, 0.5f));
+    params.push_back(std::make_unique<juce::AudioParameterBool>("reduxEnabled", "Redux Enabled", true));
+    params.push_back(std::make_unique<juce::AudioParameterBool>("reduxStepEnabled", "Redux Step Enabled", true));
     
     return { params.begin(), params.end() };
 }
@@ -388,6 +403,9 @@ void PluginProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
     // Prepare Dub Delay DSP
     dubDelay.prepare(sampleRate, samplesPerBlock);
     dubdelaySeq.prepare(sampleRate); // Initialize Dub Delay sequencer with sample rate
+    
+    // Prepare Redux DSP
+    reduxBank.prepare(sampleRate, samplesPerBlock);
     
     // Prepare output visualizer buffer (store ~1 second of downsampled audio)
     const int bufferSize = (int)(sampleRate / downsampleRate); // ~1 second at downsample rate
@@ -1260,6 +1278,40 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                     
                     // Process
                     dubDelay.process(buffer, buffer.getNumSamples());
+                }
+                break;
+            }
+            
+            case EffectID::Redux:
+            {
+                // Read Redux parameters from APVTS
+                auto* mixParam = valueTreeState.getRawParameterValue("reduxMix");
+                auto* bitDepthParam = valueTreeState.getRawParameterValue("reduxBitDepth");
+                auto* sampleRateReductionParam = valueTreeState.getRawParameterValue("reduxSampleRateReduction");
+                auto* jitterParam = valueTreeState.getRawParameterValue("reduxJitter");
+                auto* preFilterParam = valueTreeState.getRawParameterValue("reduxPreFilter");
+                auto* postFilterParam = valueTreeState.getRawParameterValue("reduxPostFilter");
+                auto* driveParam = valueTreeState.getRawParameterValue("reduxDrive");
+                auto* emphasisParam = valueTreeState.getRawParameterValue("reduxEmphasis");
+                
+                if (mixParam && bitDepthParam && sampleRateReductionParam && jitterParam &&
+                    preFilterParam && postFilterParam && driveParam && emphasisParam)
+                {
+                    // Set Redux parameters
+                    reduxBank.setParams(
+                        mixParam->load(),
+                        static_cast<int>(bitDepthParam->load()),
+                        static_cast<int>(sampleRateReductionParam->load()),
+                        jitterParam->load(),
+                        preFilterParam->load(),
+                        postFilterParam->load(),
+                        driveParam->load(),
+                        emphasisParam->load()
+                    );
+                    
+                    // Process Redux effect
+                    juce::dsp::AudioBlock<float> audioBlock(buffer);
+                    reduxBank.process(audioBlock);
                 }
                 break;
             }
@@ -2225,6 +2277,57 @@ void PluginProcessor::updateDirtCurrentStepSnapshot(int knobIndex, float value)
             break;
         case 7: // Mix
             dirtStepSnapshots[currentStep].dirt.mix = value;
+            break;
+    }
+}
+
+// Redux snapshot methods
+StepSnapshot PluginProcessor::getReduxSafeSnapshot(int step) const
+{
+    if (step >= 0 && step < 16) {
+        return reduxStepSnapshots[step];
+    }
+    return reduxStepSnapshots[0];
+}
+
+void PluginProcessor::setReduxStepSnapshot(int step, const StepSnapshot& snapshot) noexcept
+{
+    if (step >= 0 && step < 16) {
+        reduxStepSnapshots[step] = snapshot;
+    }
+}
+
+void PluginProcessor::updateReduxCurrentStepSnapshot(int knobIndex, float value)
+{
+    int currentStep = reduxUiSelectedStep.load();
+    if (currentStep < 0 || currentStep >= 16) return;
+    
+    // Update the specific Redux parameter in the snapshot
+    // Note: knob order matches UI: Bit Depth, Rate, Jitter, Pre Filter, Post Filter, Drive, Emphasis, Mix
+    switch (knobIndex) {
+        case 0: // Bit Depth
+            reduxStepSnapshots[currentStep].redux.bitDepth = (int)value;
+            break;
+        case 1: // Sample Rate Reduction (Rate)
+            reduxStepSnapshots[currentStep].redux.sampleRateReduction = (int)value;
+            break;
+        case 2: // Jitter
+            reduxStepSnapshots[currentStep].redux.jitter = value;
+            break;
+        case 3: // Pre Filter
+            reduxStepSnapshots[currentStep].redux.preFilter = value;
+            break;
+        case 4: // Post Filter
+            reduxStepSnapshots[currentStep].redux.postFilter = value;
+            break;
+        case 5: // Drive
+            reduxStepSnapshots[currentStep].redux.drive = value;
+            break;
+        case 6: // Emphasis
+            reduxStepSnapshots[currentStep].redux.emphasis = value;
+            break;
+        case 7: // Mix
+            reduxStepSnapshots[currentStep].redux.mix = value;
             break;
     }
 }
