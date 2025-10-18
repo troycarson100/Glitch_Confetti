@@ -440,6 +440,9 @@ public:
     // COMPRESS+ DSP Implementation - Master effect
     CompressEngine compressEngine;
     
+    // Getter for CompressEngine (for UI access)
+    CompressEngine& getCompressEngine() { return compressEngine; }
+    
     // Redux DSP Implementation
     ReduxBank reduxBank;
     

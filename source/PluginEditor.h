@@ -293,6 +293,42 @@ public:
     std::unique_ptr<PresetSelectorButton> presetBrowserButton;
     std::unique_ptr<juce::DrawableButton> compCrushTabButton;
     
+    // COMPRESS+ gain reduction meter
+    class GainReductionMeter : public juce::Component
+    {
+    public:
+        GainReductionMeter() {}
+        
+        void paint(juce::Graphics& g) override
+        {
+            auto bounds = getLocalBounds().toFloat();
+            const float cornerRadius = 2.0f;
+            
+            // Background (grey)
+            g.setColour(juce::Colour(0xFF666666)); // Grey background
+            g.fillRoundedRectangle(bounds, cornerRadius);
+            
+            // Gain reduction bar (orange) - horizontal fill from right
+            if (gainReductionDb > 0.0f) {
+                float fillWidth = bounds.getWidth() * (gainReductionDb / 30.0f); // Max 30dB
+                fillWidth = juce::jlimit(0.0f, bounds.getWidth(), fillWidth);
+                
+                juce::Rectangle<float> fillRect = bounds.removeFromRight(fillWidth);
+                g.setColour(juce::Colour(0xFFE96A3E)); // Orange color #E96A3E
+                g.fillRoundedRectangle(fillRect, cornerRadius);
+            }
+        }
+        
+        void setGainReduction(float gainReductionDb)
+        {
+            this->gainReductionDb = gainReductionDb;
+            repaint();
+        }
+        
+    private:
+        float gainReductionDb = 0.0f;
+    };
+    
     // Custom overlay component with black background
     class CompCrushOverlay : public juce::Component
     {
@@ -305,33 +341,48 @@ public:
     std::unique_ptr<CompCrushOverlay> compCrushOverlay;
     bool compCrushEnabled = false;
     
-    // COMPRESS+ Sliders - 8 sliders in 2 rows of 4
-    std::unique_ptr<CompressSlider> compressDriveSlider;
+    // COMPRESS+ gain reduction meter
+    std::unique_ptr<GainReductionMeter> gainReductionMeter;
+    
+    // COMPRESS+ audio visualizer
+    
+    // COMPRESS+ Sliders - 8 sliders in 2 rows of 4 (Top: Threshold, Attack, Release, Ratio; Bottom: Drive, Noise, Noise Tone, Wet)
     std::unique_ptr<CompressSlider> compressThresholdSlider;
-    std::unique_ptr<CompressSlider> compressCrushSlider;
-    std::unique_ptr<CompressSlider> compressTiltSlider;
+    std::unique_ptr<CompressSlider> compressAttackSlider;
+    std::unique_ptr<CompressSlider> compressReleaseSlider;
+    std::unique_ptr<CompressSlider> compressRatioSlider;
+    std::unique_ptr<CompressSlider> compressDriveSlider;
     std::unique_ptr<CompressSlider> compressNoiseSlider;
-    std::unique_ptr<CompressSlider> compressNoiseDecaySlider;
     std::unique_ptr<CompressSlider> compressNoiseToneSlider;
     std::unique_ptr<CompressSlider> compressWetSlider;
     
+    // COMPRESS+ slider attachments
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> compressThresholdAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> compressAttackAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> compressReleaseAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> compressRatioAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> compressDriveAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> compressNoiseAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> compressNoiseToneAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> compressWetAttachment;
+    
     // COMPRESS+ Slider Labels
-    std::unique_ptr<juce::Label> compressDriveLabel;
     std::unique_ptr<juce::Label> compressThresholdLabel;
-    std::unique_ptr<juce::Label> compressCrushLabel;
-    std::unique_ptr<juce::Label> compressTiltLabel;
+    std::unique_ptr<juce::Label> compressAttackLabel;
+    std::unique_ptr<juce::Label> compressReleaseLabel;
+    std::unique_ptr<juce::Label> compressRatioLabel;
+    std::unique_ptr<juce::Label> compressDriveLabel;
     std::unique_ptr<juce::Label> compressNoiseLabel;
-    std::unique_ptr<juce::Label> compressNoiseDecayLabel;
     std::unique_ptr<juce::Label> compressNoiseToneLabel;
     std::unique_ptr<juce::Label> compressWetLabel;
     
     // COMPRESS+ Value Labels
-    std::unique_ptr<juce::Label> compressDriveValueLabel;
     std::unique_ptr<juce::Label> compressThresholdValueLabel;
-    std::unique_ptr<juce::Label> compressCrushValueLabel;
-    std::unique_ptr<juce::Label> compressTiltValueLabel;
+    std::unique_ptr<juce::Label> compressAttackValueLabel;
+    std::unique_ptr<juce::Label> compressReleaseValueLabel;
+    std::unique_ptr<juce::Label> compressRatioValueLabel;
+    std::unique_ptr<juce::Label> compressDriveValueLabel;
     std::unique_ptr<juce::Label> compressNoiseValueLabel;
-    std::unique_ptr<juce::Label> compressNoiseDecayValueLabel;
     std::unique_ptr<juce::Label> compressNoiseToneValueLabel;
     std::unique_ptr<juce::Label> compressWetValueLabel;
         

@@ -1325,6 +1325,12 @@ void PluginEditor::timerCallback()
     
     // Update Dub Delay time label (handles sync mode display)
     updateDubDelayTimeLabel();
+    
+    // Update gain reduction meter if COMPRESS+ is enabled
+    if (compCrushEnabled && gainReductionMeter && gainReductionMeter->isVisible()) {
+        float gainReduction = processorRef.getCompressEngine().getGainReductionDb();
+        gainReductionMeter->setGainReduction(gainReduction);
+    }
 }
 
 bool PluginEditor::keyPressed(const juce::KeyPress& key)
@@ -2378,6 +2384,13 @@ void PluginEditor::setupKnobs()
             compCrushEnabled = compCrushTabButton->getToggleState();
             DBG("[CompCrush] Toggle state changed to: " << (compCrushEnabled ? "ON" : "OFF"));
             
+            // Keep the compressEnabled parameter always true - effect is always on
+            auto* compressEnabledParam = processorRef.getAPVTS().getRawParameterValue("compressEnabled");
+            if (compressEnabledParam) {
+                compressEnabledParam->store(1.0f); // Always enabled
+                DBG("[CompCrush] compressEnabled parameter kept at 1.0f (always enabled)");
+            }
+            
             // Update button image based on state
             if (compCrushEnabled && assets.compCrushTabActive) {
                 compCrushTabButton->setImages(assets.compCrushTabActive.get());
@@ -2387,6 +2400,29 @@ void PluginEditor::setupKnobs()
                     compCrushOverlay->toFront(false); // Bring to front when shown
                 }
                 
+        // Show gain reduction meter
+        if (gainReductionMeter) {
+            gainReductionMeter->setVisible(true);
+            gainReductionMeter->toFront(false);
+        }
+        
+        // Bring specific master area components to front (filter bar, resonance knobs, audio visualizer, pan bar)
+        if (outputSpectrumView) {
+            outputSpectrumView->toFront(false);
+        }
+        if (spectrumFilterSlider) {
+            spectrumFilterSlider->toFront(false);
+        }
+        if (hpResonanceKnob) {
+            hpResonanceKnob->toFront(false);
+        }
+        if (lpResonanceKnob) {
+            lpResonanceKnob->toFront(false);
+        }
+        if (panBar) {
+            panBar->toFront(false);
+        }
+                
                 // Show and enable COMPRESS+ sliders
                 compressDriveSlider->setVisible(true);
                 compressDriveSlider->setEnabled(true);
@@ -2394,18 +2430,18 @@ void PluginEditor::setupKnobs()
                 compressThresholdSlider->setVisible(true);
                 compressThresholdSlider->setEnabled(true);
                 compressThresholdSlider->toFront(false);
-                compressCrushSlider->setVisible(true);
-                compressCrushSlider->setEnabled(true);
-                compressCrushSlider->toFront(false);
-                compressTiltSlider->setVisible(true);
-                compressTiltSlider->setEnabled(true);
-                compressTiltSlider->toFront(false);
+                compressAttackSlider->setVisible(true);
+                compressAttackSlider->setEnabled(true);
+                compressAttackSlider->toFront(false);
+                compressReleaseSlider->setVisible(true);
+                compressReleaseSlider->setEnabled(true);
+                compressReleaseSlider->toFront(false);
+                compressRatioSlider->setVisible(true);
+                compressRatioSlider->setEnabled(true);
+                compressRatioSlider->toFront(false);
                 compressNoiseSlider->setVisible(true);
                 compressNoiseSlider->setEnabled(true);
                 compressNoiseSlider->toFront(false);
-                compressNoiseDecaySlider->setVisible(true);
-                compressNoiseDecaySlider->setEnabled(true);
-                compressNoiseDecaySlider->toFront(false);
                 compressNoiseToneSlider->setVisible(true);
                 compressNoiseToneSlider->setEnabled(true);
                 compressNoiseToneSlider->toFront(false);
@@ -2420,18 +2456,18 @@ void PluginEditor::setupKnobs()
                 compressThresholdLabel->setVisible(true);
                 compressThresholdLabel->setEnabled(true);
                 compressThresholdLabel->toFront(false);
-                compressCrushLabel->setVisible(true);
-                compressCrushLabel->setEnabled(true);
-                compressCrushLabel->toFront(false);
-                compressTiltLabel->setVisible(true);
-                compressTiltLabel->setEnabled(true);
-                compressTiltLabel->toFront(false);
+                compressAttackLabel->setVisible(true);
+                compressAttackLabel->setEnabled(true);
+                compressAttackLabel->toFront(false);
+                compressReleaseLabel->setVisible(true);
+                compressReleaseLabel->setEnabled(true);
+                compressReleaseLabel->toFront(false);
+                compressRatioLabel->setVisible(true);
+                compressRatioLabel->setEnabled(true);
+                compressRatioLabel->toFront(false);
                 compressNoiseLabel->setVisible(true);
                 compressNoiseLabel->setEnabled(true);
                 compressNoiseLabel->toFront(false);
-                compressNoiseDecayLabel->setVisible(true);
-                compressNoiseDecayLabel->setEnabled(true);
-                compressNoiseDecayLabel->toFront(false);
                 compressNoiseToneLabel->setVisible(true);
                 compressNoiseToneLabel->setEnabled(true);
                 compressNoiseToneLabel->toFront(false);
@@ -2446,27 +2482,24 @@ void PluginEditor::setupKnobs()
                 compressThresholdValueLabel->setVisible(true);
                 compressThresholdValueLabel->setEnabled(true);
                 compressThresholdValueLabel->toFront(false);
-                compressCrushValueLabel->setVisible(true);
-                compressCrushValueLabel->setEnabled(true);
-                compressCrushValueLabel->toFront(false);
-                compressTiltValueLabel->setVisible(true);
-                compressTiltValueLabel->setEnabled(true);
-                compressTiltValueLabel->toFront(false);
+                compressAttackValueLabel->setVisible(true);
+                compressAttackValueLabel->setEnabled(true);
+                compressAttackValueLabel->toFront(false);
+                compressReleaseValueLabel->setVisible(true);
+                compressReleaseValueLabel->setEnabled(true);
+                compressReleaseValueLabel->toFront(false);
+                compressRatioValueLabel->setVisible(true);
+                compressRatioValueLabel->setEnabled(true);
+                compressRatioValueLabel->toFront(false);
                 compressNoiseValueLabel->setVisible(true);
                 compressNoiseValueLabel->setEnabled(true);
                 compressNoiseValueLabel->toFront(false);
-                compressNoiseDecayValueLabel->setVisible(true);
-                compressNoiseDecayValueLabel->setEnabled(true);
-                compressNoiseDecayValueLabel->toFront(false);
                 compressNoiseToneValueLabel->setVisible(true);
                 compressNoiseToneValueLabel->setEnabled(true);
                 compressNoiseToneValueLabel->toFront(false);
                 compressWetValueLabel->setVisible(true);
                 compressWetValueLabel->setEnabled(true);
                 compressWetValueLabel->toFront(false);
-                
-                // Update value labels with current slider values
-                updateCompressValueLabels();
                 
                 // Hide MASTER title and dice, change to COMPRESS+
                 if (masterTitle) {
@@ -2475,6 +2508,9 @@ void PluginEditor::setupKnobs()
                 if (masterDiceButton) {
                     masterDiceButton->setVisible(false);
                 }
+                
+                // Update value labels when COMPRESS+ page is activated
+                updateCompressValueLabels();
             } else if (!compCrushEnabled && assets.compCrushTabInactive) {
                 compCrushTabButton->setImages(assets.compCrushTabInactive.get());
                 // Hide overlay and sliders when inactive
@@ -2487,32 +2523,39 @@ void PluginEditor::setupKnobs()
                 compressDriveSlider->setEnabled(false);
                 compressThresholdSlider->setVisible(false);
                 compressThresholdSlider->setEnabled(false);
-                compressCrushSlider->setVisible(false);
-                compressCrushSlider->setEnabled(false);
-                compressTiltSlider->setVisible(false);
-                compressTiltSlider->setEnabled(false);
+                compressAttackSlider->setVisible(false);
+                compressAttackSlider->setEnabled(false);
+                compressReleaseSlider->setVisible(false);
+                compressReleaseSlider->setEnabled(false);
+                compressRatioSlider->setVisible(false);
+                compressRatioSlider->setEnabled(false);
                 compressNoiseSlider->setVisible(false);
                 compressNoiseSlider->setEnabled(false);
-                compressNoiseDecaySlider->setVisible(false);
-                compressNoiseDecaySlider->setEnabled(false);
                 compressNoiseToneSlider->setVisible(false);
                 compressNoiseToneSlider->setEnabled(false);
                 compressWetSlider->setVisible(false);
                 compressWetSlider->setEnabled(false);
+                
+        // Hide gain reduction meter
+        if (gainReductionMeter) {
+            gainReductionMeter->setVisible(false);
+        }
+        
+        // Master area components will stay visible but behind other elements
                 
                 // Hide and disable slider labels
                 compressDriveLabel->setVisible(false);
                 compressDriveLabel->setEnabled(false);
                 compressThresholdLabel->setVisible(false);
                 compressThresholdLabel->setEnabled(false);
-                compressCrushLabel->setVisible(false);
-                compressCrushLabel->setEnabled(false);
-                compressTiltLabel->setVisible(false);
-                compressTiltLabel->setEnabled(false);
+                compressAttackLabel->setVisible(false);
+                compressAttackLabel->setEnabled(false);
+                compressReleaseLabel->setVisible(false);
+                compressReleaseLabel->setEnabled(false);
+                compressRatioLabel->setVisible(false);
+                compressRatioLabel->setEnabled(false);
                 compressNoiseLabel->setVisible(false);
                 compressNoiseLabel->setEnabled(false);
-                compressNoiseDecayLabel->setVisible(false);
-                compressNoiseDecayLabel->setEnabled(false);
                 compressNoiseToneLabel->setVisible(false);
                 compressNoiseToneLabel->setEnabled(false);
                 compressWetLabel->setVisible(false);
@@ -2523,14 +2566,14 @@ void PluginEditor::setupKnobs()
                 compressDriveValueLabel->setEnabled(false);
                 compressThresholdValueLabel->setVisible(false);
                 compressThresholdValueLabel->setEnabled(false);
-                compressCrushValueLabel->setVisible(false);
-                compressCrushValueLabel->setEnabled(false);
-                compressTiltValueLabel->setVisible(false);
-                compressTiltValueLabel->setEnabled(false);
+                compressAttackValueLabel->setVisible(false);
+                compressAttackValueLabel->setEnabled(false);
+                compressReleaseValueLabel->setVisible(false);
+                compressReleaseValueLabel->setEnabled(false);
+                compressRatioValueLabel->setVisible(false);
+                compressRatioValueLabel->setEnabled(false);
                 compressNoiseValueLabel->setVisible(false);
                 compressNoiseValueLabel->setEnabled(false);
-                compressNoiseDecayValueLabel->setVisible(false);
-                compressNoiseDecayValueLabel->setEnabled(false);
                 compressNoiseToneValueLabel->setVisible(false);
                 compressNoiseToneValueLabel->setEnabled(false);
                 compressWetValueLabel->setVisible(false);
@@ -2608,62 +2651,90 @@ void PluginEditor::setupKnobs()
                                 // Show COMPRESS+ sliders if enabled
                                 compressDriveSlider->setVisible(true);
                                 compressThresholdSlider->setVisible(true);
-                                compressCrushSlider->setVisible(true);
-                                compressTiltSlider->setVisible(true);
+                                compressAttackSlider->setVisible(true);
+                                compressReleaseSlider->setVisible(true);
+                                compressRatioSlider->setVisible(true);
                                 compressNoiseSlider->setVisible(true);
-                                compressNoiseDecaySlider->setVisible(true);
                                 compressNoiseToneSlider->setVisible(true);
                                 compressWetSlider->setVisible(true);
                                 
                                 // Show slider labels
                                 compressDriveLabel->setVisible(true);
                                 compressThresholdLabel->setVisible(true);
-                                compressCrushLabel->setVisible(true);
-                                compressTiltLabel->setVisible(true);
+                                compressAttackLabel->setVisible(true);
+                                compressReleaseLabel->setVisible(true);
+                                compressRatioLabel->setVisible(true);
                                 compressNoiseLabel->setVisible(true);
-                                compressNoiseDecayLabel->setVisible(true);
                                 compressNoiseToneLabel->setVisible(true);
                                 compressWetLabel->setVisible(true);
                                 
                                 // Show value labels
                                 compressDriveValueLabel->setVisible(true);
                                 compressThresholdValueLabel->setVisible(true);
-                                compressCrushValueLabel->setVisible(true);
-                                compressTiltValueLabel->setVisible(true);
+                                compressAttackValueLabel->setVisible(true);
+                                compressReleaseValueLabel->setVisible(true);
+                                compressRatioValueLabel->setVisible(true);
                                 compressNoiseValueLabel->setVisible(true);
-                                compressNoiseDecayValueLabel->setVisible(true);
                                 compressNoiseToneValueLabel->setVisible(true);
                                 compressWetValueLabel->setVisible(true);
+                                
+                                // Show gain reduction meter and audio visualizer
+                                if (gainReductionMeter) {
+                                    gainReductionMeter->setVisible(true);
+                                    gainReductionMeter->toFront(false);
+                                }
+                                // Bring specific master area components to front (filter bar, resonance knobs, audio visualizer, pan bar)
+                                if (outputSpectrumView) {
+                                    outputSpectrumView->toFront(false);
+                                }
+                                if (spectrumFilterSlider) {
+                                    spectrumFilterSlider->toFront(false);
+                                }
+                                if (hpResonanceKnob) {
+                                    hpResonanceKnob->toFront(false);
+                                }
+                                if (lpResonanceKnob) {
+                                    lpResonanceKnob->toFront(false);
+                                }
+                                if (panBar) {
+                                    panBar->toFront(false);
+                                }
                             } else {
                                 // Hide COMPRESS+ sliders if disabled
                                 compressDriveSlider->setVisible(false);
                                 compressThresholdSlider->setVisible(false);
-                                compressCrushSlider->setVisible(false);
-                                compressTiltSlider->setVisible(false);
+                                compressAttackSlider->setVisible(false);
+                                compressReleaseSlider->setVisible(false);
+                                compressRatioSlider->setVisible(false);
                                 compressNoiseSlider->setVisible(false);
-                                compressNoiseDecaySlider->setVisible(false);
                                 compressNoiseToneSlider->setVisible(false);
                                 compressWetSlider->setVisible(false);
                                 
                                 // Hide slider labels
                                 compressDriveLabel->setVisible(false);
                                 compressThresholdLabel->setVisible(false);
-                                compressCrushLabel->setVisible(false);
-                                compressTiltLabel->setVisible(false);
+                                compressAttackLabel->setVisible(false);
+                                compressReleaseLabel->setVisible(false);
+                                compressRatioLabel->setVisible(false);
                                 compressNoiseLabel->setVisible(false);
-                                compressNoiseDecayLabel->setVisible(false);
                                 compressNoiseToneLabel->setVisible(false);
                                 compressWetLabel->setVisible(false);
                                 
                                 // Hide value labels
                                 compressDriveValueLabel->setVisible(false);
                                 compressThresholdValueLabel->setVisible(false);
-                                compressCrushValueLabel->setVisible(false);
-                                compressTiltValueLabel->setVisible(false);
+                                compressAttackValueLabel->setVisible(false);
+                                compressReleaseValueLabel->setVisible(false);
+                                compressRatioValueLabel->setVisible(false);
                                 compressNoiseValueLabel->setVisible(false);
-                                compressNoiseDecayValueLabel->setVisible(false);
                                 compressNoiseToneValueLabel->setVisible(false);
                                 compressWetValueLabel->setVisible(false);
+                                
+                                // Hide gain reduction meter and audio visualizer
+                                if (gainReductionMeter) {
+                                    gainReductionMeter->setVisible(false);
+                                }
+                                // Master area components will stay visible but behind other elements
                             }
                         };
                         
@@ -2737,60 +2808,60 @@ void PluginEditor::setupKnobs()
                         // Show COMPRESS+ sliders if enabled
                         compressDriveSlider->setVisible(true);
                         compressThresholdSlider->setVisible(true);
-                        compressCrushSlider->setVisible(true);
-                        compressTiltSlider->setVisible(true);
+                        compressAttackSlider->setVisible(true);
+                        compressReleaseSlider->setVisible(true);
+                        compressRatioSlider->setVisible(true);
                         compressNoiseSlider->setVisible(true);
-                        compressNoiseDecaySlider->setVisible(true);
                         compressNoiseToneSlider->setVisible(true);
                         compressWetSlider->setVisible(true);
                         
                         // Show slider labels
                         compressDriveLabel->setVisible(true);
                         compressThresholdLabel->setVisible(true);
-                        compressCrushLabel->setVisible(true);
-                        compressTiltLabel->setVisible(true);
+                        compressAttackLabel->setVisible(true);
+                        compressReleaseLabel->setVisible(true);
+                        compressRatioLabel->setVisible(true);
                         compressNoiseLabel->setVisible(true);
-                        compressNoiseDecayLabel->setVisible(true);
                         compressNoiseToneLabel->setVisible(true);
                         compressWetLabel->setVisible(true);
                         
                         // Show value labels
                         compressDriveValueLabel->setVisible(true);
                         compressThresholdValueLabel->setVisible(true);
-                        compressCrushValueLabel->setVisible(true);
-                        compressTiltValueLabel->setVisible(true);
+                        compressAttackValueLabel->setVisible(true);
+                        compressReleaseValueLabel->setVisible(true);
+                        compressRatioValueLabel->setVisible(true);
                         compressNoiseValueLabel->setVisible(true);
-                        compressNoiseDecayValueLabel->setVisible(true);
                         compressNoiseToneValueLabel->setVisible(true);
                         compressWetValueLabel->setVisible(true);
                     } else {
                         // Hide COMPRESS+ sliders if disabled
                         compressDriveSlider->setVisible(false);
                         compressThresholdSlider->setVisible(false);
-                        compressCrushSlider->setVisible(false);
-                        compressTiltSlider->setVisible(false);
+                        compressAttackSlider->setVisible(false);
+                        compressReleaseSlider->setVisible(false);
+                        compressRatioSlider->setVisible(false);
                         compressNoiseSlider->setVisible(false);
-                        compressNoiseDecaySlider->setVisible(false);
                         compressNoiseToneSlider->setVisible(false);
                         compressWetSlider->setVisible(false);
                         
                         // Hide slider labels
                         compressDriveLabel->setVisible(false);
                         compressThresholdLabel->setVisible(false);
-                        compressCrushLabel->setVisible(false);
-                        compressTiltLabel->setVisible(false);
+                        compressAttackLabel->setVisible(false);
+                        compressReleaseLabel->setVisible(false);
+                        compressRatioLabel->setVisible(false);
                         compressNoiseLabel->setVisible(false);
-                        compressNoiseDecayLabel->setVisible(false);
                         compressNoiseToneLabel->setVisible(false);
                         compressWetLabel->setVisible(false);
                         
                         // Hide value labels
                         compressDriveValueLabel->setVisible(false);
                         compressThresholdValueLabel->setVisible(false);
-                        compressCrushValueLabel->setVisible(false);
-                        compressTiltValueLabel->setVisible(false);
+                        compressAttackValueLabel->setVisible(false);
+                        compressReleaseValueLabel->setVisible(false);
+                        compressRatioValueLabel->setVisible(false);
                         compressNoiseValueLabel->setVisible(false);
-                        compressNoiseDecayValueLabel->setVisible(false);
                         compressNoiseToneValueLabel->setVisible(false);
                         compressWetValueLabel->setVisible(false);
                     }
@@ -10417,26 +10488,33 @@ void PluginEditor::setupCompressSliders()
 {
     DBG("[UI] Setting up COMPRESS+ sliders...");
     
-    // COMPRESS+ slider titles
+    // Setup gain reduction meter - horizontal above sliders
+    gainReductionMeter = std::make_unique<GainReductionMeter>();
+    gainReductionMeter->setBounds(460 + 20 + 15 + 10 - 4 + 1, 282 + 20 + 40 + 20 + 110 + 10, 410, 15); // Full width above sliders, moved down 40px + 20px + 110px + 10px, 100px longer, 5px shorter, 10px narrower, 22px right
+    addChildComponent(gainReductionMeter.get());
+    gainReductionMeter->setVisible(false); // Initially hidden
+    
+    
+    // COMPRESS+ slider titles (Top row: Compressor controls, Bottom row: Drive/Noise/Wet)
     const juce::StringArray compressSliderTitles = {
+        "THRESHOLD",
+        "ATTACK", 
+        "RELEASE",
+        "RATIO",
         "DRIVE",
-        "COMPRESS", 
-        "CRUSH",
-        "TILT",
         "NOISE",
-        "N. DECAY",
         "N. TONE", 
         "WET"
     };
     
     // COMPRESS+ parameter IDs
     const juce::StringArray compressParamIDs = {
-        "compressDrive",
         "compressThreshold",
-        "compressCrush", 
-        "compressTilt",
+        "compressAttack",
+        "compressRelease", 
+        "compressRatio",
+        "compressDrive",
         "compressNoise",
-        "compressNoiseDecay",
         "compressNoiseTone",
         "compressWet"
     };
@@ -10447,39 +10525,39 @@ void PluginEditor::setupCompressSliders()
     const int sliderHeight = 20;
     const int sliderSpacing = 20;
     const int rowSpacing = 60;
-    const int startX = overlayBounds.getX() + 20; // Moved 30px left from 50
-    const int startY = overlayBounds.getY() + 100;
+    const int startX = overlayBounds.getX() + 20 - 3; // Moved 30px left from 50, then 3px more left
+    const int startY = overlayBounds.getY() + 100 + 40 - 10 - 50 + 20; // Moved down 40px, then up 10px, then up 50px more, then down 20px
     
     // Create sliders and labels
     juce::Slider* sliders[] = {
+        compressThresholdSlider.get(),
+        compressAttackSlider.get(), 
+        compressReleaseSlider.get(),
+        compressRatioSlider.get(),
         compressDriveSlider.get(),
-        compressThresholdSlider.get(), 
-        compressCrushSlider.get(),
-        compressTiltSlider.get(),
         compressNoiseSlider.get(),
-        compressNoiseDecaySlider.get(),
         compressNoiseToneSlider.get(),
         compressWetSlider.get()
     };
     
     juce::Label* labels[] = {
-        compressDriveLabel.get(),
         compressThresholdLabel.get(),
-        compressCrushLabel.get(), 
-        compressTiltLabel.get(),
+        compressAttackLabel.get(),
+        compressReleaseLabel.get(), 
+        compressRatioLabel.get(),
+        compressDriveLabel.get(),
         compressNoiseLabel.get(),
-        compressNoiseDecayLabel.get(),
         compressNoiseToneLabel.get(),
         compressWetLabel.get()
     };
     
     juce::Label* valueLabels[] = {
-        compressDriveValueLabel.get(),
         compressThresholdValueLabel.get(),
-        compressCrushValueLabel.get(),
-        compressTiltValueLabel.get(), 
+        compressAttackValueLabel.get(),
+        compressReleaseValueLabel.get(),
+        compressRatioValueLabel.get(), 
+        compressDriveValueLabel.get(),
         compressNoiseValueLabel.get(),
-        compressNoiseDecayValueLabel.get(),
         compressNoiseToneValueLabel.get(),
         compressWetValueLabel.get()
     };
@@ -10489,18 +10567,45 @@ void PluginEditor::setupCompressSliders()
     {
         // Calculate position (2 rows of 4)
         int x = startX + (i % 4) * (sliderWidth + sliderSpacing);
-        int y = startY + (i / 4) * rowSpacing;
+        int y = startY + (i / 4) * rowSpacing + (i < 4 ? 12 : 0); // Top 4 sliders moved down 12px
         
         // Create slider
         auto slider = std::make_unique<CompressSlider>();
+        
+        // Set slider ranges based on parameter type
+        if (compressParamIDs[i] == "compressThreshold") {
+            slider->setRange(-60.0, 0.0, 0.1); // -60dB to 0dB threshold
+        } else if (compressParamIDs[i] == "compressAttack") {
+            slider->setRange(0.1, 100.0, 0.1); // 0.1ms to 100ms attack
+        } else if (compressParamIDs[i] == "compressRelease") {
+            slider->setRange(10.0, 1000.0, 1.0); // 10ms to 1000ms release
+        } else if (compressParamIDs[i] == "compressRatio") {
+            slider->setRange(1.0, 20.0, 0.1); // 1:1 to 20:1 ratio
+        } else if (compressParamIDs[i] == "compressDrive") {
+            slider->setRange(0.0, 30.0, 0.1); // 0-30dB drive
+        } else if (compressParamIDs[i] == "compressNoiseTone") {
+            slider->setRange(200.0, 8000.0, 10.0); // 200Hz-8kHz noise tone
+        } else {
+            slider->setRange(0.0, 1.0, 0.01); // 0-1 for other parameters
+        }
+        
         slider->setBounds(x, y, sliderWidth, sliderHeight);
         slider->setVisible(false); // Initially hidden
         slider->setEnabled(false); // Initially disabled
         addChildComponent(slider.get()); // Use addChildComponent instead of addAndMakeVisible
         
-        // Create parameter attachment
-        auto attachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
-            processorRef.getAPVTS(), compressParamIDs[i], *slider);
+        // Create parameter attachment and store it
+        std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> attachment;
+        switch(i) {
+            case 0: compressThresholdAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(processorRef.getAPVTS(), compressParamIDs[i], *slider); break;
+            case 1: compressAttackAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(processorRef.getAPVTS(), compressParamIDs[i], *slider); break;
+            case 2: compressReleaseAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(processorRef.getAPVTS(), compressParamIDs[i], *slider); break;
+            case 3: compressRatioAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(processorRef.getAPVTS(), compressParamIDs[i], *slider); break;
+            case 4: compressDriveAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(processorRef.getAPVTS(), compressParamIDs[i], *slider); break;
+            case 5: compressNoiseAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(processorRef.getAPVTS(), compressParamIDs[i], *slider); break;
+            case 6: compressNoiseToneAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(processorRef.getAPVTS(), compressParamIDs[i], *slider); break;
+            case 7: compressWetAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(processorRef.getAPVTS(), compressParamIDs[i], *slider); break;
+        }
             
         // Create title label
         auto label = std::make_unique<juce::Label>();
@@ -10534,16 +10639,20 @@ void PluginEditor::setupCompressSliders()
                 
                 // Format value based on parameter type
                 const juce::StringArray paramIDs = {
-                    "compressDrive", "compressThreshold", "compressCrush", "compressTilt",
-                    "compressNoise", "compressNoiseDecay", "compressNoiseTone", "compressWet"
+                    "compressThreshold", "compressAttack", "compressRelease", "compressRatio",
+                    "compressDrive", "compressNoise", "compressNoiseTone", "compressWet"
                 };
                 
-                if (paramIDs[i] == "compressDrive") {
+                if (paramIDs[i] == "compressThreshold") {
                     valueText = juce::String(value, 1) + " dB";
-                } else if (paramIDs[i] == "compressThreshold") {
+                } else if (paramIDs[i] == "compressAttack") {
+                    valueText = juce::String(value, 1) + " ms";
+                } else if (paramIDs[i] == "compressRelease") {
+                    valueText = juce::String(value, 0) + " ms";
+                } else if (paramIDs[i] == "compressRatio") {
+                    valueText = juce::String(value, 1) + ":1";
+                } else if (paramIDs[i] == "compressDrive") {
                     valueText = juce::String(value, 1) + " dB";
-                } else if (paramIDs[i] == "compressNoiseDecay") {
-                    valueText = juce::String(value, 2) + " s";
                 } else if (paramIDs[i] == "compressNoiseTone") {
                     valueText = juce::String(value, 0) + " Hz";
                 } else {
@@ -10563,10 +10672,10 @@ void PluginEditor::setupCompressSliders()
         switch(i) {
             case 0: compressDriveSlider = std::move(slider); compressDriveLabel = std::move(label); compressDriveValueLabel = std::move(valueLabel); break;
             case 1: compressThresholdSlider = std::move(slider); compressThresholdLabel = std::move(label); compressThresholdValueLabel = std::move(valueLabel); break;
-            case 2: compressCrushSlider = std::move(slider); compressCrushLabel = std::move(label); compressCrushValueLabel = std::move(valueLabel); break;
-            case 3: compressTiltSlider = std::move(slider); compressTiltLabel = std::move(label); compressTiltValueLabel = std::move(valueLabel); break;
-            case 4: compressNoiseSlider = std::move(slider); compressNoiseLabel = std::move(label); compressNoiseValueLabel = std::move(valueLabel); break;
-            case 5: compressNoiseDecaySlider = std::move(slider); compressNoiseDecayLabel = std::move(label); compressNoiseDecayValueLabel = std::move(valueLabel); break;
+            case 2: compressAttackSlider = std::move(slider); compressAttackLabel = std::move(label); compressAttackValueLabel = std::move(valueLabel); break;
+            case 3: compressReleaseSlider = std::move(slider); compressReleaseLabel = std::move(label); compressReleaseValueLabel = std::move(valueLabel); break;
+            case 4: compressRatioSlider = std::move(slider); compressRatioLabel = std::move(label); compressRatioValueLabel = std::move(valueLabel); break;
+            case 5: compressNoiseSlider = std::move(slider); compressNoiseLabel = std::move(label); compressNoiseValueLabel = std::move(valueLabel); break;
             case 6: compressNoiseToneSlider = std::move(slider); compressNoiseToneLabel = std::move(label); compressNoiseToneValueLabel = std::move(valueLabel); break;
             case 7: compressWetSlider = std::move(slider); compressWetLabel = std::move(label); compressWetValueLabel = std::move(valueLabel); break;
         }
@@ -10582,18 +10691,18 @@ void PluginEditor::updateCompressValueLabels()
 {
     // Update all COMPRESS+ value labels with current slider values
     const juce::StringArray compressParamIDs = {
-        "compressDrive", "compressThreshold", "compressCrush", "compressTilt",
-        "compressNoise", "compressNoiseDecay", "compressNoiseTone", "compressWet"
+        "compressThreshold", "compressAttack", "compressRelease", "compressRatio",
+        "compressDrive", "compressNoise", "compressNoiseTone", "compressWet"
     };
     
     const std::vector<juce::Slider*> sliders = {
-        compressDriveSlider.get(), compressThresholdSlider.get(), compressCrushSlider.get(), compressTiltSlider.get(),
-        compressNoiseSlider.get(), compressNoiseDecaySlider.get(), compressNoiseToneSlider.get(), compressWetSlider.get()
+        compressThresholdSlider.get(), compressAttackSlider.get(), compressReleaseSlider.get(), compressRatioSlider.get(),
+        compressDriveSlider.get(), compressNoiseSlider.get(), compressNoiseToneSlider.get(), compressWetSlider.get()
     };
     
     const std::vector<juce::Label*> labels = {
-        compressDriveValueLabel.get(), compressThresholdValueLabel.get(), compressCrushValueLabel.get(), compressTiltValueLabel.get(),
-        compressNoiseValueLabel.get(), compressNoiseDecayValueLabel.get(), compressNoiseToneValueLabel.get(), compressWetValueLabel.get()
+        compressThresholdValueLabel.get(), compressAttackValueLabel.get(), compressReleaseValueLabel.get(), compressRatioValueLabel.get(),
+        compressDriveValueLabel.get(), compressNoiseValueLabel.get(), compressNoiseToneValueLabel.get(), compressWetValueLabel.get()
     };
     
     for (int i = 0; i < 8; ++i) {
@@ -10602,12 +10711,16 @@ void PluginEditor::updateCompressValueLabels()
             juce::String valueText;
             
             // Format value based on parameter type
-            if (compressParamIDs[i] == "compressDrive") {
+            if (compressParamIDs[i] == "compressThreshold") {
                 valueText = juce::String(value, 1) + " dB";
-            } else if (compressParamIDs[i] == "compressThreshold") {
+            } else if (compressParamIDs[i] == "compressAttack") {
+                valueText = juce::String(value, 1) + " ms";
+            } else if (compressParamIDs[i] == "compressRelease") {
+                valueText = juce::String(value, 0) + " ms";
+            } else if (compressParamIDs[i] == "compressRatio") {
+                valueText = juce::String(value, 1) + ":1";
+            } else if (compressParamIDs[i] == "compressDrive") {
                 valueText = juce::String(value, 1) + " dB";
-            } else if (compressParamIDs[i] == "compressNoiseDecay") {
-                valueText = juce::String(value, 2) + " s";
             } else if (compressParamIDs[i] == "compressNoiseTone") {
                 valueText = juce::String(value, 0) + " Hz";
             } else {

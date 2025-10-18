@@ -2,16 +2,13 @@
 
 CompressEngine::CompressEngine()
 {
-    // Initialize tilt EQ coefficients (1kHz pivot frequency)
-    tiltCoeffs = juce::dsp::IIR::Coefficients<float>::makeLowPass(44100.0, 1000.0);
-    tiltLowPass.coefficients = tiltCoeffs;
+    // Initialize drive oversampler
+    driveOversampler = std::make_unique<juce::dsp::Oversampling<float>>(
+        1, 2, juce::dsp::Oversampling<float>::filterHalfBandFIREquiripple, true, false);
     
     // Initialize noise filter coefficients
-    noiseCoeffs = juce::dsp::IIR::Coefficients<float>::makeLowPass(44100.0, 4000.0);
+    noiseCoeffs = juce::dsp::IIR::Coefficients<float>::makeLowPass(44100.0, 1000.0);
     noiseFilter.coefficients = noiseCoeffs;
-    
-    // Initialize oversampler for nonlinear stages
-    oversampler = std::make_unique<juce::dsp::Oversampling<float>>(2, 2, juce::dsp::Oversampling<float>::filterHalfBandFIREquiripple, true, false);
 }
 
 CompressEngine::~CompressEngine() = default;
@@ -21,42 +18,39 @@ void CompressEngine::prepare(const juce::dsp::ProcessSpec& spec)
     sampleRate = spec.sampleRate;
     blockSize = static_cast<int>(spec.maximumBlockSize);
     
-    // Prepare oversampler
-    oversampler->initProcessing(static_cast<size_t>(blockSize));
+    // Prepare JUCE compressor with default values
+    juceCompressor.setAttack(attackMs);
+    juceCompressor.setRelease(releaseMs);
+    juceCompressor.setRatio(ratio);
+    juceCompressor.setThreshold(thresholdDb);
+    juceCompressor.prepare(spec);
     
-    // Prepare tilt filter
-    tiltLowPass.prepare(spec);
-    tiltCoeffs = juce::dsp::IIR::Coefficients<float>::makeLowPass(sampleRate, 1000.0);
-    tiltLowPass.coefficients = tiltCoeffs;
+    // Prepare smoothed gain for makeup compensation
+    smoothedGain.reset(sampleRate, 0.05); // 50ms smoothing time
+    smoothedGain.setCurrentAndTargetValue(1.0f);
+    
+    // Prepare drive oversampler
+    driveOversampler->initProcessing(static_cast<size_t>(blockSize));
     
     // Prepare noise filter
     noiseFilter.prepare(spec);
-    noiseCoeffs = juce::dsp::IIR::Coefficients<float>::makeLowPass(sampleRate, 4000.0);
+    noiseCoeffs = juce::dsp::IIR::Coefficients<float>::makeLowPass(sampleRate, 1000.0);
     noiseFilter.coefficients = noiseCoeffs;
     
     // Prepare dry buffer
     dryBuffer.setSize(static_cast<int>(spec.numChannels), static_cast<int>(spec.maximumBlockSize));
-    
-    // Initialize compressor time constants
-    const float attackTime = 0.01f; // 10ms attack
-    const float releaseTime = 0.1f; // 100ms release
-    attackCoeff = std::exp(-1.0f / (attackTime * sampleRate));
-    releaseCoeff = std::exp(-1.0f / (releaseTime * sampleRate));
     
     reset();
 }
 
 void CompressEngine::reset()
 {
-    envelopeLevel = 0.0f;
-    gainReductionDb.store(0.0f);
-    sampleCounter = 0;
-    heldSample = 0.0f;
     noiseEnv = 0.0f;
     
-    tiltLowPass.reset();
+    juceCompressor.reset();
     noiseFilter.reset();
-    oversampler->reset();
+    driveOversampler->reset();
+    smoothedGain.reset(sampleRate, 0.05);
     
     dryBuffer.clear();
 }
@@ -64,7 +58,12 @@ void CompressEngine::reset()
 void CompressEngine::process(juce::AudioBuffer<float>& buffer)
 {
     if (!enabled || buffer.getNumSamples() == 0)
+    {
+        DBG("[CompressEngine] Not processing - enabled: " << (enabled ? "true" : "false") << ", samples: " << buffer.getNumSamples());
         return;
+    }
+    
+    DBG("[CompressEngine] Processing buffer with " << buffer.getNumSamples() << " samples");
     
     const int numChannels = buffer.getNumChannels();
     const int numSamples = buffer.getNumSamples();
@@ -75,62 +74,71 @@ void CompressEngine::process(juce::AudioBuffer<float>& buffer)
     // Process each effect in chain
     processCompressor(buffer);
     processDrive(buffer);
-    processCrush(buffer);
-    processTilt(buffer);
     processNoise(buffer);
     processWetDry(buffer);
 }
 
 void CompressEngine::processCompressor(juce::AudioBuffer<float>& buffer)
 {
-    const int numChannels = buffer.getNumChannels();
-    const int numSamples = buffer.getNumSamples();
+    // Early bypass if threshold is at maximum (no compression)
+    if (thresholdDb >= 0.0f) {
+        gainReductionDb.store(0.0f);
+        return;
+    }
     
-    for (int channel = 0; channel < numChannels; ++channel)
+    // Update JUCE compressor parameters
+    juceCompressor.setThreshold(thresholdDb);
+    juceCompressor.setAttack(attackMs);
+    juceCompressor.setRelease(releaseMs);
+    juceCompressor.setRatio(ratio);
+    
+    // Store pre-compression levels for gain reduction calculation
+    float preCompressionLevel = 0.0f;
+    for (int channel = 0; channel < buffer.getNumChannels(); ++channel)
     {
         float* channelData = buffer.getWritePointer(channel);
-        
-        for (int sample = 0; sample < numSamples; ++sample)
+        for (int sample = 0; sample < buffer.getNumSamples(); ++sample)
         {
-            const float input = channelData[sample];
-            const float inputLevel = std::abs(input);
-            
-            // Envelope detection with separate attack/release
-            if (inputLevel > envelopeLevel)
-                envelopeLevel = attackCoeff * envelopeLevel + (1.0f - attackCoeff) * inputLevel;
-            else
-                envelopeLevel = releaseCoeff * envelopeLevel + (1.0f - releaseCoeff) * inputLevel;
-            
-            // Convert to dB
-            const float envDb = 20.0f * std::log10(std::max(envelopeLevel, 1e-6f));
-            
-            // Soft knee compression
-            const float threshold = -20.0f; // Will be parameterized
-            const float ratio = 4.0f; // 4:1 ratio
-            const float kneeWidth = 6.0f; // 6dB knee
-            
-            float gainDb = 0.0f;
-            if (envDb < threshold - kneeWidth / 2.0f)
-            {
-                gainDb = 0.0f; // No compression
-            }
-            else if (envDb > threshold + kneeWidth / 2.0f)
-            {
-                gainDb = (threshold - envDb) * (1.0f - 1.0f / ratio); // Full ratio
-            }
-            else
-            {
-                // Soft knee interpolation
-                const float delta = envDb - (threshold - kneeWidth / 2.0f);
-                gainDb = (1.0f - 1.0f / ratio) * delta * delta / (2.0f * kneeWidth);
-            }
-            
-            // Convert gain to linear and apply
-            const float gainLinear = std::pow(10.0f, gainDb / 20.0f);
-            channelData[sample] = input * gainLinear;
-            
-            // Update gain reduction meter
-            gainReductionDb.store(-gainDb);
+            preCompressionLevel = juce::jmax(preCompressionLevel, std::abs(channelData[sample]));
+        }
+    }
+    
+    // Process with JUCE compressor
+    juce::dsp::AudioBlock<float> block(buffer);
+    juce::dsp::ProcessContextReplacing<float> context(block);
+    juceCompressor.process(context);
+    
+    // Calculate actual gain reduction
+    float postCompressionLevel = 0.0f;
+    for (int channel = 0; channel < buffer.getNumChannels(); ++channel)
+    {
+        float* channelData = buffer.getWritePointer(channel);
+        for (int sample = 0; sample < buffer.getNumSamples(); ++sample)
+        {
+            postCompressionLevel = juce::jmax(postCompressionLevel, std::abs(channelData[sample]));
+        }
+    }
+    
+    // Calculate gain reduction in dB
+    float actualGainReduction = 0.0f;
+    if (preCompressionLevel > 0.0f && postCompressionLevel > 0.0f) {
+        actualGainReduction = juce::Decibels::gainToDecibels(postCompressionLevel / preCompressionLevel);
+        actualGainReduction = juce::jlimit(-30.0f, 0.0f, actualGainReduction); // Clamp to reasonable range
+    }
+    gainReductionDb.store(actualGainReduction);
+    
+    // Apply auto gain compensation - compensate for the gain reduction
+    float makeupGain = std::pow(10.0f, -actualGainReduction / 20.0f); // Convert dB to linear gain
+    makeupGain = juce::jlimit(0.1f, 10.0f, makeupGain); // Clamp to reasonable range
+    
+    // Apply makeup gain smoothly
+    smoothedGain.setTargetValue(makeupGain);
+    for (int channel = 0; channel < buffer.getNumChannels(); ++channel)
+    {
+        float* channelData = buffer.getWritePointer(channel);
+        for (int sample = 0; sample < buffer.getNumSamples(); ++sample)
+        {
+            channelData[sample] *= smoothedGain.getNextValue();
         }
     }
 }
@@ -140,82 +148,22 @@ void CompressEngine::processDrive(juce::AudioBuffer<float>& buffer)
     if (driveGain <= 1.0f)
         return;
     
-    // Convert AudioBuffer to AudioBlock for oversampling
-    juce::dsp::AudioBlock<float> audioBlock(buffer);
-    
-    // Upsample for oversampling
-    auto oversampledBlock = oversampler->processSamplesUp(audioBlock);
-    
-    // Apply tanh saturation
-    for (size_t channel = 0; channel < oversampledBlock.getNumChannels(); ++channel)
-    {
-        float* channelData = oversampledBlock.getChannelPointer(channel);
-        for (size_t sample = 0; sample < oversampledBlock.getNumSamples(); ++sample)
-        {
-            channelData[sample] = std::tanh(driveGain * channelData[sample]);
-        }
-    }
-    
-    // Downsample back to original rate
-    oversampler->processSamplesDown(audioBlock);
-}
-
-void CompressEngine::processCrush(juce::AudioBuffer<float>& buffer)
-{
-    if (crushValue <= 0.0f)
-        return;
-    
+    // Simple drive processing without oversampling to prevent crashes
     const int numChannels = buffer.getNumChannels();
     const int numSamples = buffer.getNumSamples();
     
     for (int channel = 0; channel < numChannels; ++channel)
     {
         float* channelData = buffer.getWritePointer(channel);
-        
         for (int sample = 0; sample < numSamples; ++sample)
         {
-            float input = channelData[sample];
-            
-            // Sample rate reduction (stutter effect)
-            if (sampleCounter % rateFactor == 0)
-                heldSample = input;
-            
-            input = heldSample;
-            sampleCounter++;
-            
-            // Bit reduction
-            const float quantized = std::round(input * (1 << bitDepth)) / (1 << bitDepth);
-            
-            // Add dithering
-            const float dither = (random.nextFloat() - 0.5f) * 2.0f / (1 << bitDepth);
-            channelData[sample] = quantized + dither;
+            // Apply drive gain and tanh saturation
+            float driven = driveGain * channelData[sample];
+            channelData[sample] = std::tanh(driven);
         }
     }
 }
 
-void CompressEngine::processTilt(juce::AudioBuffer<float>& buffer)
-{
-    const int numChannels = buffer.getNumChannels();
-    const int numSamples = buffer.getNumSamples();
-    
-    for (int channel = 0; channel < numChannels; ++channel)
-    {
-        float* channelData = buffer.getWritePointer(channel);
-        
-        for (int sample = 0; sample < numSamples; ++sample)
-        {
-            const float input = channelData[sample];
-            
-            // Process through tilt filter
-            const float lp = tiltLowPass.processSample(input);
-            const float hp = input - lp;
-            
-            // Apply tilt
-            const float tilted = input + tiltValue * hp - tiltValue * lp;
-            channelData[sample] = tilted;
-        }
-    }
-}
 
 void CompressEngine::processNoise(juce::AudioBuffer<float>& buffer)
 {
@@ -239,11 +187,15 @@ void CompressEngine::processNoise(juce::AudioBuffer<float>& buffer)
             
             // Apply envelope decay
             noiseEnv *= std::exp(-1.0f / (noiseDecayTime * sampleRate));
-            if (std::abs(channelData[sample]) > 0.01f) // Trigger on input activity
+            if (std::abs(channelData[sample]) > 0.05f) // Increased threshold to prevent crush from triggering noise
                 noiseEnv = 1.0f;
             
-            // Mix in noise
-            channelData[sample] += noise * noiseLevel * noiseEnv;
+            // Clamp noise envelope to prevent runaway
+            noiseEnv = juce::jlimit(0.0f, 1.0f, noiseEnv);
+            
+            // Mix in noise and clamp output to prevent blowup
+            float mixed = channelData[sample] + noise * noiseLevel * noiseEnv;
+            channelData[sample] = juce::jlimit(-1.0f, 1.0f, mixed);
         }
     }
 }
@@ -269,37 +221,34 @@ void CompressEngine::processWetDry(juce::AudioBuffer<float>& buffer)
 }
 
 // Parameter setters
+void CompressEngine::setThreshold(float thresholdValue)
+{
+    this->thresholdDb = thresholdValue;
+}
+
+void CompressEngine::setAttack(float attackValue)
+{
+    this->attackMs = attackValue;
+}
+
+void CompressEngine::setRelease(float releaseValue)
+{
+    this->releaseMs = releaseValue;
+}
+
+void CompressEngine::setRatio(float ratioValue)
+{
+    this->ratio = ratioValue;
+}
+
 void CompressEngine::setDrive(float driveDb)
 {
     driveGain = std::pow(10.0f, driveDb / 20.0f);
 }
 
-void CompressEngine::setThreshold(float thresholdDb)
-{
-    // Threshold is used in processCompressor
-    // This would need to be stored as a member variable for full implementation
-}
-
-void CompressEngine::setCrush(float crushVal)
-{
-    this->crushValue = crushVal;
-    rateFactor = static_cast<int>(juce::jmap(crushVal, 0.0f, 1.0f, 1.0f, 20.0f));
-    bitDepth = static_cast<int>(juce::jmap(crushVal, 0.0f, 1.0f, 24.0f, 4.0f));
-}
-
-void CompressEngine::setTilt(float tiltVal)
-{
-    this->tiltValue = tiltVal;
-}
-
 void CompressEngine::setNoise(float noiseVal)
 {
     this->noiseLevel = noiseVal;
-}
-
-void CompressEngine::setNoiseDecay(float decayTime)
-{
-    this->noiseDecayTime = decayTime;
 }
 
 void CompressEngine::setNoiseTone(float toneFreq)
