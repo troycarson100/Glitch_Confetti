@@ -2382,11 +2382,25 @@ void PluginEditor::setupKnobs()
                     compCrushOverlay->setVisible(true);
                     compCrushOverlay->toFront(false); // Bring to front when shown
                 }
+                // Hide MASTER title and dice, change to COMPRESS+
+                if (masterTitle) {
+                    masterTitle->setText("COMPRESS+", juce::dontSendNotification);
+                }
+                if (masterDiceButton) {
+                    masterDiceButton->setVisible(false);
+                }
             } else if (!compCrushEnabled && assets.compCrushTabInactive) {
                 compCrushTabButton->setImages(assets.compCrushTabInactive.get());
                 // Hide overlay when inactive
                 if (compCrushOverlay) {
                     compCrushOverlay->setVisible(false);
+                }
+                // Restore MASTER title and dice
+                if (masterTitle) {
+                    masterTitle->setText("MASTER", juce::dontSendNotification);
+                }
+                if (masterDiceButton) {
+                    masterDiceButton->setVisible(true);
                 }
             }
         };
@@ -2431,11 +2445,21 @@ void PluginEditor::setupKnobs()
                         DBG("[PresetBrowser] Closing");
                         presetBrowser->setVisible(false);
                             
-                            // Restore MASTER text and show master dice
-                            if (masterTitle)
-                                masterTitle->setText("MASTER", juce::dontSendNotification);
-                            if (masterDiceButton)
-                                masterDiceButton->setVisible(true);
+                            // Restore MASTER text and show master dice (or COMPRESS+ if Comp Crush is enabled)
+                            if (masterTitle) {
+                                if (compCrushEnabled) {
+                                    masterTitle->setText("COMPRESS+", juce::dontSendNotification);
+                                } else {
+                                    masterTitle->setText("MASTER", juce::dontSendNotification);
+                                }
+                            }
+                            if (masterDiceButton) {
+                                if (compCrushEnabled) {
+                                    masterDiceButton->setVisible(false); // Hide dice if Comp Crush is enabled
+                                } else {
+                                    masterDiceButton->setVisible(true); // Show dice if Comp Crush is disabled
+                                }
+                            }
                             if (compCrushTabButton)
                                 compCrushTabButton->setVisible(true);
                         };
@@ -2485,11 +2509,21 @@ void PluginEditor::setupKnobs()
                     // Hide the overlay and restore MASTER title/dice
                     presetBrowser->setVisible(false);
                     
-                    // Restore MASTER text and show master dice
-                    if (masterTitle)
-                        masterTitle->setText("MASTER", juce::dontSendNotification);
-                    if (masterDiceButton)
-                        masterDiceButton->setVisible(true);
+                    // Restore MASTER text and show master dice (or COMPRESS+ if Comp Crush is enabled)
+                    if (masterTitle) {
+                        if (compCrushEnabled) {
+                            masterTitle->setText("COMPRESS+", juce::dontSendNotification);
+                        } else {
+                            masterTitle->setText("MASTER", juce::dontSendNotification);
+                        }
+                    }
+                    if (masterDiceButton) {
+                        if (compCrushEnabled) {
+                            masterDiceButton->setVisible(false); // Hide dice if Comp Crush is enabled
+                        } else {
+                            masterDiceButton->setVisible(true); // Show dice if Comp Crush is disabled
+                        }
+                    }
                     if (compCrushTabButton)
                         compCrushTabButton->setVisible(true);
                     if (compCrushOverlay)
