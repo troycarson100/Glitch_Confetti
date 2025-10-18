@@ -85,6 +85,12 @@ void CompressEngine::processCompressor(juce::AudioBuffer<float>& buffer)
     juceCompressor.setRelease(releaseMs);
     juceCompressor.setRatio(ratio);
     
+    // Debug output for compressor parameters
+    static int paramDebugCounter = 0;
+    if (paramDebugCounter++ % 100 == 0) { // Print every 100 calls to avoid spam
+        DBG("[CompressEngine] Threshold: " << thresholdDb << "dB, Attack: " << attackMs << "ms, Release: " << releaseMs << "ms, Ratio: " << ratio);
+    }
+    
     // Store pre-compression levels for gain reduction calculation
     float preCompressionLevel = 0.0f;
     for (int channel = 0; channel < buffer.getNumChannels(); ++channel)
@@ -95,6 +101,7 @@ void CompressEngine::processCompressor(juce::AudioBuffer<float>& buffer)
             preCompressionLevel = juce::jmax(preCompressionLevel, std::abs(channelData[sample]));
         }
     }
+    
     
     // Process with JUCE compressor
     juce::dsp::AudioBlock<float> block(buffer);
@@ -112,12 +119,21 @@ void CompressEngine::processCompressor(juce::AudioBuffer<float>& buffer)
         }
     }
     
-    // Calculate gain reduction in dB for UI feedback
+    // Calculate actual gain reduction in dB for UI feedback
     float actualGainReduction = 0.0f;
-    if (preCompressionLevel > 0.0f && postCompressionLevel > 0.0f) {
-        actualGainReduction = juce::Decibels::gainToDecibels(postCompressionLevel / preCompressionLevel);
-        actualGainReduction = juce::jlimit(-30.0f, 0.0f, actualGainReduction); // Clamp to reasonable range
+    if (preCompressionLevel > 1e-6f && postCompressionLevel > 1e-6f) {
+        float preDb = juce::Decibels::gainToDecibels(preCompressionLevel + 1e-6f);
+        float postDb = juce::Decibels::gainToDecibels(postCompressionLevel + 1e-6f);
+        actualGainReduction = juce::jlimit(0.0f, 30.0f, preDb - postDb); // Positive gain reduction
     }
+    
+    // Debug output for gain reduction
+    static int debugCounter = 0;
+    if (debugCounter++ % 100 == 0) { // Print every 100 calls to avoid spam
+        DBG("[CompressEngine] Threshold: " << thresholdDb << "dB, Pre: " << preCompressionLevel << " Post: " << postCompressionLevel << " GainReduction: " << actualGainReduction << "dB");
+    }
+    
+    
     gainReductionDb.store(actualGainReduction);
     
     // Manual makeup gain will be applied in processWetDry method
