@@ -2439,12 +2439,12 @@ void PluginEditor::setupKnobs()
                 compressRatioSlider->setVisible(true);
                 compressRatioSlider->setEnabled(true);
                 compressRatioSlider->toFront(false);
-                compressNoiseSlider->setVisible(true);
-                compressNoiseSlider->setEnabled(true);
-                compressNoiseSlider->toFront(false);
-                compressNoiseToneSlider->setVisible(true);
-                compressNoiseToneSlider->setEnabled(true);
-                compressNoiseToneSlider->toFront(false);
+                compressLofiSlider->setVisible(true);
+                compressLofiSlider->setEnabled(true);
+                compressLofiSlider->toFront(false);
+                compressMakeupGainSlider->setVisible(true);
+                compressMakeupGainSlider->setEnabled(true);
+                compressMakeupGainSlider->toFront(false);
                 compressWetSlider->setVisible(true);
                 compressWetSlider->setEnabled(true);
                 compressWetSlider->toFront(false);
@@ -2465,12 +2465,12 @@ void PluginEditor::setupKnobs()
                 compressRatioLabel->setVisible(true);
                 compressRatioLabel->setEnabled(true);
                 compressRatioLabel->toFront(false);
-                compressNoiseLabel->setVisible(true);
-                compressNoiseLabel->setEnabled(true);
-                compressNoiseLabel->toFront(false);
-                compressNoiseToneLabel->setVisible(true);
-                compressNoiseToneLabel->setEnabled(true);
-                compressNoiseToneLabel->toFront(false);
+                compressLofiLabel->setVisible(true);
+                compressLofiLabel->setEnabled(true);
+                compressLofiLabel->toFront(false);
+                compressMakeupGainLabel->setVisible(true);
+                compressMakeupGainLabel->setEnabled(true);
+                compressMakeupGainLabel->toFront(false);
                 compressWetLabel->setVisible(true);
                 compressWetLabel->setEnabled(true);
                 compressWetLabel->toFront(false);
@@ -2491,12 +2491,12 @@ void PluginEditor::setupKnobs()
                 compressRatioValueLabel->setVisible(true);
                 compressRatioValueLabel->setEnabled(true);
                 compressRatioValueLabel->toFront(false);
-                compressNoiseValueLabel->setVisible(true);
-                compressNoiseValueLabel->setEnabled(true);
-                compressNoiseValueLabel->toFront(false);
-                compressNoiseToneValueLabel->setVisible(true);
-                compressNoiseToneValueLabel->setEnabled(true);
-                compressNoiseToneValueLabel->toFront(false);
+                compressLofiValueLabel->setVisible(true);
+                compressLofiValueLabel->setEnabled(true);
+                compressLofiValueLabel->toFront(false);
+                compressMakeupGainValueLabel->setVisible(true);
+                compressMakeupGainValueLabel->setEnabled(true);
+                compressMakeupGainValueLabel->toFront(false);
                 compressWetValueLabel->setVisible(true);
                 compressWetValueLabel->setEnabled(true);
                 compressWetValueLabel->toFront(false);
@@ -2529,10 +2529,10 @@ void PluginEditor::setupKnobs()
                 compressReleaseSlider->setEnabled(false);
                 compressRatioSlider->setVisible(false);
                 compressRatioSlider->setEnabled(false);
-                compressNoiseSlider->setVisible(false);
-                compressNoiseSlider->setEnabled(false);
-                compressNoiseToneSlider->setVisible(false);
-                compressNoiseToneSlider->setEnabled(false);
+                compressLofiSlider->setVisible(false);
+                compressLofiSlider->setEnabled(false);
+                compressMakeupGainSlider->setVisible(false);
+                compressMakeupGainSlider->setEnabled(false);
                 compressWetSlider->setVisible(false);
                 compressWetSlider->setEnabled(false);
                 
@@ -2554,10 +2554,10 @@ void PluginEditor::setupKnobs()
                 compressReleaseLabel->setEnabled(false);
                 compressRatioLabel->setVisible(false);
                 compressRatioLabel->setEnabled(false);
-                compressNoiseLabel->setVisible(false);
-                compressNoiseLabel->setEnabled(false);
-                compressNoiseToneLabel->setVisible(false);
-                compressNoiseToneLabel->setEnabled(false);
+                compressLofiLabel->setVisible(false);
+                compressLofiLabel->setEnabled(false);
+                compressMakeupGainLabel->setVisible(false);
+                compressMakeupGainLabel->setEnabled(false);
                 compressWetLabel->setVisible(false);
                 compressWetLabel->setEnabled(false);
                 
@@ -2572,10 +2572,10 @@ void PluginEditor::setupKnobs()
                 compressReleaseValueLabel->setEnabled(false);
                 compressRatioValueLabel->setVisible(false);
                 compressRatioValueLabel->setEnabled(false);
-                compressNoiseValueLabel->setVisible(false);
-                compressNoiseValueLabel->setEnabled(false);
-                compressNoiseToneValueLabel->setVisible(false);
-                compressNoiseToneValueLabel->setEnabled(false);
+                compressLofiValueLabel->setVisible(false);
+                compressLofiValueLabel->setEnabled(false);
+                compressMakeupGainValueLabel->setVisible(false);
+                compressMakeupGainValueLabel->setEnabled(false);
                 compressWetValueLabel->setVisible(false);
                 compressWetValueLabel->setEnabled(false);
                 // Restore MASTER title and dice
@@ -2654,8 +2654,8 @@ void PluginEditor::setupKnobs()
                                 compressAttackSlider->setVisible(true);
                                 compressReleaseSlider->setVisible(true);
                                 compressRatioSlider->setVisible(true);
-                                compressNoiseSlider->setVisible(true);
-                                compressNoiseToneSlider->setVisible(true);
+                                compressLofiSlider->setVisible(true);
+                                compressMakeupGainSlider->setVisible(true);
                                 compressWetSlider->setVisible(true);
                                 
                                 // Show slider labels
@@ -2664,8 +2664,8 @@ void PluginEditor::setupKnobs()
                                 compressAttackLabel->setVisible(true);
                                 compressReleaseLabel->setVisible(true);
                                 compressRatioLabel->setVisible(true);
-                                compressNoiseLabel->setVisible(true);
-                                compressNoiseToneLabel->setVisible(true);
+                                compressLofiLabel->setVisible(true);
+                                compressMakeupGainLabel->setVisible(true);
                                 compressWetLabel->setVisible(true);
                                 
                                 // Show value labels
@@ -2674,8 +2674,8 @@ void PluginEditor::setupKnobs()
                                 compressAttackValueLabel->setVisible(true);
                                 compressReleaseValueLabel->setVisible(true);
                                 compressRatioValueLabel->setVisible(true);
-                                compressNoiseValueLabel->setVisible(true);
-                                compressNoiseToneValueLabel->setVisible(true);
+                                compressLofiValueLabel->setVisible(true);
+                                compressMakeupGainValueLabel->setVisible(true);
                                 compressWetValueLabel->setVisible(true);
                                 
                                 // Show gain reduction meter and audio visualizer
@@ -2706,8 +2706,8 @@ void PluginEditor::setupKnobs()
                                 compressAttackSlider->setVisible(false);
                                 compressReleaseSlider->setVisible(false);
                                 compressRatioSlider->setVisible(false);
-                                compressNoiseSlider->setVisible(false);
-                                compressNoiseToneSlider->setVisible(false);
+                                compressLofiSlider->setVisible(false);
+                                compressMakeupGainSlider->setVisible(false);
                                 compressWetSlider->setVisible(false);
                                 
                                 // Hide slider labels
@@ -2716,8 +2716,8 @@ void PluginEditor::setupKnobs()
                                 compressAttackLabel->setVisible(false);
                                 compressReleaseLabel->setVisible(false);
                                 compressRatioLabel->setVisible(false);
-                                compressNoiseLabel->setVisible(false);
-                                compressNoiseToneLabel->setVisible(false);
+                                compressLofiLabel->setVisible(false);
+                                compressMakeupGainLabel->setVisible(false);
                                 compressWetLabel->setVisible(false);
                                 
                                 // Hide value labels
@@ -2726,8 +2726,8 @@ void PluginEditor::setupKnobs()
                                 compressAttackValueLabel->setVisible(false);
                                 compressReleaseValueLabel->setVisible(false);
                                 compressRatioValueLabel->setVisible(false);
-                                compressNoiseValueLabel->setVisible(false);
-                                compressNoiseToneValueLabel->setVisible(false);
+                                compressLofiValueLabel->setVisible(false);
+                                compressMakeupGainValueLabel->setVisible(false);
                                 compressWetValueLabel->setVisible(false);
                                 
                                 // Hide gain reduction meter and audio visualizer
@@ -2811,8 +2811,8 @@ void PluginEditor::setupKnobs()
                         compressAttackSlider->setVisible(true);
                         compressReleaseSlider->setVisible(true);
                         compressRatioSlider->setVisible(true);
-                        compressNoiseSlider->setVisible(true);
-                        compressNoiseToneSlider->setVisible(true);
+                        compressLofiSlider->setVisible(true);
+                        compressMakeupGainSlider->setVisible(true);
                         compressWetSlider->setVisible(true);
                         
                         // Show slider labels
@@ -2821,8 +2821,8 @@ void PluginEditor::setupKnobs()
                         compressAttackLabel->setVisible(true);
                         compressReleaseLabel->setVisible(true);
                         compressRatioLabel->setVisible(true);
-                        compressNoiseLabel->setVisible(true);
-                        compressNoiseToneLabel->setVisible(true);
+                        compressLofiLabel->setVisible(true);
+                        compressMakeupGainLabel->setVisible(true);
                         compressWetLabel->setVisible(true);
                         
                         // Show value labels
@@ -2831,8 +2831,8 @@ void PluginEditor::setupKnobs()
                         compressAttackValueLabel->setVisible(true);
                         compressReleaseValueLabel->setVisible(true);
                         compressRatioValueLabel->setVisible(true);
-                        compressNoiseValueLabel->setVisible(true);
-                        compressNoiseToneValueLabel->setVisible(true);
+                        compressLofiValueLabel->setVisible(true);
+                        compressMakeupGainValueLabel->setVisible(true);
                         compressWetValueLabel->setVisible(true);
                     } else {
                         // Hide COMPRESS+ sliders if disabled
@@ -2841,8 +2841,8 @@ void PluginEditor::setupKnobs()
                         compressAttackSlider->setVisible(false);
                         compressReleaseSlider->setVisible(false);
                         compressRatioSlider->setVisible(false);
-                        compressNoiseSlider->setVisible(false);
-                        compressNoiseToneSlider->setVisible(false);
+                        compressLofiSlider->setVisible(false);
+                        compressMakeupGainSlider->setVisible(false);
                         compressWetSlider->setVisible(false);
                         
                         // Hide slider labels
@@ -2851,8 +2851,8 @@ void PluginEditor::setupKnobs()
                         compressAttackLabel->setVisible(false);
                         compressReleaseLabel->setVisible(false);
                         compressRatioLabel->setVisible(false);
-                        compressNoiseLabel->setVisible(false);
-                        compressNoiseToneLabel->setVisible(false);
+                        compressLofiLabel->setVisible(false);
+                        compressMakeupGainLabel->setVisible(false);
                         compressWetLabel->setVisible(false);
                         
                         // Hide value labels
@@ -2861,8 +2861,8 @@ void PluginEditor::setupKnobs()
                         compressAttackValueLabel->setVisible(false);
                         compressReleaseValueLabel->setVisible(false);
                         compressRatioValueLabel->setVisible(false);
-                        compressNoiseValueLabel->setVisible(false);
-                        compressNoiseToneValueLabel->setVisible(false);
+                        compressLofiValueLabel->setVisible(false);
+                        compressMakeupGainValueLabel->setVisible(false);
                         compressWetValueLabel->setVisible(false);
                     }
                 }
@@ -10495,15 +10495,15 @@ void PluginEditor::setupCompressSliders()
     gainReductionMeter->setVisible(false); // Initially hidden
     
     
-    // COMPRESS+ slider titles (Top row: Compressor controls, Bottom row: Drive/Noise/Wet)
+    // COMPRESS+ slider titles (Top row: Compressor controls, Bottom row: Drive/Lofi/Makeup Gain/Wet)
     const juce::StringArray compressSliderTitles = {
         "THRESHOLD",
         "ATTACK", 
         "RELEASE",
         "RATIO",
         "DRIVE",
-        "NOISE",
-        "N. TONE", 
+        "LOFI",
+        "MAKEUP", 
         "WET"
     };
     
@@ -10514,8 +10514,8 @@ void PluginEditor::setupCompressSliders()
         "compressRelease", 
         "compressRatio",
         "compressDrive",
-        "compressNoise",
-        "compressNoiseTone",
+        "compressLofi",
+        "compressMakeupGain",
         "compressWet"
     };
     
@@ -10535,19 +10535,19 @@ void PluginEditor::setupCompressSliders()
         compressReleaseSlider.get(),
         compressRatioSlider.get(),
         compressDriveSlider.get(),
-        compressNoiseSlider.get(),
-        compressNoiseToneSlider.get(),
+        compressLofiSlider.get(),
+        compressMakeupGainSlider.get(),
         compressWetSlider.get()
     };
     
     juce::Label* labels[] = {
         compressThresholdLabel.get(),
         compressAttackLabel.get(),
-        compressReleaseLabel.get(), 
+        compressReleaseLabel.get(),
         compressRatioLabel.get(),
         compressDriveLabel.get(),
-        compressNoiseLabel.get(),
-        compressNoiseToneLabel.get(),
+        compressLofiLabel.get(),
+        compressMakeupGainLabel.get(),
         compressWetLabel.get()
     };
     
@@ -10555,10 +10555,10 @@ void PluginEditor::setupCompressSliders()
         compressThresholdValueLabel.get(),
         compressAttackValueLabel.get(),
         compressReleaseValueLabel.get(),
-        compressRatioValueLabel.get(), 
+        compressRatioValueLabel.get(),
         compressDriveValueLabel.get(),
-        compressNoiseValueLabel.get(),
-        compressNoiseToneValueLabel.get(),
+        compressLofiValueLabel.get(),
+        compressMakeupGainValueLabel.get(),
         compressWetValueLabel.get()
     };
     
@@ -10583,8 +10583,8 @@ void PluginEditor::setupCompressSliders()
             slider->setRange(1.0, 20.0, 0.1); // 1:1 to 20:1 ratio
         } else if (compressParamIDs[i] == "compressDrive") {
             slider->setRange(0.0, 30.0, 0.1); // 0-30dB drive
-        } else if (compressParamIDs[i] == "compressNoiseTone") {
-            slider->setRange(200.0, 8000.0, 10.0); // 200Hz-8kHz noise tone
+        } else if (compressParamIDs[i] == "compressMakeupGain") {
+            slider->setRange(-24.0, 24.0, 0.1); // -24dB to +24dB makeup gain
         } else {
             slider->setRange(0.0, 1.0, 0.01); // 0-1 for other parameters
         }
@@ -10602,8 +10602,8 @@ void PluginEditor::setupCompressSliders()
             case 2: compressReleaseAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(processorRef.getAPVTS(), compressParamIDs[i], *slider); break;
             case 3: compressRatioAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(processorRef.getAPVTS(), compressParamIDs[i], *slider); break;
             case 4: compressDriveAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(processorRef.getAPVTS(), compressParamIDs[i], *slider); break;
-            case 5: compressNoiseAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(processorRef.getAPVTS(), compressParamIDs[i], *slider); break;
-            case 6: compressNoiseToneAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(processorRef.getAPVTS(), compressParamIDs[i], *slider); break;
+            case 5: compressLofiAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(processorRef.getAPVTS(), compressParamIDs[i], *slider); break;
+            case 6: compressMakeupGainAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(processorRef.getAPVTS(), compressParamIDs[i], *slider); break;
             case 7: compressWetAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(processorRef.getAPVTS(), compressParamIDs[i], *slider); break;
         }
             
@@ -10640,7 +10640,7 @@ void PluginEditor::setupCompressSliders()
                 // Format value based on parameter type
                 const juce::StringArray paramIDs = {
                     "compressThreshold", "compressAttack", "compressRelease", "compressRatio",
-                    "compressDrive", "compressNoise", "compressNoiseTone", "compressWet"
+                    "compressDrive", "compressLofi", "compressMakeupGain", "compressWet"
                 };
                 
                 if (paramIDs[i] == "compressThreshold") {
@@ -10653,8 +10653,8 @@ void PluginEditor::setupCompressSliders()
                     valueText = juce::String(value, 1) + ":1";
                 } else if (paramIDs[i] == "compressDrive") {
                     valueText = juce::String(value, 1) + " dB";
-                } else if (paramIDs[i] == "compressNoiseTone") {
-                    valueText = juce::String(value, 0) + " Hz";
+                } else if (paramIDs[i] == "compressMakeupGain") {
+                    valueText = juce::String(value, 1) + " dB";
                 } else {
                     valueText = juce::String(value, 2);
                 }
@@ -10675,8 +10675,8 @@ void PluginEditor::setupCompressSliders()
             case 2: compressAttackSlider = std::move(slider); compressAttackLabel = std::move(label); compressAttackValueLabel = std::move(valueLabel); break;
             case 3: compressReleaseSlider = std::move(slider); compressReleaseLabel = std::move(label); compressReleaseValueLabel = std::move(valueLabel); break;
             case 4: compressRatioSlider = std::move(slider); compressRatioLabel = std::move(label); compressRatioValueLabel = std::move(valueLabel); break;
-            case 5: compressNoiseSlider = std::move(slider); compressNoiseLabel = std::move(label); compressNoiseValueLabel = std::move(valueLabel); break;
-            case 6: compressNoiseToneSlider = std::move(slider); compressNoiseToneLabel = std::move(label); compressNoiseToneValueLabel = std::move(valueLabel); break;
+            case 5: compressLofiSlider = std::move(slider); compressLofiLabel = std::move(label); compressLofiValueLabel = std::move(valueLabel); break;
+            case 6: compressMakeupGainSlider = std::move(slider); compressMakeupGainLabel = std::move(label); compressMakeupGainValueLabel = std::move(valueLabel); break;
             case 7: compressWetSlider = std::move(slider); compressWetLabel = std::move(label); compressWetValueLabel = std::move(valueLabel); break;
         }
     }
@@ -10692,17 +10692,17 @@ void PluginEditor::updateCompressValueLabels()
     // Update all COMPRESS+ value labels with current slider values
     const juce::StringArray compressParamIDs = {
         "compressThreshold", "compressAttack", "compressRelease", "compressRatio",
-        "compressDrive", "compressNoise", "compressNoiseTone", "compressWet"
+        "compressDrive", "compressLofi", "compressMakeupGain", "compressWet"
     };
     
     const std::vector<juce::Slider*> sliders = {
         compressThresholdSlider.get(), compressAttackSlider.get(), compressReleaseSlider.get(), compressRatioSlider.get(),
-        compressDriveSlider.get(), compressNoiseSlider.get(), compressNoiseToneSlider.get(), compressWetSlider.get()
+        compressDriveSlider.get(), compressLofiSlider.get(), compressMakeupGainSlider.get(), compressWetSlider.get()
     };
     
     const std::vector<juce::Label*> labels = {
         compressThresholdValueLabel.get(), compressAttackValueLabel.get(), compressReleaseValueLabel.get(), compressRatioValueLabel.get(),
-        compressDriveValueLabel.get(), compressNoiseValueLabel.get(), compressNoiseToneValueLabel.get(), compressWetValueLabel.get()
+        compressDriveValueLabel.get(), compressLofiValueLabel.get(), compressMakeupGainValueLabel.get(), compressWetValueLabel.get()
     };
     
     for (int i = 0; i < 8; ++i) {
@@ -10721,8 +10721,8 @@ void PluginEditor::updateCompressValueLabels()
                 valueText = juce::String(value, 1) + ":1";
             } else if (compressParamIDs[i] == "compressDrive") {
                 valueText = juce::String(value, 1) + " dB";
-            } else if (compressParamIDs[i] == "compressNoiseTone") {
-                valueText = juce::String(value, 0) + " Hz";
+            } else if (compressParamIDs[i] == "compressMakeupGain") {
+                valueText = juce::String(value, 1) + " dB";
             } else {
                 valueText = juce::String(value, 2);
             }

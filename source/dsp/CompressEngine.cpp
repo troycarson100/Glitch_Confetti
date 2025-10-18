@@ -5,10 +5,6 @@ CompressEngine::CompressEngine()
     // Initialize drive oversampler
     driveOversampler = std::make_unique<juce::dsp::Oversampling<float>>(
         1, 2, juce::dsp::Oversampling<float>::filterHalfBandFIREquiripple, true, false);
-    
-    // Initialize noise filter coefficients
-    noiseCoeffs = juce::dsp::IIR::Coefficients<float>::makeLowPass(44100.0, 1000.0);
-    noiseFilter.coefficients = noiseCoeffs;
 }
 
 CompressEngine::~CompressEngine() = default;
@@ -32,10 +28,7 @@ void CompressEngine::prepare(const juce::dsp::ProcessSpec& spec)
     // Prepare drive oversampler
     driveOversampler->initProcessing(static_cast<size_t>(blockSize));
     
-    // Prepare noise filter
-    noiseFilter.prepare(spec);
-    noiseCoeffs = juce::dsp::IIR::Coefficients<float>::makeLowPass(sampleRate, 1000.0);
-    noiseFilter.coefficients = noiseCoeffs;
+    // Noise filter removed - using lofi processing instead
     
     // Prepare dry buffer
     dryBuffer.setSize(static_cast<int>(spec.numChannels), static_cast<int>(spec.maximumBlockSize));
@@ -45,10 +38,10 @@ void CompressEngine::prepare(const juce::dsp::ProcessSpec& spec)
 
 void CompressEngine::reset()
 {
-    noiseEnv = 0.0f;
+    sampleCounter = 0.0f;
+    heldSample = 0.0f;
     
     juceCompressor.reset();
-    noiseFilter.reset();
     driveOversampler->reset();
     smoothedGain.reset(sampleRate, 0.05);
     
@@ -74,7 +67,7 @@ void CompressEngine::process(juce::AudioBuffer<float>& buffer)
     // Process each effect in chain
     processCompressor(buffer);
     processDrive(buffer);
-    processNoise(buffer);
+    processLofi(buffer);
     processWetDry(buffer);
 }
 
@@ -119,7 +112,7 @@ void CompressEngine::processCompressor(juce::AudioBuffer<float>& buffer)
         }
     }
     
-    // Calculate gain reduction in dB
+    // Calculate gain reduction in dB for UI feedback
     float actualGainReduction = 0.0f;
     if (preCompressionLevel > 0.0f && postCompressionLevel > 0.0f) {
         actualGainReduction = juce::Decibels::gainToDecibels(postCompressionLevel / preCompressionLevel);
@@ -127,20 +120,7 @@ void CompressEngine::processCompressor(juce::AudioBuffer<float>& buffer)
     }
     gainReductionDb.store(actualGainReduction);
     
-    // Apply auto gain compensation - compensate for the gain reduction
-    float makeupGain = std::pow(10.0f, -actualGainReduction / 20.0f); // Convert dB to linear gain
-    makeupGain = juce::jlimit(0.1f, 10.0f, makeupGain); // Clamp to reasonable range
-    
-    // Apply makeup gain smoothly
-    smoothedGain.setTargetValue(makeupGain);
-    for (int channel = 0; channel < buffer.getNumChannels(); ++channel)
-    {
-        float* channelData = buffer.getWritePointer(channel);
-        for (int sample = 0; sample < buffer.getNumSamples(); ++sample)
-        {
-            channelData[sample] *= smoothedGain.getNextValue();
-        }
-    }
+    // Manual makeup gain will be applied in processWetDry method
 }
 
 void CompressEngine::processDrive(juce::AudioBuffer<float>& buffer)
@@ -165,13 +145,18 @@ void CompressEngine::processDrive(juce::AudioBuffer<float>& buffer)
 }
 
 
-void CompressEngine::processNoise(juce::AudioBuffer<float>& buffer)
+void CompressEngine::processLofi(juce::AudioBuffer<float>& buffer)
 {
-    if (noiseLevel <= 0.0f)
+    if (lofiLevel <= 0.0f)
         return;
     
     const int numChannels = buffer.getNumChannels();
     const int numSamples = buffer.getNumSamples();
+    
+    // Map lofi level (0-1) to bit depth (24-8) and sample rate reduction (1-4)
+    const int bitDepth = static_cast<int>(juce::jmap(lofiLevel, 0.0f, 1.0f, 24.0f, 8.0f));
+    const int rateFactor = static_cast<int>(juce::jmap(lofiLevel, 0.0f, 1.0f, 1.0f, 4.0f));
+    const float saturationAmount = juce::jmap(lofiLevel, 0.0f, 1.0f, 0.0f, 0.3f);
     
     for (int channel = 0; channel < numChannels; ++channel)
     {
@@ -179,34 +164,56 @@ void CompressEngine::processNoise(juce::AudioBuffer<float>& buffer)
         
         for (int sample = 0; sample < numSamples; ++sample)
         {
-            // Generate noise
-            float noise = (random.nextFloat() - 0.5f) * 2.0f;
+            float input = channelData[sample];
             
-            // Filter noise for tone
-            noise = noiseFilter.processSample(noise);
+            // Sample rate reduction (hold samples)
+            if (static_cast<int>(sampleCounter) % rateFactor == 0) {
+                heldSample = input;
+            }
+            sampleCounter += 1.0f;
             
-            // Apply envelope decay
-            noiseEnv *= std::exp(-1.0f / (noiseDecayTime * sampleRate));
-            if (std::abs(channelData[sample]) > 0.05f) // Increased threshold to prevent crush from triggering noise
-                noiseEnv = 1.0f;
+            // Apply held sample
+            float processed = heldSample;
             
-            // Clamp noise envelope to prevent runaway
-            noiseEnv = juce::jlimit(0.0f, 1.0f, noiseEnv);
+            // Bit depth reduction
+            const float maxVal = static_cast<float>((1 << bitDepth) - 1);
+            processed = std::round(processed * maxVal) / maxVal;
             
-            // Mix in noise and clamp output to prevent blowup
-            float mixed = channelData[sample] + noise * noiseLevel * noiseEnv;
-            channelData[sample] = juce::jlimit(-1.0f, 1.0f, mixed);
+            // Subtle saturation
+            if (saturationAmount > 0.0f) {
+                processed = std::tanh(processed * (1.0f + saturationAmount)) / (1.0f + saturationAmount);
+            }
+            
+            // Mix with original based on lofi level
+            channelData[sample] = juce::jlimit(-1.0f, 1.0f, 
+                input * (1.0f - lofiLevel) + processed * lofiLevel);
         }
     }
 }
 
 void CompressEngine::processWetDry(juce::AudioBuffer<float>& buffer)
 {
-    if (wetLevel >= 1.0f)
-        return; // Already 100% wet
-    
     const int numChannels = buffer.getNumChannels();
     const int numSamples = buffer.getNumSamples();
+    
+    // Apply makeup gain first
+    if (makeupGainDb != 0.0f) {
+        const float makeupGain = juce::Decibels::decibelsToGain(makeupGainDb);
+        smoothedGain.setTargetValue(makeupGain);
+        
+        for (int channel = 0; channel < numChannels; ++channel)
+        {
+            float* channelData = buffer.getWritePointer(channel);
+            for (int sample = 0; sample < numSamples; ++sample)
+            {
+                channelData[sample] *= smoothedGain.getNextValue();
+            }
+        }
+    }
+    
+    // Apply wet/dry mix
+    if (wetLevel >= 1.0f)
+        return; // Already 100% wet
     
     for (int channel = 0; channel < numChannels; ++channel)
     {
@@ -246,15 +253,14 @@ void CompressEngine::setDrive(float driveDb)
     driveGain = std::pow(10.0f, driveDb / 20.0f);
 }
 
-void CompressEngine::setNoise(float noiseVal)
+void CompressEngine::setLofi(float lofiVal)
 {
-    this->noiseLevel = noiseVal;
+    this->lofiLevel = juce::jlimit(0.0f, 1.0f, lofiVal);
 }
 
-void CompressEngine::setNoiseTone(float toneFreq)
+void CompressEngine::setMakeupGain(float makeupGainVal)
 {
-    noiseCoeffs = juce::dsp::IIR::Coefficients<float>::makeLowPass(sampleRate, toneFreq);
-    noiseFilter.coefficients = noiseCoeffs;
+    this->makeupGainDb = juce::jlimit(-24.0f, 24.0f, makeupGainVal);
 }
 
 void CompressEngine::setWet(float wetVal)

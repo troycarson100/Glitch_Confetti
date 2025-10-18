@@ -346,14 +346,14 @@ public:
     
     // COMPRESS+ audio visualizer
     
-    // COMPRESS+ Sliders - 8 sliders in 2 rows of 4 (Top: Threshold, Attack, Release, Ratio; Bottom: Drive, Noise, Noise Tone, Wet)
+    // COMPRESS+ Sliders - 8 sliders in 2 rows of 4 (Top: Threshold, Attack, Release, Ratio; Bottom: Drive, Lofi, Makeup Gain, Wet)
     std::unique_ptr<CompressSlider> compressThresholdSlider;
     std::unique_ptr<CompressSlider> compressAttackSlider;
     std::unique_ptr<CompressSlider> compressReleaseSlider;
     std::unique_ptr<CompressSlider> compressRatioSlider;
     std::unique_ptr<CompressSlider> compressDriveSlider;
-    std::unique_ptr<CompressSlider> compressNoiseSlider;
-    std::unique_ptr<CompressSlider> compressNoiseToneSlider;
+    std::unique_ptr<CompressSlider> compressLofiSlider;
+    std::unique_ptr<CompressSlider> compressMakeupGainSlider;
     std::unique_ptr<CompressSlider> compressWetSlider;
     
     // COMPRESS+ slider attachments
@@ -362,8 +362,8 @@ public:
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> compressReleaseAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> compressRatioAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> compressDriveAttachment;
-    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> compressNoiseAttachment;
-    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> compressNoiseToneAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> compressLofiAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> compressMakeupGainAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> compressWetAttachment;
     
     // COMPRESS+ Slider Labels
@@ -372,8 +372,8 @@ public:
     std::unique_ptr<juce::Label> compressReleaseLabel;
     std::unique_ptr<juce::Label> compressRatioLabel;
     std::unique_ptr<juce::Label> compressDriveLabel;
-    std::unique_ptr<juce::Label> compressNoiseLabel;
-    std::unique_ptr<juce::Label> compressNoiseToneLabel;
+    std::unique_ptr<juce::Label> compressLofiLabel;
+    std::unique_ptr<juce::Label> compressMakeupGainLabel;
     std::unique_ptr<juce::Label> compressWetLabel;
     
     // COMPRESS+ Value Labels
@@ -382,8 +382,8 @@ public:
     std::unique_ptr<juce::Label> compressReleaseValueLabel;
     std::unique_ptr<juce::Label> compressRatioValueLabel;
     std::unique_ptr<juce::Label> compressDriveValueLabel;
-    std::unique_ptr<juce::Label> compressNoiseValueLabel;
-    std::unique_ptr<juce::Label> compressNoiseToneValueLabel;
+    std::unique_ptr<juce::Label> compressLofiValueLabel;
+    std::unique_ptr<juce::Label> compressMakeupGainValueLabel;
     std::unique_ptr<juce::Label> compressWetValueLabel;
         
         // Flag to prevent onValueChange from saving snapshots during randomization reload

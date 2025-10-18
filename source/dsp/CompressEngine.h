@@ -22,8 +22,8 @@ public:
     void setRelease(float releaseMs);
     void setRatio(float ratio);
     void setDrive(float driveDb);
-    void setNoise(float noiseLevel);
-    void setNoiseTone(float toneFreq);
+    void setLofi(float lofiLevel);
+    void setMakeupGain(float makeupGainDb);
     void setWet(float wetLevel);
     void setEnabled(bool enabled);
 
@@ -34,7 +34,7 @@ private:
     // DSP processing methods
     void processCompressor(juce::AudioBuffer<float>& buffer);
     void processDrive(juce::AudioBuffer<float>& buffer);
-    void processNoise(juce::AudioBuffer<float>& buffer);
+    void processLofi(juce::AudioBuffer<float>& buffer);
     void processWetDry(juce::AudioBuffer<float>& buffer);
 
     // JUCE Compressor
@@ -49,13 +49,13 @@ private:
     // Drive state
     float driveGain = 1.0f;
 
-    // Noise state (fixed decay at 0.6s)
-    juce::Random random;
-    float noiseLevel = 0.0f;
-    float noiseEnv = 0.0f;
-    float noiseDecayTime = 0.6f; // Fixed at 0.6s
-    juce::dsp::IIR::Filter<float> noiseFilter;
-    juce::dsp::IIR::Coefficients<float>::Ptr noiseCoeffs;
+    // Lofi state
+    float lofiLevel = 0.0f;
+    float sampleCounter = 0.0f;
+    float heldSample = 0.0f;
+    
+    // Makeup gain state
+    float makeupGainDb = 0.0f;
 
     // Wet/Dry mix
     float wetLevel = 1.0f;

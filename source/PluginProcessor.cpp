@@ -199,11 +199,11 @@ juce::AudioProcessorValueTreeState::ParameterLayout PluginProcessor::createParam
     params.push_back(std::make_unique<juce::AudioParameterFloat>("compressAttack", "Compress Attack", 0.1f, 100.0f, 5.0f)); // 0.1ms to 100ms attack
     params.push_back(std::make_unique<juce::AudioParameterFloat>("compressRelease", "Compress Release", 10.0f, 1000.0f, 50.0f)); // 10ms to 1000ms release
     params.push_back(std::make_unique<juce::AudioParameterFloat>("compressRatio", "Compress Ratio", 1.0f, 20.0f, 4.0f)); // 1:1 to 20:1 ratio
-    // Bottom row: Drive, Noise, Noise Tone, Wet
-    params.push_back(std::make_unique<juce::AudioParameterFloat>("compressDrive", "Compress Drive", 0.0f, 30.0f, 0.0f)); // 0-30dB drive
-    params.push_back(std::make_unique<juce::AudioParameterFloat>("compressNoise", "Compress Noise", 0.0f, 1.0f, 0.0f)); // 0-1 noise level
-    params.push_back(std::make_unique<juce::AudioParameterFloat>("compressNoiseTone", "Compress Noise Tone", 200.0f, 8000.0f, 1000.0f)); // 200Hz-8kHz noise tone
-    params.push_back(std::make_unique<juce::AudioParameterFloat>("compressWet", "Compress Wet", 0.0f, 1.0f, 1.0f)); // 0-1 wet/dry mix
+            // Bottom row: Drive, Lofi, Makeup Gain, Wet
+            params.push_back(std::make_unique<juce::AudioParameterFloat>("compressDrive", "Compress Drive", 0.0f, 30.0f, 0.0f)); // 0-30dB drive
+            params.push_back(std::make_unique<juce::AudioParameterFloat>("compressLofi", "Compress Lofi", 0.0f, 1.0f, 0.0f)); // 0-1 lofi intensity
+            params.push_back(std::make_unique<juce::AudioParameterFloat>("compressMakeupGain", "Compress Makeup Gain", -24.0f, 24.0f, 0.0f)); // -24dB to +24dB makeup gain
+            params.push_back(std::make_unique<juce::AudioParameterFloat>("compressWet", "Compress Wet", 0.0f, 1.0f, 1.0f)); // 0-1 wet/dry mix
         params.push_back(std::make_unique<juce::AudioParameterBool>("compressEnabled", "Compress Enabled", true)); // COMPRESS+ master effect enabled
     
     // Page and effect enable parameters
@@ -2989,23 +2989,23 @@ void PluginProcessor::processCompressEffect(juce::AudioBuffer<float>& buffer)
     auto* attackParam = valueTreeState.getRawParameterValue("compressAttack");
     auto* releaseParam = valueTreeState.getRawParameterValue("compressRelease");
     auto* ratioParam = valueTreeState.getRawParameterValue("compressRatio");
-    auto* driveParam = valueTreeState.getRawParameterValue("compressDrive");
-    auto* noiseParam = valueTreeState.getRawParameterValue("compressNoise");
-    auto* noiseToneParam = valueTreeState.getRawParameterValue("compressNoiseTone");
-    auto* wetParam = valueTreeState.getRawParameterValue("compressWet");
-    
-    if (thresholdParam && attackParam && releaseParam && ratioParam &&
-        driveParam && noiseParam && noiseToneParam && wetParam)
-    {
-        // Set COMPRESS+ parameters
-        compressEngine.setThreshold(thresholdParam->load());
-        compressEngine.setAttack(attackParam->load());
-        compressEngine.setRelease(releaseParam->load());
-        compressEngine.setRatio(ratioParam->load());
-        compressEngine.setDrive(driveParam->load());
-        compressEngine.setNoise(noiseParam->load());
-        compressEngine.setNoiseTone(noiseToneParam->load());
-        compressEngine.setWet(wetParam->load());
+            auto* driveParam = valueTreeState.getRawParameterValue("compressDrive");
+            auto* lofiParam = valueTreeState.getRawParameterValue("compressLofi");
+            auto* makeupGainParam = valueTreeState.getRawParameterValue("compressMakeupGain");
+            auto* wetParam = valueTreeState.getRawParameterValue("compressWet");
+
+            if (thresholdParam && attackParam && releaseParam && ratioParam &&
+                driveParam && lofiParam && makeupGainParam && wetParam)
+            {
+                // Set COMPRESS+ parameters
+                compressEngine.setThreshold(thresholdParam->load());
+                compressEngine.setAttack(attackParam->load());
+                compressEngine.setRelease(releaseParam->load());
+                compressEngine.setRatio(ratioParam->load());
+                compressEngine.setDrive(driveParam->load());
+                compressEngine.setLofi(lofiParam->load());
+                compressEngine.setMakeupGain(makeupGainParam->load());
+                compressEngine.setWet(wetParam->load());
         compressEngine.setEnabled(true);
         
         // Process COMPRESS+ effect
