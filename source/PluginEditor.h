@@ -290,6 +290,8 @@ public:
     std::unique_ptr<PresetManager> presetManager;
     std::unique_ptr<PresetBrowserOverlay> presetBrowser;
     std::unique_ptr<PresetSelectorButton> presetBrowserButton;
+    std::unique_ptr<juce::DrawableButton> compCrushTabButton;
+    bool compCrushEnabled = false;
         
         // Flag to prevent onValueChange from saving snapshots during randomization reload
         std::atomic<bool> isLoadingFromSnapshot { false };

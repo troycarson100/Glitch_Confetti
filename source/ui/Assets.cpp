@@ -108,6 +108,8 @@ bool UiAssets::loadAll()
     presetMenuBackground = loadSVG (PresetMenu_Background_svg, PresetMenu_Background_svgSize);
     presetMenuCarrot     = loadSVG (PresetMenu_Carrot_svg, PresetMenu_Carrot_svgSize);
     saveIcon             = loadSVG (Save_Icon_svg, Save_Icon_svgSize);
+    compCrushTabInactive = loadSVG (Comp_Crush_Tab_Inactive_svg, Comp_Crush_Tab_Inactive_svgSize);
+    compCrushTabActive   = loadSVG (Comp_Crush_Tab_Active_svg, Comp_Crush_Tab_Active_svgSize);
     
     // Load category menu tab PNGs
     favoritesMenuTab = juce::ImageCache::getFromMemory(BinaryData::Favorites_MenuTab_png, BinaryData::Favorites_MenuTab_pngSize);
@@ -130,6 +132,8 @@ bool UiAssets::loadAll()
     reduxBackgroundTab2 = loadSVGFromFile (assetsDir.getChildFile ("ui/Redux_Background_Tab2.svg"));
     reduxBackgroundTab3 = loadSVGFromFile (assetsDir.getChildFile ("ui/Redux_Background_Tab3.svg"));
     reduxBackgroundTab4 = loadSVGFromFile (assetsDir.getChildFile ("ui/Redux_Background_Tab4.svg"));
+    
+    // Comp Crush Tab assets (loaded via binary data above)
     
     // … repeat
 #endif

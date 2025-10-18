@@ -281,6 +281,8 @@ const char* getNamedResource (const char* resourceNameUTF8, int& numBytes)
         case 0x74bea9db:  numBytes = 5248; return Chorus_Background_Tab3_svg;
         case 0x74ccc15c:  numBytes = 5257; return Chorus_Background_Tab4_svg;
         case 0xc53e8c17:  numBytes = 4446; return Chorus_Icon_svg;
+        case 0xdf8efa09:  numBytes = 955; return Comp_Crush_Tab_Active_svg;
+        case 0x6a51fd6e:  numBytes = 955; return Comp_Crush_Tab_Inactive_svg;
         case 0xd67e60c8:  numBytes = 21950; return Dice_Large_svg;
         case 0xce28d43a:  numBytes = 4991; return Dirt_Background_Tab1_svg;
         case 0xce36ebbb:  numBytes = 5188; return Dirt_Background_Tab2_svg;
@@ -394,6 +396,8 @@ const char* namedResourceList[] =
     "Chorus_Background_Tab3_svg",
     "Chorus_Background_Tab4_svg",
     "Chorus_Icon_svg",
+    "Comp_Crush_Tab_Active_svg",
+    "Comp_Crush_Tab_Inactive_svg",
     "Dice_Large_svg",
     "Dirt_Background_Tab1_svg",
     "Dirt_Background_Tab2_svg",
@@ -502,6 +506,8 @@ const char* originalFilenames[] =
     "Chorus_Background_Tab3.svg",
     "Chorus_Background_Tab4.svg",
     "Chorus_Icon.svg",
+    "Comp_Crush_Tab_Active.svg",
+    "Comp_Crush_Tab_Inactive.svg",
     "Dice_Large.svg",
     "Dirt_Background_Tab1.svg",
     "Dirt_Background_Tab2.svg",

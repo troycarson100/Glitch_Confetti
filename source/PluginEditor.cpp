@@ -2348,6 +2348,43 @@ void PluginEditor::setupKnobs()
             229, 35
         );
         
+        // Comp Crush Tab Button - positioned to the left of the save icon, 40% smaller
+        compCrushTabButton = std::make_unique<juce::DrawableButton>("CompCrushTab", juce::DrawableButton::ImageFitted);
+        compCrushTabButton->setClickingTogglesState(true);
+        compCrushTabButton->setColour(juce::DrawableButton::backgroundColourId, juce::Colours::transparentBlack);
+        compCrushTabButton->setColour(juce::DrawableButton::backgroundOnColourId, juce::Colours::transparentBlack);
+        addAndMakeVisible(compCrushTabButton.get());
+        
+        // Set initial image (inactive)
+        if (assets.compCrushTabInactive) {
+            compCrushTabButton->setImages(assets.compCrushTabInactive.get());
+        }
+        
+        // Position to the left of the preset browser button, 2.5x bigger then 6% smaller (87.5 * 0.94 = 82.25)
+        const int compCrushSize = static_cast<int>(35 * 2.5 * 0.94); // 2.5x bigger then 6% smaller: 87.5 * 0.94 = 82.25
+        const int compCrushSpacing = 10; // Space between buttons
+        compCrushTabButton->setBounds(
+            presetBrowserButton->getX() - compCrushSize - compCrushSpacing + 5 + 2 + 2 - 2, // Left of preset browser button + 5px right + 2px right + 2px right - 2px left
+            fullMasterArea.getY() + 10 - 24 + 5 - 1 + (35 - compCrushSize) / 2 + 3 + 2 + 1, // Vertically centered with preset browser button + 3px down + 2px down + 1px down
+            compCrushSize, compCrushSize
+        );
+        
+        // Toggle functionality
+        compCrushTabButton->onClick = [this]() {
+            compCrushEnabled = compCrushTabButton->getToggleState();
+            DBG("[CompCrush] Toggle state changed to: " << (compCrushEnabled ? "ON" : "OFF"));
+            
+            // Update button image based on state
+            if (compCrushEnabled && assets.compCrushTabActive) {
+                compCrushTabButton->setImages(assets.compCrushTabActive.get());
+            } else if (!compCrushEnabled && assets.compCrushTabInactive) {
+                compCrushTabButton->setImages(assets.compCrushTabInactive.get());
+            }
+        };
+        
+        // Make sure the button is visible
+        compCrushTabButton->setVisible(true);
+        
         presetBrowserButton->onClick = [this, fullMasterArea]() {
             DBG("[PresetBrowser] Button clicked");
             try {
@@ -2375,6 +2412,8 @@ void PluginEditor::setupKnobs()
                                 masterTitle->setText("MASTER", juce::dontSendNotification);
                             if (masterDiceButton)
                                 masterDiceButton->setVisible(true);
+                            if (compCrushTabButton)
+                                compCrushTabButton->setVisible(true);
                         };
                         
                         // Set up preset loaded callback (only once during creation)
@@ -2413,6 +2452,8 @@ void PluginEditor::setupKnobs()
                         masterTitle->setText("PRESETS", juce::dontSendNotification);
                     if (masterDiceButton)
                         masterDiceButton->setVisible(false);
+                        if (compCrushTabButton)
+                            compCrushTabButton->setVisible(false);
                 } else {
                     DBG("[PresetBrowser] Hiding overlay");
                     // Hide the overlay and restore MASTER title/dice
@@ -2423,6 +2464,8 @@ void PluginEditor::setupKnobs()
                         masterTitle->setText("MASTER", juce::dontSendNotification);
                     if (masterDiceButton)
                         masterDiceButton->setVisible(true);
+                    if (compCrushTabButton)
+                        compCrushTabButton->setVisible(true);
                 }
             } catch (const std::exception& e) {
                 DBG("[PresetBrowser] Exception: " + juce::String(e.what()));

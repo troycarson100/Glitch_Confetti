@@ -38,6 +38,12 @@ namespace BinaryData
     extern const char*   Chorus_Icon_svg;
     const int            Chorus_Icon_svgSize = 4446;
 
+    extern const char*   Comp_Crush_Tab_Active_svg;
+    const int            Comp_Crush_Tab_Active_svgSize = 955;
+
+    extern const char*   Comp_Crush_Tab_Inactive_svg;
+    const int            Comp_Crush_Tab_Inactive_svgSize = 955;
+
     extern const char*   Dice_Large_svg;
     const int            Dice_Large_svgSize = 21950;
 
@@ -321,7 +327,7 @@ namespace BinaryData
     const int            AlteHaasGroteskRegular_ttfSize = 143896;
 
     // Number of elements in the namedResourceList and originalFileNames arrays.
-    const int namedResourceListSize = 104;
+    const int namedResourceListSize = 106;
 
     // Points to the start of a list of resource names.
     extern const char* namedResourceList[];

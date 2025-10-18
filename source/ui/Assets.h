@@ -76,6 +76,8 @@ struct UiAssets {
     std::unique_ptr<juce::Drawable> presetMenuBackground;
     std::unique_ptr<juce::Drawable> presetMenuCarrot;
     std::unique_ptr<juce::Drawable> saveIcon;
+    std::unique_ptr<juce::Drawable> compCrushTabInactive;
+    std::unique_ptr<juce::Drawable> compCrushTabActive;
     
     // Category menu tabs (PNGs)
     juce::Image favoritesMenuTab;
