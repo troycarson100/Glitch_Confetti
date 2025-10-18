@@ -2377,13 +2377,37 @@ void PluginEditor::setupKnobs()
             // Update button image based on state
             if (compCrushEnabled && assets.compCrushTabActive) {
                 compCrushTabButton->setImages(assets.compCrushTabActive.get());
+                // Show overlay when active
+                if (compCrushOverlay) {
+                    compCrushOverlay->setVisible(true);
+                    compCrushOverlay->toFront(false); // Bring to front when shown
+                }
             } else if (!compCrushEnabled && assets.compCrushTabInactive) {
                 compCrushTabButton->setImages(assets.compCrushTabInactive.get());
+                // Hide overlay when inactive
+                if (compCrushOverlay) {
+                    compCrushOverlay->setVisible(false);
+                }
             }
         };
         
         // Make sure the button is visible
         compCrushTabButton->setVisible(true);
+        
+        // Create Comp Crush overlay - black background like presets area
+        compCrushOverlay = std::make_unique<CompCrushOverlay>();
+        addAndMakeVisible(compCrushOverlay.get());
+        
+        // Position overlay to match preset browser exactly
+        auto browserBounds = juce::Rectangle<int>(
+            fullMasterArea.getX(),
+            fullMasterArea.getY() + 28, // Start at bottom of button (button is at Y-10 with height 35) + 3px down
+            fullMasterArea.getWidth(),
+            fullMasterArea.getHeight() - 38 // Reduce by 28px for button offset + 10px bigger (was -48)
+        );
+        compCrushOverlay->setBounds(browserBounds);
+        compCrushOverlay->setVisible(false); // Initially hidden
+        compCrushOverlay->toFront(false); // Ensure it's in front of master area components
         
         presetBrowserButton->onClick = [this, fullMasterArea]() {
             DBG("[PresetBrowser] Button clicked");
@@ -2454,6 +2478,8 @@ void PluginEditor::setupKnobs()
                         masterDiceButton->setVisible(false);
                         if (compCrushTabButton)
                             compCrushTabButton->setVisible(false);
+                        if (compCrushOverlay)
+                            compCrushOverlay->setVisible(false);
                 } else {
                     DBG("[PresetBrowser] Hiding overlay");
                     // Hide the overlay and restore MASTER title/dice
@@ -2466,6 +2492,8 @@ void PluginEditor::setupKnobs()
                         masterDiceButton->setVisible(true);
                     if (compCrushTabButton)
                         compCrushTabButton->setVisible(true);
+                    if (compCrushOverlay)
+                        compCrushOverlay->setVisible(compCrushEnabled); // Show overlay if Comp Crush is enabled
                 }
             } catch (const std::exception& e) {
                 DBG("[PresetBrowser] Exception: " + juce::String(e.what()));

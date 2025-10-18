@@ -291,6 +291,17 @@ public:
     std::unique_ptr<PresetBrowserOverlay> presetBrowser;
     std::unique_ptr<PresetSelectorButton> presetBrowserButton;
     std::unique_ptr<juce::DrawableButton> compCrushTabButton;
+    
+    // Custom overlay component with black background
+    class CompCrushOverlay : public juce::Component
+    {
+    public:
+        void paint(juce::Graphics& g) override
+        {
+            g.fillAll(juce::Colour(0xFF131313)); // Same color as preset area background
+        }
+    };
+    std::unique_ptr<CompCrushOverlay> compCrushOverlay;
     bool compCrushEnabled = false;
         
         // Flag to prevent onValueChange from saving snapshots during randomization reload
