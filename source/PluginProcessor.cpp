@@ -193,6 +193,17 @@ juce::AudioProcessorValueTreeState::ParameterLayout PluginProcessor::createParam
     params.push_back(std::make_unique<juce::AudioParameterFloat>("chorusShape",    "Ch Shape",   juce::NormalisableRange<float>(0.0f,  1.0f,  0.0f, 1.0f),    0.25f)); // 0=sin .. 0.5=tri .. 1=soft square
     params.push_back(std::make_unique<juce::AudioParameterFloat>("chorusMix",      "Ch Mix",     juce::NormalisableRange<float>(0.0f,  1.0f,  0.0f, 1.0f),    0.5f));
     
+    // COMPRESS+ Parameters - Master effect after all other effects
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("compressDrive", "Compress Drive", 0.0f, 30.0f, 0.0f)); // dB scale
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("compressThreshold", "Compress Threshold", -60.0f, 0.0f, -20.0f)); // dB threshold
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("compressCrush", "Compress Crush", 0.0f, 1.0f, 0.0f)); // bit/sample rate reduction
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("compressTilt", "Compress Tilt", -1.0f, 1.0f, 0.0f)); // tilt EQ
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("compressNoise", "Compress Noise", 0.0f, 1.0f, 0.0f)); // noise level
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("compressNoiseDecay", "Compress Noise Decay", 0.01f, 5.0f, 0.5f)); // noise decay time
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("compressNoiseTone", "Compress Noise Tone", 200.0f, 8000.0f, 4000.0f)); // noise filter freq
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("compressWet", "Compress Wet", 0.0f, 1.0f, 1.0f)); // wet/dry mix
+    params.push_back(std::make_unique<juce::AudioParameterBool>("compressEnabled", "Compress Enabled", false)); // COMPRESS+ master effect enabled
+    
     // Page and effect enable parameters
     params.push_back(std::make_unique<juce::AudioParameterChoice>("currentPage", "Current Page", 
         juce::StringArray {"SpaceDelay", "AutoPan", "Dirt", "Chorus", "Reverb", "Granular", "Slicer", "DubDelay", "Redux"}, 0)); // Effect page selection
@@ -406,6 +417,13 @@ void PluginProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
     
     // Prepare Redux DSP
     reduxBank.prepare(sampleRate, samplesPerBlock);
+    
+    // Prepare COMPRESS+ DSP - Master effect
+    juce::dsp::ProcessSpec compressSpec;
+    compressSpec.sampleRate = sampleRate;
+    compressSpec.maximumBlockSize = static_cast<juce::uint32>(samplesPerBlock);
+    compressSpec.numChannels = static_cast<juce::uint32>(getTotalNumOutputChannels());
+    compressEngine.prepare(compressSpec);
     
     // Prepare output visualizer buffer (store ~1 second of downsampled audio)
     const int bufferSize = (int)(sampleRate / downsampleRate); // ~1 second at downsample rate
@@ -1319,6 +1337,9 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
             }
         }
     }
+    
+    // Process COMPRESS+ Master Effect (after all other effects)
+    processCompressEffect(buffer);
     
     // Skip old hardcoded effect processing (now done via router above)
     #if 0
@@ -2949,6 +2970,43 @@ void PluginProcessor::processChorusEffect(juce::AudioBuffer<float>& buffer)
     
     chorus.setParams(voices, baseDelayMs, rateHz, depthMs, width, feedback, shape, mix);
     chorus.process(buffer);
+}
+
+void PluginProcessor::processCompressEffect(juce::AudioBuffer<float>& buffer)
+{
+    // Read COMPRESS+ parameters from APVTS
+    auto* compressEnabledParam = valueTreeState.getRawParameterValue("compressEnabled");
+    bool isCompressEnabled = compressEnabledParam ? (compressEnabledParam->load() > 0.5f) : false;
+    
+    if (!isCompressEnabled) return;
+    
+    // Read all COMPRESS+ parameters
+    auto* driveParam = valueTreeState.getRawParameterValue("compressDrive");
+    auto* thresholdParam = valueTreeState.getRawParameterValue("compressThreshold");
+    auto* crushParam = valueTreeState.getRawParameterValue("compressCrush");
+    auto* tiltParam = valueTreeState.getRawParameterValue("compressTilt");
+    auto* noiseParam = valueTreeState.getRawParameterValue("compressNoise");
+    auto* noiseDecayParam = valueTreeState.getRawParameterValue("compressNoiseDecay");
+    auto* noiseToneParam = valueTreeState.getRawParameterValue("compressNoiseTone");
+    auto* wetParam = valueTreeState.getRawParameterValue("compressWet");
+    
+    if (driveParam && thresholdParam && crushParam && tiltParam && 
+        noiseParam && noiseDecayParam && noiseToneParam && wetParam)
+    {
+        // Set COMPRESS+ parameters
+        compressEngine.setDrive(driveParam->load());
+        compressEngine.setThreshold(thresholdParam->load());
+        compressEngine.setCrush(crushParam->load());
+        compressEngine.setTilt(tiltParam->load());
+        compressEngine.setNoise(noiseParam->load());
+        compressEngine.setNoiseDecay(noiseDecayParam->load());
+        compressEngine.setNoiseTone(noiseToneParam->load());
+        compressEngine.setWet(wetParam->load());
+        compressEngine.setEnabled(true);
+        
+        // Process COMPRESS+ effect
+        compressEngine.process(buffer);
+    }
 }
 
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()

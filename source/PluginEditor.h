@@ -7,6 +7,7 @@
 #include "StepSnapshot.h"
 #include "ui/Assets.h"
 #include "ui/BigComboWithSvgLNF.h"
+#include "ui/CompressSlider.h"
 #include "DualBarMeter.h"
 #include "ui/PanManBar.h"
 #include "EffectRouter.h"
@@ -303,6 +304,36 @@ public:
     };
     std::unique_ptr<CompCrushOverlay> compCrushOverlay;
     bool compCrushEnabled = false;
+    
+    // COMPRESS+ Sliders - 8 sliders in 2 rows of 4
+    std::unique_ptr<CompressSlider> compressDriveSlider;
+    std::unique_ptr<CompressSlider> compressThresholdSlider;
+    std::unique_ptr<CompressSlider> compressCrushSlider;
+    std::unique_ptr<CompressSlider> compressTiltSlider;
+    std::unique_ptr<CompressSlider> compressNoiseSlider;
+    std::unique_ptr<CompressSlider> compressNoiseDecaySlider;
+    std::unique_ptr<CompressSlider> compressNoiseToneSlider;
+    std::unique_ptr<CompressSlider> compressWetSlider;
+    
+    // COMPRESS+ Slider Labels
+    std::unique_ptr<juce::Label> compressDriveLabel;
+    std::unique_ptr<juce::Label> compressThresholdLabel;
+    std::unique_ptr<juce::Label> compressCrushLabel;
+    std::unique_ptr<juce::Label> compressTiltLabel;
+    std::unique_ptr<juce::Label> compressNoiseLabel;
+    std::unique_ptr<juce::Label> compressNoiseDecayLabel;
+    std::unique_ptr<juce::Label> compressNoiseToneLabel;
+    std::unique_ptr<juce::Label> compressWetLabel;
+    
+    // COMPRESS+ Value Labels
+    std::unique_ptr<juce::Label> compressDriveValueLabel;
+    std::unique_ptr<juce::Label> compressThresholdValueLabel;
+    std::unique_ptr<juce::Label> compressCrushValueLabel;
+    std::unique_ptr<juce::Label> compressTiltValueLabel;
+    std::unique_ptr<juce::Label> compressNoiseValueLabel;
+    std::unique_ptr<juce::Label> compressNoiseDecayValueLabel;
+    std::unique_ptr<juce::Label> compressNoiseToneValueLabel;
+    std::unique_ptr<juce::Label> compressWetValueLabel;
         
         // Flag to prevent onValueChange from saving snapshots during randomization reload
         std::atomic<bool> isLoadingFromSnapshot { false };
@@ -809,6 +840,8 @@ public:
         
         // Redux page helper methods
         void setupReduxKnobs();
+        void setupCompressSliders();
+    void updateCompressValueLabels();
         void setupReduxEffectsArea();
         void setupReduxSequencerArea();
         void setupReduxAllStepsToggle();

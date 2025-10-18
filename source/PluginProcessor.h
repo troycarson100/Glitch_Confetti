@@ -10,6 +10,7 @@
 #include "dsp/granular/GranularEngine.h"
 #include "dsp/rhythm_gate/RhythmGateEngine.h"
 #include "dsp/DubDelayProcessor.h"
+#include "dsp/CompressEngine.h"
 #include "Effects/Redux/ReduxBank.h"
 #include "dsp/DspFlags.h"
 #include "StepSnapshot.h"
@@ -436,6 +437,9 @@ public:
     // Dub Delay DSP Implementation
     DubDelayProcessor dubDelay;
     
+    // COMPRESS+ DSP Implementation - Master effect
+    CompressEngine compressEngine;
+    
     // Redux DSP Implementation
     ReduxBank reduxBank;
     
@@ -505,6 +509,7 @@ public:
     void processAutoPanEffect(juce::AudioBuffer<float>& buffer);
     void processDirtEffect(juce::AudioBuffer<float>& buffer);
     void processChorusEffect(juce::AudioBuffer<float>& buffer);
+    void processCompressEffect(juce::AudioBuffer<float>& buffer);
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PluginProcessor)
 };

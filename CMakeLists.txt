@@ -58,9 +58,12 @@ set(SourceFiles
     ${CMAKE_CURRENT_SOURCE_DIR}/source/dsp/rhythm_gate/RhythmGateEngine.h
     ${CMAKE_CURRENT_SOURCE_DIR}/source/dsp/DubDelayProcessor.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/source/dsp/DubDelayProcessor.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/source/dsp/CompressEngine.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/source/dsp/CompressEngine.h
     ${CMAKE_CURRENT_SOURCE_DIR}/source/ui/UiFlags.h
     ${CMAKE_CURRENT_SOURCE_DIR}/source/ui/Assets.h
     ${CMAKE_CURRENT_SOURCE_DIR}/source/ui/Assets.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/source/ui/CompressSlider.h
     ${CMAKE_CURRENT_SOURCE_DIR}/source/ui/DelayPage.h
     ${CMAKE_CURRENT_SOURCE_DIR}/source/ui/DelayPage.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/source/ui/PanIndicator.h
