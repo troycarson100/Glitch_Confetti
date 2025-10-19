@@ -299,9 +299,9 @@ public:
     public:
         GainReductionMeter() 
         {
-            // Initialize LinearSmoothedValue with short rise time for responsive attack
-            smoothedReductionDb.reset(1.0 / 60.0, 0.05f); // 60Hz timer, 50ms initial smoothing
-            startTimerHz(60); // 60 FPS smoothness
+            // Initialize LinearSmoothedValue with longer smoothing for professional meter feel
+            smoothedReductionDb.reset(1.0 / 30.0, 0.15f); // 30Hz timer, 150ms smoothing
+            startTimerHz(30); // 30Hz to match input/output meters
         }
         
         ~GainReductionMeter()
@@ -322,8 +322,8 @@ public:
             float reduction = smoothedReductionDb.getCurrentValue(); // Use current smoothed value
             
             if (reduction > 0.0f) {
-                // Apply logarithmic display mapping for more natural bounce
-                float shapedReduction = std::pow(reduction / 30.0f, 1.5f); // squish fast transients
+                // Apply gentle logarithmic display mapping for smoother visual response
+                float shapedReduction = std::pow(reduction / 30.0f, 1.2f); // Gentler curve for smoother display
                 float fillWidth = bounds.getWidth() * shapedReduction;
                 fillWidth = juce::jlimit(0.0f, bounds.getWidth(), fillWidth);
                 
@@ -344,11 +344,11 @@ public:
             float current = smoothedReductionDb.getCurrentValue();
             float target = smoothedReductionDb.getTargetValue();
             
-            // Asymmetric smoothing: quick rise, slow decay
+            // Asymmetric smoothing: quick rise, very slow decay for professional meter feel
             if (target > current) {
-                smoothedReductionDb.reset(1.0 / 60.0, 0.04f); // quick rise (40ms)
+                smoothedReductionDb.reset(1.0 / 30.0, 0.08f); // quick rise (80ms)
             } else {
-                smoothedReductionDb.reset(1.0 / 60.0, 0.15f); // slow decay (150ms)
+                smoothedReductionDb.reset(1.0 / 30.0, 0.25f); // slow decay (250ms)
             }
             
             repaint(); // triggers paint(), which pulls smoothed value

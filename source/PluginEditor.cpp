@@ -2633,7 +2633,7 @@ void PluginEditor::setupKnobs()
                                 if (compCrushEnabled) {
                                     masterTitle->setText("COMPRESS+", juce::dontSendNotification);
                                 } else {
-                                    masterTitle->setText("MASTER", juce::dontSendNotification);
+                                masterTitle->setText("MASTER", juce::dontSendNotification);
                                 }
                             }
                             if (masterDiceButton) {
@@ -2788,7 +2788,7 @@ void PluginEditor::setupKnobs()
                         if (compCrushEnabled) {
                             masterTitle->setText("COMPRESS+", juce::dontSendNotification);
                         } else {
-                            masterTitle->setText("MASTER", juce::dontSendNotification);
+                        masterTitle->setText("MASTER", juce::dontSendNotification);
                         }
                     }
                     if (masterDiceButton) {
