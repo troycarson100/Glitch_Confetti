@@ -293,14 +293,21 @@ public:
     std::unique_ptr<PresetSelectorButton> presetBrowserButton;
     std::unique_ptr<juce::DrawableButton> compCrushTabButton;
     
-    // COMPRESS+ gain reduction meter
+    // COMPRESS+ gain reduction meter with ultra-smooth professional smoothing
     class GainReductionMeter : public juce::Component, public juce::Timer
     {
     public:
         GainReductionMeter() 
         {
-            // Initialize LinearSmoothedValue with longer smoothing for professional meter feel
-            smoothedReductionDb.reset(1.0 / 30.0, 0.15f); // 30Hz timer, 150ms smoothing
+            // Initialize multiple smoothing layers for ultra-smooth professional feel
+            primarySmoother.reset(1.0 / 30.0, 0.12f);    // Primary smoothing (120ms)
+            secondarySmoother.reset(1.0 / 30.0, 0.08f);  // Secondary smoothing (80ms)
+            displaySmoother.reset(1.0 / 30.0, 0.06f);    // Final display smoothing (60ms)
+            
+            // Initialize peak hold for smooth peaks
+            peakHoldTime = 0.0f;
+            currentPeak = 0.0f;
+            
             startTimerHz(30); // 30Hz to match input/output meters
         }
         
@@ -319,11 +326,11 @@ public:
             g.fillRoundedRectangle(bounds, cornerRadius);
             
             // Gain reduction bar (orange) - horizontal fill from right
-            float reduction = smoothedReductionDb.getCurrentValue(); // Use current smoothed value
+            float reduction = displaySmoother.getCurrentValue(); // Use final smoothed value
             
             if (reduction > 0.0f) {
-                // Apply gentle logarithmic display mapping for smoother visual response
-                float shapedReduction = std::pow(reduction / 30.0f, 1.2f); // Gentler curve for smoother display
+                // Apply very gentle logarithmic display mapping for ultra-smooth visual response
+                float shapedReduction = std::pow(reduction / 30.0f, 0.8f); // Very gentle curve for ultra-smooth display
                 float fillWidth = bounds.getWidth() * shapedReduction;
                 fillWidth = juce::jlimit(0.0f, bounds.getWidth(), fillWidth);
                 
@@ -335,27 +342,55 @@ public:
         
         void setGainReduction(float newDb)
         {
-            // Update the smoothing target, not the raw value
-            smoothedReductionDb.setTargetValue(newDb);
+            // Apply aggressive smoothing to reduce bouncing
+            targetValue = juce::jlimit(0.0f, 30.0f, newDb);
+            primarySmoother.setTargetValue(targetValue);
         }
         
         void timerCallback() override
         {
-            float current = smoothedReductionDb.getCurrentValue();
-            float target = smoothedReductionDb.getTargetValue();
+            // Multi-stage smoothing pipeline for ultra-smooth movement
+            float stage1 = primarySmoother.getCurrentValue();
             
-            // Asymmetric smoothing: quick rise, very slow decay for professional meter feel
-            if (target > current) {
-                smoothedReductionDb.reset(1.0 / 30.0, 0.08f); // quick rise (80ms)
+            // Apply asymmetric smoothing to secondary stage
+            float current2 = secondarySmoother.getCurrentValue();
+            if (stage1 > current2) {
+                secondarySmoother.reset(1.0 / 30.0, 0.05f); // Very quick attack (50ms)
             } else {
-                smoothedReductionDb.reset(1.0 / 30.0, 0.25f); // slow decay (250ms)
+                secondarySmoother.reset(1.0 / 30.0, 0.20f); // Very slow decay (200ms)
+            }
+            secondarySmoother.setTargetValue(stage1);
+            
+            float stage2 = secondarySmoother.getCurrentValue();
+            
+            // Final display smoothing with gentle curves
+            displaySmoother.setTargetValue(stage2);
+            
+            // Update peak hold with smooth decay
+            float finalValue = displaySmoother.getCurrentValue();
+            if (finalValue > currentPeak) {
+                currentPeak = finalValue;
+                peakHoldTime = 0.8f; // Hold peak for 800ms
+            } else {
+                peakHoldTime -= 1.0f / 30.0f; // Countdown at 30Hz
+                if (peakHoldTime <= 0.0f) {
+                    currentPeak = juce::jmax(0.0f, currentPeak - 0.3f); // Very slow peak decay
+                }
             }
             
             repaint(); // triggers paint(), which pulls smoothed value
         }
         
     private:
-        juce::LinearSmoothedValue<float> smoothedReductionDb;
+        // Multi-stage smoothing for ultra-smooth movement
+        juce::LinearSmoothedValue<float> primarySmoother;
+        juce::LinearSmoothedValue<float> secondarySmoother;
+        juce::LinearSmoothedValue<float> displaySmoother;
+        
+        // Peak hold system
+        float targetValue = 0.0f;
+        float currentPeak = 0.0f;
+        float peakHoldTime = 0.0f;
     };
     
     // Custom overlay component with black background
