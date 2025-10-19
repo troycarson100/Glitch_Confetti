@@ -297,7 +297,10 @@ public:
     void setDubDelaySelectedStep(int step) noexcept { dubdelayUiSelectedStep.store(step); }
     void setDubDelaySequencerEnabled(bool enabled) noexcept {
         dubdelaySeq.enabled.store(enabled);
-        dubdelaySeq.active.store(enabled);
+        // Only set active to false when disabling, don't auto-enable when enabling
+        if (!enabled) {
+            dubdelaySeq.active.store(false);
+        }
     }
     void setDubDelayStepsUsed(int steps) noexcept { dubdelaySeq.stepsUsed.store(juce::jlimit(1, 16, steps)); }
     void setDubDelayDivisionIndex(int idx) noexcept { dubdelaySeq.divisionIndex.store(juce::jlimit(0, 7, idx)); }

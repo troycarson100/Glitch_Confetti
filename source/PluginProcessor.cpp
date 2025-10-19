@@ -1341,6 +1341,13 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                         // Compute seconds and convert to ms
                         double seconds = (beats * gridMult) * (60.0 / bpmSafe);
                         finalTimeMs = static_cast<float>(juce::jlimit(1.0, 20000.0, seconds * 1000.0));
+                        
+                        // Debug: Log sync rate calculation
+                        static int debugCounter = 0;
+                        if ((debugCounter++ % 1000) == 0) { // Every ~16 seconds at 60Hz
+                            DBG("[DUBDELAY SYNC] divIdx=" << divIdx << " beats=" << beats << " gridMult=" << gridMult 
+                                << " bpm=" << bpmSafe << " seconds=" << seconds << " finalTimeMs=" << finalTimeMs);
+                        }
                     }
                     
                     // Set all parameters (including computed time)
