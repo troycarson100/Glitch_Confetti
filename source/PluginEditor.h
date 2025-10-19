@@ -293,22 +293,19 @@ public:
     std::unique_ptr<PresetSelectorButton> presetBrowserButton;
     std::unique_ptr<juce::DrawableButton> compCrushTabButton;
     
-    // COMPRESS+ gain reduction meter with ultra-smooth professional smoothing
+    // COMPRESS+ gain reduction meter with professional exponential ballistics
     class GainReductionMeter : public juce::Component, public juce::Timer
     {
     public:
         GainReductionMeter() 
         {
-            // Initialize multiple smoothing layers for ultra-smooth professional feel
-            primarySmoother.reset(1.0 / 30.0, 0.12f);    // Primary smoothing (120ms)
-            secondarySmoother.reset(1.0 / 30.0, 0.08f);  // Secondary smoothing (80ms)
-            displaySmoother.reset(1.0 / 30.0, 0.06f);    // Final display smoothing (60ms)
+            // Calculate exponential coefficients for ballistics
+            // Using formula: coeff = exp(-1.0 / (timeMs * updateHz / 1000.0))
+            const float updateHz = 60.0f; // 60Hz update rate
+            attackCoeff = std::exp(-1.0f / (attackTimeMs * updateHz / 1000.0f));
+            releaseCoeff = std::exp(-1.0f / (releaseTimeMs * updateHz / 1000.0f));
             
-            // Initialize peak hold for smooth peaks
-            peakHoldTime = 0.0f;
-            currentPeak = 0.0f;
-            
-            startTimerHz(30); // 30Hz to match input/output meters
+            startTimerHz(60); // 60Hz for smooth visual updates
         }
         
         ~GainReductionMeter()
@@ -322,75 +319,74 @@ public:
             const float cornerRadius = 2.0f;
             
             // Background (grey)
-            g.setColour(juce::Colour(0xFF666666)); // Grey background
+            g.setColour(juce::Colour(0xFF666666));
             g.fillRoundedRectangle(bounds, cornerRadius);
             
-            // Gain reduction bar (orange) - horizontal fill from right
-            float reduction = displaySmoother.getCurrentValue(); // Use final smoothed value
-            
-            if (reduction > 0.0f) {
-                // Apply very gentle logarithmic display mapping for ultra-smooth visual response
-                float shapedReduction = std::pow(reduction / 30.0f, 0.8f); // Very gentle curve for ultra-smooth display
-                float fillWidth = bounds.getWidth() * shapedReduction;
+            // Gain reduction bar (orange) - use smoothed value directly
+            if (currentDisplayValue > 0.01f) {
+                float normalized = currentDisplayValue / 30.0f; // 0-30dB range
+                float fillWidth = bounds.getWidth() * normalized;
                 fillWidth = juce::jlimit(0.0f, bounds.getWidth(), fillWidth);
                 
-                juce::Rectangle<float> fillRect = bounds.removeFromRight(fillWidth);
-                g.setColour(juce::Colour(0xFFE96A3E)); // Orange color #E96A3E
+                auto fillRect = bounds.removeFromRight(fillWidth);
+                g.setColour(juce::Colour(0xFFE96A3E)); // Orange #E96A3E
                 g.fillRoundedRectangle(fillRect, cornerRadius);
             }
         }
         
         void setGainReduction(float newDb)
         {
-            // Apply aggressive smoothing to reduce bouncing
             targetValue = juce::jlimit(0.0f, 30.0f, newDb);
-            primarySmoother.setTargetValue(targetValue);
         }
         
         void timerCallback() override
         {
-            // Multi-stage smoothing pipeline for ultra-smooth movement
-            float stage1 = primarySmoother.getCurrentValue();
-            
-            // Apply asymmetric smoothing to secondary stage
-            float current2 = secondarySmoother.getCurrentValue();
-            if (stage1 > current2) {
-                secondarySmoother.reset(1.0 / 30.0, 0.05f); // Very quick attack (50ms)
+            // Apply asymmetric exponential smoothing (VU-style ballistics)
+            float coeff;
+            if (targetValue > currentDisplayValue) {
+                // Fast attack for rises
+                coeff = attackCoeff;
             } else {
-                secondarySmoother.reset(1.0 / 30.0, 0.20f); // Very slow decay (200ms)
+                // Very slow release for smooth decay
+                coeff = releaseCoeff;
             }
-            secondarySmoother.setTargetValue(stage1);
             
-            float stage2 = secondarySmoother.getCurrentValue();
-            
-            // Final display smoothing with gentle curves
-            displaySmoother.setTargetValue(stage2);
+            // Exponential smoothing: y[n] = coeff * y[n-1] + (1-coeff) * x[n]
+            currentDisplayValue = coeff * currentDisplayValue + (1.0f - coeff) * targetValue;
             
             // Update peak hold with smooth decay
-            float finalValue = displaySmoother.getCurrentValue();
-            if (finalValue > currentPeak) {
-                currentPeak = finalValue;
-                peakHoldTime = 0.8f; // Hold peak for 800ms
+            if (targetValue > peakValue) {
+                peakValue = targetValue;
+                peakHoldCounter = peakHoldTimeMs;
             } else {
-                peakHoldTime -= 1.0f / 30.0f; // Countdown at 30Hz
-                if (peakHoldTime <= 0.0f) {
-                    currentPeak = juce::jmax(0.0f, currentPeak - 0.3f); // Very slow peak decay
+                peakHoldCounter = juce::jmax(0.0f, peakHoldCounter - (1000.0f / 60.0f));
+                if (peakHoldCounter <= 0.0f) {
+                    // Smooth peak decay
+                    peakValue = juce::jmax(currentDisplayValue, peakValue * 0.98f);
                 }
             }
             
-            repaint(); // triggers paint(), which pulls smoothed value
+            repaint();
         }
         
     private:
-        // Multi-stage smoothing for ultra-smooth movement
-        juce::LinearSmoothedValue<float> primarySmoother;
-        juce::LinearSmoothedValue<float> secondarySmoother;
-        juce::LinearSmoothedValue<float> displaySmoother;
-        
-        // Peak hold system
+        // Exponential ballistics for smooth movement
+        float currentDisplayValue = 0.0f;
         float targetValue = 0.0f;
-        float currentPeak = 0.0f;
-        float peakHoldTime = 0.0f;
+        
+        // Time constants for professional VU-style ballistics
+        // Very smooth release for butter-smooth decay
+        const float attackTimeMs = 10.0f;    // Fast attack (10ms)
+        const float releaseTimeMs = 500.0f;  // Very slow release (500ms)
+        
+        // Calculated coefficients (set in constructor)
+        float attackCoeff = 0.0f;
+        float releaseCoeff = 0.0f;
+        
+        // Peak hold for transient display
+        float peakValue = 0.0f;
+        float peakHoldCounter = 0.0f;
+        const float peakHoldTimeMs = 1000.0f; // Hold peaks for 1 second
     };
     
     // Custom overlay component with black background

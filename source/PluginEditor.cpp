@@ -252,7 +252,7 @@ PluginEditor::PluginEditor (PluginProcessor& p)
         setupTabSystem();
         
         // Start timer for UI updates
-        startTimer(100); // Update every 100ms for smoother knob interaction
+        startTimer(16); // ~60Hz (16ms) for ultra-smooth UI updates
         
         DBG("[UI] PluginEditor initialized with fresh start");
 }
