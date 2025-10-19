@@ -299,8 +299,8 @@ public:
     public:
         GainReductionMeter() 
         {
-            // Initialize smoothed value with 120ms smoothing time for smooth animations
-            smoothedReductionDb.reset(1.0 / 60.0, 0.12f); // 60Hz timer, 120ms smoothing
+            // Initialize LinearSmoothedValue with short rise time for responsive attack
+            smoothedReductionDb.reset(1.0 / 60.0, 0.05f); // 60Hz timer, 50ms initial smoothing
             startTimerHz(60); // 60 FPS smoothness
         }
         
@@ -319,10 +319,12 @@ public:
             g.fillRoundedRectangle(bounds, cornerRadius);
             
             // Gain reduction bar (orange) - horizontal fill from right
-            float reduction = smoothedReductionDb.getNextValue(); // Use smoothed value
+            float reduction = smoothedReductionDb.getCurrentValue(); // Use current smoothed value
             
             if (reduction > 0.0f) {
-                float fillWidth = bounds.getWidth() * (reduction / 30.0f); // Max 30dB
+                // Apply logarithmic display mapping for more natural bounce
+                float shapedReduction = std::pow(reduction / 30.0f, 1.5f); // squish fast transients
+                float fillWidth = bounds.getWidth() * shapedReduction;
                 fillWidth = juce::jlimit(0.0f, bounds.getWidth(), fillWidth);
                 
                 juce::Rectangle<float> fillRect = bounds.removeFromRight(fillWidth);
@@ -339,11 +341,21 @@ public:
         
         void timerCallback() override
         {
+            float current = smoothedReductionDb.getCurrentValue();
+            float target = smoothedReductionDb.getTargetValue();
+            
+            // Asymmetric smoothing: quick rise, slow decay
+            if (target > current) {
+                smoothedReductionDb.reset(1.0 / 60.0, 0.04f); // quick rise (40ms)
+            } else {
+                smoothedReductionDb.reset(1.0 / 60.0, 0.15f); // slow decay (150ms)
+            }
+            
             repaint(); // triggers paint(), which pulls smoothed value
         }
         
     private:
-        juce::SmoothedValue<float> smoothedReductionDb { 0.0f };
+        juce::LinearSmoothedValue<float> smoothedReductionDb;
     };
     
     // Custom overlay component with black background
