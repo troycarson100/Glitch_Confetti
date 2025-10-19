@@ -294,10 +294,20 @@ public:
     std::unique_ptr<juce::DrawableButton> compCrushTabButton;
     
     // COMPRESS+ gain reduction meter
-    class GainReductionMeter : public juce::Component
+    class GainReductionMeter : public juce::Component, public juce::Timer
     {
     public:
-        GainReductionMeter() {}
+        GainReductionMeter() 
+        {
+            // Initialize smoothed value with 120ms smoothing time for smooth animations
+            smoothedReductionDb.reset(1.0 / 60.0, 0.12f); // 60Hz timer, 120ms smoothing
+            startTimerHz(60); // 60 FPS smoothness
+        }
+        
+        ~GainReductionMeter()
+        {
+            stopTimer();
+        }
         
         void paint(juce::Graphics& g) override
         {
@@ -309,8 +319,10 @@ public:
             g.fillRoundedRectangle(bounds, cornerRadius);
             
             // Gain reduction bar (orange) - horizontal fill from right
-            if (gainReductionDb > 0.0f) {
-                float fillWidth = bounds.getWidth() * (gainReductionDb / 30.0f); // Max 30dB
+            float reduction = smoothedReductionDb.getNextValue(); // Use smoothed value
+            
+            if (reduction > 0.0f) {
+                float fillWidth = bounds.getWidth() * (reduction / 30.0f); // Max 30dB
                 fillWidth = juce::jlimit(0.0f, bounds.getWidth(), fillWidth);
                 
                 juce::Rectangle<float> fillRect = bounds.removeFromRight(fillWidth);
@@ -319,14 +331,19 @@ public:
             }
         }
         
-        void setGainReduction(float gainReductionDb)
+        void setGainReduction(float newDb)
         {
-            this->gainReductionDb = gainReductionDb;
-            repaint();
+            // Update the smoothing target, not the raw value
+            smoothedReductionDb.setTargetValue(newDb);
+        }
+        
+        void timerCallback() override
+        {
+            repaint(); // triggers paint(), which pulls smoothed value
         }
         
     private:
-        float gainReductionDb = 0.0f;
+        juce::SmoothedValue<float> smoothedReductionDb { 0.0f };
     };
     
     // Custom overlay component with black background
