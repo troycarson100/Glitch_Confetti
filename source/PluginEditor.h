@@ -389,6 +389,102 @@ public:
         const float peakHoldTimeMs = 1000.0f; // Hold peaks for 1 second
     };
     
+    // Smaller duplicate gain reduction meter for top area
+    class SmallGainReductionMeter : public juce::Component, public juce::Timer
+    {
+    public:
+        SmallGainReductionMeter() 
+        {
+            // Calculate exponential coefficients for ballistics
+            // Using formula: coeff = exp(-1.0 / (timeMs * updateHz / 1000.0))
+            const float updateHz = 60.0f; // 60Hz update rate
+            attackCoeff = std::exp(-1.0f / (attackTimeMs * updateHz / 1000.0f));
+            releaseCoeff = std::exp(-1.0f / (releaseTimeMs * updateHz / 1000.0f));
+            
+            startTimerHz(60); // 60Hz for smooth visual updates
+        }
+        
+        ~SmallGainReductionMeter()
+        {
+            stopTimer();
+        }
+        
+        void paint(juce::Graphics& g) override
+        {
+            auto bounds = getLocalBounds().toFloat();
+            const float cornerRadius = 1.0f; // Smaller corner radius for small bar
+            
+            // Background (grey)
+            g.setColour(juce::Colour(0xFF666666));
+            g.fillRoundedRectangle(bounds, cornerRadius);
+            
+            // Gain reduction bar (orange) - use smoothed value directly
+            if (currentDisplayValue > 0.01f) {
+                float normalized = currentDisplayValue / 30.0f; // 0-30dB range
+                float fillWidth = bounds.getWidth() * normalized;
+                fillWidth = juce::jlimit(0.0f, bounds.getWidth(), fillWidth);
+                
+                auto fillRect = bounds.removeFromRight(fillWidth);
+                g.setColour(juce::Colour(0xFFE96A3E)); // Orange #E96A3E
+                g.fillRoundedRectangle(fillRect, cornerRadius);
+            }
+        }
+        
+        void setGainReduction(float newDb)
+        {
+            targetValue = juce::jlimit(0.0f, 30.0f, newDb);
+        }
+        
+        void timerCallback() override
+        {
+            // Apply asymmetric exponential smoothing (VU-style ballistics)
+            float coeff;
+            if (targetValue > currentDisplayValue) {
+                // Fast attack for rises
+                coeff = attackCoeff;
+            } else {
+                // Very slow release for smooth decay
+                coeff = releaseCoeff;
+            }
+            
+            // Exponential smoothing: y[n] = coeff * y[n-1] + (1-coeff) * x[n]
+            currentDisplayValue = coeff * currentDisplayValue + (1.0f - coeff) * targetValue;
+            
+            // Update peak hold with smooth decay
+            if (targetValue > peakValue) {
+                peakValue = targetValue;
+                peakHoldCounter = peakHoldTimeMs;
+            } else {
+                peakHoldCounter = juce::jmax(0.0f, peakHoldCounter - (1000.0f / 60.0f));
+                if (peakHoldCounter <= 0.0f) {
+                    // Smooth peak decay
+                    peakValue = juce::jmax(currentDisplayValue, peakValue * 0.98f);
+                }
+            }
+            
+            repaint();
+        }
+        
+    private:
+        // Exponential ballistics for smooth movement
+        float currentDisplayValue = 0.0f;
+        float targetValue = 0.0f;
+        
+        // Time constants for professional VU-style ballistics
+        // Very smooth release for butter-smooth decay
+        const float attackTimeMs = 10.0f;    // Fast attack (10ms)
+        const float releaseTimeMs = 500.0f;  // Very slow release (500ms)
+        
+        // Calculated coefficients (set in constructor)
+        float attackCoeff = 0.0f;
+        float releaseCoeff = 0.0f;
+        
+        // Peak hold for transient display
+        float peakValue = 0.0f;
+        float peakHoldCounter = 0.0f;
+        const float peakHoldTimeMs = 1000.0f; // Hold peaks for 1 second
+    };
+    
     // Custom overlay component with black background
     class CompCrushOverlay : public juce::Component
     {
@@ -403,6 +499,9 @@ public:
     
     // COMPRESS+ gain reduction meter
     std::unique_ptr<GainReductionMeter> gainReductionMeter;
+    
+    // Small gain reduction meter for top area (80px wide, 6px tall)
+    std::unique_ptr<SmallGainReductionMeter> smallGainReductionMeter;
     
     // COMPRESS+ audio visualizer
     

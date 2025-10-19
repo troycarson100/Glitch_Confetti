@@ -1390,6 +1390,18 @@ void PluginEditor::timerCallback()
         float gainReduction = processorRef.getCompressEngine().getGainReductionDb();
         gainReductionMeter->setGainReduction(gainReduction);
     }
+    
+    // Update small gain reduction meter (always visible)
+    if (smallGainReductionMeter) {
+        float gainReduction = processorRef.getCompressEngine().getGainReductionDb();
+        smallGainReductionMeter->setGainReduction(gainReduction);
+        
+        // Debug: Show that the meter is being updated
+        static int debugCounter = 0;
+        if ((debugCounter++ % 300) == 0) { // Every 5 seconds at 60Hz
+            DBG("[SmallGainMeter] Updating with gain reduction: " << gainReduction << " dB");
+        }
+    }
 }
 
 bool PluginEditor::keyPressed(const juce::KeyPress& key)
@@ -2650,6 +2662,23 @@ void PluginEditor::setupKnobs()
         // Make sure the button is visible
         compCrushTabButton->setVisible(true);
         
+        // Setup small gain reduction meter - positioned above the compressor toggle
+        smallGainReductionMeter = std::make_unique<SmallGainReductionMeter>();
+        // Position it above the compressor toggle (proper size and position)
+        const int smallMeterX = presetBrowserButton->getX() - compCrushSize - compCrushSpacing + 5 + 2 + 2 - 2 + (compCrushSize - 77) / 2;
+        const int smallMeterY = fullMasterArea.getY() + 10 - 24 + 5 - 1 + (35 - compCrushSize) / 2 + 3 + 2 + 1 - 15 + 36; // Moved down 36px
+        smallGainReductionMeter->setBounds(
+            smallMeterX, // Center horizontally on the compressor toggle (77px wide)
+            smallMeterY, // 15px above the compressor toggle + 36px down
+            77, // 77px wide (3px less than 80px)
+            6   // 6px tall (proper size)
+        );
+        addAndMakeVisible(smallGainReductionMeter.get());
+        smallGainReductionMeter->setVisible(true); // Always visible
+        smallGainReductionMeter->toFront(false); // Bring to front
+        
+        DBG("[SmallGainMeter] Positioned at: " << smallMeterX << ", " << smallMeterY << " (77x6) - ABOVE COMPRESSOR TOGGLE");
+        
         // Create Comp Crush overlay - black background like presets area
         compCrushOverlay = std::make_unique<CompCrushOverlay>();
         addAndMakeVisible(compCrushOverlay.get());
@@ -2704,6 +2733,8 @@ void PluginEditor::setupKnobs()
                             }
                             if (compCrushTabButton)
                                 compCrushTabButton->setVisible(true);
+                            if (smallGainReductionMeter)
+                                smallGainReductionMeter->setVisible(true);
                             
                             // Manage slider visibility based on compCrushEnabled state
                             if (compCrushEnabled) {
@@ -2835,6 +2866,8 @@ void PluginEditor::setupKnobs()
                         masterDiceButton->setVisible(false);
                         if (compCrushTabButton)
                             compCrushTabButton->setVisible(false);
+                        if (smallGainReductionMeter)
+                            smallGainReductionMeter->setVisible(false);
                         if (compCrushOverlay)
                             compCrushOverlay->setVisible(false);
                 } else {
@@ -2859,6 +2892,8 @@ void PluginEditor::setupKnobs()
                     }
                     if (compCrushTabButton)
                         compCrushTabButton->setVisible(true);
+                    if (smallGainReductionMeter)
+                        smallGainReductionMeter->setVisible(true);
                     if (compCrushOverlay)
                         compCrushOverlay->setVisible(compCrushEnabled); // Show overlay if Comp Crush is enabled
                     
