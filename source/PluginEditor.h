@@ -20,7 +20,7 @@ class PresetManager;
 class PresetBrowserOverlay;
 
 // Tab system enum
-enum class FxPageID { SpaceDelay, Panner, Dirt, Chorus, Reverb, Granular, Slicer, Redux };
+enum class FxPageID { SpaceDelay, Panner, Dirt, Chorus, Reverb, Granular, Slicer, Redux, PhaseBloom };
 
 // Forward declaration
 class PluginProcessor;
@@ -462,6 +462,7 @@ public:
     std::unique_ptr<juce::DrawableButton> tabDirt;
     std::unique_ptr<juce::DrawableButton> tabChorus;
     std::unique_ptr<juce::DrawableButton> tabDubDelay;
+    std::unique_ptr<juce::DrawableButton> tabPhaseBloom;
     
     // Effect selector dropdowns (one per page/slot)
     std::unique_ptr<juce::ComboBox> effectSelector1;
@@ -825,7 +826,40 @@ public:
     std::unique_ptr<juce::Label> reduxAllStepsLabel;
     bool reduxAllStepsEnabled = false;
     
+    // PhaseBloom page components (8 sliders - not knobs)
+    std::array<std::unique_ptr<CustomKnob>, 8> phaseBloomKnobs;
+    std::array<std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>, 8> phaseBloomAttachments;
+    std::array<std::unique_ptr<juce::Label>, 8> phaseBloomKnobLabels;
+    std::array<std::unique_ptr<juce::Label>, 8> phaseBloomValueLabels;
+    std::array<std::unique_ptr<IndicatorBar>, 8> phaseBloomIndicatorBars;
+    std::array<std::unique_ptr<CustomDiceButton>, 8> phaseBloomDiceButtons;
+    std::array<std::unique_ptr<LockButton>, 8> phaseBloomLockButtons;
+    std::array<bool, 8> phaseBloomKnobLocked { false, false, false, false, false, false, false, false };
+    
+    // PhaseBloom effects area
+    std::unique_ptr<juce::Label> phaseBloomEffectsTitle;
+    std::unique_ptr<CustomDiceButton> phaseBloomDiceButton;
+    std::unique_ptr<juce::DrawableButton> phaseBloomFxPowerButton;
+    bool phaseBloomFxAreaEnabled = true;
+    
+    // PhaseBloom step sequencer area
+    std::array<std::unique_ptr<StepButton>, 16> phaseBloomStepButtons;
+    int phaseBloomUiSelectedStep = 0;
+    std::unique_ptr<juce::TextEditor> phaseBloomStepAmountLabel;
+    std::unique_ptr<juce::ComboBox> phaseBloomRateDropdown;
+    std::unique_ptr<CircularToggleButton> phaseBloomStdToggle;
+    std::unique_ptr<juce::Label> phaseBloomStepTitle;
+    std::unique_ptr<CustomDiceButton> phaseBloomStepDiceButton;
+    std::unique_ptr<juce::DrawableButton> phaseBloomStepPowerButton;
+    bool phaseBloomStepAreaEnabled = true;
+    
+    // PhaseBloom All Steps toggle
+    std::unique_ptr<AllStepsToggleButton> phaseBloomAllStepsToggle;
+    std::unique_ptr<juce::Label> phaseBloomAllStepsLabel;
+    bool phaseBloomAllStepsEnabled = false;
+    
     std::vector<juce::Component*> reduxGroup; // All Redux UI components for visibility toggling
+    std::vector<juce::Component*> phaseBloomGroup; // All PhaseBloom UI components for visibility toggling
     
     // Redux page container for isolation
     std::unique_ptr<juce::Component> reduxPage;
@@ -965,6 +999,21 @@ public:
         void onReduxStepButtonClicked(int stepIndex);
         void ensureReduxAttachments();
         void rebindReduxAttachments();
+        
+        // PhaseBloom page helper methods
+        void setupPhaseBloomKnobs();
+        void setupPhaseBloomEffectsArea();
+        void setupPhaseBloomSequencerArea();
+        void setupPhaseBloomAllStepsToggle();
+        void updatePhaseBloomFxAreaVisibility();
+        void updatePhaseBloomStepAreaVisibility();
+        void randomizePhaseBloomKnobValues();
+        void randomizeIndividualPhaseBloomKnob(int knobIndex);
+        void updatePhaseBloomParameterFromKnob(int knobIndex);
+        void updatePhaseBloomSequencerUI();
+        void onPhaseBloomStepButtonClicked(int stepIndex);
+        void ensurePhaseBloomAttachments();
+        void rebindPhaseBloomAttachments();
         
         void togglePlayback();
         

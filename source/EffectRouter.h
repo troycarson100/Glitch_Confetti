@@ -19,7 +19,8 @@ enum class EffectID {
     Granular = 5,
     Slicer = 6,
     DubDelay = 7,
-    Redux = 8
+    Redux = 8,
+    PhaseBloom = 9
 };
 
 enum class SlotID {
@@ -171,11 +172,11 @@ public:
     // Note: With 9 effects and 4 slots, five effects will always be unassigned
     bool isValid() const
     {
-        bool seen[9] = { false, false, false, false, false, false, false, false, false };
+        bool seen[10] = { false, false, false, false, false, false, false, false, false, false };
         for (int i = 0; i < 4; ++i)
         {
             int effectIdx = static_cast<int>(assignment[i]);
-            if (effectIdx < 0 || effectIdx > 8 || seen[effectIdx])
+            if (effectIdx < 0 || effectIdx > 9 || seen[effectIdx])
                 return false;
             seen[effectIdx] = true;
         }

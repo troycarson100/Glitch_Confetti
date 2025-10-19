@@ -157,6 +157,44 @@ void PageTargetRegistry::buildRegistry()
         targets.maxSteps = 16;
         registry[EffectID::DubDelay] = targets;
     }
+    
+    // Redux Page
+    {
+        PageTargets targets;
+        targets.pageId = "Redux";
+        targets.knobParamIds = {
+            "reduxBitDepth",           // Knob 0: Bit Depth
+            "reduxSampleRateReduction", // Knob 1: Rate
+            "reduxJitter",             // Knob 2: Jitter
+            "reduxPreFilter",          // Knob 3: Pre Filter
+            "reduxPostFilter",         // Knob 4: Post Filter
+            "reduxDrive",              // Knob 5: Drive
+            "reduxEmphasis",           // Knob 6: Emphasis
+            "reduxMix"                 // Knob 7: Mix
+        };
+        targets.sequencerStepsUsedKey = "reduxStepsUsed";
+        targets.maxSteps = 16;
+        registry[EffectID::Redux] = targets;
+    }
+    
+    // PhaseBloom Page
+    {
+        PageTargets targets;
+        targets.pageId = "PhaseBloom";
+        targets.knobParamIds = {
+            "phasebloomDepth",         // Knob 0: Depth
+            "phasebloomRate",          // Knob 1: Rate
+            "phasebloomFeedback",      // Knob 2: Feedback
+            "phasebloomCenter",        // Knob 3: Center
+            "phasebloomBloom",         // Knob 4: Bloom
+            "phasebloomSpread",        // Knob 5: Spread
+            "phasebloomResonance",     // Knob 6: Resonance
+            "phasebloomMix"            // Knob 7: Mix
+        };
+        targets.sequencerStepsUsedKey = "phasebloomStepsUsed";
+        targets.maxSteps = 16;
+        registry[EffectID::PhaseBloom] = targets;
+    }
 }
 
 std::array<PageTargets, 4> PageTargetRegistry::getActivePages(

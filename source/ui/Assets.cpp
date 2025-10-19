@@ -94,6 +94,13 @@ bool UiAssets::loadAll()
     reduxBackgroundTab3 = loadSVG (Redux_Background_Tab3_svg, Redux_Background_Tab3_svgSize);
     reduxBackgroundTab4 = loadSVG (Redux_Background_Tab4_svg, Redux_Background_Tab4_svgSize);
     
+    // PhaseBloom assets - use actual PhaseBloom binary data
+    tabPhaseBloomIcon = loadSVG (PhaseBloom_Icon_svg, PhaseBloom_Icon_svgSize);
+    phasebloomBackgroundTab1 = loadSVG (PhaseBloom_Background_Tab1_svg, PhaseBloom_Background_Tab1_svgSize);
+    phasebloomBackgroundTab2 = loadSVG (PhaseBloom_Background_Tab2_svg, PhaseBloom_Background_Tab2_svgSize);
+    phasebloomBackgroundTab3 = loadSVG (PhaseBloom_Background_Tab3_svg, PhaseBloom_Background_Tab3_svgSize);
+    phasebloomBackgroundTab4 = loadSVG (PhaseBloom_Background_Tab4_svg, PhaseBloom_Background_Tab4_svgSize);
+    
     fxPowerOn         = loadSVG (FX_Power_On_svg, FX_Power_On_svgSize);
     stepPowerOn       = loadSVG (Step_Power_On_svg, Step_Power_On_svgSize);
     knobDice          = loadSVG (Knob_Basic_Dice_svg, Knob_Basic_Dice_svgSize);
@@ -132,6 +139,13 @@ bool UiAssets::loadAll()
     reduxBackgroundTab2 = loadSVGFromFile (assetsDir.getChildFile ("ui/Redux_Background_Tab2.svg"));
     reduxBackgroundTab3 = loadSVGFromFile (assetsDir.getChildFile ("ui/Redux_Background_Tab3.svg"));
     reduxBackgroundTab4 = loadSVGFromFile (assetsDir.getChildFile ("ui/Redux_Background_Tab4.svg"));
+    
+    // PhaseBloom assets
+    tabPhaseBloomIcon = loadSVGFromFile (assetsDir.getChildFile ("ui/PhaseBloom_Icon.svg"));
+    phasebloomBackgroundTab1 = loadSVGFromFile (assetsDir.getChildFile ("ui/PhaseBloom_Background_Tab1.svg"));
+    phasebloomBackgroundTab2 = loadSVGFromFile (assetsDir.getChildFile ("ui/PhaseBloom_Background_Tab2.svg"));
+    phasebloomBackgroundTab3 = loadSVGFromFile (assetsDir.getChildFile ("ui/PhaseBloom_Background_Tab3.svg"));
+    phasebloomBackgroundTab4 = loadSVGFromFile (assetsDir.getChildFile ("ui/PhaseBloom_Background_Tab4.svg"));
     
     // Comp Crush Tab assets (loaded via binary data above)
     

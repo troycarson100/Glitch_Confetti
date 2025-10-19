@@ -84,6 +84,25 @@ PluginProcessor::PluginProcessor()
     }
     DBG("[Stepper] Initialized Dub Delay step snapshots with default values");
     
+    // Initialize PhaseBloom sequencer
+    phaseBloomSeq.enabled.store(true); // Start enabled
+    phaseBloomSeq.stepsUsed.store(16);
+    phaseBloomSeq.divisionIndex.store(5); // 1/8 default
+    phaseBloomSeq.playingStep.store(0);
+    
+    // Initialize PhaseBloom step snapshots with defaults
+    for (int i = 0; i < 16; ++i) {
+        phaseBloomStepSnapshots[i].phasebloom.depth = 0.5f;
+        phaseBloomStepSnapshots[i].phasebloom.rate = 0.5f;
+        phaseBloomStepSnapshots[i].phasebloom.feedback = 0.3f;
+        phaseBloomStepSnapshots[i].phasebloom.center = 1000.0f;
+        phaseBloomStepSnapshots[i].phasebloom.bloom = 0.2f;
+        phaseBloomStepSnapshots[i].phasebloom.spread = 0.8f;
+        phaseBloomStepSnapshots[i].phasebloom.resonance = 0.5f;
+        phaseBloomStepSnapshots[i].phasebloom.mix = 0.5f;
+    }
+    DBG("[Stepper] Initialized PhaseBloom step snapshots with default values");
+    
     // Initialize UI state
     uiSelectedStep.store(0);
     autopanUiSelectedStep.store(0);
@@ -92,6 +111,7 @@ PluginProcessor::PluginProcessor()
     reverbUiSelectedStep.store(0);
     slicerUiSelectedStep.store(0);
     granularUiSelectedStep.store(0);
+    phaseBloomUiSelectedStep.store(0);
     
     // Initialize transport cache
     transportCache.valid.store(false);
@@ -208,7 +228,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout PluginProcessor::createParam
     
     // Page and effect enable parameters
     params.push_back(std::make_unique<juce::AudioParameterChoice>("currentPage", "Current Page", 
-        juce::StringArray {"SpaceDelay", "AutoPan", "Dirt", "Chorus", "Reverb", "Granular", "Slicer", "DubDelay", "Redux"}, 0)); // Effect page selection
+        juce::StringArray {"SpaceDelay", "AutoPan", "Dirt", "Chorus", "Reverb", "Granular", "Slicer", "DubDelay", "Redux", "PhaseBloom"}, 0)); // Effect page selection
     params.push_back(std::make_unique<juce::AudioParameterBool>("autopanEnabled", "AutoPan Enabled", true)); // AutoPan effect enabled - ON by default
     params.push_back(std::make_unique<juce::AudioParameterBool>("autopanTimeSync", "AutoPan Time Sync", true)); // AutoPan sync mode enabled - ON by default
     params.push_back(std::make_unique<juce::AudioParameterBool>("dirtEnabled", "Dirt Enabled", true)); // Dirt effect enabled - ON by default
@@ -329,6 +349,18 @@ juce::AudioProcessorValueTreeState::ParameterLayout PluginProcessor::createParam
     params.push_back(std::make_unique<juce::AudioParameterBool>("reduxEnabled", "Redux Enabled", true));
     params.push_back(std::make_unique<juce::AudioParameterBool>("reduxStepEnabled", "Redux Step Enabled", true));
     
+    // PhaseBloom Parameters - 8 sliders
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("phasebloomDepth", "PhaseBloom Depth", 0.0f, 1.0f, 0.5f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("phasebloomRate", "PhaseBloom Rate", 0.0f, 1.0f, 0.5f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("phasebloomFeedback", "PhaseBloom Feedback", -0.8f, 0.8f, 0.3f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("phasebloomCenter", "PhaseBloom Center", 200.0f, 8000.0f, 2000.0f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("phasebloomBloom", "PhaseBloom Bloom", 0.0f, 1.0f, 0.2f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("phasebloomSpread", "PhaseBloom Spread", 0.0f, 1.0f, 0.8f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("phasebloomResonance", "PhaseBloom Resonance", 0.0f, 1.0f, 0.5f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("phasebloomMix", "PhaseBloom Mix", 0.0f, 1.0f, 0.5f));
+    params.push_back(std::make_unique<juce::AudioParameterBool>("phasebloomEnabled", "PhaseBloom Enabled", true));
+    params.push_back(std::make_unique<juce::AudioParameterBool>("phasebloomStepEnabled", "PhaseBloom Step Enabled", true));
+    
     return { params.begin(), params.end() };
 }
 
@@ -419,6 +451,10 @@ void PluginProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
     
     // Prepare Redux DSP
     reduxBank.prepare(sampleRate, samplesPerBlock);
+    
+    // Prepare PhaseBloom DSP
+    phaseBloomEngine.prepare(sampleRate, samplesPerBlock, getTotalNumInputChannels());
+    phaseBloomSeq.prepare(sampleRate); // Initialize PhaseBloom sequencer with sample rate
     
     // Prepare COMPRESS+ DSP - Master effect
     juce::dsp::ProcessSpec compressSpec;
@@ -534,6 +570,7 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                 granularSeq.resetPhase();  // Granular sequencer phase reset
                 slicerSeq.resetPhase();    // Slicer sequencer phase reset
                 dubdelaySeq.resetPhase();  // Dub Delay sequencer phase reset
+                phaseBloomSeq.resetPhase();  // PhaseBloom sequencer phase reset
                 
                 // Auto-enable delay sequencer on DAW play (user can still disable with power button)
                 if (followHost.load()) {
@@ -582,6 +619,12 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                 if (dubdelaySeq.enabled.load()) {
                     dubdelaySeq.active.store(true);  // Activate Dub Delay sequencer
                     DBG("[DUBDELAY SEQ] ✓ Activated on play edge");
+                }
+                
+                // PhaseBloom sequencer activates if enabled (independent of followHost)
+                if (phaseBloomSeq.enabled.load()) {
+                    phaseBloomSeq.active.store(true);  // Activate PhaseBloom sequencer
+                    DBG("[PHASEBLOOM SEQ] ✓ Activated on play edge");
                 }
                 
                 DBG("[SEQ] Play edge detected");
@@ -649,6 +692,13 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                     dubdelaySeq.currentStep.store(dubdelayStep);
                     dubdelaySeq.playingStep.store(dubdelayStep);
                     DBG("[DUBDELAY SEQ] Lock-in at PPQ=" << ppq << " -> step " << dubdelayStep);
+                }
+                
+                if (phaseBloomSeq.enabled.load() && phaseBloomSeq.active.load()) {
+                    const int phaseBloomStep = phaseBloomSeq.computeStepFromPPQ(ppq);
+                    phaseBloomSeq.currentStep.store(phaseBloomStep);
+                    phaseBloomSeq.playingStep.store(phaseBloomStep);
+                    DBG("[PHASEBLOOM SEQ] Lock-in at PPQ=" << ppq << " -> step " << phaseBloomStep);
                 }
                 
                 armPending.store(false);
@@ -742,6 +792,16 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                     dubdelaySeq.currentStep.store(dubdelayStep);
                     dubdelaySeq.playingStep.store(dubdelayStep);
                     DBG("[DUBDELAY SEQ] ★ Step changed to: " << dubdelayStep << " PPQ: " << ppq);
+                }
+            }
+            
+            // PhaseBloom sequencer stepping (shares same PPQ/transport, independent timing)
+            if (isPlaying && ppqValid && phaseBloomSeq.active.load()) {
+                const int phaseBloomStep = phaseBloomSeq.computeStepFromPPQ(ppq);
+                if (phaseBloomStep != phaseBloomSeq.currentStep.load()) {
+                    phaseBloomSeq.currentStep.store(phaseBloomStep);
+                    phaseBloomSeq.playingStep.store(phaseBloomStep);
+                    DBG("[PHASEBLOOM SEQ] ★ Step changed to: " << phaseBloomStep << " PPQ: " << ppq);
                 }
             }
             
@@ -1334,6 +1394,110 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                     // Process Redux effect
                     juce::dsp::AudioBlock<float> audioBlock(buffer);
                     reduxBank.process(audioBlock);
+                }
+                break;
+            }
+            
+            case EffectID::PhaseBloom:
+            {
+                // Check if effect is enabled
+                auto* phaseBloomEnabledParam = valueTreeState.getRawParameterValue("phasebloomEnabled");
+                bool isPhaseBloomEnabled = phaseBloomEnabledParam ? (phaseBloomEnabledParam->load() > 0.5f) : false;
+                
+                if (isPhaseBloomEnabled)
+                {
+                    // Get PhaseBloom sequencer state
+                    auto& phaseBloomSeq = getPhaseBloomSeqState();
+                    
+                    // Check if sequencer is enabled and active
+                    if (phaseBloomSeq.enabled.load() && phaseBloomSeq.active.load())
+                    {
+                        // Get current step snapshot
+                        int currentStep = phaseBloomSeq.currentStep.load();
+                        if (currentStep >= 0 && currentStep < 16)
+                        {
+                            StepSnapshot snapshot = getPhaseBloomSafeSnapshot(currentStep);
+                            
+                            // Safety check for parameter values
+                            snapshot.phasebloom.depth = juce::jlimit(0.0f, 1.0f, snapshot.phasebloom.depth);
+                            snapshot.phasebloom.rate = juce::jlimit(0.0f, 1.0f, snapshot.phasebloom.rate);
+                            snapshot.phasebloom.feedback = juce::jlimit(-0.8f, 0.8f, snapshot.phasebloom.feedback);
+                            snapshot.phasebloom.center = juce::jlimit(200.0f, 8000.0f, snapshot.phasebloom.center);
+                            snapshot.phasebloom.bloom = juce::jlimit(0.0f, 1.0f, snapshot.phasebloom.bloom);
+                            snapshot.phasebloom.spread = juce::jlimit(0.0f, 1.0f, snapshot.phasebloom.spread);
+                            snapshot.phasebloom.resonance = juce::jlimit(0.0f, 1.0f, snapshot.phasebloom.resonance);
+                            snapshot.phasebloom.mix = juce::jlimit(0.0f, 1.0f, snapshot.phasebloom.mix);
+                            
+                            // DEBUG: Log sequencer parameters every 1000 blocks
+                            static int debugCounter = 0;
+                            if ((debugCounter++ % 1000) == 0) {
+                                DBG("[PHASEBLOOM SEQ] Step=" << currentStep 
+                                    << " depth=" << snapshot.phasebloom.depth 
+                                    << " rate=" << snapshot.phasebloom.rate 
+                                    << " feedback=" << snapshot.phasebloom.feedback
+                                    << " center=" << snapshot.phasebloom.center
+                                    << " bloom=" << snapshot.phasebloom.bloom
+                                    << " spread=" << snapshot.phasebloom.spread
+                                    << " resonance=" << snapshot.phasebloom.resonance
+                                    << " mix=" << snapshot.phasebloom.mix
+                                    << " bpm=" << transportCache.bpm.load());
+                            }
+                            
+                            // Apply sequencer parameters to engine
+                            phaseBloomEngine.setDepth(snapshot.phasebloom.depth);
+                            phaseBloomEngine.setRate(snapshot.phasebloom.rate);
+                            phaseBloomEngine.setFeedback(snapshot.phasebloom.feedback);
+                            phaseBloomEngine.setCenter(snapshot.phasebloom.center);
+                            phaseBloomEngine.setBloom(snapshot.phasebloom.bloom);
+                            phaseBloomEngine.setSpread(snapshot.phasebloom.spread);
+                            phaseBloomEngine.setResonance(snapshot.phasebloom.resonance);
+                            phaseBloomEngine.setMix(snapshot.phasebloom.mix);
+                            phaseBloomEngine.setEnabled(true);
+                            
+                            // Only process if mix > 0
+                            if (snapshot.phasebloom.mix > 0.0f)
+                            {
+                                // Process PhaseBloom effect
+                                phaseBloomEngine.process(buffer, transportCache.bpm.load());
+                            }
+                        }
+                    }
+                    else
+                    {
+                        // Use static parameters when sequencer is disabled
+                        auto* depthParam = valueTreeState.getRawParameterValue("phasebloomDepth");
+                        auto* rateParam = valueTreeState.getRawParameterValue("phasebloomRate");
+                        auto* feedbackParam = valueTreeState.getRawParameterValue("phasebloomFeedback");
+                        auto* centerParam = valueTreeState.getRawParameterValue("phasebloomCenter");
+                        auto* bloomParam = valueTreeState.getRawParameterValue("phasebloomBloom");
+                        auto* spreadParam = valueTreeState.getRawParameterValue("phasebloomSpread");
+                        auto* resonanceParam = valueTreeState.getRawParameterValue("phasebloomResonance");
+                        auto* mixParam = valueTreeState.getRawParameterValue("phasebloomMix");
+                        
+                        if (depthParam && rateParam && feedbackParam && centerParam &&
+                            bloomParam && spreadParam && resonanceParam && mixParam)
+                        {
+                            float mixValue = mixParam->load();
+                            
+                            // Set PhaseBloom parameters
+                            phaseBloomEngine.setDepth(depthParam->load());
+                            phaseBloomEngine.setRate(rateParam->load());
+                            phaseBloomEngine.setFeedback(feedbackParam->load());
+                            phaseBloomEngine.setCenter(centerParam->load());
+                            phaseBloomEngine.setBloom(bloomParam->load());
+                            phaseBloomEngine.setSpread(spreadParam->load());
+                            phaseBloomEngine.setResonance(resonanceParam->load());
+                            phaseBloomEngine.setMix(mixValue);
+                            phaseBloomEngine.setEnabled(true);
+                            
+                            // Only process if mix > 0
+                            if (mixValue > 0.0f)
+                            {
+                                // Process PhaseBloom effect
+                                phaseBloomEngine.process(buffer, transportCache.bpm.load());
+                            }
+                        }
+                    }
                 }
                 break;
             }
@@ -2355,6 +2519,67 @@ void PluginProcessor::updateReduxCurrentStepSnapshot(int knobIndex, float value)
             reduxStepSnapshots[currentStep].redux.mix = value;
             break;
     }
+}
+
+// PhaseBloom snapshot methods
+StepSnapshot PluginProcessor::getPhaseBloomSafeSnapshot(int step) const
+{
+    if (step >= 0 && step < 16) {
+        return phaseBloomStepSnapshots[step];
+    }
+    return phaseBloomStepSnapshots[0];
+}
+
+void PluginProcessor::setPhaseBloomStepSnapshot(int step, const StepSnapshot& snapshot) noexcept
+{
+    if (step >= 0 && step < 16) {
+        phaseBloomStepSnapshots[step] = snapshot;
+    }
+}
+
+void PluginProcessor::updatePhaseBloomCurrentStepSnapshot(int knobIndex, float value)
+{
+    int currentStep = phaseBloomUiSelectedStep.load();
+    if (currentStep < 0 || currentStep >= 16) return;
+    
+    // Update the specific PhaseBloom parameter in the snapshot
+    // Note: knob order matches UI: Depth, Rate, Feedback, Center, Bloom, Spread, Resonance, Mix
+    switch (knobIndex) {
+        case 0: // Depth
+            phaseBloomStepSnapshots[currentStep].phasebloom.depth = value;
+            break;
+        case 1: // Rate
+            phaseBloomStepSnapshots[currentStep].phasebloom.rate = value;
+            break;
+        case 2: // Feedback
+            phaseBloomStepSnapshots[currentStep].phasebloom.feedback = value;
+            break;
+        case 3: // Center
+            phaseBloomStepSnapshots[currentStep].phasebloom.center = value;
+            break;
+        case 4: // Bloom
+            phaseBloomStepSnapshots[currentStep].phasebloom.bloom = value;
+            break;
+        case 5: // Spread
+            phaseBloomStepSnapshots[currentStep].phasebloom.spread = value;
+            break;
+        case 6: // Resonance
+            phaseBloomStepSnapshots[currentStep].phasebloom.resonance = value;
+            break;
+        case 7: // Mix
+            phaseBloomStepSnapshots[currentStep].phasebloom.mix = value;
+            break;
+    }
+}
+
+void PluginProcessor::setPhaseBloomStepsUsed(int stepsUsed)
+{
+    phaseBloomSeq.stepsUsed.store(juce::jlimit(1, 16, stepsUsed));
+}
+
+void PluginProcessor::setPhaseBloomDivisionIndex(int divisionIndex)
+{
+    phaseBloomSeq.divisionIndex.store(juce::jlimit(0, 8, divisionIndex));
 }
 
 StepSnapshot PluginProcessor::getChorusSafeSnapshot(int step) const

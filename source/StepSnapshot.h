@@ -96,4 +96,15 @@ struct StepSnapshot {
         float drive = 1.0f;                  // 0-10 (pre-saturation gain)
         float emphasis = 0.5f;               // 0-1 (frequency emphasis/tilt EQ)
     } redux;
+    
+       struct {
+           float depth = 0.7f;                  // 0-1 (modulation depth) - higher default
+           float rate = 0.5f;                   // 0-1 (tempo sync divisions)
+           float feedback = 0.4f;               // -0.8 to +0.8 (phaser feedback) - higher default
+           float center = 2000.0f;              // 200-8000 Hz (base frequency) - higher default
+           float bloom = 0.3f;                  // 0-1 (harmonic enrichment) - higher default
+           float spread = 0.8f;                 // 0-1 (stereo phase offset)
+           float resonance = 0.6f;              // 0-1 (Q factor/notch intensity) - higher default
+           float mix = 0.7f;                    // 0-1 (dry/wet blend) - higher default
+       } phasebloom;
 };

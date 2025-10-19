@@ -182,6 +182,13 @@ PluginEditor::PluginEditor (PluginProcessor& p)
         setupReduxSequencerArea();
         setupReduxAllStepsToggle();
         
+        // Setup PhaseBloom page
+        DBG("[UI] Setting up PhaseBloom page...");
+        setupPhaseBloomKnobs();
+        setupPhaseBloomEffectsArea();
+        setupPhaseBloomSequencerArea();
+        setupPhaseBloomAllStepsToggle();
+        
         // Setup COMPRESS+ sliders
         DBG("[UI] Setting up COMPRESS+ page...");
         setupCompressSliders();
@@ -218,6 +225,39 @@ PluginEditor::PluginEditor (PluginProcessor& p)
         }
         
         DBG("[UI] Redux page setup complete");
+        
+        // Populate PhaseBloom group for visibility management (same pattern as other effects)
+        phaseBloomGroup.clear();
+        
+        // Add all PhaseBloom components to the group
+        for (int i = 0; i < 8; ++i) {
+            if (phaseBloomKnobs[i]) phaseBloomGroup.push_back(phaseBloomKnobs[i].get());
+            if (phaseBloomKnobLabels[i]) phaseBloomGroup.push_back(phaseBloomKnobLabels[i].get());
+            if (phaseBloomValueLabels[i]) phaseBloomGroup.push_back(phaseBloomValueLabels[i].get());
+            if (phaseBloomIndicatorBars[i]) phaseBloomGroup.push_back(phaseBloomIndicatorBars[i].get());
+            if (phaseBloomDiceButtons[i]) phaseBloomGroup.push_back(phaseBloomDiceButtons[i].get());
+            if (phaseBloomLockButtons[i]) phaseBloomGroup.push_back(phaseBloomLockButtons[i].get());
+        }
+        
+        // Add other PhaseBloom components to group
+        if (phaseBloomEffectsTitle) phaseBloomGroup.push_back(phaseBloomEffectsTitle.get());
+        if (phaseBloomDiceButton) phaseBloomGroup.push_back(phaseBloomDiceButton.get());
+        if (phaseBloomFxPowerButton) phaseBloomGroup.push_back(phaseBloomFxPowerButton.get());
+        if (phaseBloomStepTitle) phaseBloomGroup.push_back(phaseBloomStepTitle.get());
+        if (phaseBloomStepPowerButton) phaseBloomGroup.push_back(phaseBloomStepPowerButton.get());
+        if (phaseBloomStepAmountLabel) phaseBloomGroup.push_back(phaseBloomStepAmountLabel.get());
+        if (phaseBloomRateDropdown) phaseBloomGroup.push_back(phaseBloomRateDropdown.get());
+        if (phaseBloomStdToggle) phaseBloomGroup.push_back(phaseBloomStdToggle.get());
+        if (phaseBloomStepDiceButton) phaseBloomGroup.push_back(phaseBloomStepDiceButton.get());
+        if (phaseBloomAllStepsToggle) phaseBloomGroup.push_back(phaseBloomAllStepsToggle.get());
+        if (phaseBloomAllStepsLabel) phaseBloomGroup.push_back(phaseBloomAllStepsLabel.get());
+        
+        // Add step buttons to group
+        for (int i = 0; i < 16; ++i) {
+            if (phaseBloomStepButtons[i]) phaseBloomGroup.push_back(phaseBloomStepButtons[i].get());
+        }
+        
+        DBG("[UI] PhaseBloom page setup complete");
         
         // Initialize Slicer step power button state from processor
         {
@@ -359,6 +399,21 @@ void PluginEditor::paint (juce::Graphics& g)
                     return assets.reduxBackgroundTab4.get();
                 }
                 break;
+                
+            case EffectID::PhaseBloom:
+                if (tabNumber == 1 && assets.phasebloomBackgroundTab1) {
+                    return assets.phasebloomBackgroundTab1.get();
+                }
+                else if (tabNumber == 2 && assets.phasebloomBackgroundTab2) {
+                    return assets.phasebloomBackgroundTab2.get();
+                }
+                else if (tabNumber == 3 && assets.phasebloomBackgroundTab3) {
+                    return assets.phasebloomBackgroundTab3.get();
+                }
+                else if (tabNumber == 4 && assets.phasebloomBackgroundTab4) {
+                    return assets.phasebloomBackgroundTab4.get();
+                }
+                break;
         }
         return nullptr;
     };
@@ -406,6 +461,7 @@ void PluginEditor::paint (juce::Graphics& g)
                 DBG("[PAINT] DubDelay icon: " << (assets.tabDubDelayIcon ? "loaded" : "null"));
                 return assets.tabDubDelayIcon.get();    // DubDelay_Icon
             case EffectID::Redux:       return assets.tabReduxIcon.get();       // Redux_Icon
+            case EffectID::PhaseBloom:  return assets.tabPhaseBloomIcon.get();  // PhaseBloom_Icon
         }
         return nullptr;
     };
@@ -1156,6 +1212,9 @@ void PluginEditor::timerCallback()
     
     // Update Redux sequencer UI
     updateReduxSequencerUI();
+    
+    // Update PhaseBloom sequencer UI
+    updatePhaseBloomSequencerUI();
     
     // Update Chorus sequencer UI
     updateChorusSequencerUI();
@@ -3281,6 +3340,7 @@ void PluginEditor::setupSpaceDelayUI()
     effectTypeDropdown->addItem("Slicer", 7);
     effectTypeDropdown->addItem("Dub Echo", 8);
     effectTypeDropdown->addItem("Redux", 9);
+    effectTypeDropdown->addItem("PhaseBloom", 10);
     effectTypeDropdown->setSelectedId(1, juce::dontSendNotification);
     
     // Position dropdown with proper height for closed control
@@ -4207,6 +4267,7 @@ void PluginEditor::setupTabSystem()
         selector->addItem("Slicer", 7);
         selector->addItem("Dub Echo", 8);
         selector->addItem("Redux", 9);
+        selector->addItem("PhaseBloom", 10);
         
         // Hide text when closed - just show carrot icon
         selector->setTextWhenNothingSelected("");
@@ -4464,6 +4525,7 @@ void PluginEditor::showPage(FxPageID id)
         else if (id == FxPageID::Granular) pageValue = 5.0f;
         else if (id == FxPageID::Slicer) pageValue = 6.0f;
         else if (id == FxPageID::Redux) pageValue = 8.0f; // Redux is index 8 in the parameter array
+        else if (id == FxPageID::PhaseBloom) pageValue = 9.0f; // PhaseBloom is index 9 in the parameter array
         currentPageParam->setValueNotifyingHost(pageValue);
         }
     }
@@ -4565,6 +4627,7 @@ void PluginEditor::showPage(FxPageID id)
     setVisibleVec(slicerGroup, false);
     setVisibleVec(dubdelayGroup, false);
     setVisibleVec(reduxGroup, false);
+    setVisibleVec(phaseBloomGroup, false);
     
     // Show only the group for the effect assigned to this slot
     switch (assignedEffect)
@@ -4696,6 +4759,42 @@ void PluginEditor::showPage(FxPageID id)
             updateReduxSequencerUI();
             
             break;
+        case EffectID::PhaseBloom:
+            setVisibleVec(phaseBloomGroup, true);
+            DBG("[ROUTER] Showing PhaseBloom UI for slot " << slotIndex);
+            
+            // Restore UI state from APVTS parameters
+            {
+                auto* fxEnabledParam = processorRef.getAPVTS().getRawParameterValue("phasebloomEnabled");
+                phaseBloomFxAreaEnabled = fxEnabledParam ? (fxEnabledParam->load() > 0.5f) : true;
+                
+                if (phaseBloomFxPowerButton) {
+                    phaseBloomFxPowerButton->setToggleState(phaseBloomFxAreaEnabled, juce::dontSendNotification);
+                }
+                
+                // Restore sequencer enabled state
+                phaseBloomStepAreaEnabled = processorRef.getPhaseBloomSeqState().enabled.load();
+                if (phaseBloomStepPowerButton) {
+                    phaseBloomStepPowerButton->setToggleState(phaseBloomStepAreaEnabled, juce::dontSendNotification);
+                }
+                
+                updatePhaseBloomFxAreaVisibility();
+                updatePhaseBloomStepAreaVisibility();
+            }
+            
+            // Trigger initial value label updates (8 knobs)
+            for (int i = 0; i < 8; ++i) {
+                if (phaseBloomKnobs[i]) {
+                    phaseBloomKnobs[i]->onValueChange();
+                }
+            }
+            
+            // Update sequencer UI to show first step as selected
+            phaseBloomUiSelectedStep = 0;
+            processorRef.setPhaseBloomSelectedStep(0);
+            updatePhaseBloomSequencerUI();
+            
+            break;
     }
 
     // Raise the active tab to front
@@ -4703,6 +4802,7 @@ void PluginEditor::showPage(FxPageID id)
     else if (id == FxPageID::Panner && tabPanner) tabPanner->toFront(false);
     else if (id == FxPageID::Dirt && tabDirt) tabDirt->toFront(false);
     else if (id == FxPageID::Chorus && tabChorus) tabChorus->toFront(false);
+    else if (id == FxPageID::PhaseBloom && tabPhaseBloom) tabPhaseBloom->toFront(false);
     
     // Bring step amount editors to front when page is shown
     if (id == FxPageID::Panner && autopanStepAmountLabel) {
@@ -4720,6 +4820,10 @@ void PluginEditor::showPage(FxPageID id)
     else if (id == FxPageID::Reverb && reverbStepAmountLabel) {
         reverbStepAmountLabel->toFront(true);
         reverbStepAmountLabel->setWantsKeyboardFocus(true);
+    }
+    else if (id == FxPageID::PhaseBloom && phaseBloomStepAmountLabel) {
+        phaseBloomStepAmountLabel->toFront(true);
+        phaseBloomStepAmountLabel->setWantsKeyboardFocus(true);
     }
 
     repaint();
@@ -7562,7 +7666,7 @@ void PluginEditor::onEffectSelectorChanged(int slotIndex)
     int selectedEffectID = selector->getSelectedId() - 1; // ComboBox IDs are 1-based
     DBG("[ROUTER] Selected effect ID: " << selectedEffectID);
     
-    if (selectedEffectID < 0 || selectedEffectID > 8) {
+    if (selectedEffectID < 0 || selectedEffectID > 9) {
         DBG("[ROUTER] ERROR: Invalid effect ID " << selectedEffectID);
         return;
     }
@@ -7666,6 +7770,7 @@ void PluginEditor::onEffectSelectorChanged(int slotIndex)
     setVisibleVec(slicerGroup, false);
     setVisibleVec(dubdelayGroup, false);
     setVisibleVec(reduxGroup, false);
+    setVisibleVec(phaseBloomGroup, false);
     DBG("[ROUTER] ✓ All groups hidden");
     
     // Show the correct effect for the current page based on new assignment
@@ -7764,6 +7869,7 @@ void PluginEditor::onEffectSelectorChanged(int slotIndex)
             DBG("[ROUTER] ✓ DubDelay group shown");
             break;
         case EffectID::Redux:
+        {
             DBG("[ROUTER] Showing Redux group (" << reduxGroup.size() << " components)");
             setVisibleVec(reduxGroup, true);
             
@@ -7811,6 +7917,44 @@ void PluginEditor::onEffectSelectorChanged(int slotIndex)
             
             DBG("[ROUTER] ✓ Redux group shown");
             break;
+        }
+        case EffectID::PhaseBloom:
+        {
+            DBG("[ROUTER] Showing PhaseBloom group (" << phaseBloomGroup.size() << " components)");
+            setVisibleVec(phaseBloomGroup, true);
+            
+            // Restore UI state from APVTS parameters
+            {
+                auto* fxEnabledParam = processorRef.getAPVTS().getRawParameterValue("phasebloomEnabled");
+                phaseBloomFxAreaEnabled = fxEnabledParam ? (fxEnabledParam->load() > 0.5f) : true;
+                if (phaseBloomFxPowerButton) {
+                    phaseBloomFxPowerButton->setToggleState(phaseBloomFxAreaEnabled, juce::dontSendNotification);
+                }
+                
+                // Restore sequencer enabled state
+                phaseBloomStepAreaEnabled = processorRef.getPhaseBloomSeqState().enabled.load();
+                if (phaseBloomStepPowerButton) {
+                    phaseBloomStepPowerButton->setToggleState(phaseBloomStepAreaEnabled, juce::dontSendNotification);
+                }
+                
+                updatePhaseBloomFxAreaVisibility();
+                updatePhaseBloomStepAreaVisibility();
+            }
+            
+            // Load current snapshot values into sliders
+            StepSnapshot phaseBloomSnapshot = processorRef.getPhaseBloomSafeSnapshot(0); // Load step 0
+            if (phaseBloomKnobs[0]) phaseBloomKnobs[0]->setValue(phaseBloomSnapshot.phasebloom.depth, juce::dontSendNotification);
+            if (phaseBloomKnobs[1]) phaseBloomKnobs[1]->setValue(phaseBloomSnapshot.phasebloom.rate, juce::dontSendNotification);
+            if (phaseBloomKnobs[2]) phaseBloomKnobs[2]->setValue(phaseBloomSnapshot.phasebloom.feedback, juce::dontSendNotification);
+            if (phaseBloomKnobs[3]) phaseBloomKnobs[3]->setValue(phaseBloomSnapshot.phasebloom.center, juce::dontSendNotification);
+            if (phaseBloomKnobs[4]) phaseBloomKnobs[4]->setValue(phaseBloomSnapshot.phasebloom.bloom, juce::dontSendNotification);
+            if (phaseBloomKnobs[5]) phaseBloomKnobs[5]->setValue(phaseBloomSnapshot.phasebloom.spread, juce::dontSendNotification);
+            if (phaseBloomKnobs[6]) phaseBloomKnobs[6]->setValue(phaseBloomSnapshot.phasebloom.resonance, juce::dontSendNotification);
+            if (phaseBloomKnobs[7]) phaseBloomKnobs[7]->setValue(phaseBloomSnapshot.phasebloom.mix, juce::dontSendNotification);
+            
+            DBG("[ROUTER] ✓ PhaseBloom group shown");
+            break;
+        }
     }
     
     // Repaint to show new background
@@ -11128,3 +11272,658 @@ void PluginEditor::onReduxStepButtonClicked(int stepIndex)
 }
 void PluginEditor::ensureReduxAttachments() {}
 void PluginEditor::rebindReduxAttachments() {}
+
+//==============================================================================
+// PhaseBloom Page Setup Methods
+//==============================================================================
+
+void PluginEditor::setupPhaseBloomKnobs()
+{
+    // PhaseBloom knob titles for phaser controls
+    const juce::StringArray phaseBloomKnobTitles = {
+        "Depth",
+        "Rate",
+        "Feedback",
+        "Center",
+        "Bloom",
+        "Spread",
+        "Resonance",
+        "Mix"
+    };
+    
+    // PhaseBloom parameter IDs (must match APVTS order)
+    const juce::StringArray phaseBloomParamIDs = {
+        "phasebloomDepth",
+        "phasebloomRate",
+        "phasebloomFeedback", 
+        "phasebloomCenter",
+        "phasebloomBloom",
+        "phasebloomSpread",
+        "phasebloomResonance",
+        "phasebloomMix"
+    };
+    
+    DBG("[UI] Setting up PhaseBloom knobs...");
+
+    // Effect area bounds (same as other pages)
+    auto effectArea = juce::Rectangle<int>(25, 54, 413, 296);
+    const int knobSize = 80;
+    const int knobSpacing = 20;
+    const int startX = effectArea.getX() + 15;
+    const int startY = effectArea.getY() + effectArea.getHeight() - 210;
+
+    // Create and setup knobs
+    for (int i = 0; i < 8; ++i)
+    {
+        // Position 8 knobs in 2 rows of 4 (EXACT same as other effects)
+        int x = startX + (i % 4) * (knobSize + knobSpacing);
+        int y = startY + (i / 4) * (knobSize + 20);
+        
+        // Move all knob groups up 6px from current position, then top 4 down 8px (EXACT same as other effects)
+        if (i < 4)
+            y -= 23; // Moved up 6px from -25 to -31, then down 8px to -23
+        else
+            y -= 1; // Moved up 6px from +5 to -1
+        
+        // Create knob
+        phaseBloomKnobs[i] = std::make_unique<CustomKnob>();
+        addAndMakeVisible(phaseBloomKnobs[i].get());
+        phaseBloomKnobs[i]->setVisible(false);
+        phaseBloomKnobs[i]->setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
+        phaseBloomKnobs[i]->setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
+        
+        // Set knob ranges based on parameter (UI order)
+        switch (i) {
+            case 0: // Depth (0-1)
+                phaseBloomKnobs[i]->setRange(0.0, 1.0, 0.01);
+                phaseBloomKnobs[i]->setValue(0.5, juce::dontSendNotification);
+                break;
+            case 1: // Rate (0-1, tempo sync divisions)
+                phaseBloomKnobs[i]->setRange(0.0, 1.0, 0.01);
+                phaseBloomKnobs[i]->setValue(0.5, juce::dontSendNotification);
+                break;
+            case 2: // Feedback (-0.8 to +0.8)
+                phaseBloomKnobs[i]->setRange(-0.8, 0.8, 0.01);
+                phaseBloomKnobs[i]->setValue(0.3, juce::dontSendNotification);
+                break;
+            case 3: // Center (200-8000 Hz, log scale)
+                phaseBloomKnobs[i]->setRange(200.0, 8000.0, 1.0);
+                phaseBloomKnobs[i]->setSkewFactorFromMidPoint(2000.0);
+                phaseBloomKnobs[i]->setValue(2000.0, juce::dontSendNotification);
+                break;
+            case 4: // Bloom (0-1)
+                phaseBloomKnobs[i]->setRange(0.0, 1.0, 0.01);
+                phaseBloomKnobs[i]->setValue(0.2, juce::dontSendNotification);
+                break;
+            case 5: // Spread (0-1)
+                phaseBloomKnobs[i]->setRange(0.0, 1.0, 0.01);
+                phaseBloomKnobs[i]->setValue(0.8, juce::dontSendNotification);
+                break;
+            case 6: // Resonance (0-1)
+                phaseBloomKnobs[i]->setRange(0.0, 1.0, 0.01);
+                phaseBloomKnobs[i]->setValue(0.5, juce::dontSendNotification);
+                break;
+            case 7: // Mix (0-1)
+                phaseBloomKnobs[i]->setRange(0.0, 1.0, 0.01);
+                phaseBloomKnobs[i]->setValue(0.5, juce::dontSendNotification);
+                break;
+        }
+        
+        // Set knob images (CRITICAL - this makes them look like proper knobs!)
+        if (assets.knobRing != nullptr)
+            phaseBloomKnobs[i]->setRingImage(assets.knobRing->createCopy());
+        if (assets.knobInside != nullptr)
+            phaseBloomKnobs[i]->setInnerImage(assets.knobInside->createCopy());
+
+        // Position knob
+        phaseBloomKnobs[i]->setBounds(x, y, knobSize, knobSize);
+        
+        // Create knob label
+        phaseBloomKnobLabels[i] = std::make_unique<juce::Label>();
+        addAndMakeVisible(phaseBloomKnobLabels[i].get());
+        phaseBloomKnobLabels[i]->setVisible(false);
+        phaseBloomKnobLabels[i]->setText(phaseBloomKnobTitles[i], juce::dontSendNotification);
+        phaseBloomKnobLabels[i]->setJustificationType(juce::Justification::centred);
+        phaseBloomKnobLabels[i]->setColour(juce::Label::textColourId, juce::Colours::white);
+        phaseBloomKnobLabels[i]->setFont(juce::Font(12.0f, juce::Font::bold));
+        phaseBloomKnobLabels[i]->setBounds(x, y - 15, knobSize, 20); // Moved down 5px from -20 to -15 (same as other effects)
+        
+        // Create value label
+        phaseBloomValueLabels[i] = std::make_unique<juce::Label>();
+        addAndMakeVisible(phaseBloomValueLabels[i].get());
+        phaseBloomValueLabels[i]->setVisible(false);
+        phaseBloomValueLabels[i]->setText("0", juce::dontSendNotification);
+        phaseBloomValueLabels[i]->setJustificationType(juce::Justification::centred);
+        phaseBloomValueLabels[i]->setColour(juce::Label::textColourId, juce::Colours::white);
+        phaseBloomValueLabels[i]->setFont(juce::Font(10.0f, juce::Font::plain));
+        phaseBloomValueLabels[i]->setBounds(x, y + knobSize - 10, knobSize, 15); // Same as other effects
+        
+        // Create indicator bar
+        phaseBloomIndicatorBars[i] = std::make_unique<IndicatorBar>();
+        addAndMakeVisible(phaseBloomIndicatorBars[i].get());
+        phaseBloomIndicatorBars[i]->setVisible(false);
+        phaseBloomIndicatorBars[i]->setValue(0.5f);
+        phaseBloomIndicatorBars[i]->setBounds(x + 10, y + knobSize + 8, knobSize - 20, 13); // Same as other effects
+        
+        // Create dice button
+        phaseBloomDiceButtons[i] = std::make_unique<CustomDiceButton>();
+        addAndMakeVisible(phaseBloomDiceButtons[i].get());
+        phaseBloomDiceButtons[i]->setVisible(false);
+        
+        // Create lock button (positioned at end of title text like other effects)
+        phaseBloomLockButtons[i] = std::make_unique<LockButton>();
+        addAndMakeVisible(phaseBloomLockButtons[i].get());
+        phaseBloomLockButtons[i]->setVisible(false);
+        
+        // Position lock button at end of title text (same as other effects)
+        juce::Font labelFont(12.0f, juce::Font::bold);
+        int textWidth = labelFont.getStringWidth(phaseBloomKnobTitles[i]);
+        const int lockSize = 10; // Same size as other effects
+        const int lockSpacing = 5; // Fixed distance from end of title text
+        int lockX = x + (knobSize / 2) + (textWidth / 2) + lockSpacing;
+        int lockY = y - 10; // Same position as other effects
+        
+        phaseBloomLockButtons[i]->setBounds(lockX, lockY, lockSize, lockSize);
+        
+        // Set lock button images
+        if (assets.unlockedIcon && assets.lockedIcon) {
+            auto imgUnlocked = assets.unlockedIcon->createCopy();
+            auto imgLocked = assets.lockedIcon->createCopy();
+            phaseBloomLockButtons[i]->setImages(std::move(imgUnlocked), std::move(imgLocked));
+        }
+        phaseBloomLockButtons[i]->setToggleState(phaseBloomKnobLocked[i], juce::dontSendNotification);
+        phaseBloomLockButtons[i]->onClick = [this, i]() {
+            phaseBloomKnobLocked[i] = phaseBloomLockButtons[i]->getToggleState();
+        };
+        
+        // Create APVTS attachment
+        phaseBloomAttachments[i] = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+            processorRef.getAPVTS(), phaseBloomParamIDs[i], *phaseBloomKnobs[i]);
+        
+        // Add value change callback to update value label and indicator bar
+        phaseBloomKnobs[i]->onValueChange = [this, i]() {
+            if (phaseBloomKnobs[i] && phaseBloomValueLabels[i] && phaseBloomIndicatorBars[i]) {
+                float value = phaseBloomKnobs[i]->getValue();
+                juce::String valueText;
+                
+                switch (i) {
+                    case 0: valueText = juce::String(value, 2); break; // Depth
+                    case 1: valueText = PhaseBloomEngine::getRateLabel(value); break; // Rate (tempo sync)
+                    case 2: valueText = juce::String(value, 2); break; // Feedback
+                    case 3: valueText = juce::String((int)value) + " Hz"; break; // Center
+                    case 4: valueText = juce::String(value, 2); break; // Bloom
+                    case 5: valueText = juce::String(value, 2); break; // Spread
+                    case 6: valueText = juce::String(value, 2); break; // Resonance
+                    case 7: valueText = juce::String(value, 2); break; // Mix
+                }
+                
+                phaseBloomValueLabels[i]->setText(valueText, juce::dontSendNotification);
+                
+                // Update indicator bar
+                phaseBloomIndicatorBars[i]->setValue(value);
+                
+                // Update parameter in processor
+                updatePhaseBloomParameterFromKnob(i);
+                
+                // Update all steps if enabled
+                if (phaseBloomAllStepsEnabled) {
+                    for (int step = 0; step < 16; ++step) {
+                        StepSnapshot snapshot = processorRef.getPhaseBloomSafeSnapshot(step);
+                        switch (i) {
+                            case 0: snapshot.phasebloom.depth = value; break;
+                            case 1: snapshot.phasebloom.rate = value; break;
+                            case 2: snapshot.phasebloom.feedback = value; break;
+                            case 3: snapshot.phasebloom.center = value; break;
+                            case 4: snapshot.phasebloom.bloom = value; break;
+                            case 5: snapshot.phasebloom.spread = value; break;
+                            case 6: snapshot.phasebloom.resonance = value; break;
+                            case 7: snapshot.phasebloom.mix = value; break;
+                        }
+                        processorRef.setPhaseBloomStepSnapshot(step, snapshot);
+                    }
+                }
+            }
+        };
+    }
+    
+    DBG("[UI] PhaseBloom knobs setup complete");
+}
+
+void PluginEditor::setupPhaseBloomEffectsArea()
+{
+    DBG("[UI] Setting up PhaseBloom effects area...");
+    
+    // Effect area bounds (match other pages exactly)
+    auto effectArea = juce::Rectangle<int>(25, 54, 413, 296);
+    
+    // Create "EFFECT" title label (ALWAYS "EFFECT", NOT the effect name!)
+    phaseBloomEffectsTitle = std::make_unique<juce::Label>();
+    phaseBloomEffectsTitle->setText("EFFECT", juce::dontSendNotification);
+    phaseBloomEffectsTitle->setFont(juce::Font(27.648f, juce::Font::bold));
+    phaseBloomEffectsTitle->setColour(juce::Label::textColourId, juce::Colours::white);
+    phaseBloomEffectsTitle->setJustificationType(juce::Justification::centredLeft);
+    phaseBloomEffectsTitle->setBounds(effectArea.getX() + 10, effectArea.getY() + 5, 100, 30);
+    addAndMakeVisible(phaseBloomEffectsTitle.get());
+    phaseBloomEffectsTitle->setVisible(false);
+    
+    // Create FX power button
+    phaseBloomFxPowerButton = std::make_unique<juce::DrawableButton>("PhaseBloomEffectPower", juce::DrawableButton::ImageFitted);
+    phaseBloomFxPowerButton->setClickingTogglesState(true);
+    phaseBloomFxPowerButton->setColour(juce::DrawableButton::backgroundColourId, juce::Colours::transparentBlack);
+    phaseBloomFxPowerButton->setColour(juce::DrawableButton::backgroundOnColourId, juce::Colours::transparentBlack);
+    if (assets.fxPowerOn) {
+        phaseBloomFxPowerButton->setImages(assets.fxPowerOn.get());
+    }
+    const int buttonSize = 46;
+    phaseBloomFxPowerButton->setBounds(effectArea.getX() + effectArea.getWidth() - buttonSize - 8 + 8 + 3, 
+                                       effectArea.getY() + 6 - 20 + 4, buttonSize, buttonSize);
+    addAndMakeVisible(phaseBloomFxPowerButton.get());
+    phaseBloomFxPowerButton->setVisible(false);
+    
+    // Create dice button
+    phaseBloomDiceButton = std::make_unique<CustomDiceButton>();
+    const int diceSize = 32;
+    phaseBloomDiceButton->setBounds(effectArea.getX() + 130, effectArea.getY() + 5, diceSize, diceSize);
+    if (assets.diceLarge != nullptr) {
+        phaseBloomDiceButton->setDiceImage(assets.diceLarge->createCopy());
+    }
+    addAndMakeVisible(phaseBloomDiceButton.get());
+    phaseBloomDiceButton->setVisible(false);
+    
+    // Set up FX power button callback
+    phaseBloomFxPowerButton->onClick = [this]() {
+        phaseBloomFxAreaEnabled = phaseBloomFxPowerButton->getToggleState();
+        updatePhaseBloomFxAreaVisibility();
+    };
+    
+    // Set up dice button callback
+    phaseBloomDiceButton->onClick = [this]() {
+        randomizePhaseBloomKnobValues();
+    };
+    
+    DBG("[UI] PhaseBloom effects area setup complete");
+}
+
+void PluginEditor::setupPhaseBloomSequencerArea()
+{
+    DBG("[UI] Setting up PhaseBloom sequencer area...");
+    
+    // Sequencer area bounds (EXACT same as other pages)
+    auto sequencerArea = juce::Rectangle<int>(25, 374, 413, 140);
+    
+    // Create step title
+    phaseBloomStepTitle = std::make_unique<juce::Label>();
+    phaseBloomStepTitle->setText("STEP", juce::dontSendNotification);
+    phaseBloomStepTitle->setFont(juce::Font(22.118f, juce::Font::bold));
+    phaseBloomStepTitle->setColour(juce::Label::textColourId, juce::Colours::white);
+    phaseBloomStepTitle->setJustificationType(juce::Justification::centredLeft);
+    phaseBloomStepTitle->setBounds(sequencerArea.getX() + 10, sequencerArea.getY(), 80, 30);
+    addAndMakeVisible(phaseBloomStepTitle.get());
+    phaseBloomStepTitle->setVisible(false);
+    
+    // Create step buttons (2x8 grid)
+    const int buttonSize = 40;
+    const int buttonSpacing = 8;
+    const int startX = sequencerArea.getX() + 20;
+    const int startY = sequencerArea.getY() + 35;
+    
+    for (int i = 0; i < 16; ++i) {
+            auto button = std::make_unique<StepButton>(i);
+            int x = startX + (i % 8) * (buttonSize + buttonSpacing);
+            int y = startY + (i / 8) * (buttonSize + buttonSpacing);
+            button->setBounds(x, y, buttonSize, buttonSize);
+            button->onClick = [this, i]() { onPhaseBloomStepButtonClicked(i); };
+            
+            // Set step button images before adding
+            if (assets.stepActive && assets.stepInactive) {
+                button->setActiveImage(assets.stepActive->createCopy());
+                button->setInactiveImage(assets.stepInactive->createCopy());
+            }
+            
+            addAndMakeVisible(button.get());
+            button->setVisible(false);
+            phaseBloomStepButtons[i] = std::move(button);
+    }
+    
+    // Create step amount label (TextEditor)
+    phaseBloomStepAmountLabel = std::make_unique<juce::TextEditor>();
+    phaseBloomStepAmountLabel->setText("16");
+    phaseBloomStepAmountLabel->setFont(juce::Font(16.0f, juce::Font::bold));
+    phaseBloomStepAmountLabel->setColour(juce::TextEditor::textColourId, juce::Colours::white);
+    phaseBloomStepAmountLabel->setColour(juce::TextEditor::backgroundColourId, juce::Colours::transparentBlack);
+    phaseBloomStepAmountLabel->setColour(juce::TextEditor::outlineColourId, juce::Colours::white);
+    phaseBloomStepAmountLabel->setColour(juce::TextEditor::focusedOutlineColourId, juce::Colours::white);
+    phaseBloomStepAmountLabel->setJustification(juce::Justification::centred);
+    phaseBloomStepAmountLabel->setBorder(juce::BorderSize<int>(2));
+    phaseBloomStepAmountLabel->setIndents(0, 0);
+    phaseBloomStepAmountLabel->setInputRestrictions(2, "0123456789");
+    phaseBloomStepAmountLabel->setBounds(sequencerArea.getX() + 180, sequencerArea.getY() - 10, 30, 25);
+    addAndMakeVisible(phaseBloomStepAmountLabel.get());
+    phaseBloomStepAmountLabel->setVisible(false);
+    
+    // Add callback for step amount changes
+    phaseBloomStepAmountLabel->onTextChange = [this]() {
+        int newStepsUsed = phaseBloomStepAmountLabel->getText().getIntValue();
+        newStepsUsed = juce::jlimit(1, 16, newStepsUsed);
+        processorRef.setPhaseBloomStepsUsed(newStepsUsed);
+        updatePhaseBloomSequencerUI();
+    };
+    
+    // Create rate dropdown
+    phaseBloomRateDropdown = std::make_unique<juce::ComboBox>();
+    phaseBloomRateDropdown->addItem("4", 1);
+    phaseBloomRateDropdown->addItem("2", 2);
+    phaseBloomRateDropdown->addItem("1", 3);
+    phaseBloomRateDropdown->addItem("1/2", 4);
+    phaseBloomRateDropdown->addItem("1/4", 5);
+    phaseBloomRateDropdown->addItem("1/8", 6);
+    phaseBloomRateDropdown->addItem("1/16", 7);
+    phaseBloomRateDropdown->addItem("1/32", 8);
+    phaseBloomRateDropdown->setSelectedId(6); // Default to 1/8
+    phaseBloomRateDropdown->setColour(juce::ComboBox::backgroundColourId, juce::Colours::transparentBlack);
+    phaseBloomRateDropdown->setColour(juce::ComboBox::outlineColourId, juce::Colours::transparentBlack);
+    phaseBloomRateDropdown->setColour(juce::ComboBox::buttonColourId, juce::Colours::transparentBlack);
+    phaseBloomRateDropdown->setColour(juce::ComboBox::textColourId, juce::Colours::white);
+    phaseBloomRateDropdown->setColour(juce::ComboBox::arrowColourId, juce::Colours::white);
+    phaseBloomRateDropdown->setBounds(sequencerArea.getX() + 220, sequencerArea.getY() - 10, 74, 25);
+    addAndMakeVisible(phaseBloomRateDropdown.get());
+    phaseBloomRateDropdown->setVisible(false);
+    
+    // Add callback for rate dropdown changes
+    phaseBloomRateDropdown->onChange = [this]() {
+        int selectedId = phaseBloomRateDropdown->getSelectedId();
+        int divisionIndex = selectedId - 1; // Convert 1-based to 0-based
+        processorRef.setPhaseBloomDivisionIndex(divisionIndex);
+    };
+    
+    // Create STD toggle
+    phaseBloomStdToggle = std::make_unique<CircularToggleButton>();
+    phaseBloomStdToggle->setButtonText("-");
+    phaseBloomStdToggle->setBounds(sequencerArea.getX() + 288, sequencerArea.getY() - 14, 30, 30);
+    addAndMakeVisible(phaseBloomStdToggle.get());
+    phaseBloomStdToggle->setVisible(false);
+    
+    // Create step dice button
+    phaseBloomStepDiceButton = std::make_unique<CustomDiceButton>();
+    int stepDiceSize = static_cast<int>(35 * 0.7); // 30% smaller
+    phaseBloomStepDiceButton->setBounds(sequencerArea.getX() + 75, sequencerArea.getY() + 5, stepDiceSize, stepDiceSize);
+    if (assets.diceLarge != nullptr) {
+        phaseBloomStepDiceButton->setDiceImage(assets.diceLarge->createCopy());
+    }
+    addAndMakeVisible(phaseBloomStepDiceButton.get());
+    phaseBloomStepDiceButton->setVisible(false);
+    
+    // Create step power button
+    phaseBloomStepPowerButton = std::make_unique<juce::DrawableButton>("PhaseBloomStepPower", juce::DrawableButton::ImageFitted);
+    phaseBloomStepPowerButton->setColour(juce::DrawableButton::backgroundColourId, juce::Colours::transparentBlack);
+    phaseBloomStepPowerButton->setColour(juce::DrawableButton::backgroundOnColourId, juce::Colours::transparentBlack);
+    if (assets.stepPowerOn) {
+        phaseBloomStepPowerButton->setImages(assets.stepPowerOn.get());
+    }
+    phaseBloomStepPowerButton->setClickingTogglesState(true);
+    const int stepPowerSize = 40;
+    phaseBloomStepPowerButton->setBounds(sequencerArea.getX() + sequencerArea.getWidth() - stepPowerSize - 5 + 15 - 5 - 1, 
+                                         sequencerArea.getY() - 5 - stepPowerSize + 25 + 5, stepPowerSize, stepPowerSize);
+    addAndMakeVisible(phaseBloomStepPowerButton.get());
+    phaseBloomStepPowerButton->setVisible(false);
+    
+    // Add callback for step power button
+    phaseBloomStepPowerButton->onClick = [this]() {
+        phaseBloomStepAreaEnabled = phaseBloomStepPowerButton->getToggleState();
+        processorRef.setPhaseBloomSequencerEnabled(phaseBloomStepAreaEnabled);
+        updatePhaseBloomStepAreaVisibility();
+    };
+    
+    
+    phaseBloomStepDiceButton->onClick = [this]() {
+        DBG("[PHASEBLOOM] Step dice button clicked - randomizing all step snapshots");
+        
+        // Randomize step sequencer
+        for (int i = 0; i < 16; ++i) {
+            auto snapshot = processorRef.getPhaseBloomSafeSnapshot(i);
+            // Randomize all parameters
+            snapshot.phasebloom.depth = juce::Random::getSystemRandom().nextFloat();
+            snapshot.phasebloom.rate = juce::Random::getSystemRandom().nextFloat();
+            snapshot.phasebloom.feedback = juce::Random::getSystemRandom().nextFloat() * 2.0f - 1.0f;
+            snapshot.phasebloom.center = juce::Random::getSystemRandom().nextFloat() * 3900.0f + 100.0f;
+            snapshot.phasebloom.bloom = juce::Random::getSystemRandom().nextFloat();
+            snapshot.phasebloom.spread = juce::Random::getSystemRandom().nextFloat();
+            snapshot.phasebloom.resonance = juce::Random::getSystemRandom().nextFloat();
+            snapshot.phasebloom.mix = juce::Random::getSystemRandom().nextFloat();
+            processorRef.setPhaseBloomStepSnapshot(i, snapshot);
+        }
+        
+        // Update the UI to show the new random values
+        updatePhaseBloomSequencerUI();
+        
+        // Update knob values to reflect the current step's randomized data
+        if (phaseBloomUiSelectedStep >= 0 && phaseBloomUiSelectedStep < 16) {
+            auto currentSnapshot = processorRef.getPhaseBloomSafeSnapshot(phaseBloomUiSelectedStep);
+            
+            // Update all knob values from the current step's snapshot
+            if (phaseBloomKnobs[0]) phaseBloomKnobs[0]->setValue(currentSnapshot.phasebloom.depth, juce::dontSendNotification);
+            if (phaseBloomKnobs[1]) phaseBloomKnobs[1]->setValue(currentSnapshot.phasebloom.rate, juce::dontSendNotification);
+            if (phaseBloomKnobs[2]) phaseBloomKnobs[2]->setValue(currentSnapshot.phasebloom.feedback, juce::dontSendNotification);
+            if (phaseBloomKnobs[3]) phaseBloomKnobs[3]->setValue(currentSnapshot.phasebloom.center, juce::dontSendNotification);
+            if (phaseBloomKnobs[4]) phaseBloomKnobs[4]->setValue(currentSnapshot.phasebloom.bloom, juce::dontSendNotification);
+            if (phaseBloomKnobs[5]) phaseBloomKnobs[5]->setValue(currentSnapshot.phasebloom.spread, juce::dontSendNotification);
+            if (phaseBloomKnobs[6]) phaseBloomKnobs[6]->setValue(currentSnapshot.phasebloom.resonance, juce::dontSendNotification);
+            if (phaseBloomKnobs[7]) phaseBloomKnobs[7]->setValue(currentSnapshot.phasebloom.mix, juce::dontSendNotification);
+            
+            // Update value labels to reflect the new knob values
+            for (int i = 0; i < 8; ++i) {
+                if (phaseBloomKnobs[i] && phaseBloomValueLabels[i]) {
+                    float value = phaseBloomKnobs[i]->getValue();
+                    juce::String valueText;
+                    
+                    switch (i) {
+                        case 0: valueText = juce::String(value, 2); break; // Depth
+                        case 1: valueText = PhaseBloomEngine::getRateLabel(value); break; // Rate (tempo sync)
+                        case 2: valueText = juce::String(value, 2); break; // Feedback
+                        case 3: valueText = juce::String((int)value) + " Hz"; break; // Center
+                        case 4: valueText = juce::String(value, 2); break; // Bloom
+                        case 5: valueText = juce::String(value, 2); break; // Spread
+                        case 6: valueText = juce::String(value, 2); break; // Resonance
+                        case 7: valueText = juce::String(value, 2); break; // Mix
+                    }
+                    
+                    phaseBloomValueLabels[i]->setText(valueText, juce::dontSendNotification);
+                }
+            }
+        }
+        
+        DBG("[PHASEBLOOM] Step randomization complete - UI updated");
+    };
+    
+    DBG("[UI] PhaseBloom sequencer area setup complete");
+}
+
+void PluginEditor::setupPhaseBloomAllStepsToggle()
+{
+    DBG("[UI] Setting up PhaseBloom all steps toggle...");
+    
+    // Effect area bounds (same as other pages)
+    auto effectArea = juce::Rectangle<int>(25, 54, 413, 296);
+    
+    // Create all steps toggle (EXACT same positioning as other effects)
+    phaseBloomAllStepsToggle = std::make_unique<AllStepsToggleButton>();
+    addAndMakeVisible(phaseBloomAllStepsToggle.get());
+    phaseBloomAllStepsToggle->setVisible(false);
+    
+    const int buttonSize = 29;
+    phaseBloomAllStepsToggle->setBounds(effectArea.getX() + effectArea.getWidth()/2 - buttonSize/2 + 30, 
+                                        effectArea.getY() - 1, buttonSize, buttonSize);
+    
+    if (assets.stepTopInactive && assets.stepTopActive) {
+        phaseBloomAllStepsToggle->setImages(assets.stepTopInactive->createCopy(), assets.stepTopActive->createCopy());
+    }
+    
+    // Create all steps label
+    phaseBloomAllStepsLabel = std::make_unique<juce::Label>();
+    phaseBloomAllStepsLabel->setText("ALL STEPS", juce::dontSendNotification);
+    phaseBloomAllStepsLabel->setFont(juce::Font(14.4f, juce::Font::bold));
+    phaseBloomAllStepsLabel->setColour(juce::Label::textColourId, juce::Colours::white);
+    phaseBloomAllStepsLabel->setJustificationType(juce::Justification::centredLeft);
+    phaseBloomAllStepsLabel->setBounds(effectArea.getX() + effectArea.getWidth()/2 + buttonSize/2 + 5 + 30, 
+                                       effectArea.getY() + 1, 80, 24);
+    addAndMakeVisible(phaseBloomAllStepsLabel.get());
+    phaseBloomAllStepsLabel->setVisible(false);
+    
+    // Set up callback
+    phaseBloomAllStepsToggle->onClick = [this]() {
+        phaseBloomAllStepsEnabled = phaseBloomAllStepsToggle->getToggleState();
+        // Update all step snapshots with current slider values
+        if (phaseBloomAllStepsEnabled) {
+            for (int i = 0; i < 8; ++i) {
+                if (phaseBloomKnobs[i]) {
+                    float value = phaseBloomKnobs[i]->getValue();
+                    for (int step = 0; step < 16; ++step) {
+                        auto snapshot = processorRef.getPhaseBloomSafeSnapshot(step);
+                        switch (i) {
+                            case 0: snapshot.phasebloom.depth = value; break;
+                            case 1: snapshot.phasebloom.rate = value; break;
+                            case 2: snapshot.phasebloom.feedback = value; break;
+                            case 3: snapshot.phasebloom.center = value; break;
+                            case 4: snapshot.phasebloom.bloom = value; break;
+                            case 5: snapshot.phasebloom.spread = value; break;
+                            case 6: snapshot.phasebloom.resonance = value; break;
+                            case 7: snapshot.phasebloom.mix = value; break;
+                        }
+                        processorRef.setPhaseBloomStepSnapshot(step, snapshot);
+                    }
+                }
+            }
+        }
+    };
+    
+    DBG("[UI] PhaseBloom all steps toggle setup complete");
+}
+
+void PluginEditor::updatePhaseBloomFxAreaVisibility()
+{
+    float alpha = phaseBloomFxAreaEnabled ? 1.0f : 0.3f;
+    for (int i = 0; i < 8; ++i) {
+        if (phaseBloomKnobs[i]) { 
+            phaseBloomKnobs[i]->setAlpha(alpha);
+            phaseBloomKnobs[i]->setEnabled(phaseBloomFxAreaEnabled);
+        }
+        if (phaseBloomKnobLabels[i]) phaseBloomKnobLabels[i]->setAlpha(alpha);
+        if (phaseBloomValueLabels[i]) phaseBloomValueLabels[i]->setAlpha(alpha);
+        if (phaseBloomIndicatorBars[i]) phaseBloomIndicatorBars[i]->setAlpha(alpha);
+        if (phaseBloomDiceButtons[i]) {
+            phaseBloomDiceButtons[i]->setAlpha(alpha);
+            phaseBloomDiceButtons[i]->setEnabled(phaseBloomFxAreaEnabled);
+        }
+        if (phaseBloomLockButtons[i]) phaseBloomLockButtons[i]->setAlpha(alpha);
+    }
+    if (phaseBloomDiceButton) {
+        phaseBloomDiceButton->setAlpha(alpha);
+        phaseBloomDiceButton->setEnabled(phaseBloomFxAreaEnabled);
+    }
+    if (phaseBloomEffectsTitle) phaseBloomEffectsTitle->setAlpha(alpha);
+    repaint();
+}
+
+void PluginEditor::updatePhaseBloomStepAreaVisibility()
+{
+    float alpha = phaseBloomStepAreaEnabled ? 1.0f : 0.3f;
+    for (int i = 0; i < 16; ++i) {
+        if (phaseBloomStepButtons[i]) {
+            phaseBloomStepButtons[i]->setAlpha(alpha);
+            phaseBloomStepButtons[i]->setEnabled(phaseBloomStepAreaEnabled);
+        }
+    }
+    if (phaseBloomStepAmountLabel) {
+        phaseBloomStepAmountLabel->setAlpha(alpha);
+        phaseBloomStepAmountLabel->setEnabled(phaseBloomStepAreaEnabled);
+    }
+    if (phaseBloomRateDropdown) {
+        phaseBloomRateDropdown->setAlpha(alpha);
+        phaseBloomRateDropdown->setEnabled(phaseBloomStepAreaEnabled);
+    }
+    if (phaseBloomStdToggle) {
+        phaseBloomStdToggle->setAlpha(alpha);
+        phaseBloomStdToggle->setEnabled(phaseBloomStepAreaEnabled);
+    }
+    if (phaseBloomStepTitle) phaseBloomStepTitle->setAlpha(alpha);
+    if (phaseBloomStepDiceButton) {
+        phaseBloomStepDiceButton->setAlpha(alpha);
+        phaseBloomStepDiceButton->setEnabled(phaseBloomStepAreaEnabled);
+    }
+    repaint();
+}
+
+void PluginEditor::randomizePhaseBloomKnobValues()
+{
+    for (int i = 0; i < 8; ++i) {
+        if (phaseBloomKnobs[i] && !phaseBloomKnobLocked[i]) {
+            randomizeIndividualPhaseBloomKnob(i);
+        }
+    }
+}
+
+void PluginEditor::randomizeIndividualPhaseBloomKnob(int knobIndex)
+{
+    if (phaseBloomKnobs[knobIndex]) {
+        float min = phaseBloomKnobs[knobIndex]->getMinimum();
+        float max = phaseBloomKnobs[knobIndex]->getMaximum();
+        float randomValue = juce::Random::getSystemRandom().nextFloat() * (max - min) + min;
+        phaseBloomKnobs[knobIndex]->setValue(randomValue);
+    }
+}
+
+void PluginEditor::updatePhaseBloomParameterFromKnob(int knobIndex)
+{
+    if (phaseBloomKnobs[knobIndex]) {
+        float value = phaseBloomKnobs[knobIndex]->getValue();
+        processorRef.updatePhaseBloomCurrentStepSnapshot(knobIndex, value);
+    }
+}
+
+void PluginEditor::updatePhaseBloomSequencerUI()
+{
+    int selectedStep = phaseBloomUiSelectedStep;
+    int playingStep = processorRef.getPhaseBloomCurrentStep();
+    const int stepsUsed = processorRef.getPhaseBloomSeqState().stepsUsed.load();
+    
+    for (int i = 0; i < 16; ++i) {
+        if (phaseBloomStepButtons[i] != nullptr) {
+            phaseBloomStepButtons[i]->setSelected(i == selectedStep);
+            bool sequencerEnabled = processorRef.getPhaseBloomSeqState().enabled.load();
+            phaseBloomStepButtons[i]->setPlaying(sequencerEnabled && (i == playingStep));
+            bool shouldBeEnabled = i < stepsUsed;
+            phaseBloomStepButtons[i]->setEnabledStep(shouldBeEnabled);
+        }
+    }
+    
+    // Update step amount display
+    if (phaseBloomStepAmountLabel != nullptr && !phaseBloomStepAmountLabel->hasKeyboardFocus(true)) {
+        phaseBloomStepAmountLabel->setText(juce::String(stepsUsed), false);
+    }
+    
+    repaint();
+}
+
+void PluginEditor::onPhaseBloomStepButtonClicked(int stepIndex)
+{
+    phaseBloomUiSelectedStep = stepIndex;
+    processorRef.setPhaseBloomSelectedStep(stepIndex);
+    
+    // Load step snapshot into knobs
+    auto snapshot = processorRef.getPhaseBloomSafeSnapshot(stepIndex);
+    if (phaseBloomKnobs[0]) phaseBloomKnobs[0]->setValue(snapshot.phasebloom.depth, juce::dontSendNotification);
+    if (phaseBloomKnobs[1]) phaseBloomKnobs[1]->setValue(snapshot.phasebloom.rate, juce::dontSendNotification);
+    if (phaseBloomKnobs[2]) phaseBloomKnobs[2]->setValue(snapshot.phasebloom.feedback, juce::dontSendNotification);
+    if (phaseBloomKnobs[3]) phaseBloomKnobs[3]->setValue(snapshot.phasebloom.center, juce::dontSendNotification);
+    if (phaseBloomKnobs[4]) phaseBloomKnobs[4]->setValue(snapshot.phasebloom.bloom, juce::dontSendNotification);
+    if (phaseBloomKnobs[5]) phaseBloomKnobs[5]->setValue(snapshot.phasebloom.spread, juce::dontSendNotification);
+    if (phaseBloomKnobs[6]) phaseBloomKnobs[6]->setValue(snapshot.phasebloom.resonance, juce::dontSendNotification);
+    if (phaseBloomKnobs[7]) phaseBloomKnobs[7]->setValue(snapshot.phasebloom.mix, juce::dontSendNotification);
+    
+    updatePhaseBloomSequencerUI();
+    
+    DBG("[UI] Switched to PhaseBloom step " << stepIndex);
+}
+
+void PluginEditor::ensurePhaseBloomAttachments() {}
+void PluginEditor::rebindPhaseBloomAttachments() {}

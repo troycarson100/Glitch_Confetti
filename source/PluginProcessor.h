@@ -11,6 +11,7 @@
 #include "dsp/rhythm_gate/RhythmGateEngine.h"
 #include "dsp/DubDelayProcessor.h"
 #include "dsp/CompressEngine.h"
+#include "dsp/PhaseBloomEngine.h"
 #include "Effects/Redux/ReduxBank.h"
 #include "dsp/DspFlags.h"
 #include "StepSnapshot.h"
@@ -177,6 +178,18 @@ public:
     const SeqState& getReduxSeqState() const { return reduxSeq; }
     int getReduxPlayingStep() const noexcept { return reduxSeq.playingStep.load(); }
     int getReduxCurrentStep() const noexcept { return reduxSeq.currentStep.load(); }
+    
+    // PhaseBloom sequencer accessors
+    void setPhaseBloomSelectedStep(int step) noexcept { phaseBloomUiSelectedStep.store(step); }
+    void setPhaseBloomSequencerEnabled(bool enabled) noexcept {
+        phaseBloomSeq.enabled.store(enabled);
+        if (enabled) {
+            phaseBloomSeq.active.store(true);
+        }
+    }
+    const SeqState& getPhaseBloomSeqState() const { return phaseBloomSeq; }
+    int getPhaseBloomPlayingStep() const noexcept { return phaseBloomSeq.playingStep.load(); }
+    int getPhaseBloomCurrentStep() const noexcept { return phaseBloomSeq.currentStep.load(); }
     void setDirtSequencerEnabled(bool enabled) noexcept {
         dirtSeq.enabled.store(enabled);
         if (enabled) {
@@ -224,6 +237,13 @@ public:
     StepSnapshot getReduxSafeSnapshot(int step) const;
     void setReduxStepSnapshot(int step, const StepSnapshot& snapshot) noexcept;
     void updateReduxCurrentStepSnapshot(int knobIndex, float value);
+    
+    // Step snapshot access (PhaseBloom)
+    StepSnapshot getPhaseBloomSafeSnapshot(int step) const;
+    void setPhaseBloomStepSnapshot(int step, const StepSnapshot& snapshot) noexcept;
+    void updatePhaseBloomCurrentStepSnapshot(int knobIndex, float value);
+    void setPhaseBloomStepsUsed(int stepsUsed);
+    void setPhaseBloomDivisionIndex(int divisionIndex);
     
     // Chorus snapshot access
     StepSnapshot getChorusSafeSnapshot(int step) const;
@@ -361,6 +381,10 @@ private:
     SeqState reduxSeq;
     std::atomic<int> reduxUiSelectedStep { 0 };  // Redux editor's selected step
     
+    // PhaseBloom sequencer state (independent from other effects)
+    SeqState phaseBloomSeq;
+    std::atomic<int> phaseBloomUiSelectedStep { 0 };  // PhaseBloom editor's selected step
+    
     // Chorus Sequencer State (independent from Delay, AutoPan, and Dirt)
     SeqState chorusSeq;
     std::atomic<int> chorusUiSelectedStep { 0 };  // Chorus editor's selected step
@@ -386,6 +410,7 @@ private:
     std::array<StepSnapshot, 16> autopanStepSnapshots;
     std::array<StepSnapshot, 16> dirtStepSnapshots;
     std::array<StepSnapshot, 16> reduxStepSnapshots;
+    std::array<StepSnapshot, 16> phaseBloomStepSnapshots;
     std::array<StepSnapshot, 16> chorusStepSnapshots;
     std::array<StepSnapshot, 16> reverbStepSnapshots;
     std::array<StepSnapshot, 16> granularStepSnapshots;
@@ -442,6 +467,9 @@ public:
     
     // Getter for CompressEngine (for UI access)
     CompressEngine& getCompressEngine() { return compressEngine; }
+    
+    // PhaseBloom DSP Implementation
+    PhaseBloomEngine phaseBloomEngine;
     
     // Redux DSP Implementation
     ReduxBank reduxBank;
