@@ -495,6 +495,17 @@ void PluginProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
     compressSpec.numChannels = static_cast<juce::uint32>(getTotalNumOutputChannels());
     compressEngine.prepare(compressSpec);
     
+    // Initialize compressor with default parameter values
+    compressEngine.setThreshold(-20.0f);  // Default threshold
+    compressEngine.setAttack(5.0f);       // Default attack
+    compressEngine.setRelease(50.0f);     // Default release
+    compressEngine.setRatio(4.0f);        // Default ratio
+    compressEngine.setDrive(0.0f);        // Default drive
+    compressEngine.setLofi(0.0f);         // Default lofi
+    compressEngine.setMakeupGain(0.0f);   // Default makeup gain
+    compressEngine.setWet(1.0f);          // Default wet level
+    compressEngine.setEnabled(true);      // Enable compressor
+    
     // Prepare output visualizer buffer (store ~1 second of downsampled audio)
     const int bufferSize = (int)(sampleRate / downsampleRate); // ~1 second at downsample rate
     outputVisualizerBuffer.prepare(bufferSize);
