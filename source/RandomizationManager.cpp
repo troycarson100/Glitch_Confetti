@@ -1,5 +1,7 @@
 #include "RandomizationManager.h"
 #include "PluginEditor.h"
+#include <random>
+#include <algorithm>
 
 RandomizationManager::RandomizationManager(PluginProcessor& proc, juce::AudioProcessorValueTreeState& tree, PluginEditor* ed)
     : processor(proc), apvts(tree), editor(ed)
@@ -44,6 +46,7 @@ void RandomizationManager::randomizeAll()
     stats = Stats();
     paramTargets.clear();
     stepTargets.clear();
+    sequencerTargets.clear();
     
     // Collect all targets
     collectTargets();
@@ -51,6 +54,7 @@ void RandomizationManager::randomizeAll()
     // Apply changes
     applyParamChanges();
     applyStepChanges();
+    applySequencerChanges();
     
     // Verify and report
     verifyAndReport();
@@ -63,13 +67,13 @@ void RandomizationManager::collectTargets()
 {
     DBG("[RAND] Collecting targets...");
     
-    // Get the 4 active pages
-    auto activePages = registry.getActivePages(processor, apvts);
+    // Get 4 random effects instead of currently active pages
+    auto randomEffects = registry.getRandomEffects();
     
     for (int slot = 0; slot < 4; ++slot)
     {
-        const auto& page = activePages[slot];
-        DBG("[RAND] Page " + juce::String(slot) + ": " + page.pageId);
+        const auto& page = randomEffects[slot];
+        DBG("[RAND] Random Effect " + juce::String(slot) + ": " + page.pageId);
         
         // Collect knob parameters
         for (const auto& paramId : page.knobParamIds)
@@ -94,7 +98,7 @@ void RandomizationManager::collectTargets()
         }
         
         // Collect step targets (all 16 steps)
-        EffectID effect = processor.getEffectRouter().getEffectInSlot(static_cast<SlotID>(slot));
+        EffectID effect = getEffectIDFromPageId(page.pageId);
         for (int step = 0; step < page.maxSteps; ++step)
         {
             StepTarget target;
@@ -108,10 +112,38 @@ void RandomizationManager::collectTargets()
             if (target.locked)
                 stats.stepsLocked++;
         }
+        
+        // Collect sequencer settings
+        SequencerTarget seqTarget;
+        seqTarget.effect = effect;
+        seqTarget.pageId = page.pageId;
+        seqTarget.maxSteps = page.maxSteps;
+        seqTarget.maxDivisionIndex = page.maxDivisionIndex;
+        seqTarget.locked = false; // TODO: Add sequencer lock checking
+        sequencerTargets.push_back(seqTarget);
+        stats.sequencersExpected++;
     }
     
     DBG("[RAND] Collected " + juce::String(paramTargets.size()) + " params, " 
-        + juce::String(stepTargets.size()) + " steps");
+        + juce::String(stepTargets.size()) + " steps, " 
+        + juce::String(sequencerTargets.size()) + " sequencers");
+}
+
+EffectID RandomizationManager::getEffectIDFromPageId(const juce::String& pageId) const
+{
+    if (pageId == "SpaceDelay") return EffectID::SpaceDelay;
+    if (pageId == "AutoPan") return EffectID::AutoPan;
+    if (pageId == "Dirt") return EffectID::Dirt;
+    if (pageId == "Chorus") return EffectID::Chorus;
+    if (pageId == "Reverb") return EffectID::Reverb;
+    if (pageId == "Granular") return EffectID::Granular;
+    if (pageId == "Slicer") return EffectID::Slicer;
+    if (pageId == "DubDelay") return EffectID::DubDelay;
+    if (pageId == "Redux") return EffectID::Redux;
+    if (pageId == "PhaseBloom") return EffectID::PhaseBloom;
+    
+    DBG("[RAND] WARNING: Unknown page ID: " + pageId);
+    return EffectID::SpaceDelay; // fallback
 }
 
 void RandomizationManager::applyParamChanges()
@@ -439,20 +471,121 @@ void RandomizationManager::applyStepChanges()
     DBG("[RAND] Randomized " + juce::String(stats.stepsRandomized) + " steps");
 }
 
+void RandomizationManager::applySequencerChanges()
+{
+    if (sequencerTargets.empty())
+        return;
+    
+    DBG("[RAND] Applying sequencer changes...");
+    
+    for (const auto& target : sequencerTargets)
+    {
+        if (target.locked)
+        {
+            stats.sequencersLocked++;
+            continue;
+        }
+        
+        // Randomize sequencer enabled state (70% chance to be enabled)
+        bool sequencerEnabled = (rand01() < 0.7f);
+        
+        // Randomize steps used (4-16, weighted toward higher values)
+        int stepsUsed = 4 + static_cast<int>(rand01() * rand01() * 12); // Square for bias toward higher values
+        
+        // Randomize division index (0-maxDivisionIndex)
+        int divisionIndex = static_cast<int>(rand01() * (target.maxDivisionIndex + 1));
+        
+        // Apply sequencer settings based on effect type
+        switch (target.effect)
+        {
+            case EffectID::SpaceDelay:
+                processor.setSpaceDelaySequencerEnabled(sequencerEnabled);
+                processor.setSpaceDelayStepsUsed(stepsUsed);
+                processor.setSpaceDelayDivisionIndex(divisionIndex);
+                break;
+                
+            case EffectID::AutoPan:
+                processor.setAutoPanSequencerEnabled(sequencerEnabled);
+                processor.setAutoPanStepsUsed(stepsUsed);
+                processor.setAutoPanDivisionIndex(divisionIndex);
+                break;
+                
+            case EffectID::Dirt:
+                processor.setDirtSequencerEnabled(sequencerEnabled);
+                processor.setDirtStepsUsed(stepsUsed);
+                processor.setDirtDivisionIndex(divisionIndex);
+                break;
+                
+            case EffectID::Chorus:
+                processor.setChorusSequencerEnabled(sequencerEnabled);
+                processor.setChorusStepsUsed(stepsUsed);
+                processor.setChorusDivisionIndex(divisionIndex);
+                break;
+                
+            case EffectID::Reverb:
+                processor.setReverbSequencerEnabled(sequencerEnabled);
+                processor.setReverbStepsUsed(stepsUsed);
+                processor.setReverbDivisionIndex(divisionIndex);
+                break;
+                
+            case EffectID::Granular:
+                processor.setGranularSequencerEnabled(sequencerEnabled);
+                processor.setGranularStepsUsed(stepsUsed);
+                processor.setGranularDivisionIndex(divisionIndex);
+                break;
+                
+            case EffectID::Slicer:
+                processor.setSlicerSequencerEnabled(sequencerEnabled);
+                processor.setSlicerStepsUsed(stepsUsed);
+                processor.setSlicerDivisionIndex(divisionIndex);
+                break;
+                
+            case EffectID::DubDelay:
+                processor.setDubDelaySequencerEnabled(sequencerEnabled);
+                processor.setDubDelayStepsUsed(stepsUsed);
+                processor.setDubDelayDivisionIndex(divisionIndex);
+                break;
+                
+            case EffectID::Redux:
+                processor.setReduxSequencerEnabled(sequencerEnabled);
+                processor.setReduxStepsUsed(stepsUsed);
+                processor.setReduxDivisionIndex(divisionIndex);
+                break;
+                
+            case EffectID::PhaseBloom:
+                processor.setPhaseBloomSequencerEnabled(sequencerEnabled);
+                processor.setPhaseBloomStepsUsed(stepsUsed);
+                processor.setPhaseBloomDivisionIndex(divisionIndex);
+                break;
+        }
+        
+        DBG("[RAND] " + target.pageId + ": enabled=" + (sequencerEnabled ? "ON" : "OFF") 
+            + ", steps=" + juce::String(stepsUsed) + ", division=" + juce::String(divisionIndex));
+        
+        stats.sequencersRandomized++;
+    }
+    
+    DBG("[RAND] Randomized " + juce::String(stats.sequencersRandomized) + " sequencers");
+}
+
 void RandomizationManager::verifyAndReport()
 {
     DBG("[RAND] ══════════ RANDOMIZATION REPORT ══════════");
-    DBG("[RAND] Pages: 4 active");
+    DBG("[RAND] Pages: 4 random effects");
     DBG("[RAND] Knobs: " + juce::String(stats.paramsRandomized) + "/" + juce::String(stats.paramsExpected) 
         + " (" + juce::String(stats.paramsLocked) + " locked)");
     DBG("[RAND] Steps: " + juce::String(stats.stepsRandomized) + "/" + juce::String(stats.stepsExpected)
         + " (" + juce::String(stats.stepsLocked) + " locked)");
+    DBG("[RAND] Sequencers: " + juce::String(stats.sequencersRandomized) + "/" + juce::String(stats.sequencersExpected)
+        + " (" + juce::String(stats.sequencersLocked) + " locked)");
     
     // Verify non-zero coverage
     if (stats.paramsRandomized == 0 && stats.paramsExpected > 0)
         DBG("[RAND] ERROR: No parameters randomized!");
     if (stats.stepsRandomized == 0 && stats.stepsExpected > 0)
         DBG("[RAND] ERROR: No steps randomized!");
+    if (stats.sequencersRandomized == 0 && stats.sequencersExpected > 0)
+        DBG("[RAND] ERROR: No sequencers randomized!");
     
     DBG("[RAND] ═══════════════════════════════════════════");
 }

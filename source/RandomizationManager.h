@@ -1,6 +1,8 @@
 #pragma once
 
 #include <juce_audio_processors/juce_audio_processors.h>
+#include <atomic>
+#include <vector>
 #include "PluginProcessor.h"
 #include "EffectRouter.h"
 #include "PageTargetRegistry.h"
@@ -26,9 +28,10 @@ private:
     void randomizeAll();               // transactional randomization
     
     // Pipeline steps
-    void collectTargets();       // gather all params + steps for 4 active pages
+    void collectTargets();       // gather all params + steps + sequencers for 4 random effects
     void applyParamChanges();    // randomize all knob parameters
     void applyStepChanges();     // randomize all step snapshots
+    void applySequencerChanges(); // randomize sequencer settings (steps used, rate, enabled)
     void verifyAndReport();      // log coverage report
     
     PluginProcessor& processor;
@@ -54,6 +57,15 @@ private:
     };
     std::vector<StepTarget> stepTargets;
     
+    struct SequencerTarget {
+        EffectID effect;
+        juce::String pageId;
+        int maxSteps;
+        int maxDivisionIndex;
+        bool locked = false;
+    };
+    std::vector<SequencerTarget> sequencerTargets;
+    
     // Statistics for verification
     struct Stats {
         int paramsExpected = 0;
@@ -62,6 +74,9 @@ private:
         int stepsExpected = 0;
         int stepsRandomized = 0;
         int stepsLocked = 0;
+        int sequencersExpected = 0;
+        int sequencersRandomized = 0;
+        int sequencersLocked = 0;
         int activeStepsIncluded = 0;
     } stats;
     
@@ -72,4 +87,7 @@ private:
     // Lock checking
     bool isParamLocked(const juce::String& paramId) const;
     bool isStepLocked(EffectID effect, int step) const;
+    
+    // Helper functions
+    EffectID getEffectIDFromPageId(const juce::String& pageId) const;
 };

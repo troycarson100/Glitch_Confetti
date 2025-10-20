@@ -1,5 +1,7 @@
 #include "PageTargetRegistry.h"
 #include "PluginProcessor.h"
+#include <random>
+#include <algorithm>
 
 PageTargetRegistry::PageTargetRegistry()
 {
@@ -118,6 +120,7 @@ void PageTargetRegistry::buildRegistry()
         };
         targets.sequencerStepsUsedKey = "granularStepsUsed";
         targets.maxSteps = 16;
+        targets.maxDivisionIndex = 10; // Granular has 0-10 division range
         registry[EffectID::Granular] = targets;
     }
     
@@ -208,6 +211,30 @@ std::array<PageTargets, 4> PageTargetRegistry::getActivePages(
     {
         EffectID effect = router.getEffectInSlot(static_cast<SlotID>(slot));
         result[slot] = getTargetsForEffect(effect);
+    }
+    
+    return result;
+}
+
+std::array<PageTargets, 4> PageTargetRegistry::getRandomEffects() const
+{
+    std::array<PageTargets, 4> result;
+    
+    // Get all available effects (excluding master/compressor)
+    std::vector<EffectID> availableEffects;
+    for (const auto& pair : registry) {
+        availableEffects.push_back(pair.first);
+    }
+    
+    // Randomly select 4 effects
+    std::vector<EffectID> selectedEffects;
+    std::sample(availableEffects.begin(), availableEffects.end(),
+                std::back_inserter(selectedEffects), 4,
+                std::mt19937{std::random_device{}()});
+    
+    // Convert to PageTargets
+    for (size_t i = 0; i < selectedEffects.size() && i < 4; ++i) {
+        result[i] = getTargetsForEffect(selectedEffects[i]);
     }
     
     return result;

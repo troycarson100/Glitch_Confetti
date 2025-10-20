@@ -175,6 +175,8 @@ public:
             reduxSeq.active.store(true);
         }
     }
+    void setReduxStepsUsed(int steps) noexcept { reduxSeq.stepsUsed.store(juce::jlimit(1, 16, steps)); }
+    void setReduxDivisionIndex(int idx) noexcept { reduxSeq.divisionIndex.store(juce::jlimit(0, 7, idx)); }
     const SeqState& getReduxSeqState() const { return reduxSeq; }
     int getReduxPlayingStep() const noexcept { return reduxSeq.playingStep.load(); }
     int getReduxCurrentStep() const noexcept { return reduxSeq.currentStep.load(); }
