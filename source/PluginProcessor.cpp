@@ -594,6 +594,7 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                 granularSeq.resetPhase();  // Granular sequencer phase reset
                 slicerSeq.resetPhase();    // Slicer sequencer phase reset
                 dubdelaySeq.resetPhase();  // Dub Delay sequencer phase reset
+                spacedelaySeq.resetPhase();  // Space Delay sequencer phase reset
                 phaseBloomSeq.resetPhase();  // PhaseBloom sequencer phase reset
                 
                 // Auto-enable delay sequencer on DAW play (only if user hasn't explicitly disabled it)
@@ -650,6 +651,12 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                     DBG("[DUBDELAY SEQ] ✓ Activated on play edge");
                 }
                 
+                // Space Delay sequencer activates if enabled (independent of followHost)
+                if (spacedelaySeq.enabled.load()) {
+                    spacedelaySeq.active.store(true);  // Activate Space Delay sequencer
+                    DBG("[SPACEDELAY SEQ] ✓ Activated on play edge");
+                }
+                
                 // PhaseBloom sequencer activates if enabled (independent of followHost)
                 if (phaseBloomSeq.enabled.load()) {
                     phaseBloomSeq.active.store(true);  // Activate PhaseBloom sequencer
@@ -659,6 +666,7 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                 DBG("[SEQ] Play edge detected");
                 DBG("[SEQ] Delay: enabled=" + juce::String(seq.enabled.load() ? 1 : 0) + " active=" + juce::String(seq.active.load() ? 1 : 0));
                 DBG("[SEQ] AutoPan: enabled=" + juce::String(autopanSeq.enabled.load() ? 1 : 0) + " active=" + juce::String(autopanSeq.active.load() ? 1 : 0));
+                DBG("[SEQ] SpaceDelay: enabled=" + juce::String(spacedelaySeq.enabled.load() ? 1 : 0) + " active=" + juce::String(spacedelaySeq.active.load() ? 1 : 0));
             }
 
             // If arming and PPQ now valid, lock-in
@@ -769,6 +777,27 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                 }
             } else if (autopanSeq.enabled.load() && !autopanSeq.active.load()) {
                 DBG("[AUTOPAN SEQ] WARNING: Enabled but not active! isPlaying=" + juce::String(isPlaying ? 1 : 0) + " ppqValid=" + juce::String(ppqValid ? 1 : 0));
+            }
+            
+            // Space Delay sequencer stepping (shares same PPQ/transport as other sequencers)
+            static int spacedelayDebugCounter = 0;
+            if ((spacedelayDebugCounter++ % 100) == 0) {  // Log every 100 blocks
+                DBG("[SPACEDELAY SEQ DEBUG] isPlaying=" + juce::String(isPlaying ? 1 : 0) + " ppqValid=" + juce::String(ppqValid ? 1 : 0) 
+                    + " active=" + juce::String(spacedelaySeq.active.load() ? 1 : 0) + " enabled=" + juce::String(spacedelaySeq.enabled.load() ? 1 : 0)
+                    + " PPQ=" + juce::String(ppq));
+            }
+            
+            if (isPlaying && ppqValid && spacedelaySeq.active.load()) {
+                const int spacedelayStep = spacedelaySeq.computeStepFromPPQ(ppq);
+                if (spacedelayStep != spacedelaySeq.currentStep.load()) {
+                    spacedelaySeq.currentStep.store(spacedelayStep);
+                    spacedelaySeq.playingStep.store(spacedelayStep);
+                    DBG("[SPACEDELAY SEQ] ★ Step changed to: " << spacedelayStep << " PPQ: " << ppq 
+                        << " divIdx=" << spacedelaySeq.divisionIndex.load() 
+                        << " stepsUsed=" << spacedelaySeq.stepsUsed.load());
+                }
+            } else if (spacedelaySeq.enabled.load() && !spacedelaySeq.active.load()) {
+                DBG("[SPACEDELAY SEQ] WARNING: Enabled but not active! isPlaying=" + juce::String(isPlaying ? 1 : 0) + " ppqValid=" + juce::String(ppqValid ? 1 : 0));
             }
             
             // Dirt sequencer stepping (shares same PPQ/transport, independent timing)
