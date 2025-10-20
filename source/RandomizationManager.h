@@ -28,7 +28,8 @@ private:
     void randomizeAll();               // transactional randomization
     
     // Pipeline steps
-    void collectTargets();       // gather all params + steps + sequencers for 4 random effects
+    void randomizeEffectRouter(); // Randomly assign 4 effects to the router slots
+    void collectTargets();       // gather all params + steps + sequencers for 4 active effects
     void applyParamChanges();    // randomize all knob parameters
     void applyStepChanges();     // randomize all step snapshots
     void applySequencerChanges(); // randomize sequencer settings (steps used, rate, enabled)
@@ -87,7 +88,4 @@ private:
     // Lock checking
     bool isParamLocked(const juce::String& paramId) const;
     bool isStepLocked(EffectID effect, int step) const;
-    
-    // Helper functions
-    EffectID getEffectIDFromPageId(const juce::String& pageId) const;
 };

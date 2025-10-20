@@ -48,7 +48,10 @@ void RandomizationManager::randomizeAll()
     stepTargets.clear();
     sequencerTargets.clear();
     
-    // Collect all targets
+    // FIRST: Change the effect router to select 4 random effects
+    randomizeEffectRouter();
+    
+    // THEN: Collect targets for the newly assigned effects
     collectTargets();
     
     // Apply changes
@@ -63,17 +66,41 @@ void RandomizationManager::randomizeAll()
     processor.suspendProcessing(false);
 }
 
+void RandomizationManager::randomizeEffectRouter()
+{
+    DBG("[RAND] Randomizing effect router assignments...");
+    
+    // Get all available effects (excluding master/compressor)
+    std::vector<EffectID> availableEffects;
+    for (int i = 0; i <= 9; ++i) { // EffectID::SpaceDelay to EffectID::PhaseBloom
+        availableEffects.push_back(static_cast<EffectID>(i));
+    }
+    
+    // Randomly select 4 effects
+    std::vector<EffectID> selectedEffects;
+    std::sample(availableEffects.begin(), availableEffects.end(),
+                std::back_inserter(selectedEffects), 4,
+                std::mt19937{std::random_device{}()});
+    
+    // Assign the selected effects to the 4 slots
+    auto& router = processor.getEffectRouter();
+    for (int slot = 0; slot < 4; ++slot) {
+        router.assignEffectToSlot(selectedEffects[slot], static_cast<SlotID>(slot));
+        DBG("[RAND] Assigned " + juce::String(static_cast<int>(selectedEffects[slot])) + " to slot " + juce::String(slot));
+    }
+}
+
 void RandomizationManager::collectTargets()
 {
     DBG("[RAND] Collecting targets...");
     
-    // Get 4 random effects instead of currently active pages
-    auto randomEffects = registry.getRandomEffects();
+    // Get the currently active pages (after router randomization)
+    auto activePages = registry.getActivePages(processor, apvts);
     
     for (int slot = 0; slot < 4; ++slot)
     {
-        const auto& page = randomEffects[slot];
-        DBG("[RAND] Random Effect " + juce::String(slot) + ": " + page.pageId);
+        const auto& page = activePages[slot];
+        DBG("[RAND] Active Effect " + juce::String(slot) + ": " + page.pageId);
         
         // Collect knob parameters
         for (const auto& paramId : page.knobParamIds)
@@ -98,7 +125,7 @@ void RandomizationManager::collectTargets()
         }
         
         // Collect step targets (all 16 steps)
-        EffectID effect = getEffectIDFromPageId(page.pageId);
+        EffectID effect = processor.getEffectRouter().getEffectInSlot(static_cast<SlotID>(slot));
         for (int step = 0; step < page.maxSteps; ++step)
         {
             StepTarget target;
@@ -127,23 +154,6 @@ void RandomizationManager::collectTargets()
     DBG("[RAND] Collected " + juce::String(paramTargets.size()) + " params, " 
         + juce::String(stepTargets.size()) + " steps, " 
         + juce::String(sequencerTargets.size()) + " sequencers");
-}
-
-EffectID RandomizationManager::getEffectIDFromPageId(const juce::String& pageId) const
-{
-    if (pageId == "SpaceDelay") return EffectID::SpaceDelay;
-    if (pageId == "AutoPan") return EffectID::AutoPan;
-    if (pageId == "Dirt") return EffectID::Dirt;
-    if (pageId == "Chorus") return EffectID::Chorus;
-    if (pageId == "Reverb") return EffectID::Reverb;
-    if (pageId == "Granular") return EffectID::Granular;
-    if (pageId == "Slicer") return EffectID::Slicer;
-    if (pageId == "DubDelay") return EffectID::DubDelay;
-    if (pageId == "Redux") return EffectID::Redux;
-    if (pageId == "PhaseBloom") return EffectID::PhaseBloom;
-    
-    DBG("[RAND] WARNING: Unknown page ID: " + pageId);
-    return EffectID::SpaceDelay; // fallback
 }
 
 void RandomizationManager::applyParamChanges()
