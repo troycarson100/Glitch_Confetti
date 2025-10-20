@@ -502,8 +502,8 @@ void RandomizationManager::applySequencerChanges()
         // Randomize steps used (4-16, weighted toward higher values)
         int stepsUsed = 4 + static_cast<int>(rand01() * rand01() * 12); // Square for bias toward higher values
         
-        // Randomize division index (0-maxDivisionIndex)
-        int divisionIndex = static_cast<int>(rand01() * (target.maxDivisionIndex + 1));
+        // Randomize division index (1-7: 2 bars to 1/32)
+        int divisionIndex = 1 + static_cast<int>(rand01() * 7); // Range: 1-7 (2 bars to 1/32)
         
         // Apply sequencer settings based on effect type
         switch (target.effect)

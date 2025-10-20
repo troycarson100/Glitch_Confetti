@@ -110,6 +110,12 @@ PluginProcessor::PluginProcessor()
     phaseBloomSeq.divisionIndex.store(5); // 1/8 default
     phaseBloomSeq.playingStep.store(0);
     
+    // Initialize Redux sequencer
+    reduxSeq.enabled.store(true); // Start enabled
+    reduxSeq.stepsUsed.store(16);
+    reduxSeq.divisionIndex.store(5); // 1/8 default
+    reduxSeq.playingStep.store(0);
+    
     // Initialize PhaseBloom step snapshots with defaults
     for (int i = 0; i < 16; ++i) {
         phaseBloomStepSnapshots[i].phasebloom.depth = 0.5f;
@@ -476,6 +482,7 @@ void PluginProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
     
     // Prepare Redux DSP
     reduxBank.prepare(sampleRate, samplesPerBlock);
+    reduxSeq.prepare(sampleRate); // Initialize Redux sequencer with sample rate
     
     // Prepare PhaseBloom DSP
     phaseBloomEngine.prepare(sampleRate, samplesPerBlock, getTotalNumInputChannels());
@@ -597,6 +604,7 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                 dubdelaySeq.resetPhase();  // Dub Delay sequencer phase reset
                 spacedelaySeq.resetPhase();  // Space Delay sequencer phase reset
                 phaseBloomSeq.resetPhase();  // PhaseBloom sequencer phase reset
+                reduxSeq.resetPhase();      // Redux sequencer phase reset
                 
                 // Auto-enable delay sequencer on DAW play (only if user hasn't explicitly disabled it)
                 if (followHost.load() && !userDisabledSequencer.load()) {
@@ -662,6 +670,12 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                 if (phaseBloomSeq.enabled.load()) {
                     phaseBloomSeq.active.store(true);  // Activate PhaseBloom sequencer
                     DBG("[PHASEBLOOM SEQ] ✓ Activated on play edge");
+                }
+                
+                // Redux sequencer activates if enabled (independent of followHost)
+                if (reduxSeq.enabled.load()) {
+                    reduxSeq.active.store(true);  // Activate Redux sequencer
+                    DBG("[REDUX SEQ] ✓ Activated on play edge");
                 }
                 
                 DBG("[SEQ] Play edge detected");
@@ -868,6 +882,16 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                     phaseBloomSeq.currentStep.store(phaseBloomStep);
                     phaseBloomSeq.playingStep.store(phaseBloomStep);
                     DBG("[PHASEBLOOM SEQ] ★ Step changed to: " << phaseBloomStep << " PPQ: " << ppq);
+                }
+            }
+            
+            // Redux sequencer stepping (shares same PPQ/transport, independent timing)
+            if (isPlaying && ppqValid && reduxSeq.active.load()) {
+                const int reduxStep = reduxSeq.computeStepFromPPQ(ppq);
+                if (reduxStep != reduxSeq.currentStep.load()) {
+                    reduxSeq.currentStep.store(reduxStep);
+                    reduxSeq.playingStep.store(reduxStep);
+                    DBG("[REDUX SEQ] ★ Step changed to: " << reduxStep << " PPQ: " << ppq);
                 }
             }
             
