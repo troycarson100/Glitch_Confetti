@@ -2079,6 +2079,8 @@ void PluginEditor::setupKnobs()
                 // If All Steps toggle is active, update all step snapshots
                 if (allStepsEnabled)
                 {
+                    DBG("[All Steps] Knob " << i << " changed, allStepsEnabled=true, currentPage=" 
+                        << static_cast<int>(currentPage));
                     updateAllStepSnapshots(i);
                 }
             };
@@ -3565,6 +3567,7 @@ void PluginEditor::setupAllStepsToggle()
     allStepsToggle->onClick = [this]() {
         allStepsEnabled = allStepsToggle->getToggleState();
         DBG("[UI] All Steps toggle: " + juce::String(allStepsEnabled ? "ON" : "OFF") + " toggleState=" + juce::String(allStepsToggle->getToggleState() ? 1 : 0));
+        DBG("[UI] All Steps toggle clicked - current page: " + juce::String(static_cast<int>(currentPage)));
     };
     
     // Create "All Steps" label
@@ -3608,90 +3611,41 @@ void PluginEditor::setupSequencerArea()
     int stepDiceSize = static_cast<int>(35 * 0.7); // 30% smaller than 35px = ~24px
     stepDiceButton->setBounds(stepArea.getX() + 75, stepArea.getY() + 5, stepDiceSize, stepDiceSize); // Moved down another 10px and left another 10px
     
-    // Set up step dice button callback to randomize all step snapshots
+    // Set up step dice button callback to randomize all 16 step snapshots (Space Delay)
     stepDiceButton->onClick = [this]() {
-        DBG("[UI] Step dice button clicked - randomizing all step snapshots");
-        
-        // Randomize all 16 step snapshots, but only for unlocked parameters
+        DBG("[UI] Step dice button clicked - randomizing ALL Space Delay step snapshots");
+
         for (int step = 0; step < 16; ++step) {
-            auto snapshot = processorRef.getSafeSnapshot(step);
-            
-            // Only randomize unlocked parameters
-            if (!knobLocked[0]) snapshot.delay.timeMs = 10.0f + juce::Random::getSystemRandom().nextFloat() * (2000.0f - 10.0f);
-            if (!knobLocked[1]) snapshot.delay.feedback = juce::Random::getSystemRandom().nextFloat() * 0.95f;
-            if (!knobLocked[2]) snapshot.delay.wowDepth = juce::Random::getSystemRandom().nextFloat();
-            if (!knobLocked[3]) snapshot.delay.wowRate = 0.1f + juce::Random::getSystemRandom().nextFloat() * (8.0f - 0.1f);
-            if (!knobLocked[4]) snapshot.delay.saturation = juce::Random::getSystemRandom().nextFloat();
-            if (!knobLocked[5]) snapshot.delay.highCut = 1000.0f + juce::Random::getSystemRandom().nextFloat() * (20000.0f - 1000.0f);
-            if (!knobLocked[6]) snapshot.delay.lowCut = 20.0f + juce::Random::getSystemRandom().nextFloat() * (2000.0f - 20.0f);
-            if (!knobLocked[7]) snapshot.delay.mix = juce::Random::getSystemRandom().nextFloat();
-            
-            // Update the snapshot in the processor
-            processorRef.setStepSnapshot(step, snapshot);
+            auto snapshot = processorRef.getSpaceDelaySafeSnapshot(step);
+
+            // Randomize only unlocked parameters with correct ranges (matching APVTS parameter ranges)
+            if (!knobLocked[0]) snapshot.delay.timeMs = 10.0f + juce::Random::getSystemRandom().nextFloat() * (2000.0f - 10.0f); // 10-2000ms
+            if (!knobLocked[1]) snapshot.delay.feedback = juce::Random::getSystemRandom().nextFloat() * 0.95f; // 0-0.95 (not 0-100!)
+            if (!knobLocked[2]) snapshot.delay.wowDepth = juce::Random::getSystemRandom().nextFloat(); // 0-1 (not 0-100!)
+            if (!knobLocked[3]) snapshot.delay.wowRate = 0.1f + juce::Random::getSystemRandom().nextFloat() * (8.0f - 0.1f); // 0.1-8.0
+            if (!knobLocked[4]) snapshot.delay.saturation = juce::Random::getSystemRandom().nextFloat(); // 0-1 (not 0-100!)
+            if (!knobLocked[5]) snapshot.delay.highCut = 1000.0f + juce::Random::getSystemRandom().nextFloat() * (20000.0f - 1000.0f); // 1000-20000Hz
+            if (!knobLocked[6]) snapshot.delay.lowCut = 20.0f + juce::Random::getSystemRandom().nextFloat() * (2000.0f - 20.0f); // 20-2000Hz
+            if (!knobLocked[7]) snapshot.delay.mix = juce::Random::getSystemRandom().nextFloat(); // 0-1 (not 0-100!)
+
+            processorRef.setSpaceDelayStepSnapshot(step, snapshot);
         }
-        
-        // Update current step if one is selected to show the new values
-        int selectedStep = processorRef.getSelectedStep();
-        if (selectedStep >= 0 && selectedStep < 16) {
-            // Load the randomized snapshot for the selected step
-            auto snapshot = processorRef.getSafeSnapshot(selectedStep);
-            
-            // Update knobs with the new snapshot values using correct parameter ranges, respecting locks
-            // timeMs: 10.0f to 2000.0f
-            if (!knobLocked[0]) knobs[0]->setValue((snapshot.delay.timeMs - 10.0f) / (2000.0f - 10.0f), juce::dontSendNotification);
-            // feedback: 0.0f to 0.95f (already normalized)
-            if (!knobLocked[1]) knobs[1]->setValue(snapshot.delay.feedback, juce::dontSendNotification);
-            // wowDepth: 0.0f to 1.0f (already normalized)
-            if (!knobLocked[2]) knobs[2]->setValue(snapshot.delay.wowDepth, juce::dontSendNotification);
-            // wowRate: 0.1f to 8.0f
-            if (!knobLocked[3]) knobs[3]->setValue((snapshot.delay.wowRate - 0.1f) / (8.0f - 0.1f), juce::dontSendNotification);
-            // drive/saturation: 0.0f to 1.0f (already normalized)
-            if (!knobLocked[4]) knobs[4]->setValue(snapshot.delay.saturation, juce::dontSendNotification);
-            // hiCut: 1000.0f to 20000.0f
-            if (!knobLocked[5]) knobs[5]->setValue((snapshot.delay.highCut - 1000.0f) / (20000.0f - 1000.0f), juce::dontSendNotification);
-            // lowCut: 20.0f to 2000.0f
-            if (!knobLocked[6]) knobs[6]->setValue((snapshot.delay.lowCut - 20.0f) / (2000.0f - 20.0f), juce::dontSendNotification);
-            // mix: 0.0f to 1.0f (already normalized)
-            if (!knobLocked[7]) knobs[7]->setValue(snapshot.delay.mix, juce::dontSendNotification);
-            
-            // Update value labels and indicator bars to reflect the new values
-            for (int i = 0; i < 8; ++i) {
-                if (valueLabels[i] != nullptr && !knobLocked[i]) {
-                    float knobValue = knobs[i]->getValue();
-                    juce::String valueText;
-                    if (i == 0 && timeSyncEnabled) {
-                        // Show musical division label instead of ms
-                        std::vector<juce::String> labels = {"1/64","1/32","1/16","1/8","1/4","1/2","1","2"};
-                        int idx = juce::jlimit(0, 7, (int) std::round(knobValue * 7.0f));
-                        auto label = labels[idx];
-                        if (timeSyncStdMode == 1) label << "t"; else if (timeSyncStdMode == 2) label << ".";
-                        valueText = label;
-                    } else {
-                        if (i == 0) {
-                            // Time, sync OFF: show whole ms
-                            if (auto* p = dynamic_cast<juce::AudioParameterFloat*>(processorRef.getAPVTS().getParameter("timeMs"))) {
-                                float ms = p->convertFrom0to1(knobs[0]->getValue());
-                                valueText = juce::String((int) std::round(ms)) + "ms";
-                            } else {
-                                valueText = juce::String((int) std::round(knobValue * 100));
-                            }
-                        } else {
-                            valueText = juce::String((int) std::round(knobValue * 100));
-                        }
-                    }
-                    valueLabels[i]->setText(valueText, juce::dontSendNotification);
-                }
-                if (indicatorBars[i] != nullptr && !knobLocked[i]) {
-                    indicatorBars[i]->setValue(knobs[i]->getValue());
-                }
-                
-                // Update the step snapshot in the processor to match the knob values
-                if (!knobLocked[i]) updateParameterFromKnob(i);
-            }
-        }
-        
-        // Update UI
+
+        // Refresh UI to reflect changes at current selection
         updateSequencerUI();
+
+        // Also push the selected step's new values into the knobs so user sees change immediately
+        int selectedStep = processorRef.getSpaceDelayUiSelectedStep();
+        selectedStep = juce::jlimit(0, 15, selectedStep);
+        const auto updated = processorRef.getSpaceDelaySafeSnapshot(selectedStep);
+        processorRef.getAPVTS().getParameter("timeMs")->setValueNotifyingHost(processorRef.getAPVTS().getParameter("timeMs")->convertTo0to1(updated.delay.timeMs));
+        processorRef.getAPVTS().getParameter("feedback")->setValueNotifyingHost(processorRef.getAPVTS().getParameter("feedback")->convertTo0to1(updated.delay.feedback));
+        processorRef.getAPVTS().getParameter("wowDepth")->setValueNotifyingHost(processorRef.getAPVTS().getParameter("wowDepth")->convertTo0to1(updated.delay.wowDepth));
+        processorRef.getAPVTS().getParameter("wowRate")->setValueNotifyingHost(processorRef.getAPVTS().getParameter("wowRate")->convertTo0to1(updated.delay.wowRate));
+        processorRef.getAPVTS().getParameter("drive")->setValueNotifyingHost(processorRef.getAPVTS().getParameter("drive")->convertTo0to1(updated.delay.saturation));
+        processorRef.getAPVTS().getParameter("hiCut")->setValueNotifyingHost(processorRef.getAPVTS().getParameter("hiCut")->convertTo0to1(updated.delay.highCut));
+        processorRef.getAPVTS().getParameter("lowCut")->setValueNotifyingHost(processorRef.getAPVTS().getParameter("lowCut")->convertTo0to1(updated.delay.lowCut));
+        processorRef.getAPVTS().getParameter("mix")->setValueNotifyingHost(processorRef.getAPVTS().getParameter("mix")->convertTo0to1(updated.delay.mix));
     };
     
     // Set dice image for step dice button
@@ -3743,7 +3697,7 @@ void PluginEditor::setupSequencerArea()
         {
             int value = stepAmountLabel->getText().getIntValue();
             value = juce::jlimit(1, 16, value);
-            processorRef.setStepsUsed(value);
+            processorRef.setSpaceDelayStepsUsed(value);
             stepAmountLabel->setText(juce::String(value), juce::dontSendNotification);
             updateSequencerUI();
         }
@@ -3780,7 +3734,7 @@ void PluginEditor::setupSequencerArea()
             const int selected = rateDropdown->getSelectedId(); // 1..8
             const int newDivisionIndex = juce::jlimit(0, 7, selected - 1);
             DBG("[UI] Rate dropdown changed: ID=" << selected << " -> divisionIndex=" << newDivisionIndex);
-            processorRef.setDivisionIndex(newDivisionIndex);
+            processorRef.setSpaceDelayDivisionIndex(newDivisionIndex);
             updateSequencerUI();
         }
     };
@@ -3842,12 +3796,13 @@ void PluginEditor::setupStepPowerButton()
         
         if (!stepAreaEnabled) {
             // Disable sequencer and stop it immediately when turning OFF
-            processorRef.setSequencerEnabled(false);
-            processorRef.setSequencerActive(false); // Force stop the sequencer
+            processorRef.setSpaceDelaySequencerEnabled(false);
             processorRef.resetSequencerState();
+            DBG("[UI] Space Delay sequencer STOPPED by user");
         } else {
             // Enable sequencer when turning ON
-            processorRef.setSequencerEnabled(true);
+            processorRef.setSpaceDelaySequencerEnabled(true);
+            DBG("[UI] Space Delay sequencer ENABLED by user");
             // If followHost is enabled and DAW is playing, realign immediately
             if (auto* ph = processorRef.getPlayHead()) {
                 auto pos = ph->getPosition();
@@ -3969,7 +3924,13 @@ void PluginEditor::updateParameterFromKnob(int knobIndex)
         }
         
         // Update the snapshot for the currently selected step
-        processorRef.updateCurrentStepSnapshot(knobIndex, actualValue);
+        // Check if we're on Space Delay page and use dedicated sequencer
+        bool isSpaceDelayPage = (currentPage == FxPageID::SpaceDelay);
+        if (isSpaceDelayPage) {
+            processorRef.updateSpaceDelayCurrentStepSnapshot(knobIndex, actualValue);
+        } else {
+            processorRef.updateCurrentStepSnapshot(knobIndex, actualValue);
+        }
     }
 }
 
@@ -3987,29 +3948,39 @@ void PluginEditor::updateAllStepSnapshots(int knobIndex)
             actualValue = floatParam->convertFrom0to1(knobValue);
         }
         
-        DBG("[UI] All Steps: Updating knob " << knobIndex << " with knobValue=" << knobValue << " actualValue=" << actualValue);
+        // Check if we're on Space Delay page and use dedicated sequencer
+        bool isSpaceDelayPage = (currentPage == FxPageID::SpaceDelay);
+        
+        DBG("[All Steps] isSpaceDelayPage=" << isSpaceDelayPage << " knobIndex=" << knobIndex 
+            << " actualValue=" << actualValue);
         
         // Update all 16 step snapshots with the new value
         for (int step = 0; step < 16; ++step)
         {
-            // Get current snapshot for this step
-            StepSnapshot snapshot = processorRef.getSafeSnapshot(step);
+            // Get current snapshot for this step (use dedicated sequencer for Space Delay)
+            StepSnapshot snapshot = isSpaceDelayPage ? 
+                processorRef.getSpaceDelaySafeSnapshot(step) : 
+                processorRef.getSafeSnapshot(step);
             
-            // Update the specific parameter in the snapshot with proper conversion
+            // Update the specific parameter in the snapshot with proper conversion (matching APVTS ranges)
             switch (knobIndex)
             {
-                case 0: snapshot.delay.timeMs = actualValue; break;
-                case 1: snapshot.delay.feedback = actualValue * 100.0f; break; // Convert to percentage
-                case 2: snapshot.delay.wowDepth = actualValue * 100.0f; break; // Convert to percentage
-                case 3: snapshot.delay.wowRate = actualValue; break;
-                case 4: snapshot.delay.saturation = actualValue * 100.0f; break; // Convert to percentage
-                case 5: snapshot.delay.highCut = actualValue; break;
-                case 6: snapshot.delay.lowCut = actualValue; break;
-                case 7: snapshot.delay.mix = actualValue * 100.0f; break; // Convert to percentage
+                case 0: snapshot.delay.timeMs = actualValue; break; // 10-2000ms
+                case 1: snapshot.delay.feedback = actualValue; break; // 0-0.95 (not percentage!)
+                case 2: snapshot.delay.wowDepth = actualValue; break; // 0-1 (not percentage!)
+                case 3: snapshot.delay.wowRate = actualValue; break; // 0.1-8.0
+                case 4: snapshot.delay.saturation = actualValue; break; // 0-1 (not percentage!)
+                case 5: snapshot.delay.highCut = actualValue; break; // 1000-20000Hz
+                case 6: snapshot.delay.lowCut = actualValue; break; // 20-2000Hz
+                case 7: snapshot.delay.mix = actualValue; break; // 0-1 (not percentage!)
             }
             
-            // Set the updated snapshot back
-            processorRef.setStepSnapshot(step, snapshot);
+            // Set the updated snapshot back (use dedicated sequencer for Space Delay)
+            if (isSpaceDelayPage) {
+                processorRef.setSpaceDelayStepSnapshot(step, snapshot);
+            } else {
+                processorRef.setStepSnapshot(step, snapshot);
+            }
         }
         
         DBG("[UI] Updated all 16 step snapshots for knob " << knobIndex << " with value " << actualValue);
@@ -4021,29 +3992,29 @@ void PluginEditor::onStepButtonClicked(int stepIndex)
     DBG("[UI] Step button " << stepIndex << " clicked");
     
     // Save current step's snapshot before switching
-    int currentStep = processorRef.getSelectedStep();
+    int currentStep = processorRef.getSpaceDelayUiSelectedStep();
     if (currentStep >= 0 && currentStep < 16) {
         StepSnapshot currentSnapshot;
         currentSnapshot.delay.timeMs = processorRef.getAPVTS().getParameter("timeMs")->convertFrom0to1(processorRef.getAPVTS().getParameter("timeMs")->getValue());
-        currentSnapshot.delay.feedback = processorRef.getAPVTS().getParameter("feedback")->convertFrom0to1(processorRef.getAPVTS().getParameter("feedback")->getValue()) * 100.0f;
-        currentSnapshot.delay.wowDepth = processorRef.getAPVTS().getParameter("wowDepth")->convertFrom0to1(processorRef.getAPVTS().getParameter("wowDepth")->getValue()) * 100.0f;
+        currentSnapshot.delay.feedback = processorRef.getAPVTS().getParameter("feedback")->convertFrom0to1(processorRef.getAPVTS().getParameter("feedback")->getValue());
+        currentSnapshot.delay.wowDepth = processorRef.getAPVTS().getParameter("wowDepth")->convertFrom0to1(processorRef.getAPVTS().getParameter("wowDepth")->getValue());
         currentSnapshot.delay.wowRate = processorRef.getAPVTS().getParameter("wowRate")->convertFrom0to1(processorRef.getAPVTS().getParameter("wowRate")->getValue());
-        currentSnapshot.delay.saturation = processorRef.getAPVTS().getParameter("drive")->convertFrom0to1(processorRef.getAPVTS().getParameter("drive")->getValue()) * 100.0f;
+        currentSnapshot.delay.saturation = processorRef.getAPVTS().getParameter("drive")->convertFrom0to1(processorRef.getAPVTS().getParameter("drive")->getValue());
         currentSnapshot.delay.highCut = processorRef.getAPVTS().getParameter("hiCut")->convertFrom0to1(processorRef.getAPVTS().getParameter("hiCut")->getValue());
         currentSnapshot.delay.lowCut = processorRef.getAPVTS().getParameter("lowCut")->convertFrom0to1(processorRef.getAPVTS().getParameter("lowCut")->getValue());
-        currentSnapshot.delay.mix = processorRef.getAPVTS().getParameter("mix")->convertFrom0to1(processorRef.getAPVTS().getParameter("mix")->getValue()) * 100.0f;
-        processorRef.setStepSnapshot(currentStep, currentSnapshot);
+        currentSnapshot.delay.mix = processorRef.getAPVTS().getParameter("mix")->convertFrom0to1(processorRef.getAPVTS().getParameter("mix")->getValue());
+        processorRef.setSpaceDelayStepSnapshot(currentStep, currentSnapshot);
         DBG("[UI] Saved current step " << currentStep << " snapshot before switching");
     }
     
     // Update selected step in processor
-    processorRef.setSelectedStep(stepIndex);
+    processorRef.setSpaceDelaySelectedStep(stepIndex);
     
     // Update UI to show which step is selected
     updateSequencerUI();
     
     // Load the snapshot for this step into the knobs
-    auto snapshot = processorRef.getSafeSnapshot(stepIndex);
+    auto snapshot = processorRef.getSpaceDelaySafeSnapshot(stepIndex);
     
     // Update knobs with snapshot values (convert from actual values to normalized 0-1)
     if (timeSyncEnabled) {
@@ -4064,38 +4035,38 @@ void PluginEditor::onStepButtonClicked(int stepIndex)
     } else {
         knobs[0]->setValue(processorRef.getAPVTS().getParameter("timeMs")->convertTo0to1(snapshot.delay.timeMs), juce::dontSendNotification);
     }
-    knobs[1]->setValue(processorRef.getAPVTS().getParameter("feedback")->convertTo0to1(snapshot.delay.feedback / 100.0f), juce::dontSendNotification);
-    knobs[2]->setValue(processorRef.getAPVTS().getParameter("wowDepth")->convertTo0to1(snapshot.delay.wowDepth / 100.0f), juce::dontSendNotification);
+    knobs[1]->setValue(processorRef.getAPVTS().getParameter("feedback")->convertTo0to1(snapshot.delay.feedback), juce::dontSendNotification);
+    knobs[2]->setValue(processorRef.getAPVTS().getParameter("wowDepth")->convertTo0to1(snapshot.delay.wowDepth), juce::dontSendNotification);
     knobs[3]->setValue(processorRef.getAPVTS().getParameter("wowRate")->convertTo0to1(snapshot.delay.wowRate), juce::dontSendNotification);
-    knobs[4]->setValue(processorRef.getAPVTS().getParameter("drive")->convertTo0to1(snapshot.delay.saturation / 100.0f), juce::dontSendNotification);
+    knobs[4]->setValue(processorRef.getAPVTS().getParameter("drive")->convertTo0to1(snapshot.delay.saturation), juce::dontSendNotification);
     knobs[5]->setValue(processorRef.getAPVTS().getParameter("hiCut")->convertTo0to1(snapshot.delay.highCut), juce::dontSendNotification);
     knobs[6]->setValue(processorRef.getAPVTS().getParameter("lowCut")->convertTo0to1(snapshot.delay.lowCut), juce::dontSendNotification);
-    knobs[7]->setValue(processorRef.getAPVTS().getParameter("mix")->convertTo0to1(snapshot.delay.mix / 100.0f), juce::dontSendNotification);
+    knobs[7]->setValue(processorRef.getAPVTS().getParameter("mix")->convertTo0to1(snapshot.delay.mix), juce::dontSendNotification);
     
     // Also update the APVTS parameters to match the snapshot
     processorRef.getAPVTS().getParameter("timeMs")->setValueNotifyingHost(processorRef.getAPVTS().getParameter("timeMs")->convertTo0to1(snapshot.delay.timeMs));
-    processorRef.getAPVTS().getParameter("feedback")->setValueNotifyingHost(processorRef.getAPVTS().getParameter("feedback")->convertTo0to1(snapshot.delay.feedback / 100.0f));
-    processorRef.getAPVTS().getParameter("wowDepth")->setValueNotifyingHost(processorRef.getAPVTS().getParameter("wowDepth")->convertTo0to1(snapshot.delay.wowDepth / 100.0f));
+    processorRef.getAPVTS().getParameter("feedback")->setValueNotifyingHost(processorRef.getAPVTS().getParameter("feedback")->convertTo0to1(snapshot.delay.feedback));
+    processorRef.getAPVTS().getParameter("wowDepth")->setValueNotifyingHost(processorRef.getAPVTS().getParameter("wowDepth")->convertTo0to1(snapshot.delay.wowDepth));
     processorRef.getAPVTS().getParameter("wowRate")->setValueNotifyingHost(processorRef.getAPVTS().getParameter("wowRate")->convertTo0to1(snapshot.delay.wowRate));
-    processorRef.getAPVTS().getParameter("drive")->setValueNotifyingHost(processorRef.getAPVTS().getParameter("drive")->convertTo0to1(snapshot.delay.saturation / 100.0f));
+    processorRef.getAPVTS().getParameter("drive")->setValueNotifyingHost(processorRef.getAPVTS().getParameter("drive")->convertTo0to1(snapshot.delay.saturation));
     processorRef.getAPVTS().getParameter("hiCut")->setValueNotifyingHost(processorRef.getAPVTS().getParameter("hiCut")->convertTo0to1(snapshot.delay.highCut));
     processorRef.getAPVTS().getParameter("lowCut")->setValueNotifyingHost(processorRef.getAPVTS().getParameter("lowCut")->convertTo0to1(snapshot.delay.lowCut));
-    processorRef.getAPVTS().getParameter("mix")->setValueNotifyingHost(processorRef.getAPVTS().getParameter("mix")->convertTo0to1(snapshot.delay.mix / 100.0f));
+    processorRef.getAPVTS().getParameter("mix")->setValueNotifyingHost(processorRef.getAPVTS().getParameter("mix")->convertTo0to1(snapshot.delay.mix));
 }
 
 void PluginEditor::updateSequencerUI()
 {
     // Update step button selection states
-    int selectedStep = processorRef.getSelectedStep();
-    int playingStep = processorRef.getCurrentSeqStepAudioThread(); // Read from audio thread
-    const int stepsUsed = processorRef.getSeqState().stepsUsed.load();
+    int selectedStep = processorRef.getSpaceDelayUiSelectedStep();
+    int playingStep = processorRef.getSpaceDelayPlayingStep(); // Read from audio thread
+    const int stepsUsed = processorRef.getSpaceDelaySeqState().stepsUsed.load();
     
     for (int i = 0; i < 16; ++i) {
         if (stepButtons[i] != nullptr) {
             // Only the selected step should show as selected
             stepButtons[i]->setSelected(i == selectedStep);
             // Show playing highlight only if sequencer is enabled
-            bool sequencerEnabled = processorRef.isSequencerEnabled();
+            bool sequencerEnabled = processorRef.getSpaceDelaySeqState().enabled.load();
             stepButtons[i]->setPlaying(sequencerEnabled && (i == playingStep));
             // Grey out inactive steps beyond stepsUsed
             bool shouldBeEnabled = i < stepsUsed;
@@ -4105,13 +4076,13 @@ void PluginEditor::updateSequencerUI()
     
     // Update step amount display (don't steal focus if editing)
     if (stepAmountLabel != nullptr && ! stepAmountLabel->isBeingEdited()) {
-        int stepsUsed = processorRef.getSeqState().stepsUsed.load();
+        int stepsUsed = processorRef.getSpaceDelaySeqState().stepsUsed.load();
         stepAmountLabel->setText(juce::String(stepsUsed), juce::dontSendNotification);
     }
     
     // Update rate dropdown
     if (rateDropdown != nullptr) {
-        int divisionIndex = processorRef.getSeqState().divisionIndex.load();
+        int divisionIndex = processorRef.getSpaceDelaySeqState().divisionIndex.load();
         rateDropdown->setSelectedId(divisionIndex + 1);
     }
 }

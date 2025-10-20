@@ -305,6 +305,22 @@ public:
     void setDubDelayStepsUsed(int steps) noexcept { dubdelaySeq.stepsUsed.store(juce::jlimit(1, 16, steps)); }
     void setDubDelayDivisionIndex(int idx) noexcept { dubdelaySeq.divisionIndex.store(juce::jlimit(0, 7, idx)); }
     
+    // Space Delay sequencer accessors
+    const SeqState& getSpaceDelaySeqState() const { return spacedelaySeq; }
+    int getSpaceDelayPlayingStep() const noexcept { return spacedelaySeq.playingStep.load(); }
+    int getSpaceDelayCurrentStep() const noexcept { return spacedelaySeq.currentStep.load(); }
+    int getSpaceDelayUiSelectedStep() const noexcept { return spacedelayUiSelectedStep.load(); }
+    void setSpaceDelaySelectedStep(int step) noexcept { spacedelayUiSelectedStep.store(step); }
+    void setSpaceDelaySequencerEnabled(bool enabled) noexcept { 
+        spacedelaySeq.enabled.store(enabled);
+        // Only set active to false when disabling, don't auto-enable when enabling
+        if (!enabled) {
+            spacedelaySeq.active.store(false);
+        }
+    }
+    void setSpaceDelayStepsUsed(int steps) noexcept { spacedelaySeq.stepsUsed.store(juce::jlimit(1, 16, steps)); }
+    void setSpaceDelayDivisionIndex(int idx) noexcept { spacedelaySeq.divisionIndex.store(juce::jlimit(0, 7, idx)); }
+    
     StepSnapshot getGranularSafeSnapshot(int step) const;
     void setGranularStepSnapshot(int step, const StepSnapshot& snapshot) noexcept;
     void updateGranularCurrentStepSnapshot(int knobIndex, float value);
@@ -319,8 +335,14 @@ public:
     void setDubDelayStepSnapshot(int step, const StepSnapshot& snapshot) noexcept;
     void updateDubDelayCurrentStepSnapshot(int knobIndex, float value);
     
+    StepSnapshot getSpaceDelaySafeSnapshot(int step) const;
+    void setSpaceDelayStepSnapshot(int step, const StepSnapshot& snapshot) noexcept;
+    void updateSpaceDelayCurrentStepSnapshot(int knobIndex, float value);
+    
     void setSequencerEnabled(bool enabled) noexcept { 
         seq.enabled.store(enabled); 
+        // Track if user explicitly disabled sequencer
+        userDisabledSequencer.store(!enabled);
         // Only set active if enabled, otherwise leave active state for transport watcher
         if (enabled) {
             seq.active.store(true);
@@ -361,6 +383,7 @@ private:
     std::atomic<double> lastPPQ{-1.0};
     std::atomic<int64_t> lastSamples{-1};
     std::atomic<bool> followHost{true};     // follow host transport
+    std::atomic<bool> userDisabledSequencer{false}; // track if user explicitly disabled sequencer
 
     
     // Helper function for sequencer (legacy - now handled by SeqState::beatsPerStepFromDivision)
@@ -408,6 +431,10 @@ private:
     SeqState dubdelaySeq;
     std::atomic<int> dubdelayUiSelectedStep { 0 };  // Dub Delay editor's selected step
     
+    // Space Delay Sequencer State (independent from all other sequencers)
+    SeqState spacedelaySeq;
+    std::atomic<int> spacedelayUiSelectedStep { 0 };  // Space Delay editor's selected step
+    
     // Step snapshots storage (shared structure, independent sequencing)
     std::array<StepSnapshot, 16> stepSnapshots;
     std::array<StepSnapshot, 16> autopanStepSnapshots;
@@ -419,6 +446,7 @@ private:
     std::array<StepSnapshot, 16> granularStepSnapshots;
     std::array<StepSnapshot, 16> slicerStepSnapshots;
     std::array<StepSnapshot, 16> dubdelayStepSnapshots;
+    std::array<StepSnapshot, 16> spacedelayStepSnapshots;
     
     // Level tracking for meters
     std::atomic<float> inputLevel { -60.0f };

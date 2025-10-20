@@ -84,6 +84,26 @@ PluginProcessor::PluginProcessor()
     }
     DBG("[Stepper] Initialized Dub Delay step snapshots with default values");
     
+    // Initialize Space Delay sequencer
+    spacedelaySeq.enabled.store(true); // Start enabled
+    spacedelaySeq.stepsUsed.store(16);
+    spacedelaySeq.divisionIndex.store(5); // 1/8 default
+    spacedelaySeq.playingStep.store(0);
+    spacedelayUiSelectedStep.store(0); // Initialize UI selected step
+    
+    // Initialize Space Delay step snapshots with defaults
+    for (int i = 0; i < 16; ++i) {
+        spacedelayStepSnapshots[i].delay.timeMs = 250.0f;
+        spacedelayStepSnapshots[i].delay.feedback = 0.2f;
+        spacedelayStepSnapshots[i].delay.wowDepth = 0.0f;
+        spacedelayStepSnapshots[i].delay.wowRate = 1.0f;
+        spacedelayStepSnapshots[i].delay.saturation = 0.0f;
+        spacedelayStepSnapshots[i].delay.highCut = 20000.0f;
+        spacedelayStepSnapshots[i].delay.lowCut = 20.0f;
+        spacedelayStepSnapshots[i].delay.mix = 0.5f;
+    }
+    DBG("[Stepper] Initialized Space Delay step snapshots with default values");
+    
     // Initialize PhaseBloom sequencer
     phaseBloomSeq.enabled.store(true); // Start enabled
     phaseBloomSeq.stepsUsed.store(16);
@@ -449,6 +469,10 @@ void PluginProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
     dubDelay.prepare(sampleRate, samplesPerBlock);
     dubdelaySeq.prepare(sampleRate); // Initialize Dub Delay sequencer with sample rate
     
+    // Prepare Space Delay DSP
+    spaceDelay.prepare(sampleRate, samplesPerBlock);
+    spacedelaySeq.prepare(sampleRate); // Initialize Space Delay sequencer with sample rate
+    
     // Prepare Redux DSP
     reduxBank.prepare(sampleRate, samplesPerBlock);
     
@@ -572,10 +596,15 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                 dubdelaySeq.resetPhase();  // Dub Delay sequencer phase reset
                 phaseBloomSeq.resetPhase();  // PhaseBloom sequencer phase reset
                 
-                // Auto-enable delay sequencer on DAW play (user can still disable with power button)
-                if (followHost.load()) {
+                // Auto-enable delay sequencer on DAW play (only if user hasn't explicitly disabled it)
+                if (followHost.load() && !userDisabledSequencer.load()) {
                     seq.enabled.store(true);  // Enable delay sequencer
                     seq.active.store(true);   // Activate delay sequencer
+                    DBG("[SEQ] Auto-enabled delay sequencer (followHost=true, userDisabled=false)");
+                } else if (followHost.load() && userDisabledSequencer.load()) {
+                    DBG("[SEQ] Skipped auto-enable delay sequencer (user explicitly disabled)");
+                } else {
+                    DBG("[SEQ] Skipped auto-enable delay sequencer (followHost=false)");
                 }
                 
                 // AutoPan sequencer activates if enabled (independent of followHost)
@@ -692,6 +721,13 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                     dubdelaySeq.currentStep.store(dubdelayStep);
                     dubdelaySeq.playingStep.store(dubdelayStep);
                     DBG("[DUBDELAY SEQ] Lock-in at PPQ=" << ppq << " -> step " << dubdelayStep);
+                }
+                
+                if (spacedelaySeq.enabled.load() && spacedelaySeq.active.load()) {
+                    const int spacedelayStep = spacedelaySeq.computeStepFromPPQ(ppq);
+                    spacedelaySeq.currentStep.store(spacedelayStep);
+                    spacedelaySeq.playingStep.store(spacedelayStep);
+                    DBG("[SPACEDELAY SEQ] Lock-in at PPQ=" << ppq << " -> step " << spacedelayStep);
                 }
                 
                 if (phaseBloomSeq.enabled.load() && phaseBloomSeq.active.load()) {
@@ -2834,6 +2870,40 @@ void PluginProcessor::updateDubDelayCurrentStepSnapshot(int knobIndex, float val
     }
 }
 
+// Space Delay snapshot accessors
+StepSnapshot PluginProcessor::getSpaceDelaySafeSnapshot(int step) const
+{
+    if (step >= 0 && step < 16) {
+        return spacedelayStepSnapshots[step];
+    }
+    return spacedelayStepSnapshots[0];
+}
+
+void PluginProcessor::setSpaceDelayStepSnapshot(int step, const StepSnapshot& snapshot) noexcept
+{
+    if (step >= 0 && step < 16) {
+        spacedelayStepSnapshots[step] = snapshot;
+    }
+}
+
+void PluginProcessor::updateSpaceDelayCurrentStepSnapshot(int knobIndex, float value)
+{
+    int currentStep = spacedelayUiSelectedStep.load();
+    if (currentStep < 0 || currentStep >= 16) return;
+    
+    switch (knobIndex) {
+        case 0: spacedelayStepSnapshots[currentStep].delay.timeMs = value; break;
+        case 1: spacedelayStepSnapshots[currentStep].delay.feedback = value; break;
+        case 2: spacedelayStepSnapshots[currentStep].delay.wowDepth = value; break;
+        case 3: spacedelayStepSnapshots[currentStep].delay.wowRate = value; break;
+        case 4: spacedelayStepSnapshots[currentStep].delay.saturation = value; break;
+        case 5: spacedelayStepSnapshots[currentStep].delay.highCut = value; break;
+        case 6: spacedelayStepSnapshots[currentStep].delay.lowCut = value; break;
+        case 7: spacedelayStepSnapshots[currentStep].delay.mix = value; break;
+        default: break;
+    }
+}
+
 void PluginProcessor::randomizeAllStepSnapshots() noexcept
 {
     DBG("[Processor] Randomizing all step snapshots");
@@ -3042,8 +3112,69 @@ void PluginProcessor::processDelayEffect(juce::AudioBuffer<float>& buffer)
 {
     // Process delay effect (original SpaceDelay processing)
     if (buffer.getNumChannels() > 0 && buffer.getNumSamples() > 0) {
-        if (fxEnabled.load())
-            spaceDelay.process(buffer, buffer.getNumSamples());
+        // Check if effect is enabled
+        auto* delayEnabledParam = valueTreeState.getRawParameterValue("delayEnabled");
+        bool isDelayEnabled = delayEnabledParam ? (delayEnabledParam->load() > 0.5f) : false;
+        
+        if (!isDelayEnabled) return;
+        
+        // Check if sequencer is enabled and active
+        bool seqEnabled = spacedelaySeq.enabled.load();
+        bool seqActive = spacedelaySeq.active.load();
+        int playingStep = spacedelaySeq.playingStep.load();
+        
+        // Get parameters from sequencer snapshot OR APVTS
+        float timeMs, feedback, wowDepth, wowRate, drive, hiCut, lowCut, mix;
+        
+        if (seqEnabled && seqActive && playingStep >= 0 && playingStep < 16) {
+            // Read from step snapshot
+            StepSnapshot snapshot = spacedelayStepSnapshots[playingStep];
+            timeMs = snapshot.delay.timeMs;
+            feedback = snapshot.delay.feedback;
+            wowDepth = snapshot.delay.wowDepth;
+            wowRate = snapshot.delay.wowRate;
+            drive = snapshot.delay.saturation; // Note: saturation field is used for drive
+            hiCut = snapshot.delay.highCut;
+            lowCut = snapshot.delay.lowCut;
+            mix = snapshot.delay.mix;
+            
+            DBG("[SPACE DELAY SEQ] Using sequencer step " << playingStep << " - timeMs: " << timeMs << ", feedback: " << feedback);
+        } else {
+            // Read from APVTS parameters (manual control)
+            auto* timeMsParam = valueTreeState.getRawParameterValue("timeMs");
+            auto* feedbackParam = valueTreeState.getRawParameterValue("feedback");
+            auto* wowDepthParam = valueTreeState.getRawParameterValue("wowDepth");
+            auto* wowRateParam = valueTreeState.getRawParameterValue("wowRate");
+            auto* driveParam = valueTreeState.getRawParameterValue("drive");
+            auto* hiCutParam = valueTreeState.getRawParameterValue("hiCut");
+            auto* lowCutParam = valueTreeState.getRawParameterValue("lowCut");
+            auto* mixParam = valueTreeState.getRawParameterValue("mix");
+            
+            timeMs = timeMsParam ? timeMsParam->load() : 250.0f;
+            feedback = feedbackParam ? feedbackParam->load() : 0.2f;
+            wowDepth = wowDepthParam ? wowDepthParam->load() : 0.0f;
+            wowRate = wowRateParam ? wowRateParam->load() : 1.0f;
+            drive = driveParam ? driveParam->load() : 0.0f;
+            hiCut = hiCutParam ? hiCutParam->load() : 20000.0f;
+            lowCut = lowCutParam ? lowCutParam->load() : 20.0f;
+            mix = mixParam ? mixParam->load() : 0.5f;
+            
+            DBG("[SPACE DELAY MANUAL] Using APVTS parameters - timeMs: " << timeMs << ", feedback: " << feedback);
+        }
+        
+        // Set Space Delay parameters
+        FxDelay::Targets t;
+        t.timeMs = timeMs;
+        t.feedback = juce::jlimit(0.0f, 0.85f, feedback);
+        t.wowDepth = wowDepth;
+        t.wowRate = wowRate;
+        t.drive = drive;
+        t.hiCutHz = hiCut;
+        t.lowCutHz = lowCut;
+        t.mix = mix;
+        
+        spaceDelay.setTargets(t);
+        spaceDelay.process(buffer, buffer.getNumSamples());
     }
 }
 
