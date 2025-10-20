@@ -55,7 +55,7 @@ PluginEditor::PluginEditor (PluginProcessor& p)
         setupFxPowerButton();
         
         // Setup All Steps toggle
-        setupAllStepsToggle();
+        setupSpaceDelayAllStepsToggle();
         
         // Setup sequencer area
         setupSequencerArea();
@@ -2077,11 +2077,28 @@ void PluginEditor::setupKnobs()
                 }
                 
                 // If All Steps toggle is active, update all step snapshots
-                if (allStepsEnabled)
+                if (spaceDelayAllStepsEnabled)
                 {
-                    DBG("[All Steps] Knob " << i << " changed, allStepsEnabled=true, currentPage=" 
-                        << static_cast<int>(currentPage));
-                    updateAllStepSnapshots(i);
+                    DBG("[All Steps] Space Delay knob " << i << " changed, spaceDelayAllStepsEnabled=true");
+                    
+                    // Update all 16 step snapshots with the new value
+                    float value = knobs[i]->getValue();
+                    for (int step = 0; step < 16; ++step) {
+                        auto snapshot = processorRef.getSpaceDelaySafeSnapshot(step);
+                        switch (i) {
+                            case 0: snapshot.delay.timeMs = processorRef.getAPVTS().getParameter("timeMs")->convertFrom0to1(value); break;
+                            case 1: snapshot.delay.feedback = processorRef.getAPVTS().getParameter("feedback")->convertFrom0to1(value); break;
+                            case 2: snapshot.delay.wowDepth = processorRef.getAPVTS().getParameter("wowDepth")->convertFrom0to1(value); break;
+                            case 3: snapshot.delay.wowRate = processorRef.getAPVTS().getParameter("wowRate")->convertFrom0to1(value); break;
+                            case 4: snapshot.delay.saturation = processorRef.getAPVTS().getParameter("drive")->convertFrom0to1(value); break;
+                            case 5: snapshot.delay.highCut = processorRef.getAPVTS().getParameter("hiCut")->convertFrom0to1(value); break;
+                            case 6: snapshot.delay.lowCut = processorRef.getAPVTS().getParameter("lowCut")->convertFrom0to1(value); break;
+                            case 7: snapshot.delay.mix = processorRef.getAPVTS().getParameter("mix")->convertFrom0to1(value); break;
+                        }
+                        processorRef.setSpaceDelayStepSnapshot(step, snapshot);
+                    }
+                } else {
+                    DBG("[All Steps] Space Delay knob " << i << " changed, spaceDelayAllStepsEnabled=false, skipping All Steps update");
                 }
             };
         }
@@ -3568,6 +3585,11 @@ void PluginEditor::setupAllStepsToggle()
         allStepsEnabled = allStepsToggle->getToggleState();
         DBG("[UI] All Steps toggle: " + juce::String(allStepsEnabled ? "ON" : "OFF") + " toggleState=" + juce::String(allStepsToggle->getToggleState() ? 1 : 0));
         DBG("[UI] All Steps toggle clicked - current page: " + juce::String(static_cast<int>(currentPage)));
+        
+        // Test if All Steps is working by checking if we're on Space Delay page
+        if (currentPage == FxPageID::SpaceDelay) {
+            DBG("[UI] Space Delay All Steps toggle state: " + juce::String(allStepsEnabled ? "ON" : "OFF"));
+        }
     };
     
     // Create "All Steps" label
@@ -3611,23 +3633,99 @@ void PluginEditor::setupSequencerArea()
     int stepDiceSize = static_cast<int>(35 * 0.7); // 30% smaller than 35px = ~24px
     stepDiceButton->setBounds(stepArea.getX() + 75, stepArea.getY() + 5, stepDiceSize, stepDiceSize); // Moved down another 10px and left another 10px
     
-    // Set up step dice button callback to randomize all 16 step snapshots (UNIFIED for all effects)
+    // Set up step dice button callback to randomize all Space Delay step snapshots
     stepDiceButton->onClick = [this]() {
-        DBG("[UI] Step dice button clicked - randomizing ALL step snapshots for current effect");
+        DBG("[UI] Space Delay step dice button clicked - randomizing all step snapshots");
         
-        // Get current effect page
-        FxPageID currentEffect = currentPage;
-        
-        // Randomize all 16 steps for the current effect
         for (int step = 0; step < 16; ++step) {
-            randomizeEffectStepSnapshot(currentEffect, step);
+            auto snapshot = processorRef.getSpaceDelaySafeSnapshot(step);
+            
+            // Randomize each parameter (respecting lock states from knobLocked array)
+            if (!knobLocked[0]) {
+                snapshot.delay.timeMs = juce::Random::getSystemRandom().nextFloat() * (2000.0f - 10.0f) + 10.0f; // 10-2000ms
+            }
+            if (!knobLocked[1]) {
+                snapshot.delay.feedback = juce::Random::getSystemRandom().nextFloat() * 0.95f; // 0-0.95
+            }
+            if (!knobLocked[2]) {
+                snapshot.delay.wowDepth = juce::Random::getSystemRandom().nextFloat(); // 0-1
+            }
+            if (!knobLocked[3]) {
+                snapshot.delay.wowRate = juce::Random::getSystemRandom().nextFloat() * (8.0f - 0.1f) + 0.1f; // 0.1-8.0
+            }
+            if (!knobLocked[4]) {
+                snapshot.delay.saturation = juce::Random::getSystemRandom().nextFloat(); // 0-1 (drive)
+            }
+            if (!knobLocked[5]) {
+                snapshot.delay.highCut = juce::Random::getSystemRandom().nextFloat() * (20000.0f - 1000.0f) + 1000.0f; // 1000-20000Hz
+            }
+            if (!knobLocked[6]) {
+                snapshot.delay.lowCut = juce::Random::getSystemRandom().nextFloat() * (2000.0f - 20.0f) + 20.0f; // 20-2000Hz
+            }
+            if (!knobLocked[7]) {
+                snapshot.delay.mix = juce::Random::getSystemRandom().nextFloat(); // 0-1
+            }
+            
+            processorRef.setSpaceDelayStepSnapshot(step, snapshot);
         }
         
-        // Refresh UI to reflect changes at current selection
+        // Update UI to reflect changes
         updateSequencerUI();
         
         // Load the selected step's new values into the knobs
-        loadSelectedStepIntoKnobs(currentEffect);
+        int selectedStep = processorRef.getSpaceDelayUiSelectedStep();
+        auto updatedSnapshot = processorRef.getSpaceDelaySafeSnapshot(selectedStep);
+        
+        // Load snapshot values into knobs using normalized values and sendNotification for proper UI updates
+        if (knobs[0]) {
+            auto* param = processorRef.getAPVTS().getParameter("timeMs");
+            if (param) knobs[0]->setValue(param->convertTo0to1(updatedSnapshot.delay.timeMs), juce::sendNotification);
+        }
+        if (knobs[1]) {
+            auto* param = processorRef.getAPVTS().getParameter("feedback");
+            if (param) knobs[1]->setValue(param->convertTo0to1(updatedSnapshot.delay.feedback), juce::sendNotification);
+        }
+        if (knobs[2]) {
+            auto* param = processorRef.getAPVTS().getParameter("wowDepth");
+            if (param) knobs[2]->setValue(param->convertTo0to1(updatedSnapshot.delay.wowDepth), juce::sendNotification);
+        }
+        if (knobs[3]) {
+            auto* param = processorRef.getAPVTS().getParameter("wowRate");
+            if (param) knobs[3]->setValue(param->convertTo0to1(updatedSnapshot.delay.wowRate), juce::sendNotification);
+        }
+        if (knobs[4]) {
+            auto* param = processorRef.getAPVTS().getParameter("drive");
+            if (param) knobs[4]->setValue(param->convertTo0to1(updatedSnapshot.delay.saturation), juce::sendNotification);
+        }
+        if (knobs[5]) {
+            auto* param = processorRef.getAPVTS().getParameter("hiCut");
+            if (param) knobs[5]->setValue(param->convertTo0to1(updatedSnapshot.delay.highCut), juce::sendNotification);
+        }
+        if (knobs[6]) {
+            auto* param = processorRef.getAPVTS().getParameter("lowCut");
+            if (param) knobs[6]->setValue(param->convertTo0to1(updatedSnapshot.delay.lowCut), juce::sendNotification);
+        }
+        if (knobs[7]) {
+            auto* param = processorRef.getAPVTS().getParameter("mix");
+            if (param) knobs[7]->setValue(param->convertTo0to1(updatedSnapshot.delay.mix), juce::sendNotification);
+        }
+        
+        // Update value labels
+        for (int i = 0; i < 8; ++i) {
+            if (valueLabels[i] && knobs[i]) {
+                float value = knobs[i]->getValue();
+                juce::String valueText;
+                if (i == 0) valueText = juce::String(static_cast<int>(value)) + "ms";
+                else if (i == 1) valueText = juce::String(value, 2);
+                else if (i == 2) valueText = juce::String(value, 2);
+                else if (i == 3) valueText = juce::String(value, 2) + "Hz";
+                else if (i == 4) valueText = juce::String(value, 2);
+                else if (i == 5) valueText = juce::String(static_cast<int>(value)) + "Hz";
+                else if (i == 6) valueText = juce::String(static_cast<int>(value)) + "Hz";
+                else if (i == 7) valueText = juce::String(value, 2);
+                valueLabels[i]->setText(valueText, juce::dontSendNotification);
+            }
+        }
     };
     
     // Set dice image for step dice button
@@ -3659,7 +3757,7 @@ void PluginEditor::setupSequencerArea()
         
         // Set up click handler
         stepButtons[i]->onClick = [this, i]() {
-            onUnifiedStepButtonClicked(i);
+            onStepButtonClicked(i);
         };
     }
     
@@ -4345,8 +4443,8 @@ void PluginEditor::setupTabSystem()
     if (fxPowerButton) spaceDelayGroup.push_back(fxPowerButton.get());
     
     // Add sequencer components
-    if (allStepsToggle) spaceDelayGroup.push_back(allStepsToggle.get());
-    if (allStepsLabel) spaceDelayGroup.push_back(allStepsLabel.get());
+    if (spaceDelayAllStepsToggle) spaceDelayGroup.push_back(spaceDelayAllStepsToggle.get());
+    if (spaceDelayAllStepsLabel) spaceDelayGroup.push_back(spaceDelayAllStepsLabel.get());
     for (int i = 0; i < 16; ++i) {
         if (stepButtons[i]) spaceDelayGroup.push_back(stepButtons[i].get());
     }
@@ -4623,6 +4721,40 @@ void PluginEditor::showPage(FxPageID id)
         case EffectID::SpaceDelay:
             setVisibleVec(spaceDelayGroup, true);
             DBG("[ROUTER] Showing SpaceDelay UI for slot " << slotIndex);
+            
+            // Restore UI state from processor/APVTS parameters
+            {
+                auto* fxEnabledParam = processorRef.getAPVTS().getRawParameterValue("effectEnabled");
+                fxAreaEnabled = fxEnabledParam ? (fxEnabledParam->load() > 0.5f) : true;
+                if (fxPowerButton) {
+                    fxPowerButton->setToggleState(fxAreaEnabled, juce::dontSendNotification);
+                }
+
+                // Step power reflects processor sequencer enabled state
+                stepAreaEnabled = processorRef.getSpaceDelaySeqState().enabled.load();
+                if (stepPowerButton) {
+                    stepPowerButton->setToggleState(stepAreaEnabled, juce::dontSendNotification);
+                }
+
+                // Update All Steps toggle state
+                if (spaceDelayAllStepsToggle) {
+                    spaceDelayAllStepsToggle->setToggleState(spaceDelayAllStepsEnabled, juce::dontSendNotification);
+                }
+
+                updateFxAreaVisibility();
+                updateStepAreaVisibility();
+            }
+            
+            // Trigger initial value label updates (8 knobs)
+            for (int i = 0; i < 8; ++i) {
+                if (knobs[i]) {
+                    knobs[i]->onValueChange();
+                }
+            }
+            
+            // Update sequencer UI to show first step as selected
+            processorRef.setSpaceDelaySelectedStep(0);
+            updateSequencerUI();
             break;
         case EffectID::AutoPan:
             setVisibleVec(pannerGroup, true);
@@ -5456,6 +5588,53 @@ void PluginEditor::setupAutoPanAllStepsToggle()
     autopanAllStepsLabel->setBounds(effectArea.getX() + effectArea.getWidth()/2 + buttonSize/2 + 5 + 30, effectArea.getY() + 1, 80, 24); // Moved up 4px from 5 to 1
     
     DBG("[UI] AutoPan All Steps toggle setup complete");
+}
+
+void PluginEditor::setupSpaceDelayAllStepsToggle()
+{
+    DBG("[UI] Setting up Space Delay All Steps toggle...");
+    
+    // Effect area bounds (EXACT same as delay page)
+    auto effectArea = juce::Rectangle<int>(25, 54, 413, 296);
+    
+    // Create "All Steps" toggle button - using AllStepsToggleButton like delay page
+    spaceDelayAllStepsToggle = std::make_unique<AllStepsToggleButton>();
+    addAndMakeVisible(spaceDelayAllStepsToggle.get());
+    spaceDelayAllStepsToggle->setVisible(false); // Initially hidden until Space Delay page is selected
+    
+    // Position button in EXACT same location as delay page
+    const int buttonSize = 29; // 24 * 1.2 = 28.8, rounded to 29
+    spaceDelayAllStepsToggle->setBounds(effectArea.getX() + effectArea.getWidth()/2 - buttonSize/2 + 30, effectArea.getY() - 1, buttonSize, buttonSize);
+    
+    // Set up images (EXACT same as delay page)
+    if (assets.stepTopInactive != nullptr && assets.stepTopActive != nullptr)
+    {
+        static_cast<AllStepsToggleButton*>(spaceDelayAllStepsToggle.get())->setImages(
+            assets.stepTopInactive->createCopy(),
+            assets.stepTopActive->createCopy()
+        );
+    }
+    
+    // Set up click handler (EXACT same as delay page)
+    spaceDelayAllStepsToggle->setToggleState(false, juce::dontSendNotification);
+    spaceDelayAllStepsToggle->onClick = [this]() {
+        spaceDelayAllStepsEnabled = spaceDelayAllStepsToggle->getToggleState();
+        DBG("[UI] Space Delay All Steps toggle: " + juce::String(spaceDelayAllStepsEnabled ? "ON" : "OFF") + " toggleState=" + juce::String(spaceDelayAllStepsToggle->getToggleState() ? 1 : 0));
+    };
+    
+    // Create "All Steps" label
+    spaceDelayAllStepsLabel = std::make_unique<juce::Label>();
+    spaceDelayAllStepsLabel->setText("All Steps", juce::dontSendNotification);
+    spaceDelayAllStepsLabel->setFont(juce::Font(14.4f, juce::Font::bold)); // 12.0f * 1.2 = 14.4f (20% bigger)
+    spaceDelayAllStepsLabel->setColour(juce::Label::textColourId, juce::Colours::white);
+    spaceDelayAllStepsLabel->setJustificationType(juce::Justification::centredLeft);
+    addAndMakeVisible(spaceDelayAllStepsLabel.get());
+    spaceDelayAllStepsLabel->setVisible(false); // Initially hidden until Space Delay page is selected
+    
+    // Position label to the right of the button, moved 30px right, moved up 4px
+    spaceDelayAllStepsLabel->setBounds(effectArea.getX() + effectArea.getWidth()/2 + buttonSize/2 + 5 + 30, effectArea.getY() + 1, 80, 24); // Moved up 4px from 5 to 1
+    
+    DBG("[UI] Space Delay All Steps toggle setup complete");
 }
 
 void PluginEditor::setupAutoPanStepPowerButton()
@@ -12311,8 +12490,25 @@ void PluginEditor::loadSelectedStepIntoKnobs(FxPageID effect)
 
 void PluginEditor::onUnifiedStepButtonClicked(int stepIndex)
 {
-    DBG("[UI] Unified step button " << stepIndex << " clicked for effect " << static_cast<int>(currentPage));
+    // Handle Space Delay specifically since it uses global knobs and All Steps toggle
+    if (currentPage == FxPageID::SpaceDelay) {
+        // Save current step's snapshot before switching (if All Steps is OFF)
+        if (!allStepsEnabled) {
+            saveCurrentStepSnapshot();
+        }
+        
+        // Update selected step in processor
+        processorRef.setSpaceDelaySelectedStep(stepIndex);
+        
+        // Update UI to show which step is selected
+        updateSequencerUI();
+        
+        // Load the snapshot for this step into the knobs (without triggering All Steps)
+        loadSelectedStepIntoKnobs(FxPageID::SpaceDelay);
+        return;
+    }
     
+    // For other effects, use the generic approach
     // Save current step's snapshot before switching (if All Steps is OFF)
     if (!allStepsEnabled) {
         saveCurrentStepSnapshot();

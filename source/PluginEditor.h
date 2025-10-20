@@ -414,8 +414,8 @@ public:
             auto bounds = getLocalBounds().toFloat();
             const float cornerRadius = 1.0f; // Smaller corner radius for small bar
             
-            // Background (grey)
-            g.setColour(juce::Colour(0xFF666666));
+            // Background (white)
+            g.setColour(juce::Colour(0xFFFFFFFF));
             g.fillRoundedRectangle(bounds, cornerRadius);
             
             // Gain reduction bar (orange) - use smoothed value directly
@@ -682,6 +682,11 @@ public:
     std::unique_ptr<AllStepsToggleButton> autopanAllStepsToggle;
     std::unique_ptr<juce::Label> autopanAllStepsLabel;
     bool autopanAllStepsEnabled = false;
+    
+    // Space Delay All Steps toggle
+    std::unique_ptr<AllStepsToggleButton> spaceDelayAllStepsToggle;
+    std::unique_ptr<juce::Label> spaceDelayAllStepsLabel;
+    bool spaceDelayAllStepsEnabled = false;
     
     // Dirt page components (clone of Delay page layout)
     std::array<std::unique_ptr<CustomKnob>, 8> dirtKnobs;
@@ -1001,6 +1006,7 @@ public:
         void setupAutoPanEffectsArea();
         void setupAutoPanSequencerArea();
         void setupAutoPanAllStepsToggle();
+        void setupSpaceDelayAllStepsToggle();
         
         // Dirt page setup methods
         void setupDirtKnobs();
