@@ -506,6 +506,52 @@ void PluginProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
     compressEngine.setWet(1.0f);          // Default wet level
     compressEngine.setEnabled(true);      // Enable compressor
     
+    // Force APVTS parameters to default values to ensure they're properly initialized
+    auto* compressEnabledParam = valueTreeState.getParameter("compressEnabled");
+    if (compressEnabledParam) {
+        compressEnabledParam->setValueNotifyingHost(1.0f); // true
+    }
+    
+    auto* thresholdParam = valueTreeState.getParameter("compressThreshold");
+    if (thresholdParam) {
+        thresholdParam->setValueNotifyingHost(thresholdParam->convertTo0to1(-20.0f));
+    }
+    
+    auto* attackParam = valueTreeState.getParameter("compressAttack");
+    if (attackParam) {
+        attackParam->setValueNotifyingHost(attackParam->convertTo0to1(5.0f));
+    }
+    
+    auto* releaseParam = valueTreeState.getParameter("compressRelease");
+    if (releaseParam) {
+        releaseParam->setValueNotifyingHost(releaseParam->convertTo0to1(50.0f));
+    }
+    
+    auto* ratioParam = valueTreeState.getParameter("compressRatio");
+    if (ratioParam) {
+        ratioParam->setValueNotifyingHost(ratioParam->convertTo0to1(4.0f));
+    }
+    
+    auto* driveParam = valueTreeState.getParameter("compressDrive");
+    if (driveParam) {
+        driveParam->setValueNotifyingHost(driveParam->convertTo0to1(0.0f));
+    }
+    
+    auto* lofiParam = valueTreeState.getParameter("compressLofi");
+    if (lofiParam) {
+        lofiParam->setValueNotifyingHost(0.0f); // 0-1 range, 0.0f is default
+    }
+    
+    auto* makeupGainParam = valueTreeState.getParameter("compressMakeupGain");
+    if (makeupGainParam) {
+        makeupGainParam->setValueNotifyingHost(makeupGainParam->convertTo0to1(0.0f));
+    }
+    
+    auto* wetParam = valueTreeState.getParameter("compressWet");
+    if (wetParam) {
+        wetParam->setValueNotifyingHost(1.0f); // 0-1 range, 1.0f is default
+    }
+    
     // Prepare output visualizer buffer (store ~1 second of downsampled audio)
     const int bufferSize = (int)(sampleRate / downsampleRate); // ~1 second at downsample rate
     outputVisualizerBuffer.prepare(bufferSize);
@@ -3407,6 +3453,14 @@ void PluginProcessor::processCompressEffect(juce::AudioBuffer<float>& buffer)
     // Read COMPRESS+ parameters from APVTS
     auto* compressEnabledParam = valueTreeState.getRawParameterValue("compressEnabled");
     bool isCompressEnabled = compressEnabledParam ? (compressEnabledParam->load() > 0.5f) : false;
+    
+    // Debug logging for AU troubleshooting
+    static int debugCounter = 0;
+    if (debugCounter++ % 1000 == 0) { // Print every 1000 calls to avoid spam
+        DBG("[CompressEngine] compressEnabledParam: " << (compressEnabledParam ? "EXISTS" : "NULL") 
+            << ", value: " << (compressEnabledParam ? juce::String(compressEnabledParam->load()) : "N/A")
+            << ", isCompressEnabled: " << (isCompressEnabled ? "true" : "false"));
+    }
     
     if (!isCompressEnabled) return;
     
