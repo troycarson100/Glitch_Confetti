@@ -65,15 +65,8 @@ public:
     {
         auto bounds = getLocalBounds().toFloat();
         
-        // === BACKGROUND ===
-        // Dark charcoal with soft vignette
-        juce::ColourGradient bgGradient(
-            juce::Colour(0xFF1A1A1A), bounds.getCentreX(), bounds.getCentreY(),
-            juce::Colour(0xFF0F0F0F), bounds.getCentreX(), bounds.getBottom(),
-            true
-        );
-        g.setGradientFill(bgGradient);
-        g.fillRect(bounds);
+        // No background - transparent
+        // Background removed to show underlying UI
         
         // === DRAWING BOUNDS with margins to prevent cutoff ===
         // Add generous margins to keep all content within the visible frame

@@ -28,14 +28,8 @@ public:
     {
         auto bounds = getLocalBounds().toFloat();
         
-        // Background - subtle dark gradient
-        juce::ColourGradient bgGradient(
-            juce::Colour(0xFF1A1A1A), bounds.getX(), bounds.getY(),
-            juce::Colour(0xFF0F0F0F), bounds.getX(), bounds.getBottom(),
-            false
-        );
-        g.setGradientFill(bgGradient);
-        g.fillRect(bounds);
+        // No background - transparent
+        // Background removed to show underlying UI
         
         // Draw center line (subtle reference)
         const float centerY = bounds.getCentreY();

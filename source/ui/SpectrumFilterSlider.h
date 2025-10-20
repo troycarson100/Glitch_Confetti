@@ -19,9 +19,8 @@ public:
     {
         auto bounds = getLocalBounds().toFloat();
         
-        // Background bar
-        g.setColour(juce::Colour(0xFF1A1A1A));
-        g.fillRoundedRectangle(bounds, 3.0f);
+        // No background - transparent
+        // Background removed to show underlying UI
         
         // Calculate positions (log scale 20 Hz to 20 kHz)
         float lowCutX = freqToX(lowCutFreq, bounds);
