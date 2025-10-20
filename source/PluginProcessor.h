@@ -294,6 +294,7 @@ public:
     const SeqState& getDubDelaySeqState() const { return dubdelaySeq; }
     int getDubDelayPlayingStep() const noexcept { return dubdelaySeq.playingStep.load(); }
     int getDubDelayCurrentStep() const noexcept { return dubdelaySeq.currentStep.load(); }
+    int getDubDelayUiSelectedStep() const noexcept { return dubdelayUiSelectedStep.load(); }
     void setDubDelaySelectedStep(int step) noexcept { dubdelayUiSelectedStep.store(step); }
     void setDubDelaySequencerEnabled(bool enabled) noexcept {
         dubdelaySeq.enabled.store(enabled);

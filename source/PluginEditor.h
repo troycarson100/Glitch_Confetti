@@ -318,8 +318,8 @@ public:
             auto bounds = getLocalBounds().toFloat();
             const float cornerRadius = 2.0f;
             
-            // Background (grey)
-            g.setColour(juce::Colour(0xFF666666));
+            // Background (white)
+            g.setColour(juce::Colour(0xFFFFFFFF));
             g.fillRoundedRectangle(bounds, cornerRadius);
             
             // Gain reduction bar (orange) - use smoothed value directly

@@ -2036,7 +2036,7 @@ void PluginEditor::setupKnobs()
             auto* param = processorRef.getParameters().getUnchecked(i);
             
             // All knobs use normalized 0-1 range for consistent UI behavior
-            knobs[i]->setRange(0.0, 1.0, 0.001);
+                knobs[i]->setRange(0.0, 1.0, 0.001);
             
             // Set initial value from parameter (already normalized)
             if (auto* floatParam = dynamic_cast<juce::AudioParameterFloat*>(param))
@@ -2046,10 +2046,10 @@ void PluginEditor::setupKnobs()
             else
             {
                 knobs[i]->setValue(0.5, juce::dontSendNotification);
-            }
-            
+        }
+        
             // Add listener to update snapshots when knob changes
-            knobs[i]->onValueChange = [this, i]() {
+        knobs[i]->onValueChange = [this, i]() {
                 if (i == 0 && timeSyncEnabled)
                 {
                     // Use full throw to select division; update parameter directly without changing slider value
@@ -2103,12 +2103,12 @@ void PluginEditor::setupKnobs()
             };
         }
         
-            // Set images
-            if (assets.knobRing != nullptr)
-                knobs[i]->setRingImage(assets.knobRing->createCopy());
-            if (assets.knobInside != nullptr)
-                knobs[i]->setInnerImage(assets.knobInside->createCopy());
-        
+        // Set images
+        if (assets.knobRing != nullptr)
+            knobs[i]->setRingImage(assets.knobRing->createCopy());
+        if (assets.knobInside != nullptr)
+            knobs[i]->setInnerImage(assets.knobInside->createCopy());
+    
         // Position knob with special handling for top and bottom rows
         int x = startX + (i % 4) * (knobSize + knobSpacing);
         int y = startY + (i / 4) * (knobSize + 20);
@@ -2189,63 +2189,63 @@ void PluginEditor::setupKnobs()
             // No dice click; replaced by lock
     }
     
-        DBG("[UI] Created " << 8 << " knobs with labels and indicator bars");
-    }
+    DBG("[UI] Created " << 8 << " knobs with labels and indicator bars");
+}
 
     //==============================================================================
     // Master Knobs Setup
     //==============================================================================
+
+void PluginEditor::setupMasterKnobs()
+{
+    DBG("[UI] Setting up master knobs...");
     
-    void PluginEditor::setupMasterKnobs()
-    {
-        DBG("[UI] Setting up master knobs...");
-        
-        // Master knob parameters
-        std::vector<juce::String> masterKnobNames = {
-            "Input", "Dry/Wet", "Output"
-        };
-        
-        // Master knob parameters from APVTS (indices 8, 9, 10)
-        std::vector<juce::String> masterParamNames = {
-            "masterInput", "masterDryWet", "masterOutput"
-        };
-        
-        // Master area bounds (positioned in master area)
-        auto masterArea = juce::Rectangle<int>(453, 54, 413, 296);
-        
-        // Full master area for preset browser overlay (separate from knob positioning)
-        auto fullMasterArea = juce::Rectangle<int>(460, 54, 495, 460);
-        
-        // Create "MASTER" title in master area (top-left corner, 10px right)
-        masterTitle = std::make_unique<juce::Label>();
-        masterTitle->setText("MASTER", juce::dontSendNotification);
-        masterTitle->setFont(juce::Font(23.5f, juce::Font::bold)); // 15% smaller: 27.648 * 0.85 = 23.5
-        masterTitle->setColour(juce::Label::textColourId, juce::Colours::white);
-        masterTitle->setJustificationType(juce::Justification::centredLeft);
-        addAndMakeVisible(masterTitle.get());
-        masterTitle->setBounds(masterArea.getX() + 20, masterArea.getY() + 5, 150, 30); // 20px from left, moved down 5px
-        masterTitle->toFront(false);
-        
-        // Create Master Dice Button (randomizes all effects, all steps) 
-        masterDiceButton = std::make_unique<CustomDiceButton>();
-        addAndMakeVisible(masterDiceButton.get());
-        
-        if (assets.diceLarge) {
-            masterDiceButton->setDiceImage(assets.diceLarge->createCopy());
+    // Master knob parameters
+    std::vector<juce::String> masterKnobNames = {
+        "Input", "Dry/Wet", "Output"
+    };
+    
+    // Master knob parameters from APVTS (indices 8, 9, 10)
+    std::vector<juce::String> masterParamNames = {
+        "masterInput", "masterDryWet", "masterOutput"
+    };
+    
+    // Master area bounds (positioned in master area)
+    auto masterArea = juce::Rectangle<int>(453, 54, 413, 296);
+    
+    // Full master area for preset browser overlay (separate from knob positioning)
+    auto fullMasterArea = juce::Rectangle<int>(460, 54, 495, 460);
+    
+    // Create "MASTER" title in master area (top-left corner, 10px right)
+    masterTitle = std::make_unique<juce::Label>();
+    masterTitle->setText("MASTER", juce::dontSendNotification);
+    masterTitle->setFont(juce::Font(23.5f, juce::Font::bold)); // 15% smaller: 27.648 * 0.85 = 23.5
+    masterTitle->setColour(juce::Label::textColourId, juce::Colours::white);
+    masterTitle->setJustificationType(juce::Justification::centredLeft);
+    addAndMakeVisible(masterTitle.get());
+    masterTitle->setBounds(masterArea.getX() + 20, masterArea.getY() + 5, 150, 30); // 20px from left, moved down 5px
+    masterTitle->toFront(false);
+    
+    // Create Master Dice Button (randomizes all effects, all steps) 
+    masterDiceButton = std::make_unique<CustomDiceButton>();
+    addAndMakeVisible(masterDiceButton.get());
+    
+    if (assets.diceLarge) {
+        masterDiceButton->setDiceImage(assets.diceLarge->createCopy());
+    }
+    
+    masterDiceButton->onClick = [this]() {
+        DBG("[UI] Master dice clicked");
+        if (randomizationManager) {
+            randomizationManager->requestRandomizeAllActivePages();
         }
-        
-        masterDiceButton->onClick = [this]() {
-            DBG("[UI] Master dice clicked");
-            if (randomizationManager) {
-                randomizationManager->requestRandomizeAllActivePages();
-            }
-        };
-        
-        // Position dice button 20px left from before (was 160, now 140), 20% smaller
-        const int diceSizeMaster = 26; // 20% smaller: 32 * 0.8 = 25.6 ≈ 26
-        masterDiceButton->setBounds(
-            masterArea.getX() + 140,  // 20px left from before
-            masterArea.getY() + 6,    // Aligned with MASTER title
+    };
+    
+    // Position dice button 20px left from before (was 160, now 140), 20% smaller
+    const int diceSizeMaster = 26; // 20% smaller: 32 * 0.8 = 25.6 ≈ 26
+    masterDiceButton->setBounds(
+        masterArea.getX() + 140,  // 20px left from before
+        masterArea.getY() + 6,    // Aligned with MASTER title
             diceSizeMaster, diceSizeMaster
         );
         
@@ -4059,7 +4059,7 @@ void PluginEditor::updateAllStepSnapshots(int knobIndex)
             if (isSpaceDelayPage) {
                 processorRef.setSpaceDelayStepSnapshot(step, snapshot);
             } else {
-                processorRef.setStepSnapshot(step, snapshot);
+            processorRef.setStepSnapshot(step, snapshot);
             }
         }
         
@@ -9469,18 +9469,18 @@ void PluginEditor::onSlicerStepButtonClicked(int stepIndex)
     StepSnapshot snapshot = processorRef.getSlicerSafeSnapshot(stepIndex);
     
     if (!slicerAllStepsEnabled) {
-        // Update knobs with values from the snapshot
-        if (slicerKnobs[0]) slicerKnobs[0]->setValue(snapshot.slicer.pattern, juce::dontSendNotification);
-        if (slicerKnobs[1]) slicerKnobs[1]->setValue(snapshot.slicer.division, juce::dontSendNotification);
-        if (slicerKnobs[2]) slicerKnobs[2]->setValue(snapshot.slicer.offset, juce::dontSendNotification);
-        if (slicerKnobs[3]) slicerKnobs[3]->setValue(snapshot.slicer.shape, juce::dontSendNotification);
-        if (slicerKnobs[4]) slicerKnobs[4]->setValue(snapshot.slicer.releaseMs, juce::dontSendNotification);
-        // Knob 5 (Mix) is global, not per-step
-        
-        // Trigger value change callbacks to update labels
-        for (int i = 0; i < 5; ++i) {
-            if (slicerKnobs[i]) {
-                slicerKnobs[i]->onValueChange();
+    // Update knobs with values from the snapshot
+    if (slicerKnobs[0]) slicerKnobs[0]->setValue(snapshot.slicer.pattern, juce::dontSendNotification);
+    if (slicerKnobs[1]) slicerKnobs[1]->setValue(snapshot.slicer.division, juce::dontSendNotification);
+    if (slicerKnobs[2]) slicerKnobs[2]->setValue(snapshot.slicer.offset, juce::dontSendNotification);
+    if (slicerKnobs[3]) slicerKnobs[3]->setValue(snapshot.slicer.shape, juce::dontSendNotification);
+    if (slicerKnobs[4]) slicerKnobs[4]->setValue(snapshot.slicer.releaseMs, juce::dontSendNotification);
+    // Knob 5 (Mix) is global, not per-step
+    
+    // Trigger value change callbacks to update labels
+    for (int i = 0; i < 5; ++i) {
+        if (slicerKnobs[i]) {
+            slicerKnobs[i]->onValueChange();
             }
         }
     }
@@ -9796,7 +9796,75 @@ void PluginEditor::setupDubDelayKnobs()
         // Add value change callback to update value label
         dubdelayKnobs[i]->onValueChange = [this, i]() {
             if (dubdelayKnobs[i] != nullptr) {
-                updateDubDelayParameterFromKnob(i);
+                // Skip if loading from snapshot (prevents circular updates during randomization)
+                if (isLoadingFromSnapshot.load())
+                    return;
+                
+                // Update current step snapshot with new value
+                float value = dubdelayKnobs[i]->getValue();
+                processorRef.updateDubDelayCurrentStepSnapshot(i, value);
+                
+                // If All Steps toggle is active, update all step snapshots
+                if (dubdelayAllStepsEnabled) {
+                    DBG("[All Steps] Dub Delay knob " << i << " changed, dubdelayAllStepsEnabled=true");
+                    
+                    // Convert knob value to actual parameter value using APVTS parameter ranges
+                    float actualValue = value;
+                    switch (i) {
+                        case 0: { // Time - convert from normalized to milliseconds (1-2000)
+                            auto* param = processorRef.getAPVTS().getParameter("dubTimeMs");
+                            if (param) actualValue = param->convertFrom0to1(value);
+                            break;
+                        }
+                        case 1: { // Feedback - convert from normalized to feedback amount (0-0.98)
+                            auto* param = processorRef.getAPVTS().getParameter("dubFeedback");
+                            if (param) actualValue = param->convertFrom0to1(value);
+                            break;
+                        }
+                        case 2: { // Tone - convert from normalized to frequency (200-20000 Hz)
+                            auto* param = processorRef.getAPVTS().getParameter("dubToneHz");
+                            if (param) actualValue = param->convertFrom0to1(value);
+                            break;
+                        }
+                        case 3: { // Drive - already normalized (0-1)
+                            actualValue = value;
+                            break;
+                        }
+                        case 4: { // PingPong - boolean from normalized
+                            actualValue = value > 0.5f ? 1.0f : 0.0f;
+                            break;
+                        }
+                        case 5: { // WowFlutter - already normalized (0-1)
+                            actualValue = value;
+                            break;
+                        }
+                        case 6: { // RegenDamp - already normalized (0-1)
+                            actualValue = value;
+                            break;
+                        }
+                        case 7: { // Mix - already normalized (0-1)
+                            actualValue = value;
+                            break;
+                        }
+                    }
+                    
+                    for (int step = 0; step < 16; ++step) {
+                        auto snapshot = processorRef.getDubDelaySafeSnapshot(step);
+                        switch (i) {
+                            case 0: snapshot.dubdelay.timeMs = actualValue; break;
+                            case 1: snapshot.dubdelay.feedback = actualValue; break;
+                            case 2: snapshot.dubdelay.toneHz = actualValue; break;
+                            case 3: snapshot.dubdelay.drive = actualValue; break;
+                            case 4: snapshot.dubdelay.pingPong = actualValue > 0.5f; break;
+                            case 5: snapshot.dubdelay.wowFlutter = actualValue; break;
+                            case 6: snapshot.dubdelay.regenDamp = actualValue; break;
+                            case 7: snapshot.dubdelay.mix = actualValue; break;
+                        }
+                        processorRef.setDubDelayStepSnapshot(step, snapshot);
+                    }
+                } else {
+                    DBG("[All Steps] Dub Delay knob " << i << " changed, dubdelayAllStepsEnabled=false, skipping All Steps update");
+                }
                 
                 // Update value label
                 if (dubdelayValueLabels[i]) {
@@ -10200,7 +10268,78 @@ void PluginEditor::setupDubDelaySequencerArea()
         dubdelayStepDiceButton->setDiceImage(assets.diceLarge->createCopy());
     }
     dubdelayStepDiceButton->onClick = [this]() {
-        randomizeDubDelayKnobValues();
+        DBG("[UI] Dub Delay step dice button clicked - randomizing all step snapshots");
+        
+        for (int step = 0; step < 16; ++step) {
+            auto snapshot = processorRef.getDubDelaySafeSnapshot(step);
+            
+            // Randomize all Dub Delay parameters for this step (respecting lock states)
+            // Only randomize if lock button is NOT toggled (locked)
+            if (!dubdelayKnobLocked[0]) {
+                snapshot.dubdelay.timeMs = 100.0f + juce::Random::getSystemRandom().nextFloat() * 1400.0f; // 100-1500ms
+            }
+            if (!dubdelayKnobLocked[1]) {
+                snapshot.dubdelay.feedback = 0.2f + juce::Random::getSystemRandom().nextFloat() * 0.65f; // 0.2-0.85
+            }
+            if (!dubdelayKnobLocked[2]) {
+                snapshot.dubdelay.toneHz = 1000.0f + juce::Random::getSystemRandom().nextFloat() * 14000.0f; // 1-15kHz
+            }
+            if (!dubdelayKnobLocked[3]) {
+                snapshot.dubdelay.drive = juce::Random::getSystemRandom().nextFloat() * 0.6f; // 0-0.6
+            }
+            if (!dubdelayKnobLocked[4]) {
+                snapshot.dubdelay.pingPong = juce::Random::getSystemRandom().nextBool();
+            }
+            if (!dubdelayKnobLocked[5]) {
+                snapshot.dubdelay.wowFlutter = juce::Random::getSystemRandom().nextFloat() * 0.5f; // 0-0.5
+            }
+            if (!dubdelayKnobLocked[6]) {
+                snapshot.dubdelay.regenDamp = juce::Random::getSystemRandom().nextFloat() * 0.6f; // 0-0.6
+            }
+            if (!dubdelayKnobLocked[7]) {
+                snapshot.dubdelay.mix = 0.2f + juce::Random::getSystemRandom().nextFloat() * 0.6f; // 0.2-0.8
+            }
+            
+            processorRef.setDubDelayStepSnapshot(step, snapshot);
+        }
+        
+        // Reload current step's values into knobs
+        int selectedStep = processorRef.getDubDelayUiSelectedStep();
+        auto updatedSnapshot = processorRef.getDubDelaySafeSnapshot(selectedStep);
+        
+        // Load snapshot values into knobs using normalized values and sendNotification for proper UI updates
+        if (dubdelayKnobs[0]) {
+            auto* param = processorRef.getAPVTS().getParameter("dubTimeMs");
+            if (param) dubdelayKnobs[0]->setValue(param->convertTo0to1(updatedSnapshot.dubdelay.timeMs), juce::sendNotification);
+        }
+        if (dubdelayKnobs[1]) {
+            auto* param = processorRef.getAPVTS().getParameter("dubFeedback");
+            if (param) dubdelayKnobs[1]->setValue(param->convertTo0to1(updatedSnapshot.dubdelay.feedback), juce::sendNotification);
+        }
+        if (dubdelayKnobs[2]) {
+            auto* param = processorRef.getAPVTS().getParameter("dubToneHz");
+            if (param) dubdelayKnobs[2]->setValue(param->convertTo0to1(updatedSnapshot.dubdelay.toneHz), juce::sendNotification);
+        }
+        if (dubdelayKnobs[3]) {
+            dubdelayKnobs[3]->setValue(updatedSnapshot.dubdelay.drive, juce::sendNotification);
+        }
+        if (dubdelayKnobs[4]) {
+            dubdelayKnobs[4]->setValue(updatedSnapshot.dubdelay.pingPong ? 1.0f : 0.0f, juce::sendNotification);
+        }
+        if (dubdelayKnobs[5]) {
+            dubdelayKnobs[5]->setValue(updatedSnapshot.dubdelay.wowFlutter, juce::sendNotification);
+        }
+        if (dubdelayKnobs[6]) {
+            dubdelayKnobs[6]->setValue(updatedSnapshot.dubdelay.regenDamp, juce::sendNotification);
+        }
+        if (dubdelayKnobs[7]) {
+            dubdelayKnobs[7]->setValue(updatedSnapshot.dubdelay.mix, juce::sendNotification);
+        }
+        
+        // Update the sequencer UI to reflect the changes
+        updateDubDelaySequencerUI();
+        
+        DBG("[UI] Dub Delay randomization complete - all 16 steps randomized");
     };
     
     // Step power button (match Slicer)
@@ -10422,10 +10561,8 @@ void PluginEditor::updateDubDelayParameterFromKnob(int knobIndex)
     
     float value = dubdelayKnobs[knobIndex]->getValue();
     
-    // Update snapshot if All Steps is OFF
-    if (!dubdelayAllStepsEnabled) {
-        updateDubDelayCurrentStepSnapshot(knobIndex, value);
-    }
+    // Update current step snapshot (All Steps logic is now handled in knob change handler)
+    updateDubDelayCurrentStepSnapshot(knobIndex, value);
 }
 
 void PluginEditor::updateDubDelayCurrentStepSnapshot(int knobIndex, float value)
@@ -10461,6 +10598,24 @@ void PluginEditor::onDubDelayStepButtonClicked(int stepIndex)
     if (dubdelayKnobs[5]) dubdelayKnobs[5]->setValue(snapshot.dubdelay.wowFlutter, juce::dontSendNotification);
     if (dubdelayKnobs[6]) dubdelayKnobs[6]->setValue(snapshot.dubdelay.regenDamp, juce::dontSendNotification);
     // Mix (knob 7) is global - load from APVTS, not snapshot
+    
+    // Manually update value labels since dontSendNotification prevents onValueChange callbacks
+    for (int i = 0; i < 7; ++i) { // Only update first 7 knobs (Mix is global)
+        if (dubdelayKnobs[i] && dubdelayValueLabels[i]) {
+            float value = dubdelayKnobs[i]->getValue();
+            juce::String valueText;
+            switch (i) {
+                case 0: valueText = juce::String(int(value)) + "ms"; break; // Time
+                case 1: valueText = juce::String(int(value * 100)) + "%"; break; // Feedback
+                case 2: valueText = juce::String(int(value)) + "Hz"; break; // Tone
+                case 3: valueText = juce::String(int(value * 100)) + "%"; break; // Drive
+                case 4: valueText = snapshot.dubdelay.pingPong ? "On" : "Off"; break; // PingPong
+                case 5: valueText = juce::String(int(value * 100)) + "%"; break; // WowFlutter
+                case 6: valueText = juce::String(int(value * 100)) + "%"; break; // RegenDamp
+            }
+            dubdelayValueLabels[i]->setText(valueText, juce::dontSendNotification);
+        }
+    }
     
     dubdelayAllStepsEnabled = wasAllSteps;
 }
@@ -11657,6 +11812,10 @@ void PluginEditor::setupPhaseBloomKnobs()
         
         // Add value change callback to update value label and indicator bar
         phaseBloomKnobs[i]->onValueChange = [this, i]() {
+            // Skip if loading from snapshot (prevents circular updates during randomization)
+            if (isLoadingFromSnapshot.load())
+                return;
+            
             if (phaseBloomKnobs[i] && phaseBloomValueLabels[i] && phaseBloomIndicatorBars[i]) {
                 float value = phaseBloomKnobs[i]->getValue();
                 juce::String valueText;
@@ -11677,25 +11836,74 @@ void PluginEditor::setupPhaseBloomKnobs()
                 // Update indicator bar
                 phaseBloomIndicatorBars[i]->setValue(value);
                 
-                // Update parameter in processor
-                updatePhaseBloomParameterFromKnob(i);
+                // Update current step snapshot with new value
+                processorRef.updatePhaseBloomCurrentStepSnapshot(i, value);
                 
-                // Update all steps if enabled
+                // If All Steps toggle is active, update all step snapshots
                 if (phaseBloomAllStepsEnabled) {
+                    DBG("[All Steps] PhaseBloom knob " << i << " changed, phaseBloomAllStepsEnabled=true");
+                    
+                    // Convert knob value to actual parameter value using APVTS parameter ranges
+                    float actualValue = value;
+                    switch (i) {
+                        case 0: { // Depth
+                            auto* param = processorRef.getAPVTS().getParameter("phasebloomDepth");
+                            if (param) actualValue = param->convertFrom0to1(value);
+                            break;
+                        }
+                        case 1: { // Rate
+                            auto* param = processorRef.getAPVTS().getParameter("phasebloomRate");
+                            if (param) actualValue = param->convertFrom0to1(value);
+                            break;
+                        }
+                        case 2: { // Feedback
+                            auto* param = processorRef.getAPVTS().getParameter("phasebloomFeedback");
+                            if (param) actualValue = param->convertFrom0to1(value);
+                            break;
+                        }
+                        case 3: { // Center
+                            auto* param = processorRef.getAPVTS().getParameter("phasebloomCenter");
+                            if (param) actualValue = param->convertFrom0to1(value);
+                            break;
+                        }
+                        case 4: { // Bloom
+                            auto* param = processorRef.getAPVTS().getParameter("phasebloomBloom");
+                            if (param) actualValue = param->convertFrom0to1(value);
+                            break;
+                        }
+                        case 5: { // Spread
+                            auto* param = processorRef.getAPVTS().getParameter("phasebloomSpread");
+                            if (param) actualValue = param->convertFrom0to1(value);
+                            break;
+                        }
+                        case 6: { // Resonance
+                            auto* param = processorRef.getAPVTS().getParameter("phasebloomResonance");
+                            if (param) actualValue = param->convertFrom0to1(value);
+                            break;
+                        }
+                        case 7: { // Mix
+                            auto* param = processorRef.getAPVTS().getParameter("phasebloomMix");
+                            if (param) actualValue = param->convertFrom0to1(value);
+                            break;
+                        }
+                    }
+                    
                     for (int step = 0; step < 16; ++step) {
-                        StepSnapshot snapshot = processorRef.getPhaseBloomSafeSnapshot(step);
+                        auto snapshot = processorRef.getPhaseBloomSafeSnapshot(step);
                         switch (i) {
-                            case 0: snapshot.phasebloom.depth = value; break;
-                            case 1: snapshot.phasebloom.rate = value; break;
-                            case 2: snapshot.phasebloom.feedback = value; break;
-                            case 3: snapshot.phasebloom.center = value; break;
-                            case 4: snapshot.phasebloom.bloom = value; break;
-                            case 5: snapshot.phasebloom.spread = value; break;
-                            case 6: snapshot.phasebloom.resonance = value; break;
-                            case 7: snapshot.phasebloom.mix = value; break;
+                            case 0: snapshot.phasebloom.depth = actualValue; break;
+                            case 1: snapshot.phasebloom.rate = actualValue; break;
+                            case 2: snapshot.phasebloom.feedback = actualValue; break;
+                            case 3: snapshot.phasebloom.center = actualValue; break;
+                            case 4: snapshot.phasebloom.bloom = actualValue; break;
+                            case 5: snapshot.phasebloom.spread = actualValue; break;
+                            case 6: snapshot.phasebloom.resonance = actualValue; break;
+                            case 7: snapshot.phasebloom.mix = actualValue; break;
                         }
                         processorRef.setPhaseBloomStepSnapshot(step, snapshot);
                     }
+                } else {
+                    DBG("[All Steps] PhaseBloom knob " << i << " changed, phaseBloomAllStepsEnabled=false, skipping All Steps update");
                 }
             }
         };
@@ -11987,28 +12195,8 @@ void PluginEditor::setupPhaseBloomAllStepsToggle()
     // Set up callback
     phaseBloomAllStepsToggle->onClick = [this]() {
         phaseBloomAllStepsEnabled = phaseBloomAllStepsToggle->getToggleState();
-        // Update all step snapshots with current slider values
-        if (phaseBloomAllStepsEnabled) {
-            for (int i = 0; i < 8; ++i) {
-                if (phaseBloomKnobs[i]) {
-                    float value = phaseBloomKnobs[i]->getValue();
-                    for (int step = 0; step < 16; ++step) {
-                        auto snapshot = processorRef.getPhaseBloomSafeSnapshot(step);
-                        switch (i) {
-                            case 0: snapshot.phasebloom.depth = value; break;
-                            case 1: snapshot.phasebloom.rate = value; break;
-                            case 2: snapshot.phasebloom.feedback = value; break;
-                            case 3: snapshot.phasebloom.center = value; break;
-                            case 4: snapshot.phasebloom.bloom = value; break;
-                            case 5: snapshot.phasebloom.spread = value; break;
-                            case 6: snapshot.phasebloom.resonance = value; break;
-                            case 7: snapshot.phasebloom.mix = value; break;
-                        }
-                        processorRef.setPhaseBloomStepSnapshot(step, snapshot);
-                    }
-                }
-            }
-        }
+        DBG("[UI] PhaseBloom All Steps toggle: " << (phaseBloomAllStepsEnabled ? "ON" : "OFF"));
+        phaseBloomAllStepsLabel->setAlpha(phaseBloomAllStepsEnabled ? 1.0f : 0.5f);
     };
     
     DBG("[UI] PhaseBloom all steps toggle setup complete");
@@ -12340,7 +12528,7 @@ void PluginEditor::loadSelectedStepIntoKnobs(FxPageID effect)
             processorRef.getAPVTS().getParameter("hiCut")->setValueNotifyingHost(processorRef.getAPVTS().getParameter("hiCut")->convertTo0to1(snapshot.delay.highCut));
             processorRef.getAPVTS().getParameter("lowCut")->setValueNotifyingHost(processorRef.getAPVTS().getParameter("lowCut")->convertTo0to1(snapshot.delay.lowCut));
             processorRef.getAPVTS().getParameter("mix")->setValueNotifyingHost(processorRef.getAPVTS().getParameter("mix")->convertTo0to1(snapshot.delay.mix));
-            break;
+                break;
         }
         
         case FxPageID::Panner: {
@@ -12355,7 +12543,7 @@ void PluginEditor::loadSelectedStepIntoKnobs(FxPageID effect)
             if (autopanKnobs[3]) autopanKnobs[3]->setValue(snapshot.autopan.waveShape, juce::dontSendNotification);
             if (autopanKnobs[4]) autopanKnobs[4]->setValue(snapshot.autopan.inverted ? 1.0f : 0.0f, juce::dontSendNotification);
             if (autopanKnobs[5]) autopanKnobs[5]->setValue(snapshot.autopan.amount, juce::dontSendNotification);
-            break;
+                break;
         }
         
         case FxPageID::Dirt: {
@@ -12372,7 +12560,7 @@ void PluginEditor::loadSelectedStepIntoKnobs(FxPageID effect)
             if (dirtKnobs[5]) dirtKnobs[5]->setValue(snapshot.dirt.highCut, juce::dontSendNotification);
             if (dirtKnobs[6]) dirtKnobs[6]->setValue(snapshot.dirt.tone, juce::dontSendNotification);
             if (dirtKnobs[7]) dirtKnobs[7]->setValue(snapshot.dirt.mix, juce::dontSendNotification);
-            break;
+                break;
         }
         
         case FxPageID::Chorus: {
@@ -12389,7 +12577,7 @@ void PluginEditor::loadSelectedStepIntoKnobs(FxPageID effect)
             if (chorusKnobs[5]) chorusKnobs[5]->setValue(snapshot.chorus.width, juce::dontSendNotification);
             if (chorusKnobs[6]) chorusKnobs[6]->setValue(snapshot.chorus.tone, juce::dontSendNotification);
             if (chorusKnobs[7]) chorusKnobs[7]->setValue(snapshot.chorus.mix, juce::dontSendNotification);
-            break;
+                break;
         }
         
         case FxPageID::Reverb: {
@@ -12406,7 +12594,7 @@ void PluginEditor::loadSelectedStepIntoKnobs(FxPageID effect)
             if (reverbKnobs[5]) reverbKnobs[5]->setValue(snapshot.reverb.early, juce::dontSendNotification);
             if (reverbKnobs[6]) reverbKnobs[6]->setValue(snapshot.reverb.decaySec, juce::dontSendNotification);
             if (reverbKnobs[7]) reverbKnobs[7]->setValue(snapshot.reverb.mix, juce::dontSendNotification);
-            break;
+                break;
         }
         
         case FxPageID::Granular: {
@@ -12423,7 +12611,7 @@ void PluginEditor::loadSelectedStepIntoKnobs(FxPageID effect)
             if (granularKnobs[5]) granularKnobs[5]->setValue(snapshot.granular.random, juce::dontSendNotification);
             if (granularKnobs[6]) granularKnobs[6]->setValue(snapshot.granular.texture, juce::dontSendNotification);
             if (granularKnobs[7]) granularKnobs[7]->setValue(snapshot.granular.mix, juce::dontSendNotification);
-            break;
+                break;
         }
         
         case FxPageID::Slicer: {
@@ -12437,7 +12625,7 @@ void PluginEditor::loadSelectedStepIntoKnobs(FxPageID effect)
             if (slicerKnobs[2]) slicerKnobs[2]->setValue(snapshot.slicer.offset, juce::dontSendNotification);
             if (slicerKnobs[3]) slicerKnobs[3]->setValue(snapshot.slicer.shape, juce::dontSendNotification);
             if (slicerKnobs[4]) slicerKnobs[4]->setValue(snapshot.slicer.releaseMs, juce::dontSendNotification);
-            break;
+                break;
         }
         
         case FxPageID::Redux: {
@@ -12457,7 +12645,7 @@ void PluginEditor::loadSelectedStepIntoKnobs(FxPageID effect)
             if (reduxKnobs[5]) reduxKnobs[5]->setValue(snapshot.redux.drive, juce::dontSendNotification);
             if (reduxKnobs[6]) reduxKnobs[6]->setValue(snapshot.redux.emphasis, juce::dontSendNotification);
             if (reduxKnobs[7]) reduxKnobs[7]->setValue(snapshot.redux.mix, juce::dontSendNotification);
-            break;
+                break;
         }
         
         case FxPageID::PhaseBloom: {
@@ -12474,7 +12662,7 @@ void PluginEditor::loadSelectedStepIntoKnobs(FxPageID effect)
             if (phaseBloomKnobs[5]) phaseBloomKnobs[5]->setValue(snapshot.phasebloom.spread, juce::dontSendNotification);
             if (phaseBloomKnobs[6]) phaseBloomKnobs[6]->setValue(snapshot.phasebloom.resonance, juce::dontSendNotification);
             if (phaseBloomKnobs[7]) phaseBloomKnobs[7]->setValue(snapshot.phasebloom.mix, juce::dontSendNotification);
-            break;
+                break;
         }
         
         default:
@@ -12554,13 +12742,13 @@ void PluginEditor::saveCurrentStepSnapshot()
                 processorRef.setSpaceDelayStepSnapshot(currentStep, currentSnapshot);
                 DBG("[UI] Saved Space Delay snapshot for step " << currentStep);
             }
-            break;
+                break;
         }
         
         // TODO: Implement for other effects
         default:
             DBG("[UI] saveCurrentStepSnapshot not implemented for effect: " << static_cast<int>(currentPage));
-            break;
+                break;
     }
 }
 
@@ -12571,12 +12759,12 @@ void PluginEditor::updateSelectedStepInProcessor(int stepIndex)
     switch (currentPage) {
         case FxPageID::SpaceDelay:
             processorRef.setSpaceDelaySelectedStep(stepIndex);
-            break;
+                break;
             
         // TODO: Implement for other effects
         default:
             DBG("[UI] updateSelectedStepInProcessor not implemented for effect: " << static_cast<int>(currentPage));
-            break;
+                break;
     }
 }
 
@@ -12594,11 +12782,11 @@ void PluginEditor::updateSnapshotValue(StepSnapshot& snapshot, int knobIndex, fl
                 case 6: snapshot.delay.lowCut = value; break;
                 case 7: snapshot.delay.mix = value; break;
             }
-            break;
+                break;
             
         // TODO: Implement for other effects
         default:
-            break;
+                break;
     }
 }
 

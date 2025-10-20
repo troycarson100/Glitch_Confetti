@@ -249,6 +249,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout PluginProcessor::createParam
     // Page and effect enable parameters
     params.push_back(std::make_unique<juce::AudioParameterChoice>("currentPage", "Current Page", 
         juce::StringArray {"SpaceDelay", "AutoPan", "Dirt", "Chorus", "Reverb", "Granular", "Slicer", "DubDelay", "Redux", "PhaseBloom"}, 0)); // Effect page selection
+    params.push_back(std::make_unique<juce::AudioParameterBool>("delayEnabled", "Delay Enabled", true)); // Space Delay effect enabled - ON by default
     params.push_back(std::make_unique<juce::AudioParameterBool>("autopanEnabled", "AutoPan Enabled", true)); // AutoPan effect enabled - ON by default
     params.push_back(std::make_unique<juce::AudioParameterBool>("autopanTimeSync", "AutoPan Time Sync", true)); // AutoPan sync mode enabled - ON by default
     params.push_back(std::make_unique<juce::AudioParameterBool>("dirtEnabled", "Dirt Enabled", true)); // Dirt effect enabled - ON by default
@@ -3398,6 +3399,14 @@ void PluginProcessor::processCompressEffect(juce::AudioBuffer<float>& buffer)
                 compressEngine.setLofi(lofiParam->load());
                 compressEngine.setMakeupGain(makeupGainParam->load());
                 compressEngine.setWet(wetParam->load());
+                
+                // If drive and lofi are both 0, bypass compression by setting threshold to 0dB (no compression)
+                float driveValue = driveParam->load();
+                float lofiValue = lofiParam->load();
+                if (driveValue <= 0.0f && lofiValue <= 0.0f) {
+                    compressEngine.setThreshold(0.0f); // Set threshold to 0dB to bypass compression
+                }
+                
         compressEngine.setEnabled(true);
         
         // Process COMPRESS+ effect
