@@ -25,7 +25,7 @@ PluginProcessor::PluginProcessor()
     autopanSeq.playingStep.store(0);
     
     // Initialize Dirt sequencer state (independent)
-    dirtSeq.enabled.store(false);
+    dirtSeq.enabled.store(true); // Start enabled so it auto-activates on play
     dirtSeq.stepsUsed.store(16);
     dirtSeq.divisionIndex.store(5); // 1/8 default (index 5 = item ID 6)
     dirtSeq.playingStep.store(0);
