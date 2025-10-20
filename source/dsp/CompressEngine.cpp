@@ -38,8 +38,15 @@ void CompressEngine::prepare(const juce::dsp::ProcessSpec& spec)
 
 void CompressEngine::reset()
 {
-    sampleCounter = 0.0f;
-    heldSample = 0.0f;
+    // Reset lofi state variables
+    heldL = 0.0f;
+    heldR = 0.0f;
+    lastHeldL = 0.0f;
+    lastHeldR = 0.0f;
+    counterL = 0.0f;
+    counterR = 0.0f;
+    lowpassL = 0.0f;
+    lowpassR = 0.0f;
     
     juceCompressor.reset();
     driveOversampler->reset();
@@ -169,41 +176,74 @@ void CompressEngine::processLofi(juce::AudioBuffer<float>& buffer)
     const int numChannels = buffer.getNumChannels();
     const int numSamples = buffer.getNumSamples();
     
-    // Map lofi level (0-1) to bit depth (24-8) and sample rate reduction (1-4)
-    const int bitDepth = static_cast<int>(juce::jmap(lofiLevel, 0.0f, 1.0f, 24.0f, 8.0f));
-    const int rateFactor = static_cast<int>(juce::jmap(lofiLevel, 0.0f, 1.0f, 1.0f, 4.0f));
-    const float saturationAmount = juce::jmap(lofiLevel, 0.0f, 1.0f, 0.0f, 0.3f);
+    // Pre-calc (do once per block): map slider to downsample factor and bit steps
+    // Downsample hold period: 1 (no hold) up to 32 samples (heavy hold)
+    const float holdPeriod = juce::jmap(lofiLevel, 1.0f, 32.0f);
     
-    for (int channel = 0; channel < numChannels; ++channel)
+    // Bit quantization steps: from many steps at low lofi to few at high lofi
+    // E.g. 256 steps (8-bit) at min, 8 steps (~3-bit) at max
+    const float bitSteps = juce::jmap(lofiLevel, 256.0f, 8.0f);
+    
+    // Low-pass filter setup: cutoff falls with more lofi for smoothness
+    // E.g. 20 kHz at min effect down to ~2 kHz at max (tune as needed)
+    const float cutoff = juce::jmap(lofiLevel, 20000.0f, 2000.0f);
+    const float RC = 1.0f / (2.0f * juce::MathConstants<float>::pi * cutoff);
+    const float dt = 1.0f / sampleRate;
+    const float alpha = dt / (RC + dt);  // one-pole filter coefficient
+    
+    // Process each sample for stereo
+    for (int sample = 0; sample < numSamples; ++sample)
     {
-        float* channelData = buffer.getWritePointer(channel);
+        // Read input (assuming stereo)
+        float inL = buffer.getReadPointer(0)[sample];
+        float inR = (numChannels > 1) ? buffer.getReadPointer(1)[sample] : inL;
         
-        for (int sample = 0; sample < numSamples; ++sample)
+        // --- Downsampling (sample&hold with interpolation) ---
+        // Left channel:
+        counterL += 1.0f;
+        if (counterL >= holdPeriod)
         {
-            float input = channelData[sample];
-            
-            // Sample rate reduction (hold samples)
-            if (static_cast<int>(sampleCounter) % rateFactor == 0) {
-                heldSample = input;
-            }
-            sampleCounter += 1.0f;
-            
-            // Apply held sample
-            float processed = heldSample;
-            
-            // Bit depth reduction
-            const float maxVal = static_cast<float>((1 << bitDepth) - 1);
-            processed = std::round(processed * maxVal) / maxVal;
-            
-            // Subtle saturation
-            if (saturationAmount > 0.0f) {
-                processed = std::tanh(processed * (1.0f + saturationAmount)) / (1.0f + saturationAmount);
-            }
-            
-            // Mix with original based on lofi level
-            channelData[sample] = juce::jlimit(-1.0f, 1.0f, 
-                input * (1.0f - lofiLevel) + processed * lofiLevel);
+            counterL -= holdPeriod;
+            lastHeldL = heldL;
+            heldL = inL;
         }
+        float phaseL = counterL / holdPeriod;
+        float outL = lastHeldL + (heldL - lastHeldL) * phaseL;
+        
+        // Right channel (same logic):
+        counterR += 1.0f;
+        if (counterR >= holdPeriod)
+        {
+            counterR -= holdPeriod;
+            lastHeldR = heldR;
+            heldR = inR;
+        }
+        float phaseR = counterR / holdPeriod;
+        float outR = lastHeldR + (heldR - lastHeldR) * phaseR;
+        
+        // --- Bit-depth quantization ---
+        // Clamp to [-1,1] to avoid overflow, then quantize amplitude:
+        outL = juce::jlimit(-1.0f, 1.0f, outL);
+        outR = juce::jlimit(-1.0f, 1.0f, outR);
+        
+        float quantL = std::round(outL * bitSteps) / bitSteps;
+        float quantR = std::round(outR * bitSteps) / bitSteps;
+        
+        // --- Low-pass filtering to remove aliasing ---
+        // Simple one-pole (smoothing). Alpha is small at low cutoff (more smoothing).
+        lowpassL += alpha * (quantL - lowpassL);
+        lowpassR += alpha * (quantR - lowpassR);
+        
+        // --- Soft saturation for warmth ---
+        // Simple tanh-based saturation that increases with lofiLevel.
+        const float warmGain = 1.0f + 0.5f * lofiLevel;  // drive up to 1.5x
+        float satL = std::tanh(lowpassL * warmGain);
+        float satR = std::tanh(lowpassR * warmGain);
+        
+        // Write back to buffer (to be mixed downstream by the plugin's mix parameter)
+        buffer.getWritePointer(0)[sample] = satL;
+        if (numChannels > 1)
+            buffer.getWritePointer(1)[sample] = satR;
     }
 }
 

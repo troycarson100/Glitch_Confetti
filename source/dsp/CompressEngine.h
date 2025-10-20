@@ -49,10 +49,19 @@ private:
     // Drive state
     float driveGain = 1.0f;
 
-    // Lofi state
+    // Lofi state - new DSP algorithm
     float lofiLevel = 0.0f;
-    float sampleCounter = 0.0f;
-    float heldSample = 0.0f;
+    
+    // Sample & hold with interpolation state (per channel)
+    float heldL = 0.0f, heldR = 0.0f;
+    float lastHeldL = 0.0f, lastHeldR = 0.0f;
+    float counterL = 0.0f, counterR = 0.0f;
+    
+    // Low-pass filter state for anti-aliasing (per channel)
+    float lowpassL = 0.0f, lowpassR = 0.0f;
+    
+    // Random number generator for dithering (if needed)
+    juce::Random lofiRandom;
     
     // Makeup gain state
     float makeupGainDb = 0.0f;
