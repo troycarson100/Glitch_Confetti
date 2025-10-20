@@ -160,13 +160,13 @@ void RandomizationManager::applyParamChanges()
                 int step = editor->autopanUiSelectedStep;
                 if (step >= 0 && step < 16) {
                     auto s = processor.getAutoPanSafeSnapshot(step);
-                    // Load into knobs
-                    if (editor->autopanKnobs[0]) editor->autopanKnobs[0]->setValue(s.autopan.rate, juce::sendNotification);
-                    if (editor->autopanKnobs[1]) editor->autopanKnobs[1]->setValue(s.autopan.phase, juce::sendNotification);
-                    if (editor->autopanKnobs[2]) editor->autopanKnobs[2]->setValue((float)s.autopan.waveType, juce::sendNotification);
-                    if (editor->autopanKnobs[3]) editor->autopanKnobs[3]->setValue(s.autopan.waveShape, juce::sendNotification);
-                    if (editor->autopanKnobs[4]) editor->autopanKnobs[4]->setValue(s.autopan.inverted ? 1.0f : 0.0f, juce::sendNotification);
-                    if (editor->autopanKnobs[5]) editor->autopanKnobs[5]->setValue(s.autopan.amount, juce::sendNotification);
+                    // Load into knobs (CRITICAL: Use dontSendNotification to prevent All Steps trigger)
+                    if (editor->autopanKnobs[0]) editor->autopanKnobs[0]->setValue(s.autopan.rate, juce::dontSendNotification);
+                    if (editor->autopanKnobs[1]) editor->autopanKnobs[1]->setValue(s.autopan.phase, juce::dontSendNotification);
+                    if (editor->autopanKnobs[2]) editor->autopanKnobs[2]->setValue((float)s.autopan.waveType, juce::dontSendNotification);
+                    if (editor->autopanKnobs[3]) editor->autopanKnobs[3]->setValue(s.autopan.waveShape, juce::dontSendNotification);
+                    if (editor->autopanKnobs[4]) editor->autopanKnobs[4]->setValue(s.autopan.inverted ? 1.0f : 0.0f, juce::dontSendNotification);
+                    if (editor->autopanKnobs[5]) editor->autopanKnobs[5]->setValue(s.autopan.amount, juce::dontSendNotification);
                     DBG("[RAND]   AutoPan step " + juce::String(step) + " reloaded");
                 }
                 break;

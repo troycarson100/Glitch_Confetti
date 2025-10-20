@@ -981,6 +981,17 @@ public:
         void updateAllStepSnapshots(int knobIndex);
         void onStepButtonClicked(int stepIndex);
         void updateSequencerUI();
+        
+    // Unified effect handling methods
+    void randomizeEffectStepSnapshot(FxPageID effect, int step);
+    void loadSelectedStepIntoKnobs(FxPageID effect);
+    void onUnifiedStepButtonClicked(int stepIndex);
+    void updateUnifiedAllStepSnapshots(int knobIndex);
+    void updateUnifiedParameterFromKnob(int knobIndex);
+    void saveCurrentStepSnapshot();
+    void updateSelectedStepInProcessor(int stepIndex);
+    void updateSnapshotValue(StepSnapshot& snapshot, int knobIndex, float value);
+    juce::String getParameterIdForKnob(int knobIndex);
         void setupUIToggle();
         void toggleUIVisibility();
         void setupPlayButton();

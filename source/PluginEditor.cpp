@@ -3611,41 +3611,23 @@ void PluginEditor::setupSequencerArea()
     int stepDiceSize = static_cast<int>(35 * 0.7); // 30% smaller than 35px = ~24px
     stepDiceButton->setBounds(stepArea.getX() + 75, stepArea.getY() + 5, stepDiceSize, stepDiceSize); // Moved down another 10px and left another 10px
     
-    // Set up step dice button callback to randomize all 16 step snapshots (Space Delay)
+    // Set up step dice button callback to randomize all 16 step snapshots (UNIFIED for all effects)
     stepDiceButton->onClick = [this]() {
-        DBG("[UI] Step dice button clicked - randomizing ALL Space Delay step snapshots");
-
+        DBG("[UI] Step dice button clicked - randomizing ALL step snapshots for current effect");
+        
+        // Get current effect page
+        FxPageID currentEffect = currentPage;
+        
+        // Randomize all 16 steps for the current effect
         for (int step = 0; step < 16; ++step) {
-            auto snapshot = processorRef.getSpaceDelaySafeSnapshot(step);
-
-            // Randomize only unlocked parameters with correct ranges (matching APVTS parameter ranges)
-            if (!knobLocked[0]) snapshot.delay.timeMs = 10.0f + juce::Random::getSystemRandom().nextFloat() * (2000.0f - 10.0f); // 10-2000ms
-            if (!knobLocked[1]) snapshot.delay.feedback = juce::Random::getSystemRandom().nextFloat() * 0.95f; // 0-0.95 (not 0-100!)
-            if (!knobLocked[2]) snapshot.delay.wowDepth = juce::Random::getSystemRandom().nextFloat(); // 0-1 (not 0-100!)
-            if (!knobLocked[3]) snapshot.delay.wowRate = 0.1f + juce::Random::getSystemRandom().nextFloat() * (8.0f - 0.1f); // 0.1-8.0
-            if (!knobLocked[4]) snapshot.delay.saturation = juce::Random::getSystemRandom().nextFloat(); // 0-1 (not 0-100!)
-            if (!knobLocked[5]) snapshot.delay.highCut = 1000.0f + juce::Random::getSystemRandom().nextFloat() * (20000.0f - 1000.0f); // 1000-20000Hz
-            if (!knobLocked[6]) snapshot.delay.lowCut = 20.0f + juce::Random::getSystemRandom().nextFloat() * (2000.0f - 20.0f); // 20-2000Hz
-            if (!knobLocked[7]) snapshot.delay.mix = juce::Random::getSystemRandom().nextFloat(); // 0-1 (not 0-100!)
-
-            processorRef.setSpaceDelayStepSnapshot(step, snapshot);
+            randomizeEffectStepSnapshot(currentEffect, step);
         }
-
+        
         // Refresh UI to reflect changes at current selection
         updateSequencerUI();
-
-        // Also push the selected step's new values into the knobs so user sees change immediately
-        int selectedStep = processorRef.getSpaceDelayUiSelectedStep();
-        selectedStep = juce::jlimit(0, 15, selectedStep);
-        const auto updated = processorRef.getSpaceDelaySafeSnapshot(selectedStep);
-        processorRef.getAPVTS().getParameter("timeMs")->setValueNotifyingHost(processorRef.getAPVTS().getParameter("timeMs")->convertTo0to1(updated.delay.timeMs));
-        processorRef.getAPVTS().getParameter("feedback")->setValueNotifyingHost(processorRef.getAPVTS().getParameter("feedback")->convertTo0to1(updated.delay.feedback));
-        processorRef.getAPVTS().getParameter("wowDepth")->setValueNotifyingHost(processorRef.getAPVTS().getParameter("wowDepth")->convertTo0to1(updated.delay.wowDepth));
-        processorRef.getAPVTS().getParameter("wowRate")->setValueNotifyingHost(processorRef.getAPVTS().getParameter("wowRate")->convertTo0to1(updated.delay.wowRate));
-        processorRef.getAPVTS().getParameter("drive")->setValueNotifyingHost(processorRef.getAPVTS().getParameter("drive")->convertTo0to1(updated.delay.saturation));
-        processorRef.getAPVTS().getParameter("hiCut")->setValueNotifyingHost(processorRef.getAPVTS().getParameter("hiCut")->convertTo0to1(updated.delay.highCut));
-        processorRef.getAPVTS().getParameter("lowCut")->setValueNotifyingHost(processorRef.getAPVTS().getParameter("lowCut")->convertTo0to1(updated.delay.lowCut));
-        processorRef.getAPVTS().getParameter("mix")->setValueNotifyingHost(processorRef.getAPVTS().getParameter("mix")->convertTo0to1(updated.delay.mix));
+        
+        // Load the selected step's new values into the knobs
+        loadSelectedStepIntoKnobs(currentEffect);
     };
     
     // Set dice image for step dice button
@@ -3677,7 +3659,7 @@ void PluginEditor::setupSequencerArea()
         
         // Set up click handler
         stepButtons[i]->onClick = [this, i]() {
-            onStepButtonClicked(i);
+            onUnifiedStepButtonClicked(i);
         };
     }
     
@@ -6097,14 +6079,14 @@ void PluginEditor::onAutoPanStepButtonClicked(int stepIndex)
     autopanUiSelectedStep = stepIndex;
     processorRef.setAutoPanSelectedStep(stepIndex);
     
-    // Load new step's snapshot into knobs
+    // Load new step's snapshot into knobs (CRITICAL: Use dontSendNotification to prevent All Steps trigger)
     StepSnapshot newSnapshot = processorRef.getAutoPanSafeSnapshot(stepIndex);
-    if (autopanKnobs[0]) autopanKnobs[0]->setValue(newSnapshot.autopan.rate, juce::sendNotification);
-    if (autopanKnobs[1]) autopanKnobs[1]->setValue(newSnapshot.autopan.phase, juce::sendNotification);
-    if (autopanKnobs[2]) autopanKnobs[2]->setValue((float)newSnapshot.autopan.waveType, juce::sendNotification);
-    if (autopanKnobs[3]) autopanKnobs[3]->setValue(newSnapshot.autopan.waveShape, juce::sendNotification);
-    if (autopanKnobs[4]) autopanKnobs[4]->setValue(newSnapshot.autopan.inverted ? 1.0f : 0.0f, juce::sendNotification);
-    if (autopanKnobs[5]) autopanKnobs[5]->setValue(newSnapshot.autopan.amount, juce::sendNotification);
+    if (autopanKnobs[0]) autopanKnobs[0]->setValue(newSnapshot.autopan.rate, juce::dontSendNotification);
+    if (autopanKnobs[1]) autopanKnobs[1]->setValue(newSnapshot.autopan.phase, juce::dontSendNotification);
+    if (autopanKnobs[2]) autopanKnobs[2]->setValue((float)newSnapshot.autopan.waveType, juce::dontSendNotification);
+    if (autopanKnobs[3]) autopanKnobs[3]->setValue(newSnapshot.autopan.waveShape, juce::dontSendNotification);
+    if (autopanKnobs[4]) autopanKnobs[4]->setValue(newSnapshot.autopan.inverted ? 1.0f : 0.0f, juce::dontSendNotification);
+    if (autopanKnobs[5]) autopanKnobs[5]->setValue(newSnapshot.autopan.amount, juce::dontSendNotification);
     
     // Update UI will be called from timer
         updateAutoPanSequencerUI();
@@ -6207,16 +6189,16 @@ void PluginEditor::onDirtStepButtonClicked(int stepIndex)
     dirtUiSelectedStep = stepIndex;
     processorRef.setDirtSelectedStep(stepIndex);
     
-    // Load new step's snapshot into knobs
+    // Load new step's snapshot into knobs (CRITICAL: Use dontSendNotification to prevent All Steps trigger)
     StepSnapshot newSnapshot = processorRef.getDirtSafeSnapshot(stepIndex);
-    if (dirtKnobs[0]) dirtKnobs[0]->setValue(newSnapshot.dirt.drive, juce::sendNotification);
-    if (dirtKnobs[1]) dirtKnobs[1]->setValue(newSnapshot.dirt.color, juce::sendNotification);
-    if (dirtKnobs[2]) dirtKnobs[2]->setValue(newSnapshot.dirt.asym, juce::sendNotification);
-    if (dirtKnobs[3]) dirtKnobs[3]->setValue(newSnapshot.dirt.texture, juce::sendNotification);
-    if (dirtKnobs[4]) dirtKnobs[4]->setValue(newSnapshot.dirt.lowCut, juce::sendNotification);
-    if (dirtKnobs[5]) dirtKnobs[5]->setValue(newSnapshot.dirt.highCut, juce::sendNotification);
-    if (dirtKnobs[6]) dirtKnobs[6]->setValue(newSnapshot.dirt.tone, juce::sendNotification);
-    if (dirtKnobs[7]) dirtKnobs[7]->setValue(newSnapshot.dirt.mix, juce::sendNotification);
+    if (dirtKnobs[0]) dirtKnobs[0]->setValue(newSnapshot.dirt.drive, juce::dontSendNotification);
+    if (dirtKnobs[1]) dirtKnobs[1]->setValue(newSnapshot.dirt.color, juce::dontSendNotification);
+    if (dirtKnobs[2]) dirtKnobs[2]->setValue(newSnapshot.dirt.asym, juce::dontSendNotification);
+    if (dirtKnobs[3]) dirtKnobs[3]->setValue(newSnapshot.dirt.texture, juce::dontSendNotification);
+    if (dirtKnobs[4]) dirtKnobs[4]->setValue(newSnapshot.dirt.lowCut, juce::dontSendNotification);
+    if (dirtKnobs[5]) dirtKnobs[5]->setValue(newSnapshot.dirt.highCut, juce::dontSendNotification);
+    if (dirtKnobs[6]) dirtKnobs[6]->setValue(newSnapshot.dirt.tone, juce::dontSendNotification);
+    if (dirtKnobs[7]) dirtKnobs[7]->setValue(newSnapshot.dirt.mix, juce::dontSendNotification);
     
     updateDirtSequencerUI();
     
@@ -6926,14 +6908,14 @@ void PluginEditor::onChorusStepButtonClicked(int stepIndex)
     processorRef.setChorusSelectedStep(stepIndex);
     
     StepSnapshot newSnapshot = processorRef.getChorusSafeSnapshot(stepIndex);
-    if (chorusKnobs[0]) chorusKnobs[0]->setValue(newSnapshot.chorus.delayTime, juce::sendNotification);  // Delay
-    if (chorusKnobs[1]) chorusKnobs[1]->setValue(newSnapshot.chorus.rate, juce::sendNotification);        // Rate
-    if (chorusKnobs[2]) chorusKnobs[2]->setValue(newSnapshot.chorus.depth, juce::sendNotification);       // Depth
-    if (chorusKnobs[3]) chorusKnobs[3]->setValue(newSnapshot.chorus.feedback, juce::sendNotification);    // Feedback
-    if (chorusKnobs[4]) chorusKnobs[4]->setValue(newSnapshot.chorus.voices, juce::sendNotification);      // Voices
-    if (chorusKnobs[5]) chorusKnobs[5]->setValue(newSnapshot.chorus.width, juce::sendNotification);       // Width
-    if (chorusKnobs[6]) chorusKnobs[6]->setValue(newSnapshot.chorus.tone, juce::sendNotification);        // Shape
-    if (chorusKnobs[7]) chorusKnobs[7]->setValue(newSnapshot.chorus.mix, juce::sendNotification);         // Mix
+    if (chorusKnobs[0]) chorusKnobs[0]->setValue(newSnapshot.chorus.delayTime, juce::dontSendNotification);  // Delay
+    if (chorusKnobs[1]) chorusKnobs[1]->setValue(newSnapshot.chorus.rate, juce::dontSendNotification);        // Rate
+    if (chorusKnobs[2]) chorusKnobs[2]->setValue(newSnapshot.chorus.depth, juce::dontSendNotification);       // Depth
+    if (chorusKnobs[3]) chorusKnobs[3]->setValue(newSnapshot.chorus.feedback, juce::dontSendNotification);    // Feedback
+    if (chorusKnobs[4]) chorusKnobs[4]->setValue(newSnapshot.chorus.voices, juce::dontSendNotification);      // Voices
+    if (chorusKnobs[5]) chorusKnobs[5]->setValue(newSnapshot.chorus.width, juce::dontSendNotification);       // Width
+    if (chorusKnobs[6]) chorusKnobs[6]->setValue(newSnapshot.chorus.tone, juce::dontSendNotification);        // Shape
+    if (chorusKnobs[7]) chorusKnobs[7]->setValue(newSnapshot.chorus.mix, juce::dontSendNotification);         // Mix
     
     updateChorusSequencerUI();
     
@@ -10292,13 +10274,13 @@ void PluginEditor::onDubDelayStepButtonClicked(int stepIndex)
     bool wasAllSteps = dubdelayAllStepsEnabled;
     dubdelayAllStepsEnabled = false;
     
-    if (dubdelayKnobs[0]) dubdelayKnobs[0]->setValue(snapshot.dubdelay.timeMs, juce::sendNotification);
-    if (dubdelayKnobs[1]) dubdelayKnobs[1]->setValue(snapshot.dubdelay.feedback, juce::sendNotification);
-    if (dubdelayKnobs[2]) dubdelayKnobs[2]->setValue(snapshot.dubdelay.toneHz, juce::sendNotification);
-    if (dubdelayKnobs[3]) dubdelayKnobs[3]->setValue(snapshot.dubdelay.drive, juce::sendNotification);
-    if (dubdelayKnobs[4]) dubdelayKnobs[4]->setValue(snapshot.dubdelay.pingPong ? 1.0f : 0.0f, juce::sendNotification);
-    if (dubdelayKnobs[5]) dubdelayKnobs[5]->setValue(snapshot.dubdelay.wowFlutter, juce::sendNotification);
-    if (dubdelayKnobs[6]) dubdelayKnobs[6]->setValue(snapshot.dubdelay.regenDamp, juce::sendNotification);
+    if (dubdelayKnobs[0]) dubdelayKnobs[0]->setValue(snapshot.dubdelay.timeMs, juce::dontSendNotification);
+    if (dubdelayKnobs[1]) dubdelayKnobs[1]->setValue(snapshot.dubdelay.feedback, juce::dontSendNotification);
+    if (dubdelayKnobs[2]) dubdelayKnobs[2]->setValue(snapshot.dubdelay.toneHz, juce::dontSendNotification);
+    if (dubdelayKnobs[3]) dubdelayKnobs[3]->setValue(snapshot.dubdelay.drive, juce::dontSendNotification);
+    if (dubdelayKnobs[4]) dubdelayKnobs[4]->setValue(snapshot.dubdelay.pingPong ? 1.0f : 0.0f, juce::dontSendNotification);
+    if (dubdelayKnobs[5]) dubdelayKnobs[5]->setValue(snapshot.dubdelay.wowFlutter, juce::dontSendNotification);
+    if (dubdelayKnobs[6]) dubdelayKnobs[6]->setValue(snapshot.dubdelay.regenDamp, juce::dontSendNotification);
     // Mix (knob 7) is global - load from APVTS, not snapshot
     
     dubdelayAllStepsEnabled = wasAllSteps;
@@ -10527,7 +10509,26 @@ void PluginEditor::setupReduxKnobs()
                 
                 // Update all steps if enabled
                 if (reduxAllStepsEnabled) {
-                    // TODO: Implement updateReduxAllStepsSnapshot in processor
+                    for (int step = 0; step < 16; ++step) {
+                        StepSnapshot snapshot = processorRef.getReduxSafeSnapshot(step);
+                        switch (i) {
+                            case 0: {
+                                // Convert UI value (1-12) to internal value (4-16)
+                                int internalBitDepth = (int)value + 3;
+                                snapshot.redux.bitDepth = internalBitDepth;
+                                break;
+                            }
+                            case 1: snapshot.redux.sampleRateReduction = (int)value; break;
+                            case 2: snapshot.redux.jitter = value; break;
+                            case 3: snapshot.redux.preFilter = value; break;
+                            case 4: snapshot.redux.postFilter = value; break;
+                            case 5: snapshot.redux.drive = value; break;
+                            case 6: snapshot.redux.emphasis = value; break;
+                            case 7: snapshot.redux.mix = value; break;
+                        }
+                        processorRef.setReduxStepSnapshot(step, snapshot);
+                    }
+                    DBG("[UI] Redux All Steps: Updated all 16 steps with knob " << i << " value " << value);
                 }
                 
                 if (reduxIndicatorBars[i]) {
@@ -11005,8 +11006,34 @@ void PluginEditor::setupReduxSequencerArea()
         reduxStepDiceButton->setDiceImage(assets.diceLarge->createCopy());
     }
     reduxStepDiceButton->onClick = [this]() {
-        DBG("[UI] Redux step dice clicked");
-        // TODO: Randomize step pattern
+        DBG("[UI] Redux step dice clicked - randomizing all steps");
+        
+        // Randomize all 16 steps for Redux
+        for (int step = 0; step < 16; ++step) {
+            auto snapshot = processorRef.getReduxSafeSnapshot(step);
+            
+            // Randomize Redux parameters (respecting locked knobs)
+            if (!reduxKnobLocked[0]) {
+                // Generate UI value (1-12) then convert to internal value (4-16)
+                int uiBitDepth = 1 + juce::Random::getSystemRandom().nextInt(12); // 1-12
+                snapshot.redux.bitDepth = uiBitDepth + 3; // Convert to 4-16
+            }
+            if (!reduxKnobLocked[1]) snapshot.redux.sampleRateReduction = 1 + juce::Random::getSystemRandom().nextInt(32); // 1-32
+            if (!reduxKnobLocked[2]) snapshot.redux.jitter = juce::Random::getSystemRandom().nextFloat();
+            if (!reduxKnobLocked[3]) snapshot.redux.preFilter = 20.0f + juce::Random::getSystemRandom().nextFloat() * (20000.0f - 20.0f);
+            if (!reduxKnobLocked[4]) snapshot.redux.postFilter = 20.0f + juce::Random::getSystemRandom().nextFloat() * (20000.0f - 20.0f);
+            if (!reduxKnobLocked[5]) snapshot.redux.drive = juce::Random::getSystemRandom().nextFloat() * 10.0f;
+            if (!reduxKnobLocked[6]) snapshot.redux.emphasis = juce::Random::getSystemRandom().nextFloat();
+            if (!reduxKnobLocked[7]) snapshot.redux.mix = juce::Random::getSystemRandom().nextFloat();
+            
+            processorRef.setReduxStepSnapshot(step, snapshot);
+        }
+        
+        // Update UI to show the randomized values for the current step
+        updateReduxSequencerUI();
+        loadSelectedStepIntoKnobs(FxPageID::Redux);
+        
+        DBG("[UI] Redux all steps randomized");
     };
     
     // Create step power button
@@ -11077,14 +11104,13 @@ void PluginEditor::setupReduxAllStepsToggle()
     
     reduxAllStepsToggle->setToggleState(false, juce::dontSendNotification);
     reduxAllStepsToggle->onClick = [this]() {
-        bool allStepsOn = reduxAllStepsToggle->getToggleState();
-        DBG("[UI] Redux all steps toggle: " << (allStepsOn ? "ON" : "OFF"));
-        // TODO: Handle all steps toggle
+        reduxAllStepsEnabled = reduxAllStepsToggle->getToggleState();
+        DBG("[UI] Redux All Steps toggle: " + juce::String(reduxAllStepsEnabled ? "ON" : "OFF") + " toggleState=" + juce::String(reduxAllStepsToggle->getToggleState() ? 1 : 0));
     };
     
     // Create all steps label (EXACT same positioning as other effects)
     reduxAllStepsLabel = std::make_unique<juce::Label>();
-    reduxAllStepsLabel->setText("ALL STEPS", juce::dontSendNotification);
+    reduxAllStepsLabel->setText("All Steps", juce::dontSendNotification);
     reduxAllStepsLabel->setFont(juce::Font(14.4f, juce::Font::bold));
     reduxAllStepsLabel->setColour(juce::Label::textColourId, juce::Colours::white);
     reduxAllStepsLabel->setJustificationType(juce::Justification::centredLeft);
@@ -11239,15 +11265,19 @@ void PluginEditor::onReduxStepButtonClicked(int stepIndex)
     int currentStep = reduxUiSelectedStep;
     if (currentStep >= 0 && currentStep < 16) {
         StepSnapshot currentSnapshot;
-        // Read current Redux knob values and save to snapshot
-        if (reduxKnobs[0]) currentSnapshot.redux.mix = reduxKnobs[0]->getValue();
-        if (reduxKnobs[1]) currentSnapshot.redux.bitDepth = (int)reduxKnobs[1]->getValue();
-        if (reduxKnobs[2]) currentSnapshot.redux.sampleRateReduction = (int)reduxKnobs[2]->getValue();
-        if (reduxKnobs[3]) currentSnapshot.redux.jitter = reduxKnobs[3]->getValue();
-        if (reduxKnobs[4]) currentSnapshot.redux.preFilter = reduxKnobs[4]->getValue();
-        if (reduxKnobs[5]) currentSnapshot.redux.postFilter = reduxKnobs[5]->getValue();
-        if (reduxKnobs[6]) currentSnapshot.redux.drive = reduxKnobs[6]->getValue();
-        if (reduxKnobs[7]) currentSnapshot.redux.emphasis = reduxKnobs[7]->getValue();
+        // Read current Redux knob values and save to snapshot (CORRECT ORDER)
+        if (reduxKnobs[0]) {
+            // Convert UI bit depth (1-12) to internal value (4-16)
+            float uiBitDepth = reduxKnobs[0]->getValue();
+            currentSnapshot.redux.bitDepth = (int)(uiBitDepth + 3.0f);
+        }
+        if (reduxKnobs[1]) currentSnapshot.redux.sampleRateReduction = (int)reduxKnobs[1]->getValue();
+        if (reduxKnobs[2]) currentSnapshot.redux.jitter = reduxKnobs[2]->getValue();
+        if (reduxKnobs[3]) currentSnapshot.redux.preFilter = reduxKnobs[3]->getValue();
+        if (reduxKnobs[4]) currentSnapshot.redux.postFilter = reduxKnobs[4]->getValue();
+        if (reduxKnobs[5]) currentSnapshot.redux.drive = reduxKnobs[5]->getValue();
+        if (reduxKnobs[6]) currentSnapshot.redux.emphasis = reduxKnobs[6]->getValue();
+        if (reduxKnobs[7]) currentSnapshot.redux.mix = reduxKnobs[7]->getValue();
         
         processorRef.setReduxStepSnapshot(currentStep, currentSnapshot);
         DBG("[UI] Saved Redux snapshot for step " << currentStep);
@@ -11257,20 +11287,20 @@ void PluginEditor::onReduxStepButtonClicked(int stepIndex)
     reduxUiSelectedStep = stepIndex;
     processorRef.setReduxSelectedStep(stepIndex);
     
-    // Load new step's snapshot into knobs
+    // Load new step's snapshot into knobs (CRITICAL: Use dontSendNotification to prevent All Steps trigger)
     StepSnapshot newSnapshot = processorRef.getReduxSafeSnapshot(stepIndex);
     if (reduxKnobs[0]) {
         // Convert internal bit depth (4-16) to UI value (1-12)
         float uiBitDepth = (float)newSnapshot.redux.bitDepth - 3.0f;
-        reduxKnobs[0]->setValue(uiBitDepth, juce::sendNotification);
+        reduxKnobs[0]->setValue(uiBitDepth, juce::dontSendNotification);
     }
-    if (reduxKnobs[1]) reduxKnobs[1]->setValue((float)newSnapshot.redux.sampleRateReduction, juce::sendNotification);
-    if (reduxKnobs[2]) reduxKnobs[2]->setValue(newSnapshot.redux.jitter, juce::sendNotification);
-    if (reduxKnobs[3]) reduxKnobs[3]->setValue(newSnapshot.redux.preFilter, juce::sendNotification);
-    if (reduxKnobs[4]) reduxKnobs[4]->setValue(newSnapshot.redux.postFilter, juce::sendNotification);
-    if (reduxKnobs[5]) reduxKnobs[5]->setValue(newSnapshot.redux.drive, juce::sendNotification);
-    if (reduxKnobs[6]) reduxKnobs[6]->setValue(newSnapshot.redux.emphasis, juce::sendNotification);
-    if (reduxKnobs[7]) reduxKnobs[7]->setValue(newSnapshot.redux.mix, juce::sendNotification);
+    if (reduxKnobs[1]) reduxKnobs[1]->setValue((float)newSnapshot.redux.sampleRateReduction, juce::dontSendNotification);
+    if (reduxKnobs[2]) reduxKnobs[2]->setValue(newSnapshot.redux.jitter, juce::dontSendNotification);
+    if (reduxKnobs[3]) reduxKnobs[3]->setValue(newSnapshot.redux.preFilter, juce::dontSendNotification);
+    if (reduxKnobs[4]) reduxKnobs[4]->setValue(newSnapshot.redux.postFilter, juce::dontSendNotification);
+    if (reduxKnobs[5]) reduxKnobs[5]->setValue(newSnapshot.redux.drive, juce::dontSendNotification);
+    if (reduxKnobs[6]) reduxKnobs[6]->setValue(newSnapshot.redux.emphasis, juce::dontSendNotification);
+    if (reduxKnobs[7]) reduxKnobs[7]->setValue(newSnapshot.redux.mix, juce::dontSendNotification);
     
     updateReduxSequencerUI();
     
@@ -11766,7 +11796,7 @@ void PluginEditor::setupPhaseBloomAllStepsToggle()
     
     // Create all steps label
     phaseBloomAllStepsLabel = std::make_unique<juce::Label>();
-    phaseBloomAllStepsLabel->setText("ALL STEPS", juce::dontSendNotification);
+    phaseBloomAllStepsLabel->setText("All Steps", juce::dontSendNotification);
     phaseBloomAllStepsLabel->setFont(juce::Font(14.4f, juce::Font::bold));
     phaseBloomAllStepsLabel->setColour(juce::Label::textColourId, juce::Colours::white);
     phaseBloomAllStepsLabel->setJustificationType(juce::Justification::centredLeft);
@@ -11933,3 +11963,468 @@ void PluginEditor::onPhaseBloomStepButtonClicked(int stepIndex)
 
 void PluginEditor::ensurePhaseBloomAttachments() {}
 void PluginEditor::rebindPhaseBloomAttachments() {}
+
+//==============================================================================
+// Unified Effect Handling Methods
+//==============================================================================
+
+void PluginEditor::randomizeEffectStepSnapshot(FxPageID effect, int step)
+{
+    DBG("[UI] Randomizing step " << step << " for effect " << static_cast<int>(effect));
+    
+    switch (effect) {
+        case FxPageID::SpaceDelay: {
+            auto snapshot = processorRef.getSpaceDelaySafeSnapshot(step);
+            
+            // Randomize only unlocked parameters with correct ranges
+            if (!knobLocked[0]) snapshot.delay.timeMs = 10.0f + juce::Random::getSystemRandom().nextFloat() * (2000.0f - 10.0f);
+            if (!knobLocked[1]) snapshot.delay.feedback = juce::Random::getSystemRandom().nextFloat() * 0.95f;
+            if (!knobLocked[2]) snapshot.delay.wowDepth = juce::Random::getSystemRandom().nextFloat();
+            if (!knobLocked[3]) snapshot.delay.wowRate = 0.1f + juce::Random::getSystemRandom().nextFloat() * (8.0f - 0.1f);
+            if (!knobLocked[4]) snapshot.delay.saturation = juce::Random::getSystemRandom().nextFloat();
+            if (!knobLocked[5]) snapshot.delay.highCut = 1000.0f + juce::Random::getSystemRandom().nextFloat() * (20000.0f - 1000.0f);
+            if (!knobLocked[6]) snapshot.delay.lowCut = 20.0f + juce::Random::getSystemRandom().nextFloat() * (2000.0f - 20.0f);
+            if (!knobLocked[7]) snapshot.delay.mix = juce::Random::getSystemRandom().nextFloat();
+            
+            processorRef.setSpaceDelayStepSnapshot(step, snapshot);
+            break;
+        }
+        
+        case FxPageID::Panner: {
+            auto snapshot = processorRef.getSafeSnapshot(step);
+            
+            // Randomize AutoPan parameters
+            if (!knobLocked[0]) snapshot.autopan.rate = juce::Random::getSystemRandom().nextFloat();
+            if (!knobLocked[1]) snapshot.autopan.phase = juce::Random::getSystemRandom().nextFloat() * 360.0f;
+            if (!knobLocked[2]) snapshot.autopan.waveType = juce::Random::getSystemRandom().nextInt(5);
+            if (!knobLocked[3]) snapshot.autopan.waveShape = juce::Random::getSystemRandom().nextFloat();
+            if (!knobLocked[4]) snapshot.autopan.inverted = juce::Random::getSystemRandom().nextBool();
+            if (!knobLocked[5]) snapshot.autopan.amount = juce::Random::getSystemRandom().nextFloat();
+            
+            processorRef.setStepSnapshot(step, snapshot);
+            break;
+        }
+        
+        case FxPageID::Dirt: {
+            auto snapshot = processorRef.getSafeSnapshot(step);
+            
+            // Randomize Dirt parameters
+            if (!knobLocked[0]) snapshot.dirt.drive = juce::Random::getSystemRandom().nextFloat() * 36.0f;
+            if (!knobLocked[1]) snapshot.dirt.color = -1.0f + juce::Random::getSystemRandom().nextFloat() * 2.0f;
+            if (!knobLocked[2]) snapshot.dirt.asym = -1.0f + juce::Random::getSystemRandom().nextFloat() * 2.0f;
+            if (!knobLocked[3]) snapshot.dirt.texture = juce::Random::getSystemRandom().nextFloat();
+            if (!knobLocked[4]) snapshot.dirt.lowCut = 20.0f + juce::Random::getSystemRandom().nextFloat() * (300.0f - 20.0f);
+            if (!knobLocked[5]) snapshot.dirt.highCut = 3000.0f + juce::Random::getSystemRandom().nextFloat() * (22000.0f - 3000.0f);
+            if (!knobLocked[6]) snapshot.dirt.tone = -1.0f + juce::Random::getSystemRandom().nextFloat() * 2.0f;
+            if (!knobLocked[7]) snapshot.dirt.mix = juce::Random::getSystemRandom().nextFloat();
+            
+            processorRef.setStepSnapshot(step, snapshot);
+            break;
+        }
+        
+        case FxPageID::Chorus: {
+            auto snapshot = processorRef.getSafeSnapshot(step);
+            
+            // Randomize Chorus parameters
+            if (!knobLocked[0]) snapshot.chorus.delayTime = 5.0f + juce::Random::getSystemRandom().nextFloat() * (50.0f - 5.0f);
+            if (!knobLocked[1]) snapshot.chorus.rate = 0.02f + juce::Random::getSystemRandom().nextFloat() * (8.0f - 0.02f);
+            if (!knobLocked[2]) snapshot.chorus.depth = juce::Random::getSystemRandom().nextFloat() * 12.0f;
+            if (!knobLocked[3]) snapshot.chorus.feedback = juce::Random::getSystemRandom().nextFloat() * 0.9f;
+            if (!knobLocked[4]) snapshot.chorus.voices = 2.0f + juce::Random::getSystemRandom().nextFloat() * (8.0f - 2.0f);
+            if (!knobLocked[5]) snapshot.chorus.width = juce::Random::getSystemRandom().nextFloat();
+            if (!knobLocked[6]) snapshot.chorus.tone = juce::Random::getSystemRandom().nextFloat();
+            if (!knobLocked[7]) snapshot.chorus.mix = juce::Random::getSystemRandom().nextFloat();
+            
+            processorRef.setStepSnapshot(step, snapshot);
+            break;
+        }
+        
+        case FxPageID::Reverb: {
+            auto snapshot = processorRef.getSafeSnapshot(step);
+            
+            // Randomize Reverb parameters
+            if (!knobLocked[0]) snapshot.reverb.type = juce::Random::getSystemRandom().nextFloat();
+            if (!knobLocked[1]) snapshot.reverb.size = juce::Random::getSystemRandom().nextFloat();
+            if (!knobLocked[2]) snapshot.reverb.predelayMs = juce::Random::getSystemRandom().nextFloat() * 200.0f;
+            if (!knobLocked[3]) snapshot.reverb.dampHz = 1000.0f + juce::Random::getSystemRandom().nextFloat() * (20000.0f - 1000.0f);
+            if (!knobLocked[4]) snapshot.reverb.diffusion = juce::Random::getSystemRandom().nextFloat();
+            if (!knobLocked[5]) snapshot.reverb.early = juce::Random::getSystemRandom().nextFloat();
+            if (!knobLocked[6]) snapshot.reverb.decaySec = 0.1f + juce::Random::getSystemRandom().nextFloat() * (10.0f - 0.1f);
+            if (!knobLocked[7]) snapshot.reverb.mix = juce::Random::getSystemRandom().nextFloat();
+            
+            processorRef.setStepSnapshot(step, snapshot);
+            break;
+        }
+        
+        case FxPageID::Granular: {
+            auto snapshot = processorRef.getSafeSnapshot(step);
+            
+            // Randomize Granular parameters
+            if (!knobLocked[0]) snapshot.granular.sizeMs = 1.0f + juce::Random::getSystemRandom().nextFloat() * (100.0f - 1.0f);
+            if (!knobLocked[1]) snapshot.granular.densityHz = 0.1f + juce::Random::getSystemRandom().nextFloat() * (50.0f - 0.1f);
+            if (!knobLocked[2]) snapshot.granular.position = juce::Random::getSystemRandom().nextFloat();
+            if (!knobLocked[3]) snapshot.granular.sprayMs = juce::Random::getSystemRandom().nextFloat() * 50.0f;
+            if (!knobLocked[4]) snapshot.granular.pitchSemi = -24.0f + juce::Random::getSystemRandom().nextFloat() * (24.0f - (-24.0f));
+            if (!knobLocked[5]) snapshot.granular.random = juce::Random::getSystemRandom().nextFloat();
+            if (!knobLocked[6]) snapshot.granular.texture = juce::Random::getSystemRandom().nextFloat();
+            if (!knobLocked[7]) snapshot.granular.mix = juce::Random::getSystemRandom().nextFloat();
+            
+            processorRef.setStepSnapshot(step, snapshot);
+            break;
+        }
+        
+        case FxPageID::Slicer: {
+            auto snapshot = processorRef.getSafeSnapshot(step);
+            
+            // Randomize Slicer parameters
+            if (!knobLocked[0]) snapshot.slicer.pattern = juce::Random::getSystemRandom().nextFloat();
+            if (!knobLocked[1]) snapshot.slicer.division = juce::Random::getSystemRandom().nextFloat();
+            if (!knobLocked[2]) snapshot.slicer.offset = juce::Random::getSystemRandom().nextFloat();
+            if (!knobLocked[3]) snapshot.slicer.shape = juce::Random::getSystemRandom().nextFloat();
+            if (!knobLocked[4]) snapshot.slicer.releaseMs = 1.0f + juce::Random::getSystemRandom().nextFloat() * (1000.0f - 1.0f);
+            if (!knobLocked[5]) snapshot.slicer.mix = juce::Random::getSystemRandom().nextFloat();
+            
+            processorRef.setStepSnapshot(step, snapshot);
+            break;
+        }
+        
+        case FxPageID::Redux: {
+            auto snapshot = processorRef.getReduxSafeSnapshot(step);
+            
+            // Randomize Redux parameters
+            if (!knobLocked[0]) {
+                // Generate UI value (1-12) then convert to internal value (4-16)
+                int uiBitDepth = 1 + juce::Random::getSystemRandom().nextInt(12); // 1-12
+                snapshot.redux.bitDepth = uiBitDepth + 3; // Convert to 4-16
+            }
+            if (!knobLocked[1]) snapshot.redux.sampleRateReduction = 1 + juce::Random::getSystemRandom().nextInt(32); // 1-32
+            if (!knobLocked[2]) snapshot.redux.jitter = juce::Random::getSystemRandom().nextFloat();
+            if (!knobLocked[3]) snapshot.redux.preFilter = 20.0f + juce::Random::getSystemRandom().nextFloat() * (20000.0f - 20.0f);
+            if (!knobLocked[4]) snapshot.redux.postFilter = 20.0f + juce::Random::getSystemRandom().nextFloat() * (20000.0f - 20.0f);
+            if (!knobLocked[5]) snapshot.redux.drive = juce::Random::getSystemRandom().nextFloat() * 10.0f;
+            if (!knobLocked[6]) snapshot.redux.emphasis = juce::Random::getSystemRandom().nextFloat();
+            if (!knobLocked[7]) snapshot.redux.mix = juce::Random::getSystemRandom().nextFloat();
+            
+            processorRef.setReduxStepSnapshot(step, snapshot);
+            
+            // Update UI to show the randomized values for the current step
+            if (step == reduxUiSelectedStep) {
+                loadSelectedStepIntoKnobs(FxPageID::Redux);
+                updateReduxSequencerUI();
+            }
+            break;
+        }
+        
+        case FxPageID::PhaseBloom: {
+            auto snapshot = processorRef.getSafeSnapshot(step);
+            
+            // Randomize PhaseBloom parameters
+            if (!knobLocked[0]) snapshot.phasebloom.depth = juce::Random::getSystemRandom().nextFloat();
+            if (!knobLocked[1]) snapshot.phasebloom.rate = 0.1f + juce::Random::getSystemRandom().nextFloat() * (8.0f - 0.1f);
+            if (!knobLocked[2]) snapshot.phasebloom.feedback = juce::Random::getSystemRandom().nextFloat() * 0.95f;
+            if (!knobLocked[3]) snapshot.phasebloom.center = juce::Random::getSystemRandom().nextFloat();
+            if (!knobLocked[4]) snapshot.phasebloom.bloom = juce::Random::getSystemRandom().nextFloat();
+            if (!knobLocked[5]) snapshot.phasebloom.spread = juce::Random::getSystemRandom().nextFloat();
+            if (!knobLocked[6]) snapshot.phasebloom.resonance = juce::Random::getSystemRandom().nextFloat();
+            if (!knobLocked[7]) snapshot.phasebloom.mix = juce::Random::getSystemRandom().nextFloat();
+            
+            processorRef.setStepSnapshot(step, snapshot);
+            break;
+        }
+        
+        default:
+            DBG("[UI] Unknown effect type for randomization: " << static_cast<int>(effect));
+            break;
+    }
+}
+
+void PluginEditor::loadSelectedStepIntoKnobs(FxPageID effect)
+{
+    DBG("[UI] Loading selected step into knobs for effect " << static_cast<int>(effect));
+    
+    // CRITICAL: Temporarily disable All Steps to prevent it from triggering during step loading
+    bool wasAllStepsEnabled = allStepsEnabled;
+    allStepsEnabled = false;
+    
+    switch (effect) {
+        case FxPageID::SpaceDelay: {
+            int selectedStep = processorRef.getSpaceDelayUiSelectedStep();
+            selectedStep = juce::jlimit(0, 15, selectedStep);
+            const auto snapshot = processorRef.getSpaceDelaySafeSnapshot(selectedStep);
+            
+            // Load snapshot values into knobs using APVTS parameter conversion
+            processorRef.getAPVTS().getParameter("timeMs")->setValueNotifyingHost(processorRef.getAPVTS().getParameter("timeMs")->convertTo0to1(snapshot.delay.timeMs));
+            processorRef.getAPVTS().getParameter("feedback")->setValueNotifyingHost(processorRef.getAPVTS().getParameter("feedback")->convertTo0to1(snapshot.delay.feedback));
+            processorRef.getAPVTS().getParameter("wowDepth")->setValueNotifyingHost(processorRef.getAPVTS().getParameter("wowDepth")->convertTo0to1(snapshot.delay.wowDepth));
+            processorRef.getAPVTS().getParameter("wowRate")->setValueNotifyingHost(processorRef.getAPVTS().getParameter("wowRate")->convertTo0to1(snapshot.delay.wowRate));
+            processorRef.getAPVTS().getParameter("drive")->setValueNotifyingHost(processorRef.getAPVTS().getParameter("drive")->convertTo0to1(snapshot.delay.saturation));
+            processorRef.getAPVTS().getParameter("hiCut")->setValueNotifyingHost(processorRef.getAPVTS().getParameter("hiCut")->convertTo0to1(snapshot.delay.highCut));
+            processorRef.getAPVTS().getParameter("lowCut")->setValueNotifyingHost(processorRef.getAPVTS().getParameter("lowCut")->convertTo0to1(snapshot.delay.lowCut));
+            processorRef.getAPVTS().getParameter("mix")->setValueNotifyingHost(processorRef.getAPVTS().getParameter("mix")->convertTo0to1(snapshot.delay.mix));
+            break;
+        }
+        
+        case FxPageID::Panner: {
+            int selectedStep = autopanUiSelectedStep;
+            selectedStep = juce::jlimit(0, 15, selectedStep);
+            const auto snapshot = processorRef.getAutoPanSafeSnapshot(selectedStep);
+            
+            // Load snapshot values into knobs
+            if (autopanKnobs[0]) autopanKnobs[0]->setValue(snapshot.autopan.rate, juce::dontSendNotification);
+            if (autopanKnobs[1]) autopanKnobs[1]->setValue(snapshot.autopan.phase, juce::dontSendNotification);
+            if (autopanKnobs[2]) autopanKnobs[2]->setValue((float)snapshot.autopan.waveType, juce::dontSendNotification);
+            if (autopanKnobs[3]) autopanKnobs[3]->setValue(snapshot.autopan.waveShape, juce::dontSendNotification);
+            if (autopanKnobs[4]) autopanKnobs[4]->setValue(snapshot.autopan.inverted ? 1.0f : 0.0f, juce::dontSendNotification);
+            if (autopanKnobs[5]) autopanKnobs[5]->setValue(snapshot.autopan.amount, juce::dontSendNotification);
+            break;
+        }
+        
+        case FxPageID::Dirt: {
+            int selectedStep = dirtUiSelectedStep;
+            selectedStep = juce::jlimit(0, 15, selectedStep);
+            const auto snapshot = processorRef.getDirtSafeSnapshot(selectedStep);
+            
+            // Load snapshot values into knobs
+            if (dirtKnobs[0]) dirtKnobs[0]->setValue(snapshot.dirt.drive, juce::dontSendNotification);
+            if (dirtKnobs[1]) dirtKnobs[1]->setValue(snapshot.dirt.color, juce::dontSendNotification);
+            if (dirtKnobs[2]) dirtKnobs[2]->setValue(snapshot.dirt.asym, juce::dontSendNotification);
+            if (dirtKnobs[3]) dirtKnobs[3]->setValue(snapshot.dirt.texture, juce::dontSendNotification);
+            if (dirtKnobs[4]) dirtKnobs[4]->setValue(snapshot.dirt.lowCut, juce::dontSendNotification);
+            if (dirtKnobs[5]) dirtKnobs[5]->setValue(snapshot.dirt.highCut, juce::dontSendNotification);
+            if (dirtKnobs[6]) dirtKnobs[6]->setValue(snapshot.dirt.tone, juce::dontSendNotification);
+            if (dirtKnobs[7]) dirtKnobs[7]->setValue(snapshot.dirt.mix, juce::dontSendNotification);
+            break;
+        }
+        
+        case FxPageID::Chorus: {
+            int selectedStep = chorusUiSelectedStep;
+            selectedStep = juce::jlimit(0, 15, selectedStep);
+            const auto snapshot = processorRef.getChorusSafeSnapshot(selectedStep);
+            
+            // Load snapshot values into knobs
+            if (chorusKnobs[0]) chorusKnobs[0]->setValue(snapshot.chorus.delayTime, juce::dontSendNotification);
+            if (chorusKnobs[1]) chorusKnobs[1]->setValue(snapshot.chorus.rate, juce::dontSendNotification);
+            if (chorusKnobs[2]) chorusKnobs[2]->setValue(snapshot.chorus.depth, juce::dontSendNotification);
+            if (chorusKnobs[3]) chorusKnobs[3]->setValue(snapshot.chorus.feedback, juce::dontSendNotification);
+            if (chorusKnobs[4]) chorusKnobs[4]->setValue(snapshot.chorus.voices, juce::dontSendNotification);
+            if (chorusKnobs[5]) chorusKnobs[5]->setValue(snapshot.chorus.width, juce::dontSendNotification);
+            if (chorusKnobs[6]) chorusKnobs[6]->setValue(snapshot.chorus.tone, juce::dontSendNotification);
+            if (chorusKnobs[7]) chorusKnobs[7]->setValue(snapshot.chorus.mix, juce::dontSendNotification);
+            break;
+        }
+        
+        case FxPageID::Reverb: {
+            int selectedStep = reverbUiSelectedStep;
+            selectedStep = juce::jlimit(0, 15, selectedStep);
+            const auto snapshot = processorRef.getReverbSafeSnapshot(selectedStep);
+            
+            // Load snapshot values into knobs
+            if (reverbKnobs[0]) reverbKnobs[0]->setValue(snapshot.reverb.type, juce::dontSendNotification);
+            if (reverbKnobs[1]) reverbKnobs[1]->setValue(snapshot.reverb.size, juce::dontSendNotification);
+            if (reverbKnobs[2]) reverbKnobs[2]->setValue(snapshot.reverb.predelayMs, juce::dontSendNotification);
+            if (reverbKnobs[3]) reverbKnobs[3]->setValue(snapshot.reverb.dampHz, juce::dontSendNotification);
+            if (reverbKnobs[4]) reverbKnobs[4]->setValue(snapshot.reverb.diffusion, juce::dontSendNotification);
+            if (reverbKnobs[5]) reverbKnobs[5]->setValue(snapshot.reverb.early, juce::dontSendNotification);
+            if (reverbKnobs[6]) reverbKnobs[6]->setValue(snapshot.reverb.decaySec, juce::dontSendNotification);
+            if (reverbKnobs[7]) reverbKnobs[7]->setValue(snapshot.reverb.mix, juce::dontSendNotification);
+            break;
+        }
+        
+        case FxPageID::Granular: {
+            int selectedStep = granularUiSelectedStep;
+            selectedStep = juce::jlimit(0, 15, selectedStep);
+            const auto snapshot = processorRef.getGranularSafeSnapshot(selectedStep);
+            
+            // Load snapshot values into knobs
+            if (granularKnobs[0]) granularKnobs[0]->setValue(snapshot.granular.sizeMs, juce::dontSendNotification);
+            if (granularKnobs[1]) granularKnobs[1]->setValue(snapshot.granular.densityHz, juce::dontSendNotification);
+            if (granularKnobs[2]) granularKnobs[2]->setValue(snapshot.granular.position, juce::dontSendNotification);
+            if (granularKnobs[3]) granularKnobs[3]->setValue(snapshot.granular.sprayMs, juce::dontSendNotification);
+            if (granularKnobs[4]) granularKnobs[4]->setValue(snapshot.granular.pitchSemi, juce::dontSendNotification);
+            if (granularKnobs[5]) granularKnobs[5]->setValue(snapshot.granular.random, juce::dontSendNotification);
+            if (granularKnobs[6]) granularKnobs[6]->setValue(snapshot.granular.texture, juce::dontSendNotification);
+            if (granularKnobs[7]) granularKnobs[7]->setValue(snapshot.granular.mix, juce::dontSendNotification);
+            break;
+        }
+        
+        case FxPageID::Slicer: {
+            int selectedStep = slicerUiSelectedStep;
+            selectedStep = juce::jlimit(0, 15, selectedStep);
+            const auto snapshot = processorRef.getSlicerSafeSnapshot(selectedStep);
+            
+            // Load snapshot values into knobs
+            if (slicerKnobs[0]) slicerKnobs[0]->setValue(snapshot.slicer.pattern, juce::dontSendNotification);
+            if (slicerKnobs[1]) slicerKnobs[1]->setValue(snapshot.slicer.division, juce::dontSendNotification);
+            if (slicerKnobs[2]) slicerKnobs[2]->setValue(snapshot.slicer.offset, juce::dontSendNotification);
+            if (slicerKnobs[3]) slicerKnobs[3]->setValue(snapshot.slicer.shape, juce::dontSendNotification);
+            if (slicerKnobs[4]) slicerKnobs[4]->setValue(snapshot.slicer.releaseMs, juce::dontSendNotification);
+            break;
+        }
+        
+        case FxPageID::Redux: {
+            int selectedStep = reduxUiSelectedStep;
+            selectedStep = juce::jlimit(0, 15, selectedStep);
+            const auto snapshot = processorRef.getReduxSafeSnapshot(selectedStep);
+            
+            // Load snapshot values into knobs
+            if (reduxKnobs[0]) {
+                float uiBitDepth = (float)snapshot.redux.bitDepth - 3.0f;
+                reduxKnobs[0]->setValue(uiBitDepth, juce::dontSendNotification);
+            }
+            if (reduxKnobs[1]) reduxKnobs[1]->setValue((float)snapshot.redux.sampleRateReduction, juce::dontSendNotification);
+            if (reduxKnobs[2]) reduxKnobs[2]->setValue(snapshot.redux.jitter, juce::dontSendNotification);
+            if (reduxKnobs[3]) reduxKnobs[3]->setValue(snapshot.redux.preFilter, juce::dontSendNotification);
+            if (reduxKnobs[4]) reduxKnobs[4]->setValue(snapshot.redux.postFilter, juce::dontSendNotification);
+            if (reduxKnobs[5]) reduxKnobs[5]->setValue(snapshot.redux.drive, juce::dontSendNotification);
+            if (reduxKnobs[6]) reduxKnobs[6]->setValue(snapshot.redux.emphasis, juce::dontSendNotification);
+            if (reduxKnobs[7]) reduxKnobs[7]->setValue(snapshot.redux.mix, juce::dontSendNotification);
+            break;
+        }
+        
+        case FxPageID::PhaseBloom: {
+            int selectedStep = phaseBloomUiSelectedStep;
+            selectedStep = juce::jlimit(0, 15, selectedStep);
+            const auto snapshot = processorRef.getPhaseBloomSafeSnapshot(selectedStep);
+            
+            // Load snapshot values into knobs
+            if (phaseBloomKnobs[0]) phaseBloomKnobs[0]->setValue(snapshot.phasebloom.depth, juce::dontSendNotification);
+            if (phaseBloomKnobs[1]) phaseBloomKnobs[1]->setValue(snapshot.phasebloom.rate, juce::dontSendNotification);
+            if (phaseBloomKnobs[2]) phaseBloomKnobs[2]->setValue(snapshot.phasebloom.feedback, juce::dontSendNotification);
+            if (phaseBloomKnobs[3]) phaseBloomKnobs[3]->setValue(snapshot.phasebloom.center, juce::dontSendNotification);
+            if (phaseBloomKnobs[4]) phaseBloomKnobs[4]->setValue(snapshot.phasebloom.bloom, juce::dontSendNotification);
+            if (phaseBloomKnobs[5]) phaseBloomKnobs[5]->setValue(snapshot.phasebloom.spread, juce::dontSendNotification);
+            if (phaseBloomKnobs[6]) phaseBloomKnobs[6]->setValue(snapshot.phasebloom.resonance, juce::dontSendNotification);
+            if (phaseBloomKnobs[7]) phaseBloomKnobs[7]->setValue(snapshot.phasebloom.mix, juce::dontSendNotification);
+            break;
+        }
+        
+        default:
+            DBG("[UI] loadSelectedStepIntoKnobs not implemented for effect: " << static_cast<int>(effect));
+            break;
+    }
+    
+    // CRITICAL: Restore All Steps state
+    allStepsEnabled = wasAllStepsEnabled;
+    
+    DBG("[UI] Loaded step values into knobs, All Steps restored to: " << (allStepsEnabled ? "ON" : "OFF"));
+}
+
+void PluginEditor::onUnifiedStepButtonClicked(int stepIndex)
+{
+    DBG("[UI] Unified step button " << stepIndex << " clicked for effect " << static_cast<int>(currentPage));
+    
+    // Save current step's snapshot before switching (if All Steps is OFF)
+    if (!allStepsEnabled) {
+        saveCurrentStepSnapshot();
+    }
+    
+    // Update selected step in processor
+    updateSelectedStepInProcessor(stepIndex);
+    
+    // Update UI to show which step is selected
+    updateSequencerUI();
+    
+    // Load the snapshot for this step into the knobs (without triggering All Steps)
+    loadSelectedStepIntoKnobs(currentPage);
+}
+
+void PluginEditor::updateUnifiedAllStepSnapshots(int knobIndex)
+{
+    DBG("[UI] Unified All Steps update for knob " << knobIndex << " on effect " << static_cast<int>(currentPage));
+    
+    // TODO: Implement unified All Steps logic for all effects
+    // This will replace the current updateAllStepSnapshots method
+}
+
+void PluginEditor::saveCurrentStepSnapshot()
+{
+    DBG("[UI] Saving current step snapshot for effect " << static_cast<int>(currentPage));
+    
+    switch (currentPage) {
+        case FxPageID::SpaceDelay: {
+            int currentStep = processorRef.getSpaceDelayUiSelectedStep();
+            if (currentStep >= 0 && currentStep < 16) {
+                StepSnapshot currentSnapshot;
+                // Read current knob values and save to snapshot
+                for (int i = 0; i < 8; ++i) {
+                    if (knobs[i] != nullptr) {
+                        auto* param = processorRef.getAPVTS().getParameter(getParameterIdForKnob(i));
+                        if (param != nullptr) {
+                            float actualValue = param->convertFrom0to1(knobs[i]->getValue());
+                            updateSnapshotValue(currentSnapshot, i, actualValue);
+                        }
+                    }
+                }
+                processorRef.setSpaceDelayStepSnapshot(currentStep, currentSnapshot);
+                DBG("[UI] Saved Space Delay snapshot for step " << currentStep);
+            }
+            break;
+        }
+        
+        // TODO: Implement for other effects
+        default:
+            DBG("[UI] saveCurrentStepSnapshot not implemented for effect: " << static_cast<int>(currentPage));
+            break;
+    }
+}
+
+void PluginEditor::updateSelectedStepInProcessor(int stepIndex)
+{
+    DBG("[UI] Updating selected step in processor to " << stepIndex << " for effect " << static_cast<int>(currentPage));
+    
+    switch (currentPage) {
+        case FxPageID::SpaceDelay:
+            processorRef.setSpaceDelaySelectedStep(stepIndex);
+            break;
+            
+        // TODO: Implement for other effects
+        default:
+            DBG("[UI] updateSelectedStepInProcessor not implemented for effect: " << static_cast<int>(currentPage));
+            break;
+    }
+}
+
+void PluginEditor::updateSnapshotValue(StepSnapshot& snapshot, int knobIndex, float value)
+{
+    switch (currentPage) {
+        case FxPageID::SpaceDelay:
+            switch (knobIndex) {
+                case 0: snapshot.delay.timeMs = value; break;
+                case 1: snapshot.delay.feedback = value; break;
+                case 2: snapshot.delay.wowDepth = value; break;
+                case 3: snapshot.delay.wowRate = value; break;
+                case 4: snapshot.delay.saturation = value; break;
+                case 5: snapshot.delay.highCut = value; break;
+                case 6: snapshot.delay.lowCut = value; break;
+                case 7: snapshot.delay.mix = value; break;
+            }
+            break;
+            
+        // TODO: Implement for other effects
+        default:
+            break;
+    }
+}
+
+juce::String PluginEditor::getParameterIdForKnob(int knobIndex)
+{
+    switch (currentPage) {
+        case FxPageID::SpaceDelay:
+            switch (knobIndex) {
+                case 0: return "timeMs";
+                case 1: return "feedback";
+                case 2: return "wowDepth";
+                case 3: return "wowRate";
+                case 4: return "drive";
+                case 5: return "hiCut";
+                case 6: return "lowCut";
+                case 7: return "mix";
+            }
+            break;
+            
+        // TODO: Implement for other effects
+        default:
+            break;
+    }
+    return "";
+}
