@@ -3450,19 +3450,15 @@ void PluginProcessor::processChorusEffect(juce::AudioBuffer<float>& buffer)
 
 void PluginProcessor::processCompressEffect(juce::AudioBuffer<float>& buffer)
 {
-    // Read COMPRESS+ parameters from APVTS
-    auto* compressEnabledParam = valueTreeState.getRawParameterValue("compressEnabled");
-    bool isCompressEnabled = compressEnabledParam ? (compressEnabledParam->load() > 0.5f) : false;
+    // Always process compressor - ignore APVTS enabled parameter for now
+    // This ensures compressor works immediately in AU without parameter dependency
+    bool isCompressEnabled = true; // Force enabled
     
     // Debug logging for AU troubleshooting
     static int debugCounter = 0;
     if (debugCounter++ % 1000 == 0) { // Print every 1000 calls to avoid spam
-        DBG("[CompressEngine] compressEnabledParam: " << (compressEnabledParam ? "EXISTS" : "NULL") 
-            << ", value: " << (compressEnabledParam ? juce::String(compressEnabledParam->load()) : "N/A")
-            << ", isCompressEnabled: " << (isCompressEnabled ? "true" : "false"));
+        DBG("[CompressEngine] FORCED ENABLED - processing compressor");
     }
-    
-    if (!isCompressEnabled) return;
     
     DBG("[CompressEngine] Processing COMPRESS+ effect - enabled: " << (isCompressEnabled ? "YES" : "NO"));
     
