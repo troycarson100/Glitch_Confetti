@@ -3462,41 +3462,44 @@ void PluginProcessor::processCompressEffect(juce::AudioBuffer<float>& buffer)
     
     DBG("[CompressEngine] Processing COMPRESS+ effect - enabled: " << (isCompressEnabled ? "YES" : "NO"));
     
-    // Read all COMPRESS+ parameters
+    // Read all COMPRESS+ parameters with fallback defaults for AU compatibility
     auto* thresholdParam = valueTreeState.getRawParameterValue("compressThreshold");
     auto* attackParam = valueTreeState.getRawParameterValue("compressAttack");
     auto* releaseParam = valueTreeState.getRawParameterValue("compressRelease");
     auto* ratioParam = valueTreeState.getRawParameterValue("compressRatio");
-            auto* driveParam = valueTreeState.getRawParameterValue("compressDrive");
-            auto* lofiParam = valueTreeState.getRawParameterValue("compressLofi");
-            auto* makeupGainParam = valueTreeState.getRawParameterValue("compressMakeupGain");
-            auto* wetParam = valueTreeState.getRawParameterValue("compressWet");
+    auto* driveParam = valueTreeState.getRawParameterValue("compressDrive");
+    auto* lofiParam = valueTreeState.getRawParameterValue("compressLofi");
+    auto* makeupGainParam = valueTreeState.getRawParameterValue("compressMakeupGain");
+    auto* wetParam = valueTreeState.getRawParameterValue("compressWet");
 
-            if (thresholdParam && attackParam && releaseParam && ratioParam &&
-                driveParam && lofiParam && makeupGainParam && wetParam)
-            {
-                // Set COMPRESS+ parameters
-                compressEngine.setThreshold(thresholdParam->load());
-                compressEngine.setAttack(attackParam->load());
-                compressEngine.setRelease(releaseParam->load());
-                compressEngine.setRatio(ratioParam->load());
-                compressEngine.setDrive(driveParam->load());
-                compressEngine.setLofi(lofiParam->load());
-                compressEngine.setMakeupGain(makeupGainParam->load());
-                compressEngine.setWet(wetParam->load());
-                
-                // If drive and lofi are both 0, bypass compression by setting threshold to 0dB (no compression)
-                float driveValue = driveParam->load();
-                float lofiValue = lofiParam->load();
-                if (driveValue <= 0.0f && lofiValue <= 0.0f) {
-                    compressEngine.setThreshold(0.0f); // Set threshold to 0dB to bypass compression
-                }
-                
-        compressEngine.setEnabled(true);
-        
-        // Process COMPRESS+ effect
-        compressEngine.process(buffer);
+    // Use parameter values if available, otherwise use defaults (for AU compatibility)
+    float threshold = thresholdParam ? thresholdParam->load() : -20.0f;
+    float attack = attackParam ? attackParam->load() : 5.0f;
+    float release = releaseParam ? releaseParam->load() : 50.0f;
+    float ratio = ratioParam ? ratioParam->load() : 4.0f;
+    float drive = driveParam ? driveParam->load() : 0.0f;
+    float lofi = lofiParam ? lofiParam->load() : 0.0f;
+    float makeupGain = makeupGainParam ? makeupGainParam->load() : 0.0f;
+    float wet = wetParam ? wetParam->load() : 1.0f;
+
+    // Set COMPRESS+ parameters (always set, even with defaults)
+    compressEngine.setThreshold(threshold);
+    compressEngine.setAttack(attack);
+    compressEngine.setRelease(release);
+    compressEngine.setRatio(ratio);
+    compressEngine.setDrive(drive);
+    compressEngine.setLofi(lofi);
+    compressEngine.setMakeupGain(makeupGain);
+    compressEngine.setWet(wet);
+    // If drive and lofi are both 0, bypass compression by setting threshold to 0dB (no compression)
+    if (drive <= 0.0f && lofi <= 0.0f) {
+        compressEngine.setThreshold(0.0f); // Set threshold to 0dB to bypass compression
     }
+    
+    compressEngine.setEnabled(true);
+    
+    // Process COMPRESS+ effect
+    compressEngine.process(buffer);
 }
 
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
