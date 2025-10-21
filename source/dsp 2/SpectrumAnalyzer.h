@@ -180,12 +180,6 @@ private:
             
             // Convert to dB (increased ceiling to +24 dB for headroom)
             float db = 20.0f * std::log10(mag + 1e-12f);
-            
-            // Safety check: prevent NaN/infinity values that could cause white spectrum
-            if (!std::isfinite(db)) {
-                db = -90.0f; // Silent
-            }
-            
             db = juce::jlimit(-90.0f, 24.0f, db);
             
             // Apply filter attenuation (12 dB/oct slopes)

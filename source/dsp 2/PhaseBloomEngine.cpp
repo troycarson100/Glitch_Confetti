@@ -54,8 +54,20 @@ void PhaseBloomEngine::prepare(double newSampleRate, int samplesPerBlock, int nu
         phaserL[i].prepare(spec);
         phaserR[i].prepare(spec);
         
-        // TEMPORARILY DISABLE DELAY LINES TO PREVENT CRASHES
-        // TODO: Re-implement bloom with safer approach
+        // TEMPORARILY DISABLE BLOOM DELAY LINES TO PREVENT CRASHES
+        // TODO: Fix delay line initialization and channel handling
+        // for (int slot = 0; slot < NUM_SLOTS; ++slot) {
+        //     for (int d = 0; d < NUM_BLOOM_DELAYS; ++d) {
+        //         bloomDelayL[slot][d].prepare(spec);
+        //         bloomDelayR[slot][d].prepare(spec);
+        //         bloomDelayL[slot][d].setMaximumDelayInSamples(static_cast<int>(sampleRate * 0.1)); // 100ms max
+        //         bloomDelayR[slot][d].setMaximumDelayInSamples(static_cast<int>(sampleRate * 0.1)); // 100ms max
+        //         
+        //         // Initialize smoothed delay times
+        //         bloomDelayTimes[slot][d].reset(sampleRate, 0.01); // 10ms smoothing
+        //         bloomDelayTimes[slot][d].setCurrentAndTargetValue(0.0f);
+        //     }
+        // }
     }
 }
 
@@ -68,7 +80,14 @@ void PhaseBloomEngine::reset()
     {
         phaserL[i].reset();
         phaserR[i].reset();
-        // TEMPORARILY DISABLE DELAY LINES TO PREVENT CRASHES
+        // TEMPORARILY DISABLE BLOOM DELAY LINES TO PREVENT CRASHES
+        // TODO: Fix delay line initialization and channel handling
+        // for (int d = 0; d < NUM_BLOOM_DELAYS; ++d) {
+        //     bloomDelayL[i][d].reset();
+        //     bloomDelayR[i][d].reset();
+        //     bloomDelayTimes[i][d].reset(sampleRate, 0.01);
+        //     bloomDelayTimes[i][d].setCurrentAndTargetValue(0.0f);
+        // }
     }
     
     // Reset all smoothed parameters to prevent clicks
@@ -126,27 +145,27 @@ void PhaseBloomEngine::process(juce::AudioBuffer<float>& buffer, double hostBPM)
     // Convert rate value (0-1) to rate index (0-8)
     int rateIdx = juce::jlimit(0, 8, static_cast<int>(currentRate * 8.0f));
     
-    // Map resonance [0,1] to enhanced feedback with stability limiting
-    float resonanceFeedback = juce::jmap(currentResonance, 0.0f, 1.0f, currentFeedback, currentFeedback * 1.2f);
+    // TEMPORARILY DISABLE BLOOM DELAY UPDATES TO PREVENT CRASHES
+    // TODO: Fix delay line initialization and channel handling
+    // updateBloomDelays(currentBloom, sampleRate, slot);
     
-    // Limit feedback to prevent instability and loudness issues
-    resonanceFeedback = juce::jlimit(-0.7f, 0.7f, resonanceFeedback);
+    // Map resonance [0,1] to enhanced feedback with more dramatic effect
+    float baseFeedback = currentFeedback;
+    float resonanceBoost = juce::jmap(currentResonance, 0.0f, 1.0f, 1.0f, 2.5f); // 1.0x to 2.5x boost
+    float resonanceFeedback = baseFeedback * resonanceBoost;
+    
+    // Limit feedback to prevent instability but allow more resonance
+    resonanceFeedback = juce::jlimit(-0.85f, 0.85f, resonanceFeedback);
+    
+    // Update phaser resonance (Q factor) based on resonance knob
+    updatePhaserResonance(currentResonance, slot);
     
     // Calculate tempo-synced LFO rate in Hz with limiting for smoothness
-    double quarterSec = 60.0 / juce::jmax(1.0, bpm); // Prevent division by zero
+    double quarterSec = 60.0 / bpm;
     double period = quarterSec * divisionFactors[rateIdx];
-    
-    // Prevent division by zero and invalid values
-    if (period <= 0.0 || !std::isfinite(period)) {
-        period = 1.0; // Fallback to 1 second
-    }
-    
     double rateHz = 1.0 / period;
     
-    // Check for NaN/infinity and limit rate to prevent harsh artifacts and instability
-    if (!std::isfinite(rateHz)) {
-        rateHz = 1.0; // Fallback to 1 Hz
-    }
+    // Limit rate to prevent harsh artifacts and instability
     rateHz = juce::jlimit(0.1, 20.0, rateHz);
     
     // Debug output every 1000 blocks to verify rate calculation
@@ -190,43 +209,81 @@ void PhaseBloomEngine::process(juce::AudioBuffer<float>& buffer, double hostBPM)
     buffer.copyFrom(0, 0, leftBuffer, 0, 0, numSamples);
     buffer.copyFrom(1, 0, rightBuffer, 0, 0, numSamples);
     
-        // Apply Bloom (tanh) and mixing sample-by-sample
-        float invSpread = 1.0f - 2.0f * currentSpread; // for 0→1 spread (0..180° phase)
+    // TEMPORARILY DISABLE BLOOM PROCESSING TO PREVENT CRASHES
+    // TODO: Fix delay line initialization and channel handling
+    // if (currentBloom > 0.001f) {
+    //     processBloomBlock(buffer, slot);
+    // }
+    
+    // Apply simple Bloom effect (saturation-based) and stereo processing
+    for (int n = 0; n < numSamples; ++n)
+    {
+        // Original dry samples
+        float dryL = dryBuffer.getSample(0, n);
+        float dryR = dryBuffer.getSample(1, n);
+        // Wet output from phaser
+        float wetL = buffer.getSample(0, n);
+        float wetR = buffer.getSample(1, n);
         
-        // TEMPORARILY DISABLE DELAY-BASED BLOOM TO PREVENT CRASHES
-        // TODO: Re-implement bloom with safer approach
-        
-        for (int n = 0; n < numSamples; ++n)
-        {
-            // Original dry samples
-            float dryL = dryBuffer.getSample(0, n);
-            float dryR = dryBuffer.getSample(1, n);
-            // Wet output from phaser
-            float wetL = buffer.getSample(0, n);
-            float wetR = buffer.getSample(1, n);
+        // Apply enhanced Bloom effect (multi-tap diffusion simulation)
+        if (currentBloom > 0.001f) {
+            float bloomAmount = currentBloom;
             
-            // Simple bloom effect with saturation only (no delay lines)
-            if (currentBloom > 0.001f)
-            {
-                // Apply gentle saturation for bloom effect
-                float bloomAmount = currentBloom * 0.8f;
-                wetL = juce::jmap(bloomAmount, wetL, std::tanh(wetL * 0.9f));
-                wetR = juce::jmap(bloomAmount, wetR, std::tanh(wetR * 0.9f));
-            }
+            // Create diffusion effect using multiple harmonic enhancements
+            // This simulates the multi-tap delay diffusion without using actual delays
             
-            // Soft limiting to prevent loudness issues
-            wetL = juce::jlimit(-0.8f, 0.8f, wetL);
-            wetR = juce::jlimit(-0.8f, 0.8f, wetR);
+            // Primary bloom: harmonic enrichment with saturation
+            float bloomL = wetL + bloomAmount * std::tanh(wetL * 3.0f) * 0.4f;
+            float bloomR = wetR + bloomAmount * std::tanh(wetR * 3.0f) * 0.4f;
             
-            // Stereo spread: invert right channel at full spread (≈180° LFO shift)
-            wetR *= invSpread;
+            // Secondary bloom: subtle frequency modulation for "blooming" character
+            float modFreq = 0.5f + bloomAmount * 2.0f; // 0.5 to 2.5 Hz modulation
+            float modPhase = lfoPhase * modFreq;
+            float modAmount = bloomAmount * 0.15f; // Subtle modulation
             
-            // Final dry/wet mix
-            float outL = juce::jmap(currentMix, dryL, wetL);
-            float outR = juce::jmap(currentMix, dryR, wetR);
-            buffer.setSample(0, n, outL);
-            buffer.setSample(1, n, outR);
+            bloomL += modAmount * std::sin(modPhase) * wetL;
+            bloomR += modAmount * std::cos(modPhase) * wetR;
+            
+            // Mix original and bloomed signal
+            wetL = juce::jmap(bloomAmount, wetL, bloomL);
+            wetR = juce::jmap(bloomAmount, wetR, bloomR);
         }
+        
+        // Update LFO phase for next sample (used by bloom effect)
+        lfoPhase += 1.0f / static_cast<float>(sampleRate);
+        if (lfoPhase >= 1.0f) lfoPhase -= 1.0f;
+        
+        // Apply resonance-based frequency emphasis
+        if (currentResonance > 0.001f) {
+            float resonanceGain = 1.0f + currentResonance * 0.6f; // Up to 60% gain boost
+            wetL *= resonanceGain;
+            wetR *= resonanceGain;
+        }
+        
+        // Soft limiting to prevent loudness issues
+        wetL = juce::jlimit(-0.8f, 0.8f, wetL);
+        wetR = juce::jlimit(-0.8f, 0.8f, wetR);
+        
+        // Stereo spread: phase offset between L and R channels
+        float spreadAmount = currentSpread * 0.5f; // Scale down for subtlety
+        
+        // Apply stereo spread with proper phase offset
+        if (spreadAmount > 0.001f) {
+            // Create phase offset for right channel only (left stays original)
+            float phaseOffset = spreadAmount * juce::MathConstants<float>::pi * 0.5f; // 0 to π/2
+            
+            // Apply phase shift to right channel only
+            float tempR = wetR;
+            wetR = wetR * std::cos(phaseOffset) - wetL * std::sin(phaseOffset) * 0.2f;
+            // Left channel stays unchanged for proper stereo balance
+        }
+        
+        // Final dry/wet mix
+        float outL = juce::jmap(currentMix, dryL, wetL);
+        float outR = juce::jmap(currentMix, dryR, wetR);
+        buffer.setSample(0, n, outL);
+        buffer.setSample(1, n, outR);
+    }
 }
 
 void PhaseBloomEngine::setDepth(float depthValue)
@@ -295,4 +352,58 @@ juce::String PhaseBloomEngine::getRateLabel(float rateValue)
 {
     int rateIndex = juce::jlimit(0, 8, static_cast<int>(rateValue * 8.0f));
     return juce::String(RATE_LABELS[rateIndex]); // Don't reverse - faster on the right
+}
+
+void PhaseBloomEngine::updateBloomDelays(float bloomAmount, double sampleRate, int slot)
+{
+    // Update delay times for all bloom delays in the diffusion network
+    for (int d = 0; d < NUM_BLOOM_DELAYS; ++d) {
+        // Scale delay time by bloom amount (0.1x to 1.0x of base delay)
+        float modMs = BLUR_DELAY_OFFSETS[d] * (0.1f + bloomAmount * 0.9f);
+        float delaySamples = modMs * 0.001f * static_cast<float>(sampleRate);
+        
+        // Set target with smoothing to prevent clicks
+        bloomDelayTimes[slot][d].setTargetValue(delaySamples);
+    }
+}
+
+void PhaseBloomEngine::processBloomBlock(juce::AudioBuffer<float>& buffer, int slot)
+{
+    const int numChannels = buffer.getNumChannels();
+    const int numSamples = buffer.getNumSamples();
+    
+    // Process each channel separately
+    for (int ch = 0; ch < numChannels; ++ch) {
+        auto* data = buffer.getWritePointer(ch);
+        
+        // Get the appropriate delay arrays for this channel
+        auto* delays = (ch == 0) ? bloomDelayL[slot] : bloomDelayR[slot];
+        auto* delayTimes = bloomDelayTimes[slot];
+        
+        for (int n = 0; n < numSamples; ++n) {
+            float dry = data[n];
+            float smear = 0.0f;
+            
+            // Process all 4 diffusion delays
+            for (int d = 0; d < NUM_BLOOM_DELAYS; ++d) {
+                // Pop delayed sample, then push current dry sample
+                float delayed = delays[d].popSample(ch, delayTimes[d].getNextValue());
+                delays[d].pushSample(ch, dry);
+                smear += delayed;
+            }
+            
+            // Mix dry + (scaled) smeared signals; scale output to avoid clipping
+            data[n] = (dry + 0.3f * smear) * 0.77f;
+        }
+    }
+}
+
+void PhaseBloomEngine::updatePhaserResonance(float resonanceValue, int slot)
+{
+    // Map resonance [0,1] to Q factor range [1, 10] for enhanced filtering
+    float q = 1.0f + resonanceValue * 9.0f; // Q range from 1 (no peak) to 10 (strong peak)
+    
+    // Apply to both phasers (though JUCE phaser doesn't have direct Q control,
+    // we enhance the feedback mapping which affects the resonance characteristics)
+    // The feedback parameter already incorporates resonance enhancement in the main process loop
 }

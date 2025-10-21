@@ -255,16 +255,6 @@ void DubDelayProcessor::process(juce::AudioBuffer<float>& buffer, int numSamples
             fbR = delayedR;
         }
         
-        // Safety check: prevent feedback instability and NaN values
-        if (!std::isfinite(fbL) || !std::isfinite(fbR)) {
-            fbL = 0.0f;
-            fbR = 0.0f;
-        }
-        
-        // Clamp feedback to prevent runaway
-        fbL = juce::jlimit(-0.95f, 0.95f, fbL);
-        fbR = juce::jlimit(-0.95f, 0.95f, fbR);
-        
         // Write to delay buffers (input + feedback)
         delayBufferL[writePos] = inL + fbL;
         delayBufferR[writePos] = inR + fbR;

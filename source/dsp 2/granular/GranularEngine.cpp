@@ -253,19 +253,9 @@ void GranularEngine::process(juce::AudioBuffer<float>& buffer)
         targetGain = juce::jlimit(0.5f, 1.0f, targetGain);
         agcGain = agcGain * 0.9995f + targetGain * 0.0005f; // 200ms smooth
         
-        // Safety check: prevent NaN/infinity values
-        if (!std::isfinite(energyNorm) || !std::isfinite(agcGain)) {
-            energyNorm = 1.0f;
-            agcGain = 1.0f;
-        }
-        
         // Apply normalization and AGC (reduced boost to prevent bit crushing)
         outL *= energyNorm * agcGain * 1.2f; // Reduced boost for cleaner sound
         outR *= energyNorm * agcGain * 1.2f;
-        
-        // Final safety check for output values
-        if (!std::isfinite(outL)) outL = 0.0f;
-        if (!std::isfinite(outR)) outR = 0.0f;
         
         // Softer limiter (knee at -3dB, ceiling -0.5dB) for cleaner sound
         auto softLimit = [](float x) {

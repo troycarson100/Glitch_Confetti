@@ -1661,6 +1661,26 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
     // Process COMPRESS+ Master Effect (after all other effects)
     processCompressEffect(buffer);
     
+    // Safety check: detect and fix NaN/infinity values that could cause audio to go silent
+    for (int channel = 0; channel < buffer.getNumChannels(); ++channel)
+    {
+        float* channelData = buffer.getWritePointer(channel);
+        for (int sample = 0; sample < buffer.getNumSamples(); ++sample)
+        {
+            float& sampleValue = channelData[sample];
+            
+            // Check for NaN or infinity values
+            if (!std::isfinite(sampleValue))
+            {
+                DBG("[SAFETY] Detected invalid audio value: " << sampleValue << " at channel " << channel << " sample " << sample);
+                sampleValue = 0.0f; // Reset to silence
+            }
+            
+            // Clamp to reasonable range to prevent extreme values
+            sampleValue = juce::jlimit(-1.0f, 1.0f, sampleValue);
+        }
+    }
+    
     // Skip old hardcoded effect processing (now done via router above)
     #if 0
     // Process delay effect
