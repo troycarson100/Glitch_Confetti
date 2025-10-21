@@ -178,19 +178,19 @@ void CompressEngine::processLofi(juce::AudioBuffer<float>& buffer)
     
     // Pre-calc (do once per block): map slider to downsample factor and bit steps
     // Make lofi effect much more subtle at low values
-    // Downsample hold period: 1 (no hold) up to 32 samples (heavy hold)
+    // Downsample hold period: 1 (no hold) up to 16 samples (moderate hold) - reduced from 32
     // Use exponential curve to make low values much more subtle
-    const float holdPeriod = juce::jmap(lofiLevel * lofiLevel, 1.0f, 32.0f);
+    const float holdPeriod = juce::jmap(lofiLevel * lofiLevel, 1.0f, 16.0f);
     
     // Bit quantization steps: from many steps at low lofi to few at high lofi
     // Use exponential curve to make low values much more subtle
-    // At 1% lofi: ~65536 steps (16-bit), at 10%: ~10000 steps (13-bit), at 100%: 8 steps (3-bit)
-    const float bitSteps = juce::jmap(lofiLevel * lofiLevel, 65536.0f, 8.0f);
+    // At 1% lofi: ~65536 steps (16-bit), at 10%: ~10000 steps (13-bit), at 100%: 64 steps (6-bit) - improved from 8
+    const float bitSteps = juce::jmap(lofiLevel * lofiLevel, 65536.0f, 64.0f);
     
     // Low-pass filter setup: cutoff falls with more lofi for smoothness
     // Use exponential curve to make low values much more subtle
-    // At 1% lofi: 20kHz (no filtering), at 10%: ~18kHz, at 100%: 2kHz
-    const float cutoff = juce::jmap(lofiLevel * lofiLevel, 20000.0f, 2000.0f);
+    // At 1% lofi: 20kHz (no filtering), at 10%: ~18kHz, at 100%: 4kHz - improved from 2kHz
+    const float cutoff = juce::jmap(lofiLevel * lofiLevel, 20000.0f, 4000.0f);
     const float RC = 1.0f / (2.0f * juce::MathConstants<float>::pi * cutoff);
     const float dt = 1.0f / sampleRate;
     const float alpha = dt / (RC + dt);  // one-pole filter coefficient
@@ -241,7 +241,7 @@ void CompressEngine::processLofi(juce::AudioBuffer<float>& buffer)
         // --- Soft saturation for warmth ---
         // Make saturation much more subtle at low lofi values
         // Use exponential curve to make low values much more subtle
-        const float warmGain = 1.0f + 0.3f * (lofiLevel * lofiLevel);  // drive up to 1.3x (reduced from 1.5x)
+        const float warmGain = 1.0f + 0.2f * (lofiLevel * lofiLevel);  // drive up to 1.2x (reduced from 1.3x)
         float satL = std::tanh(lowpassL * warmGain);
         float satR = std::tanh(lowpassR * warmGain);
         
