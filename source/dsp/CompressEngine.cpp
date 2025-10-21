@@ -57,13 +57,18 @@ void CompressEngine::reset()
 
 void CompressEngine::process(juce::AudioBuffer<float>& buffer)
 {
-    if (!enabled || buffer.getNumSamples() == 0)
-    {
-        DBG("[CompressEngine] Not processing - enabled: " << (enabled ? "true" : "false") << ", samples: " << buffer.getNumSamples());
-        return;
+    static int processCallCounter = 0;
+    if (processCallCounter++ % 1000 == 0) { // Print every 1000 calls to avoid spam
+        DBG("[CompressEngine] process() called - enabled: " << (enabled ? "true" : "false") << ", samples: " << buffer.getNumSamples());
     }
     
-    DBG("[CompressEngine] Processing buffer with " << buffer.getNumSamples() << " samples");
+    if (!enabled || buffer.getNumSamples() == 0)
+    {
+        if (processCallCounter % 1000 == 0) { // Only log when we're already logging
+            DBG("[CompressEngine] Not processing - enabled: " << (enabled ? "true" : "false") << ", samples: " << buffer.getNumSamples());
+        }
+        return;
+    }
     
     const int numChannels = buffer.getNumChannels();
     const int numSamples = buffer.getNumSamples();
@@ -292,6 +297,7 @@ void CompressEngine::processWetDry(juce::AudioBuffer<float>& buffer)
 void CompressEngine::setThreshold(float thresholdValue)
 {
     this->thresholdDb = thresholdValue;
+    DBG("[CompressEngine] setThreshold called with: " << thresholdValue << "dB");
 }
 
 void CompressEngine::setAttack(float attackValue)
@@ -332,4 +338,5 @@ void CompressEngine::setWet(float wetVal)
 void CompressEngine::setEnabled(bool enable)
 {
     this->enabled = enable;
+    DBG("[CompressEngine] setEnabled called with: " << (enable ? "true" : "false") << ", current enabled state: " << (this->enabled ? "true" : "false"));
 }

@@ -73,7 +73,7 @@ private:
     std::unique_ptr<juce::dsp::Oversampling<float>> driveOversampler;
 
     // Processing state
-    bool enabled = false;
+    bool enabled = true; // Default to enabled to prevent initialization issues
     double sampleRate = 44100.0;
     int blockSize = 512;
     
