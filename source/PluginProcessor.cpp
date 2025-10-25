@@ -210,6 +210,11 @@ juce::AudioProcessorValueTreeState::ParameterLayout PluginProcessor::createParam
     params.push_back(std::make_unique<juce::AudioParameterFloat>("lowCut", "Low-Cut", 20.0f, 2000.0f, 20.0f));
     params.push_back(std::make_unique<juce::AudioParameterFloat>("mix", "Mix", 0.0f, 1.0f, 0.5f));
     
+    // Space Delay Sync Parameters
+    params.push_back(std::make_unique<juce::AudioParameterBool>("delaySync", "Delay Sync", false)); // Sync disabled by default
+    params.push_back(std::make_unique<juce::AudioParameterChoice>("delayTimeDiv", "Delay Time Division", 
+        juce::StringArray{"2", "1", "1/2", "1/2D", "1/2T", "1/4", "1/4D", "1/4T", "1/8", "1/8D", "1/8T", "1/16", "1/16D", "1/16T", "1/32", "1/32D", "1/32T", "1/64", "1/64D", "1/64T"}, 5)); // Default 1/4 (index 5)
+    
     // AutoPan Parameters - 6 knobs
     params.push_back(std::make_unique<juce::AudioParameterFloat>("autopanRate", "AutoPan Rate", 0.0f, 1.0f, 0.43f)); // 0-1 for sync divisions (default ~1/4 = 0.43)
     params.push_back(std::make_unique<juce::AudioParameterFloat>("autopanPhase", "AutoPan Phase", 0.0f, 360.0f, 180.0f)); // degrees
@@ -3293,9 +3298,60 @@ void PluginProcessor::processDelayEffect(juce::AudioBuffer<float>& buffer)
             DBG("[SPACE DELAY MANUAL] Using APVTS parameters - timeMs: " << timeMs << ", feedback: " << feedback);
         }
         
+        // Check if sync is enabled and compute final delay time
+        auto* syncParam = valueTreeState.getRawParameterValue("delaySync");
+        bool syncEnabled = syncParam ? (syncParam->load() > 0.5f) : false;
+        
+        float finalTimeMs = timeMs;
+        
+        if (syncEnabled) {
+            // Tempo-synced mode: compute delay time from BPM + division
+            double bpmSafe = transportCache.bpm.load();
+            if (bpmSafe < 20.0 || bpmSafe > 300.0) {
+                bpmSafe = 120.0; // Fallback
+            }
+            
+            // Get division index from parameter
+            auto* divParam = dynamic_cast<juce::AudioParameterChoice*>(valueTreeState.getParameter("delayTimeDiv"));
+            int divIdx = divParam ? divParam->getIndex() : 5; // Default 1/4 (index 5)
+            
+            // Define delay divisions: 2, 1, 1/2, 1/2D, 1/2T, 1/4, 1/4D, 1/4T, 1/8, 1/8D, 1/8T, 1/16, 1/16D, 1/16T, 1/32, 1/32D, 1/32T, 1/64, 1/64D, 1/64T
+            static const float delayMultipliers[] = {
+                8.0f,    // 2 (2 whole notes = 8 quarter notes)
+                4.0f,    // 1 (1 whole note = 4 quarter notes)
+                2.0f,    // 1/2 (half note = 2 quarter notes)
+                3.0f,    // 1/2D (dotted half = 3 quarter notes)
+                1.333f,  // 1/2T (triplet half = 4/3 quarter notes)
+                1.0f,    // 1/4 (quarter note = 1 quarter note)
+                1.5f,    // 1/4D (dotted quarter = 1.5 quarter notes)
+                0.667f,  // 1/4T (triplet quarter = 2/3 quarter notes)
+                0.5f,    // 1/8 (eighth note = 0.5 quarter notes)
+                0.75f,   // 1/8D (dotted eighth = 0.75 quarter notes)
+                0.333f,  // 1/8T (triplet eighth = 1/3 quarter notes)
+                0.25f,   // 1/16 (sixteenth note = 0.25 quarter notes)
+                0.375f,  // 1/16D (dotted sixteenth = 0.375 quarter notes)
+                0.167f,  // 1/16T (triplet sixteenth = 1/6 quarter notes)
+                0.125f,  // 1/32 (thirty-second note = 0.125 quarter notes)
+                0.188f,  // 1/32D (dotted thirty-second = 0.188 quarter notes)
+                0.083f,  // 1/32T (triplet thirty-second = 1/12 quarter notes)
+                0.0625f, // 1/64 (sixty-fourth note = 0.0625 quarter notes)
+                0.094f,  // 1/64D (dotted sixty-fourth = 0.094 quarter notes)
+                0.042f   // 1/64T (triplet sixty-fourth = 1/24 quarter notes)
+            };
+            
+            divIdx = juce::jlimit(0, (int)std::size(delayMultipliers) - 1, divIdx);
+            float multiplier = delayMultipliers[divIdx];
+            
+            // Compute delay time: 60,000 ms per minute / BPM * multiplier
+            double quarterNoteMs = 60000.0 / bpmSafe;
+            finalTimeMs = static_cast<float>(multiplier * quarterNoteMs);
+            
+            DBG("[SPACE DELAY SYNC] BPM: " << bpmSafe << ", DivIdx: " << divIdx << ", Multiplier: " << multiplier << ", FinalTimeMs: " << finalTimeMs);
+        }
+        
         // Set Space Delay parameters
         FxDelay::Targets t;
-        t.timeMs = timeMs;
+        t.timeMs = finalTimeMs;
         t.feedback = juce::jlimit(0.0f, 0.85f, feedback);
         t.wowDepth = wowDepth;
         t.wowRate = wowRate;

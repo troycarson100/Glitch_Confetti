@@ -1095,7 +1095,8 @@ public:
         void randomizeIndividualDubDelayKnob(int knobIndex);
         void updateDubDelayParameterFromKnob(int knobIndex);
         void updateDubDelaySequencerUI();
-        void updateDubDelayTimeLabel(); // Update Time knob label based on sync mode
+        void updateSpaceDelayTimeLabel();
+    void updateDubDelayTimeLabel(); // Update Time knob label based on sync mode
         void onDubDelayStepButtonClicked(int stepIndex);
         void updateDubDelayCurrentStepSnapshot(int knobIndex, float value);
         

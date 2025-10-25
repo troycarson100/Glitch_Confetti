@@ -797,14 +797,20 @@ void PluginEditor::timerCallback()
     {
         if (knobs[i] != nullptr && i < processorRef.getParameters().size())
         {
+            // Special handling for Time knob in sync mode
+            if (i == 0 && timeSyncEnabled) {
+                // In sync mode, skip timer-based updates entirely
+                // The knob is controlled by delayTimeDiv parameter, not timeMs
+                // Label is updated by updateSpaceDelayTimeLabel()
+                continue;
+            }
+            
             auto* param = processorRef.getParameters().getUnchecked(i);
             float paramValue = param->getValue();
             
             // Only update knob value if it's not currently being dragged
             if (!knobs[i]->isMouseButtonDown())
             {
-                // In sync mode for Time knob, do not overwrite the slider position (we use it to select divisions)
-                if (!(i == 0 && timeSyncEnabled))
                 knobs[i]->setValue(paramValue, juce::dontSendNotification);
             }
             
@@ -816,37 +822,20 @@ void PluginEditor::timerCallback()
                 if (auto* floatParam = dynamic_cast<juce::AudioParameterFloat*>(param))
                 {
                     float actualValue = floatParam->convertFrom0to1(paramValue);
-                    if (i == 0)
-                    {
-                        if (timeSyncEnabled)
-                        {
-                            // Show division text instead of ms
-                            const double bpm = processorRef.getBpmOrDefault(120.0);
-                            std::vector<std::pair<juce::String, double>> divisions = {
-                                {"2", 2.0}, {"1", 1.0}, {"1/2", 0.5}, {"1/4", 0.25}, {"1/8", 0.125}, {"1/16", 0.0625}, {"1/32", 0.03125}, {"1/64", 0.015625}
-                            };
-                            double mult = 1.0;
-                            if (timeSyncStdMode == 1) mult = 2.0/3.0; else if (timeSyncStdMode == 2) mult = 1.5;
-                            // Compute nearest division index from current knob pos (already set above when not dragging)
-                            int idx = juce::jlimit(0, 7, (int) std::round(knobs[i]->getValue() * 7.0f));
-                            auto label = divisions[idx].first;
-                            if (timeSyncStdMode == 1) label << "t"; else if (timeSyncStdMode == 2) label << ".";
-                            valueText = label;
-                        }
-                        else
-                        {
+                    if (i == 0) {
+                        // Time knob in non-sync mode
                         valueText = juce::String(actualValue, 0) + "ms";
-                        }
-                    }
-                    else if (i == 5 || i == 6) // Hi-Cut, Low-Cut - show in Hz
+                    } else if (i == 5 || i == 6) {
+                        // Hi-Cut, Low-Cut - show in Hz
                         valueText = juce::String((int) std::round(actualValue)) + "Hz";
-                    else if (i == 3) // Wow Rate - show in Hz
+                    } else if (i == 3) {
+                        // Wow Rate - show in Hz
                         valueText = juce::String((int) std::round(actualValue)) + "Hz";
-                    else // Others - show as percentage (whole numbers)
+                    } else {
+                        // Other knobs show percentage
                         valueText = juce::String((int) std::round(actualValue * 100)) + "%";
-                }
-                else
-                {
+                    }
+                } else {
                     // Fallback for other parameter types
                     valueText = juce::String((int) std::round(paramValue * 100)) + "%";
                 }
@@ -2036,44 +2025,74 @@ void PluginEditor::setupKnobs()
             auto* param = processorRef.getParameters().getUnchecked(i);
             
             // All knobs use normalized 0-1 range for consistent UI behavior
+            if (i == 0 && timeSyncEnabled) {
+                // Time knob in sync mode: 0-19 divisions (20 choices)
+                knobs[i]->setRange(0.0, 19.0, 1.0);
+                // Initialize from delayTimeDiv parameter instead of timeMs
+                auto* divParam = dynamic_cast<juce::AudioParameterChoice*>(processorRef.getAPVTS().getParameter("delayTimeDiv"));
+                if (divParam) {
+                    knobs[i]->setValue(static_cast<float>(divParam->getIndex()), juce::dontSendNotification);
+                } else {
+                    knobs[i]->setValue(5.0, juce::dontSendNotification); // Default to 1/4 (index 5)
+                }
+            } else if (i == 0) {
+                // Time knob in non-sync mode: 1-2000ms
+                knobs[i]->setRange(1.0, 2000.0, 1.0);
+                if (auto* floatParam = dynamic_cast<juce::AudioParameterFloat*>(param))
+                {
+                    knobs[i]->setValue(floatParam->convertFrom0to1(param->getValue()), juce::dontSendNotification);
+                }
+                else
+                {
+                    knobs[i]->setValue(250.0, juce::dontSendNotification);
+                }
+            } else {
+                // Other knobs: normalized 0-1 range
                 knobs[i]->setRange(0.0, 1.0, 0.001);
-            
-            // Set initial value from parameter (already normalized)
-            if (auto* floatParam = dynamic_cast<juce::AudioParameterFloat*>(param))
-            {
-                knobs[i]->setValue(param->getValue(), juce::dontSendNotification);
-            }
-            else
-            {
-                knobs[i]->setValue(0.5, juce::dontSendNotification);
+                if (auto* floatParam = dynamic_cast<juce::AudioParameterFloat*>(param))
+                {
+                    knobs[i]->setValue(param->getValue(), juce::dontSendNotification);
+                }
+                else
+                {
+                    knobs[i]->setValue(0.5, juce::dontSendNotification);
+                }
         }
         
             // Add listener to update snapshots when knob changes
         knobs[i]->onValueChange = [this, i]() {
                 if (i == 0 && timeSyncEnabled)
                 {
-                    // Use full throw to select division; update parameter directly without changing slider value
-                    float pos = knobs[0]->getValue();
-                    int idx = juce::jlimit(0, 7, (int) std::round(pos * 7.0f));
-                    // Ascending divisions: smallest first
-                    static const double baseBeats[8] = { 1.0/64.0, 1.0/32.0, 1.0/16.0, 1.0/8.0, 1.0/4.0, 1.0/2.0, 1.0, 2.0 };
-                    const double bpm = processorRef.getBpmOrDefault(120.0);
-                    double mult = 1.0;
-                    if (timeSyncStdMode == 1) mult = 2.0/3.0; else if (timeSyncStdMode == 2) mult = 1.5;
-                    double beatsSel = baseBeats[idx] * mult;
-                    double ms = beatsSel * (60.0 / juce::jmax(1.0, bpm)) * 1000.0;
-                    // Set parameter (normalized) to reflect ms
-                    if (auto* p = dynamic_cast<juce::AudioParameterFloat*>(processorRef.getAPVTS().getParameter("timeMs")))
-                    {
-                        float norm = p->convertTo0to1((float) ms);
-                        p->setValueNotifyingHost(norm);
-                        // Update snapshot with real value and keep UI labels consistent
-                        processorRef.updateCurrentStepSnapshot(0, (float) ms);
+                    // Handle sync mode: map knob position to division index
+                    float knobValue = knobs[0]->getValue();
+                    int divisionIndex = static_cast<int>(knobValue); // Direct mapping, no rounding needed since knob has step size of 1.0
+                    divisionIndex = juce::jlimit(0, 19, divisionIndex); // 20 divisions = indices 0-19
+                    
+                    DBG("[SYNC] Knob value: " << knobValue << ", Division index: " << divisionIndex);
+                    
+                    // Update APVTS parameter
+                    auto* divParam = dynamic_cast<juce::AudioParameterChoice*>(processorRef.getAPVTS().getParameter("delayTimeDiv"));
+                    if (divParam) {
+                        // AudioParameterChoice expects normalized value 0-1
+                        float normalizedValue = static_cast<float>(divisionIndex) / 19.0f; // 19 steps for 20 choices
+                        divParam->setValueNotifyingHost(normalizedValue);
+                        DBG("[SYNC] Set division param to: " << normalizedValue << ", actual index: " << divParam->getIndex());
+                    }
+                    
+                    // Update label via updateSpaceDelayTimeLabel
+                    updateSpaceDelayTimeLabel();
+                } else {
+                    // For non-sync time knob, update the time label
+                    if (i == 0) {
+                        updateSpaceDelayTimeLabel();
                     }
                 }
-                else
-                {
-                updateParameterFromKnob(i);
+                
+                // Always update parameter from knob for non-sync knobs or after sync handling
+                if (i != 0 || !timeSyncEnabled) {
+                    updateParameterFromKnob(i);
+                } else {
+                    DBG("[SYNC] Skipping updateParameterFromKnob for knob 0 in sync mode");
                 }
                 
                 // If All Steps toggle is active, update all step snapshots
@@ -2086,7 +2105,12 @@ void PluginEditor::setupKnobs()
                     for (int step = 0; step < 16; ++step) {
                         auto snapshot = processorRef.getSpaceDelaySafeSnapshot(step);
                         switch (i) {
-                            case 0: snapshot.delay.timeMs = processorRef.getAPVTS().getParameter("timeMs")->convertFrom0to1(value); break;
+                            case 0: 
+                                // In sync mode, skip updating timeMs directly (it's controlled by BPM + division)
+                                if (!timeSyncEnabled) {
+                                    snapshot.delay.timeMs = processorRef.getAPVTS().getParameter("timeMs")->convertFrom0to1(value);
+                                }
+                                break;
                             case 1: snapshot.delay.feedback = processorRef.getAPVTS().getParameter("feedback")->convertFrom0to1(value); break;
                             case 2: snapshot.delay.wowDepth = processorRef.getAPVTS().getParameter("wowDepth")->convertFrom0to1(value); break;
                             case 3: snapshot.delay.wowRate = processorRef.getAPVTS().getParameter("wowRate")->convertFrom0to1(value); break;
@@ -3327,25 +3351,39 @@ void PluginEditor::setupMasterKnobs()
     timeSyncToggle->setClickingTogglesState(true);
     timeSyncToggle->onClick = [this]() {
         timeSyncEnabled = timeSyncToggle->getToggleState();
-        if (timeSyncEnabled && knobs[0] != nullptr) {
-            const double bpm = processorRef.getBpmOrDefault(120.0);
-            std::vector<double> beats = {2.0,1.0,0.5,0.25,0.125,0.0625,0.03125,0.015625};
-            double mult = 1.0;
-            if (timeSyncStdMode == 1) mult = 2.0/3.0; // triplet
-            else if (timeSyncStdMode == 2) mult = 1.5; // dotted
-            for (auto& b : beats) b *= mult;
-            // Convert to ms
-            for (auto& b : beats) b = b * (60.0 / juce::jmax(1.0, bpm)) * 1000.0;
-            auto* p = processorRef.getAPVTS().getParameter("timeMs");
-            double ms = (double) static_cast<juce::AudioParameterFloat*>(p)->convertFrom0to1(knobs[0]->getValue());
-            ms = juce::jlimit(10.0, 2000.0, ms);
-            double best = beats.front(); double bd = std::abs(best - ms);
-            for (auto v : beats) { double d = std::abs(v - ms); if (d < bd) { best = v; bd = d; } }
-            knobs[0]->setValue(p->convertTo0to1((float) best));
-            updateParameterFromKnob(0);
+        
+        // Update APVTS parameter
+        auto* syncParam = processorRef.getAPVTS().getParameter("delaySync");
+        if (syncParam) {
+            syncParam->setValueNotifyingHost(timeSyncEnabled ? 1.0f : 0.0f);
         }
+        
+        if (timeSyncEnabled && knobs[0] != nullptr) {
+            // Set knob range for sync mode (0-19 divisions = 20 choices)
+            knobs[0]->setRange(0.0, 19.0, 1.0);
+            // Read current division from parameter
+            auto* divParam = dynamic_cast<juce::AudioParameterChoice*>(processorRef.getAPVTS().getParameter("delayTimeDiv"));
+            if (divParam) {
+                knobs[0]->setValue(static_cast<float>(divParam->getIndex()), juce::dontSendNotification);
+            } else {
+                knobs[0]->setValue(5.0, juce::dontSendNotification); // Start at 1/4 (index 5)
+            }
+        } else if (knobs[0] != nullptr) {
+            // Switch to 1-2000ms range for non-sync mode
+            knobs[0]->setRange(1.0, 2000.0, 1.0);
+            // Read current time from parameter
+            auto* timeParam = processorRef.getAPVTS().getRawParameterValue("timeMs");
+            if (timeParam) {
+                knobs[0]->setValue(timeParam->load(), juce::dontSendNotification);
+            } else {
+                knobs[0]->setValue(250.0, juce::dontSendNotification); // Start at 250ms
+            }
+        }
+        
+        // Update the time label display
+        updateSpaceDelayTimeLabel();
         repaint();
-        };
+    };
         
         DBG("[UI] Effects area setup complete");
     }
@@ -4006,6 +4044,12 @@ void PluginEditor::randomizeIndividualKnob(int knobIndex)
 
 void PluginEditor::updateParameterFromKnob(int knobIndex)
 {
+    // Safety: never update timeMs parameter (index 0) when in sync mode
+    if (knobIndex == 0 && timeSyncEnabled) {
+        DBG("[SYNC] Blocked updateParameterFromKnob for knob 0 in sync mode");
+        return;
+    }
+    
     if (knobIndex >= 0 && knobIndex < 8 && knobs[knobIndex] != nullptr && knobIndex < processorRef.getParameters().size())
     {
         auto* param = processorRef.getParameters().getUnchecked(knobIndex);
@@ -10537,6 +10581,35 @@ void PluginEditor::randomizeIndividualDubDelayKnob(int knobIndex)
     }
     
     dubdelayKnobs[knobIndex]->setValue(newValue, juce::sendNotification);
+}
+
+void PluginEditor::updateSpaceDelayTimeLabel()
+{
+    if (!valueLabels[0]) return;
+    
+    if (timeSyncEnabled) {
+        // Show division label
+        auto* divParam = dynamic_cast<juce::AudioParameterChoice*>(processorRef.getAPVTS().getParameter("delayTimeDiv"));
+        
+        int divIdx = divParam ? divParam->getIndex() : 5; // Default 1/4 (index 5)
+        divIdx = juce::jlimit(0, 20, divIdx);
+        
+        // Use the same labels as the parameter array
+        static const char* divStrings[] = {
+            "2", "1", "1/2", "1/2D", "1/2T", "1/4", "1/4D", "1/4T", 
+            "1/8", "1/8D", "1/8T", "1/16", "1/16D", "1/16T", "1/32", "1/32D", "1/32T", 
+            "1/64", "1/64D", "1/64T"
+        };
+        juce::String label = divStrings[divIdx];
+        
+        valueLabels[0]->setText(label, juce::dontSendNotification);
+    } else {
+        // Show ms
+        if (knobs[0]) {
+            float timeMs = knobs[0]->getValue();
+            valueLabels[0]->setText(juce::String(int(timeMs)) + "ms", juce::dontSendNotification);
+        }
+    }
 }
 
 void PluginEditor::updateDubDelayTimeLabel()
