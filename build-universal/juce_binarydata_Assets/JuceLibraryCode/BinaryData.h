@@ -179,6 +179,21 @@ namespace BinaryData
     extern const char*   Panner_Background_Tab4_svg;
     const int            Panner_Background_Tab4_svgSize = 5265;
 
+    extern const char*   PhaseBloom_Background_Tab1_svg;
+    const int            PhaseBloom_Background_Tab1_svgSize = 4979;
+
+    extern const char*   PhaseBloom_Background_Tab2_svg;
+    const int            PhaseBloom_Background_Tab2_svgSize = 5169;
+
+    extern const char*   PhaseBloom_Background_Tab3_svg;
+    const int            PhaseBloom_Background_Tab3_svgSize = 5230;
+
+    extern const char*   PhaseBloom_Background_Tab4_svg;
+    const int            PhaseBloom_Background_Tab4_svgSize = 5248;
+
+    extern const char*   PhaseBloom_Icon_svg;
+    const int            PhaseBloom_Icon_svgSize = 7419;
+
     extern const char*   PresetMenu_Background_svg;
     const int            PresetMenu_Background_svgSize = 199;
 
@@ -327,7 +342,7 @@ namespace BinaryData
     const int            AlteHaasGroteskRegular_ttfSize = 143896;
 
     // Number of elements in the namedResourceList and originalFileNames arrays.
-    const int namedResourceListSize = 106;
+    const int namedResourceListSize = 111;
 
     // Points to the start of a list of resource names.
     extern const char* namedResourceList[];

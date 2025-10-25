@@ -328,6 +328,11 @@ const char* getNamedResource (const char* resourceNameUTF8, int& numBytes)
         case 0x55ab1c92:  numBytes = 5296; return Panner_Background_Tab2_svg;
         case 0x55b93413:  numBytes = 5209; return Panner_Background_Tab3_svg;
         case 0x55c74b94:  numBytes = 5265; return Panner_Background_Tab4_svg;
+        case 0xcc0b457b:  numBytes = 4979; return PhaseBloom_Background_Tab1_svg;
+        case 0xcc195cfc:  numBytes = 5169; return PhaseBloom_Background_Tab2_svg;
+        case 0xcc27747d:  numBytes = 5230; return PhaseBloom_Background_Tab3_svg;
+        case 0xcc358bfe:  numBytes = 5248; return PhaseBloom_Background_Tab4_svg;
+        case 0x192a12b5:  numBytes = 7419; return PhaseBloom_Icon_svg;
         case 0xc55f9954:  numBytes = 199; return PresetMenu_Background_svg;
         case 0xa78433a9:  numBytes = 204; return PresetMenu_Carrot_svg;
         case 0xf4d1f0e7:  numBytes = 4958; return Redux_Background_Tab1_svg;
@@ -443,6 +448,11 @@ const char* namedResourceList[] =
     "Panner_Background_Tab2_svg",
     "Panner_Background_Tab3_svg",
     "Panner_Background_Tab4_svg",
+    "PhaseBloom_Background_Tab1_svg",
+    "PhaseBloom_Background_Tab2_svg",
+    "PhaseBloom_Background_Tab3_svg",
+    "PhaseBloom_Background_Tab4_svg",
+    "PhaseBloom_Icon_svg",
     "PresetMenu_Background_svg",
     "PresetMenu_Carrot_svg",
     "Redux_Background_Tab1_svg",
@@ -553,6 +563,11 @@ const char* originalFilenames[] =
     "Panner_Background_Tab2.svg",
     "Panner_Background_Tab3.svg",
     "Panner_Background_Tab4.svg",
+    "PhaseBloom_Background_Tab1.svg",
+    "PhaseBloom_Background_Tab2.svg",
+    "PhaseBloom_Background_Tab3.svg",
+    "PhaseBloom_Background_Tab4.svg",
+    "PhaseBloom_Icon.svg",
     "PresetMenu_Background.svg",
     "PresetMenu_Carrot.svg",
     "Redux_Background_Tab1.svg",
