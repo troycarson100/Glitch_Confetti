@@ -3438,6 +3438,25 @@ void PluginEditor::setupFxPowerButton()
         // Bypass FX when off
         processorRef.setFxEnabled(fxAreaEnabled);
         updateFxAreaVisibility();
+        
+        // Update the specific effect parameter based on current page
+        auto& router = processorRef.getEffectRouter();
+        int slotIndex = static_cast<int>(currentPage);
+        EffectID assignedEffect = router.getEffectInSlot(static_cast<SlotID>(slotIndex));
+        
+        switch (assignedEffect) {
+            case EffectID::SpaceDelay: {
+                auto* delayEnabledParam = processorRef.getAPVTS().getParameter("delayEnabled");
+                if (delayEnabledParam) {
+                    delayEnabledParam->setValueNotifyingHost(fxAreaEnabled ? 1.0f : 0.0f);
+                }
+                break;
+            }
+            // Add other effects as needed
+            default:
+                break;
+        }
+        
         repaint();
     };
 }
@@ -4031,7 +4050,7 @@ void PluginEditor::updateAllStepSnapshots(int knobIndex)
         // Check if we're on Space Delay page and use dedicated sequencer
         bool isSpaceDelayPage = (currentPage == FxPageID::SpaceDelay);
         
-        DBG("[All Steps] isSpaceDelayPage=" << isSpaceDelayPage << " knobIndex=" << knobIndex 
+        DBG("[All Steps] isSpaceDelayPage=" << (isSpaceDelayPage ? "true" : "false") << " knobIndex=" << knobIndex 
             << " actualValue=" << actualValue);
         
         // Update all 16 step snapshots with the new value
@@ -4724,7 +4743,7 @@ void PluginEditor::showPage(FxPageID id)
             
             // Restore UI state from processor/APVTS parameters
             {
-                auto* fxEnabledParam = processorRef.getAPVTS().getRawParameterValue("effectEnabled");
+                auto* fxEnabledParam = processorRef.getAPVTS().getRawParameterValue("delayEnabled");
                 fxAreaEnabled = fxEnabledParam ? (fxEnabledParam->load() > 0.5f) : true;
                 if (fxPowerButton) {
                     fxPowerButton->setToggleState(fxAreaEnabled, juce::dontSendNotification);
@@ -11957,6 +11976,12 @@ void PluginEditor::setupPhaseBloomEffectsArea()
     phaseBloomFxPowerButton->onClick = [this]() {
         phaseBloomFxAreaEnabled = phaseBloomFxPowerButton->getToggleState();
         updatePhaseBloomFxAreaVisibility();
+        
+        // Update the actual parameter that the processor checks
+        auto* phasebloomEnabledParam = processorRef.getAPVTS().getParameter("phasebloomEnabled");
+        if (phasebloomEnabledParam) {
+            phasebloomEnabledParam->setValueNotifyingHost(phaseBloomFxAreaEnabled ? 1.0f : 0.0f);
+        }
     };
     
     // Set up dice button callback
