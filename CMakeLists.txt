@@ -4,8 +4,8 @@ project(Stepper VERSION 1.0.0)
 # Use C++17
 set(CMAKE_CXX_STANDARD 17)
 
-# Use existing JUCE from PampleTest
-add_subdirectory(../PampleTest/JUCE ${CMAKE_CURRENT_BINARY_DIR}/JUCE)
+# Use local JUCE directory
+add_subdirectory(JUCE ${CMAKE_CURRENT_BINARY_DIR}/JUCE)
 
 # Create binary data for assets (GUI XML + SVGs + PNGs + Fonts)
 file(GLOB UI_SVGS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/assets/ui/*.svg")
@@ -70,6 +70,10 @@ set(SourceFiles
     ${CMAKE_CURRENT_SOURCE_DIR}/source/ui/DelayPage.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/source/ui/PanIndicator.h
     ${CMAKE_CURRENT_SOURCE_DIR}/source/ui/PanIndicator.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/source/ui/pages/EffectPageBase.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/source/ui/pages/EffectPageBase.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/source/ui/pages/SpaceDelayPage.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/source/ui/pages/SpaceDelayPage.cpp
 )
 
 target_sources(Stepper PRIVATE ${SourceFiles})
