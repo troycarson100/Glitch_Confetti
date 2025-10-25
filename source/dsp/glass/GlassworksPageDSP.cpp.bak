@@ -1,0 +1,189 @@
+#include "GlassworksPageDSP.h"
+#include "../../StepSnapshot.h"
+#include "RingsEngine.h"
+
+// Debug logging helpers
+namespace GlassLog {
+    void msg(const juce::String& s) {
+        DBG("[Glass] " + s);
+        juce::File logFile = juce::File::getSpecialLocation(juce::File::userDesktopDirectory).getChildFile("glass_debug.log");
+        logFile.appendText("[Glass] " + s + "\n");
+    }
+    
+    void err(const juce::String& s) {
+        DBG("[Glass:ERR] " + s);
+        juce::File logFile = juce::File::getSpecialLocation(juce::File::userDesktopDirectory).getChildFile("glass_debug.log");
+        logFile.appendText("[Glass:ERR] " + s + "\n");
+    }
+}
+
+GlassworksPageDSP::GlassworksPageDSP()
+{
+    GlassLog::msg("!!! GlassworksPageDSP constructor v2.0 !!!");
+}
+
+void GlassworksPageDSP::prepare(double sr, int blockSize, int numCh)
+{
+    DBG("[GlassworksPageDSP] prepare() v2.0 sr=" << sr);
+    GlassLog::msg("!!! prepare() v2.0 sr=" + juce::String(sr));
+    
+    this->sampleRate = sr;
+    this->maxBlockSize = blockSize;
+    this->numChannels = numCh;
+    
+    // Prepare Rings engine
+    rings.prepare(sr, blockSize, numCh);
+    
+    // Prepare temporary buffers
+    tempExciterBuffer.setSize(1, blockSize, false, false, true);
+    wetBuffer.setSize(numCh, blockSize, false, false, true);
+    
+    // Prepare parameter smoothing
+    smStrike.reset(sr, 0.015f);
+    smMix.reset(sr, 0.015f);
+    smBrightness.reset(sr, 0.015f);
+    
+    // Prepare DC blockers
+    dcBlockerL.setCoefficients(juce::IIRCoefficients::makeHighPass(sr, 20.0f, 0.7f));
+    dcBlockerR.setCoefficients(juce::IIRCoefficients::makeHighPass(sr, 20.0f, 0.7f));
+    
+    // Prepare exciter ADSR
+    adsrParams.attack = 0.001f;
+    adsrParams.decay = 0.008f;
+    adsrParams.sustain = 0.0f;
+    adsrParams.release = 0.001f;
+    exciterADSR.setParameters(adsrParams);
+    exciterADSR.setSampleRate(sr);
+    
+    // Prepare dry delay buffers
+    dryDelayBuffers.resize(static_cast<size_t>(numCh));
+    dryDelayWriteHeads.resize(static_cast<size_t>(numCh));
+    dryDelayLatencySamples = rings.getLatencySamples();
+    
+    for (int ch = 0; ch < numCh; ++ch) {
+        dryDelayBuffers[static_cast<size_t>(ch)].resize(static_cast<size_t>(dryDelayLatencySamples), 0.0f);
+        dryDelayWriteHeads[static_cast<size_t>(ch)] = 0;
+    }
+    
+    prepared = true;  // CRITICAL: Set to true!
+    
+    DBG("[GlassworksPageDSP] prepare() COMPLETE prepared=true");
+    GlassLog::msg("prepare OK - v2.0 READY");
+}
+
+void GlassworksPageDSP::processStep(int stepIndex, const StepSnapshot& snapshot, 
+                                   juce::AudioBuffer<float>& buffer, int numSamples, 
+                                   int channel, double, bool stepEdge)
+{
+    static int callCount = 0;
+    if (++callCount <= 5) {
+        GlassLog::msg("processStep #" + juce::String(callCount) + " v2.0 prepared=" + (prepared ? "YES" : "NO"));
+    }
+
+    if (!prepared) {
+        static bool once = false;
+        if (!once) { GlassLog::err("processStep: not prepared!"); once = true; }
+        return;
+    }
+
+    if (numSamples <= 0 || numSamples > maxBlockSize) return;
+
+    juce::ScopedNoDenormals _;
+    const int N = numSamples;
+    const int chN = juce::jmax(1, buffer.getNumChannels());
+
+    // Read parameters from snapshot
+    const float pitchSt = juce::jlimit(-24.f, 24.f, snapshot.glass.pitchSemitones);
+    const float bright = juce::jlimit(0.f, 1.f, snapshot.glass.brightness);
+    const float decay = juce::jlimit(0.05f, 4.0f, snapshot.glass.decaySec);
+    const float strike = juce::jlimit(0.f, 1.f, snapshot.glass.strike);
+    const float mixVal = juce::jlimit(0.f, 1.f, snapshot.glass.mix);
+
+    // Map pitch to frequency
+    const float f0 = juce::jlimit(20.f, 12000.f, 440.0f * std::pow(2.0f, pitchSt/12.0f));
+
+    // Map decay to damping
+    const float damping = juce::jlimit(0.f, 1.f,
+        juce::jmap(std::log(decay), std::log(0.05f), std::log(4.0f), 0.85f, 0.15f));
+
+    // Configure Rings
+    RingsParams rp;
+    rp.f0Hz = f0;
+    rp.brightness = bright;
+    rp.damping = damping;
+    rp.structure = 0.35f;
+    rp.poly = 1;
+    rings.setParams(rp);
+
+    // Generate exciter signal
+    tempExciterBuffer.setSize(1, N, false, false, true);
+    float* e = tempExciterBuffer.getWritePointer(0);
+    auto* L = buffer.getReadPointer(0);
+    auto* R = (chN > 1 ? buffer.getReadPointer(1) : nullptr);
+
+    if (kDebugInjectTestTone) {
+        // Test tone: 1 kHz sine
+        static double ph = 0;
+        const double inc = 2.0 * juce::MathConstants<double>::pi * 1000.0 / sampleRate;
+        for (int n = 0; n < N; ++n) {
+            e[n] = 0.125f * std::sin(static_cast<float>(ph));
+            ph += inc;
+            if (ph > 2.0 * juce::MathConstants<double>::pi) ph -= 2.0 * juce::MathConstants<double>::pi;
+        }
+    } else if (kDebugForceExciter) {
+        // Always excite
+        for (int n = 0; n < N; ++n) {
+            float src = L[n] * 0.5f + (R ? R[n] * 0.5f : 0.f);
+            float noise = (static_cast<float>(rand()) / static_cast<float>(RAND_MAX)) * 0.2f - 0.1f;
+            float s = std::tanh(3.0f * strike * (src + noise));
+            e[n] = s;
+        }
+    } else {
+        // Step-triggered mode
+        if (stepEdge) {
+            exciterADSR.noteOn();
+            for (int n = 0; n < N; ++n) {
+                float src = L[n] * 0.5f + (R ? R[n] * 0.5f : 0.f);
+                float noise = (static_cast<float>(rand()) / static_cast<float>(RAND_MAX)) * 0.2f - 0.1f;
+                float s = std::tanh(3.0f * strike * (src + noise)) * exciterADSR.getNextSample();
+                e[n] = s;
+            }
+            exciterADSR.noteOff();
+        } else {
+            juce::FloatVectorOperations::clear(e, N);
+        }
+    }
+    if (kDebugForceWet) {
+        for (int ch = 0; ch < chN; ++ch) {
+            buffer.copyFrom(ch, 0, wetBuffer, ch, 0, N);
+        }
+    } else {
+        const float dryGain = std::cos(0.5f * juce::MathConstants<float>::pi * mixVal);
+        const float wetGain = std::sin(0.5f * juce::MathConstants<float>::pi * mixVal);
+        
+        for (int ch = 0; ch < chN; ++ch) {
+            auto* out = buffer.getWritePointer(ch);
+            auto* wet = wetBuffer.getReadPointer(ch);
+            for (int n = 0; n < N; ++n) {
+                out[n] = dryGain * out[n] + wetGain * wet[n];
+            }
+        }
+    }
+}
+
+void GlassworksPageDSP::reset()
+{
+    rings.reset();
+    exciterADSR.reset();
+    tempExciterBuffer.clear();
+    wetBuffer.clear();
+    smStrike.reset(sampleRate, 0.015f);
+    smMix.reset(sampleRate, 0.015f);
+    smBrightness.reset(sampleRate, 0.015f);
+    dcBlockerL.reset();
+    dcBlockerR.reset();
+    for (auto& buffer : dryDelayBuffers) {
+        std::fill(buffer.begin(), buffer.end(), 0.0f);
+    }
+    GlassLog::msg("reset() called");
+}

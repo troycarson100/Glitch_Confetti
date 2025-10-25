@@ -3502,24 +3502,28 @@ void PluginProcessor::processCompressEffect(juce::AudioBuffer<float>& buffer)
     float makeupGain = makeupGainParam ? makeupGainParam->load() : 0.0f;
     float wet = wetParam ? wetParam->load() : 1.0f;
 
-    // Set COMPRESS+ parameters (always set, even with defaults)
-    compressEngine.setThreshold(threshold);
-    compressEngine.setAttack(attack);
-    compressEngine.setRelease(release);
-    compressEngine.setRatio(ratio);
-    compressEngine.setDrive(drive);
-    compressEngine.setLofi(lofi);
-    compressEngine.setMakeupGain(makeupGain);
-    compressEngine.setWet(wet);
-    // If drive and lofi are both 0, bypass compression by setting threshold to 0dB (no compression)
-    if (drive <= 0.0f && lofi <= 0.0f) {
-        compressEngine.setThreshold(0.0f); // Set threshold to 0dB to bypass compression
+    // Check if compressor is enabled
+    auto* compressEnabledParam = valueTreeState.getParameter("compressEnabled");
+    bool isCompressorEnabled = compressEnabledParam ? (compressEnabledParam->getValue() > 0.5f) : true;
+    
+    if (isCompressorEnabled) {
+        // Set COMPRESS+ parameters
+        compressEngine.setThreshold(threshold);
+        compressEngine.setAttack(attack);
+        compressEngine.setRelease(release);
+        compressEngine.setRatio(ratio);
+        compressEngine.setDrive(drive);
+        compressEngine.setLofi(lofi);
+        compressEngine.setMakeupGain(makeupGain);
+        compressEngine.setWet(wet);
+        compressEngine.setEnabled(true);
+        
+        // Process COMPRESS+ effect
+        compressEngine.process(buffer);
+    } else {
+        // Compressor is disabled - bypass it
+        compressEngine.setEnabled(false);
     }
-    
-    compressEngine.setEnabled(true);
-    
-    // Process COMPRESS+ effect
-    compressEngine.process(buffer);
 }
 
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()

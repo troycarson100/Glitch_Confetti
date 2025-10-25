@@ -1,0 +1,23 @@
+{
+  "version": 3,
+  "cmakeMinimumRequired": { "major": 3, "minor": 21, "patch": 0 },
+  "configurePresets": [
+    {
+      "name": "mac-release",
+      "displayName": "macOS Release",
+      "generator": "Xcode",
+      "binaryDir": "${sourceDir}/build-mac-release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_OSX_ARCHITECTURES": "arm64;x86_64",
+        "JUCE_DIR": "${sourceDir}/external/JUCE",
+        "JUCE_MODULES_PATH": "${sourceDir}/external/JUCE/modules",
+        "JUCE_BUILD_EXAMPLES": "OFF",
+        "JUCE_BUILD_EXTRAS": "OFF"
+      }
+    }
+  ],
+  "buildPresets": [
+    { "name": "mac-release", "configurePreset": "mac-release" }
+  ]
+}

@@ -1,0 +1,65 @@
+#pragma once
+#include <juce_audio_processors/juce_audio_processors.h>
+#include <juce_dsp/juce_dsp.h>
+#include "RingsEngine.h"
+#include "../../StepSnapshot.h"
+
+class GlassworksPageDSP
+{
+public:
+        // ===== Glass Diagnostic Flags =====
+        static constexpr bool kDebugForceWet       = false;  // false = use Mix knob normally
+        static constexpr bool kDebugForceExciter   = false;  // false = step-triggered mode (normal)
+        static constexpr bool kDebugInjectTestTone = false;  // false = use real audio input
+        static constexpr bool kDebugLogRMS         = true;   // true = log RMS levels
+        // ===================================
+
+    GlassworksPageDSP();
+    ~GlassworksPageDSP() = default;
+
+    void prepare(double sampleRate, int blockSize, int numChannels);
+    void reset();
+    void setEnabled(bool isEnabled) { enabled = isEnabled; }
+    void setBPM(float newBpm) { bpm = newBpm; }
+    
+    // Process a single step (reads all parameters from snapshot)
+    void processStep(int stepIndex, const StepSnapshot& snapshot, 
+                    juce::AudioBuffer<float>& buffer, int numSamples, int channel, double bpm, bool stepEdge);
+
+    // Health check
+    bool isHealthy() const { return prepared; }
+    bool isPrepared() const { return prepared; }
+
+private:
+    // Core DSP
+    RingsEngine rings;
+    
+    // Parameter smoothing
+    juce::LinearSmoothedValue<float> smStrike, smMix, smBrightness;
+    
+    // Exciter processing
+    juce::ADSR exciterADSR;
+    juce::ADSR::Parameters adsrParams;
+    juce::AudioBuffer<float> tempExciterBuffer;
+    juce::AudioBuffer<float> wetBuffer;
+    
+    // DC blocking
+    juce::IIRFilter dcBlockerL, dcBlockerR;
+    
+    // Dry/wet mixing (latency compensation)
+    std::vector<std::vector<float>> dryDelayBuffers;
+    std::vector<int> dryDelayWriteHeads;
+    int dryDelayLatencySamples = 0;
+    
+    // State
+    bool prepared = false;
+    bool enabled = true;
+    double sampleRate = 44100.0;
+    int maxBlockSize = 0;
+    int numChannels = 0;
+    float bpm = 120.0f;
+    
+    // Debug logging
+    static void gLog(const juce::String& s) { DBG("[Glass] " + s); }
+    static void gErr(const juce::String& s) { DBG("[Glass:ERR] " + s); }
+};
