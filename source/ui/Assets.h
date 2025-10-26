@@ -64,6 +64,10 @@ struct UiAssets {
     std::unique_ptr<juce::Drawable> tabReduxIcon;      // Redux_Icon.svg
     std::unique_ptr<juce::Drawable> tabPhaseBloomIcon; // PhaseBloom_Icon.svg
     
+    // Formant assets
+    std::unique_ptr<juce::Drawable> tabFormantIcon; // Form_Icon.svg
+    std::unique_ptr<juce::Drawable> formBackgroundTab1, formBackgroundTab2, formBackgroundTab3, formBackgroundTab4;
+    
     // Dub Delay backgrounds
     std::unique_ptr<juce::Drawable> dubdelayBackgroundTab1, dubdelayBackgroundTab2, dubdelayBackgroundTab3, dubdelayBackgroundTab4;
     

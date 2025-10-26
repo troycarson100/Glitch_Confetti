@@ -18,9 +18,10 @@
 struct RandomizationManager;
 class PresetManager;
 class PresetBrowserOverlay;
+#include "ui/StepSequencer.h"
 
 // Tab system enum
-enum class FxPageID { SpaceDelay, Panner, Dirt, Chorus, Reverb, Granular, Slicer, Redux, PhaseBloom };
+enum class FxPageID { SpaceDelay, Panner, Dirt, Chorus, Reverb, Granular, Slicer, Redux, PhaseBloom, Formant };
 
 // Forward declaration
 class PluginProcessor;
@@ -562,6 +563,7 @@ public:
     std::unique_ptr<juce::DrawableButton> tabChorus;
     std::unique_ptr<juce::DrawableButton> tabDubDelay;
     std::unique_ptr<juce::DrawableButton> tabPhaseBloom;
+    std::unique_ptr<juce::DrawableButton> tabFormant;
     
     // Effect selector dropdowns (one per page/slot)
     std::unique_ptr<juce::ComboBox> effectSelector1;
@@ -937,6 +939,39 @@ public:
     std::array<std::unique_ptr<juce::Label>, 8> phaseBloomValueLabels;
     std::array<std::unique_ptr<IndicatorBar>, 8> phaseBloomIndicatorBars;
     std::array<std::unique_ptr<CustomDiceButton>, 8> phaseBloomDiceButtons;
+    
+    // Formant page components (8 knobs)
+    std::array<std::unique_ptr<CustomKnob>, 8> formantKnobs;
+    std::array<std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>, 8> formantAttachments;
+    std::array<std::unique_ptr<juce::Label>, 8> formantKnobLabels;
+    std::array<std::unique_ptr<juce::Label>, 8> formantValueLabels;
+    std::array<std::unique_ptr<IndicatorBar>, 8> formantIndicatorBars;
+    std::array<std::unique_ptr<CustomDiceButton>, 8> formantDiceButtons;
+    
+    // Formant power buttons
+    std::unique_ptr<juce::DrawableButton> formantFxPowerButton;
+    std::unique_ptr<juce::DrawableButton> formantStepPowerButton;
+    bool formantFxAreaEnabled = true;
+    bool formantStepAreaEnabled = true;
+    
+        // Formant sequencer UI
+        std::unique_ptr<StepSequencer> formantStepSequencer;
+        std::atomic<int> formantUiSelectedStep { 0 };
+        
+        // Formant step buttons
+        std::array<std::unique_ptr<StepButton>, 16> formantStepButtons;
+        
+        // Formant titles and controls
+        std::unique_ptr<juce::Label> formantEffectsTitle;
+        std::unique_ptr<juce::Label> formantStepTitle;
+        std::unique_ptr<CustomDiceButton> formantDiceButton;
+        std::unique_ptr<CustomDiceButton> formantStepDiceButton;
+        std::unique_ptr<juce::Label> formantStepAmountLabel;
+        std::unique_ptr<juce::ComboBox> formantRateDropdown;
+        std::unique_ptr<CircularToggleButton> formantStdToggle;
+        std::unique_ptr<AllStepsToggleButton> formantAllStepsToggle;
+        std::unique_ptr<juce::Label> formantAllStepsLabel;
+        bool formantAllStepsEnabled = false;
     std::array<std::unique_ptr<LockButton>, 8> phaseBloomLockButtons;
     std::array<bool, 8> phaseBloomKnobLocked { false, false, false, false, false, false, false, false };
     
@@ -964,6 +999,7 @@ public:
     
     std::vector<juce::Component*> reduxGroup; // All Redux UI components for visibility toggling
     std::vector<juce::Component*> phaseBloomGroup; // All PhaseBloom UI components for visibility toggling
+    std::vector<juce::Component*> formantGroup; // All Formant UI components for visibility toggling
     
     // Redux page container for isolation
     std::unique_ptr<juce::Component> reduxPage;
@@ -1128,6 +1164,18 @@ public:
         void randomizeIndividualPhaseBloomKnob(int knobIndex);
         void updatePhaseBloomParameterFromKnob(int knobIndex);
         void updatePhaseBloomSequencerUI();
+        
+        // Formant page helper methods
+        void setupFormantKnobs();
+        void setupFormantEffectsArea();
+        void setupFormantSequencerArea();
+        void setupFormantAllStepsToggle();
+        void updateFormantFxAreaVisibility();
+        void updateFormantStepAreaVisibility();
+        void randomizeFormantKnobValues();
+        void randomizeIndividualFormantKnob(int knobIndex);
+        void updateFormantParameterFromKnob(int knobIndex);
+        void updateFormantSequencerUI();
         void onPhaseBloomStepButtonClicked(int stepIndex);
         void ensurePhaseBloomAttachments();
         void rebindPhaseBloomAttachments();

@@ -12,6 +12,7 @@
 #include "dsp/DubDelayProcessor.h"
 #include "dsp/CompressEngine.h"
 #include "dsp/PhaseBloomEngine.h"
+#include "dsp/FormantProcessor.h"
 #include "Effects/Redux/ReduxBank.h"
 #include "dsp/DspFlags.h"
 #include "StepSnapshot.h"
@@ -192,6 +193,20 @@ public:
     const SeqState& getPhaseBloomSeqState() const { return phaseBloomSeq; }
     int getPhaseBloomPlayingStep() const noexcept { return phaseBloomSeq.playingStep.load(); }
     int getPhaseBloomCurrentStep() const noexcept { return phaseBloomSeq.currentStep.load(); }
+    
+    // Formant sequencer accessors
+    void setFormantSelectedStep(int step) noexcept { formantUiSelectedStep.store(step); }
+    int getFormantUiSelectedStep() const noexcept { return formantUiSelectedStep.load(); }
+    void setFormantSequencerEnabled(bool enabled) noexcept {
+        formantSeq.enabled.store(enabled);
+        if (enabled) {
+            formantSeq.active.store(true);
+        }
+    }
+    const SeqState& getFormantSeqState() const { return formantSeq; }
+    int getFormantPlayingStep() const noexcept { return formantSeq.playingStep.load(); }
+    int getFormantCurrentStep() const noexcept { return formantSeq.currentStep.load(); }
+    
     void setDirtSequencerEnabled(bool enabled) noexcept {
         dirtSeq.enabled.store(enabled);
         if (enabled) {
@@ -246,6 +261,14 @@ public:
     void updatePhaseBloomCurrentStepSnapshot(int knobIndex, float value);
     void setPhaseBloomStepsUsed(int stepsUsed);
     void setPhaseBloomDivisionIndex(int divisionIndex);
+    
+    // Step snapshot access (Formant)
+    StepSnapshot getFormantSafeSnapshot(int step) const;
+    void setFormantStepSnapshot(int step, const StepSnapshot& snapshot) noexcept;
+    void updateFormantCurrentStepSnapshot(int knobIndex, float value);
+    void setFormantStepsUsed(int stepsUsed);
+    void setFormantDivisionIndex(int divisionIndex);
+    void setFormantStdMode(int stdMode);
     
     // Chorus snapshot access
     StepSnapshot getChorusSafeSnapshot(int step) const;
@@ -414,6 +437,10 @@ private:
     SeqState phaseBloomSeq;
     std::atomic<int> phaseBloomUiSelectedStep { 0 };  // PhaseBloom editor's selected step
     
+    // Formant sequencer state (independent from other effects)
+    SeqState formantSeq;
+    std::atomic<int> formantUiSelectedStep { 0 };  // Formant editor's selected step
+    
     // Chorus Sequencer State (independent from Delay, AutoPan, and Dirt)
     SeqState chorusSeq;
     std::atomic<int> chorusUiSelectedStep { 0 };  // Chorus editor's selected step
@@ -444,6 +471,7 @@ private:
     std::array<StepSnapshot, 16> dirtStepSnapshots;
     std::array<StepSnapshot, 16> reduxStepSnapshots;
     std::array<StepSnapshot, 16> phaseBloomStepSnapshots;
+    std::array<StepSnapshot, 16> formantStepSnapshots;
     std::array<StepSnapshot, 16> chorusStepSnapshots;
     std::array<StepSnapshot, 16> reverbStepSnapshots;
     std::array<StepSnapshot, 16> granularStepSnapshots;
@@ -504,6 +532,9 @@ public:
     
     // PhaseBloom DSP Implementation
     PhaseBloomEngine phaseBloomEngine;
+    
+    // Formant DSP Implementation
+    FormantProcessor formantProcessor;
     
     // Redux DSP Implementation
     ReduxBank reduxBank;

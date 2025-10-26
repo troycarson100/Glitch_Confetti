@@ -20,7 +20,8 @@ enum class EffectID {
     Slicer = 6,
     DubDelay = 7,
     Redux = 8,
-    PhaseBloom = 9
+    PhaseBloom = 9,
+    Formant = 10
 };
 
 enum class SlotID {

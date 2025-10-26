@@ -300,6 +300,11 @@ const char* getNamedResource (const char* resourceNameUTF8, int& numBytes)
         case 0x1988464f:  numBytes = 203; return FX_Type_Carrot_Active_svg;
         case 0x0b295034:  numBytes = 343; return FX_Type_Carrot_Inactive_svg;
         case 0xa2f2e2ca:  numBytes = 37363; return Feedback_svg;
+        case 0x2b26d2f7:  numBytes = 6498; return Form_Background_Tab1_svg;
+        case 0x2b34ea78:  numBytes = 6760; return Form_Background_Tab2_svg;
+        case 0x2b4301f9:  numBytes = 6749; return Form_Background_Tab3_svg;
+        case 0x2b51197a:  numBytes = 6722; return Form_Background_Tab4_svg;
+        case 0xbc401ab9:  numBytes = 2709; return Form_Icon_svg;
         case 0xabd04122:  numBytes = 6736; return Grain_Icon_svg;
         case 0xb122bf93:  numBytes = 4979; return Granular_Background_Tab1_svg;
         case 0xb130d714:  numBytes = 5169; return Granular_Background_Tab2_svg;
@@ -420,6 +425,11 @@ const char* namedResourceList[] =
     "FX_Type_Carrot_Active_svg",
     "FX_Type_Carrot_Inactive_svg",
     "Feedback_svg",
+    "Form_Background_Tab1_svg",
+    "Form_Background_Tab2_svg",
+    "Form_Background_Tab3_svg",
+    "Form_Background_Tab4_svg",
+    "Form_Icon_svg",
     "Grain_Icon_svg",
     "Granular_Background_Tab1_svg",
     "Granular_Background_Tab2_svg",
@@ -535,6 +545,11 @@ const char* originalFilenames[] =
     "FX_Type_Carrot_Active.svg",
     "FX_Type_Carrot_Inactive.svg",
     "Feedback.svg",
+    "Form_Background_Tab1.svg",
+    "Form_Background_Tab2.svg",
+    "Form_Background_Tab3.svg",
+    "Form_Background_Tab4.svg",
+    "Form_Icon.svg",
     "Grain_Icon.svg",
     "Granular_Background_Tab1.svg",
     "Granular_Background_Tab2.svg",

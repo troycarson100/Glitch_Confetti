@@ -101,6 +101,13 @@ bool UiAssets::loadAll()
     phasebloomBackgroundTab3 = loadSVG (PhaseBloom_Background_Tab3_svg, PhaseBloom_Background_Tab3_svgSize);
     phasebloomBackgroundTab4 = loadSVG (PhaseBloom_Background_Tab4_svg, PhaseBloom_Background_Tab4_svgSize);
     
+    // Formant assets - now available
+    tabFormantIcon = loadSVG (Form_Icon_svg, Form_Icon_svgSize);
+    formBackgroundTab1 = loadSVG (Form_Background_Tab1_svg, Form_Background_Tab1_svgSize);
+    formBackgroundTab2 = loadSVG (Form_Background_Tab2_svg, Form_Background_Tab2_svgSize);
+    formBackgroundTab3 = loadSVG (Form_Background_Tab3_svg, Form_Background_Tab3_svgSize);
+    formBackgroundTab4 = loadSVG (Form_Background_Tab4_svg, Form_Background_Tab4_svgSize);
+    
     fxPowerOn         = loadSVG (FX_Power_On_svg, FX_Power_On_svgSize);
     stepPowerOn       = loadSVG (Step_Power_On_svg, Step_Power_On_svgSize);
     knobDice          = loadSVG (Knob_Basic_Dice_svg, Knob_Basic_Dice_svgSize);
@@ -146,6 +153,13 @@ bool UiAssets::loadAll()
     phasebloomBackgroundTab2 = loadSVGFromFile (assetsDir.getChildFile ("ui/PhaseBloom_Background_Tab2.svg"));
     phasebloomBackgroundTab3 = loadSVGFromFile (assetsDir.getChildFile ("ui/PhaseBloom_Background_Tab3.svg"));
     phasebloomBackgroundTab4 = loadSVGFromFile (assetsDir.getChildFile ("ui/PhaseBloom_Background_Tab4.svg"));
+    
+    // Formant assets - now available
+    tabFormantIcon = loadSVGFromFile (assetsDir.getChildFile ("ui/Form_Icon.svg"));
+    formBackgroundTab1 = loadSVGFromFile (assetsDir.getChildFile ("ui/Form_Background_Tab1.svg"));
+    formBackgroundTab2 = loadSVGFromFile (assetsDir.getChildFile ("ui/Form_Background_Tab2.svg"));
+    formBackgroundTab3 = loadSVGFromFile (assetsDir.getChildFile ("ui/Form_Background_Tab3.svg"));
+    formBackgroundTab4 = loadSVGFromFile (assetsDir.getChildFile ("ui/Form_Background_Tab4.svg"));
     
     // Comp Crush Tab assets (loaded via binary data above)
     

@@ -107,4 +107,15 @@ struct StepSnapshot {
            float resonance = 0.6f;              // 0-1 (Q factor/notch intensity) - higher default
            float mix = 0.7f;                    // 0-1 (dry/wet blend) - higher default
        } phasebloom;
+       
+       struct {
+           float vowelA = 0.0f;                 // 0-4 (A=0, E=1, I=2, O=3, U=4)
+           float vowelB = 1.0f;                 // 0-4 (A=0, E=1, I=2, O=3, U=4)
+           float morph = 0.0f;                  // 0-1 (crossfade between A and B)
+           float q = 6.0f;                      // 0.3-20 (Q factor for bandwidth)
+           float emphasis = 6.0f;               // 0-12 dB (emphasis gain)
+           float gender = 1.0f;                 // 0.5-2.0 (gender shift ratio)
+           float vibDepth = 5.0f;               // 0-30 cents (vibrato depth)
+           float mix = 0.5f;                    // 0-1 (dry/wet mix)
+       } formant;
 };
