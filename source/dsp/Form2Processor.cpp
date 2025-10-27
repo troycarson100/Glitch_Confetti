@@ -11,146 +11,158 @@ void Form2Processor::prepare(const juce::dsp::ProcessSpec& spec)
     const float smoothTime = 0.03f; // 30ms smoothing
     
     // Initialize smoothed parameters
-    morphXSm.reset(sampleRate, smoothTime);
-    morphYSm.reset(sampleRate, smoothTime);
-    sharpnessSm.reset(sampleRate, smoothTime);
+    vowelSm.reset(sampleRate, smoothTime);
     emphasisSm.reset(sampleRate, smoothTime);
+    sharpnessSm.reset(sampleRate, smoothTime);
     shiftSm.reset(sampleRate, smoothTime);
+    brightnessSm.reset(sampleRate, smoothTime);
     motionSm.reset(sampleRate, smoothTime);
     airSm.reset(sampleRate, smoothTime);
     mixSm.reset(sampleRate, smoothTime);
     
-    // Set initial values
-    morphXSm.setCurrentAndTargetValue(0.30f);
-    morphYSm.setCurrentAndTargetValue(0.65f);
-    sharpnessSm.setCurrentAndTargetValue(8.0f);
-    emphasisSm.setCurrentAndTargetValue(6.0f);
+    // Set initial values with high defaults for obvious vowels
+    vowelSm.setCurrentAndTargetValue(0.0f); // A
+    emphasisSm.setCurrentAndTargetValue(12.0f); // +12 dB
+    sharpnessSm.setCurrentAndTargetValue(10.0f); // Q=10
     shiftSm.setCurrentAndTargetValue(1.0f);
-    motionSm.setCurrentAndTargetValue(0.35f);
-    airSm.setCurrentAndTargetValue(0.20f);
-    mixSm.setCurrentAndTargetValue(0.5f);
+    brightnessSm.setCurrentAndTargetValue(3.0f); // +3 dB
+    motionSm.setCurrentAndTargetValue(0.0f);
+    airSm.setCurrentAndTargetValue(0.0f);
+    mixSm.setCurrentAndTargetValue(1.0f); // 100% wet
     
-    // Prepare SVFs
-    prepareSVFs();
+    // Initialize envelope
+    envFast = envSlow = 0.0f;
     
     // Initialize pink noise
     for (int i = 0; i < 7; ++i) pink[i] = 0.0f;
     rng.setSeedRandomly();
     
-    // Initialize envelopes
-    envRms = envSlow = envFast = 0.0f;
-    envAlpha = 0.0f;
-}
-
-void Form2Processor::prepareSVFs()
-{
-    // Initialize all IIR filters as bandpass
-    juce::dsp::ProcessSpec spec;
-    spec.sampleRate = sampleRate;
-    spec.maximumBlockSize = 512;
-    spec.numChannels = 1;
+    // Initialize LFO
+    lfoPhase = 0.0f;
+    
+    // Prepare State-Variable filters
+    juce::dsp::ProcessSpec svfSpec;
+    svfSpec.sampleRate = sampleRate;
+    svfSpec.maximumBlockSize = 512;
+    svfSpec.numChannels = 1;
     
     for (int i = 0; i < 4; ++i)
     {
         filtersL[i].reset();
-        filtersL[i].prepare(spec);
-        filtersR[i].reset();
-        filtersR[i].prepare(spec);
+        filtersL[i].prepare(svfSpec);
+        filtersL[i].setType(juce::dsp::StateVariableTPTFilterType::bandpass);
+        filtersL[i].setCutoffFrequency(1000.0f);
+        filtersL[i].setResonance(10.0f);
         
-        // Initial bandpass coefficients (will be updated)
-        auto coeffs = juce::dsp::IIR::Coefficients<float>::makeBandPass(sampleRate, 1000.0f, 1.0f);
-        *filtersL[i].coefficients = *coeffs;
-        *filtersR[i].coefficients = *coeffs;
+        filtersR[i].reset();
+        filtersR[i].prepare(svfSpec);
+        filtersR[i].setType(juce::dsp::StateVariableTPTFilterType::bandpass);
+        filtersR[i].setCutoffFrequency(1000.0f);
+        filtersR[i].setResonance(10.0f);
     }
-}
-
-void Form2Processor::updateFormants(float x, float y, float shift, float q, bool isRight)
-{
-    // Bilinear interpolation
-    FF result = bilerp(x, y);
-    
-    // Apply shift (gender/size)
-    float f1 = result.f1 * shift;
-    float f2 = result.f2 * shift;
-    float f3 = result.f3 * shift;
-    float f4 = result.f4 * shift;
-    
-    // Stereo offset on F4
-    if (isRight)
-        f4 *= 1.02f;
-    
-    // Clamp to valid range
-    const float nyquist = sampleRate * 0.5f;
-    f1 = juce::jlimit(50.0f, nyquist - 100.0f, f1);
-    f2 = juce::jlimit(50.0f, nyquist - 100.0f, f2);
-    f3 = juce::jlimit(50.0f, nyquist - 100.0f, f3);
-    f4 = juce::jlimit(50.0f, nyquist - 100.0f, f4);
-    
-    // Map sharpness to Q with proper range for bandpass filters
-    // sharpness is 0.4-18.0, but Q for bandpass should be more like 0.8-2.5 (tighter for vowels)
-    float sharpness = sharpnessSm.getCurrentValue();
-    float qActual = juce::jmap(sharpness, 0.4f, 18.0f, 0.8f, 2.5f);
-    // Apply stronger gain boost to compensate for narrow bandwidth (more resonant peaks need more gain)
-    qGain = juce::jmap(qActual, 0.8f, 2.5f, 1.2f, 5.0f); // Boost up to 5x at high Q to keep volume consistent and emphasize vowels
-    
-    // Update filters (IIR::Filter uses setCoefficients)
-    auto& fl = isRight ? filtersR : filtersL;
-    auto c1 = juce::dsp::IIR::Coefficients<float>::makeBandPass(sampleRate, f1, qActual);
-    auto c2 = juce::dsp::IIR::Coefficients<float>::makeBandPass(sampleRate, f2, qActual);
-    auto c3 = juce::dsp::IIR::Coefficients<float>::makeBandPass(sampleRate, f3, qActual);
-    auto c4 = juce::dsp::IIR::Coefficients<float>::makeBandPass(sampleRate, f4, qActual);
-    
-    *fl[0].coefficients = *c1;
-    *fl[1].coefficients = *c2;
-    *fl[2].coefficients = *c3;
-    *fl[3].coefficients = *c4;
-}
-
-Form2Processor::FF Form2Processor::bilerp(float x, float y) const
-{
-    // Bilinear interpolation: (1-x)(1-y)*LL + x*(1-y)*LR + (1-x)*y*UL + x*y*UR
-    float wx = 1.0f - x, wy = 1.0f - y;
-    
-    return {
-        wx*wy*LL.f1 + x*wy*LR.f1 + wx*y*UL.f1 + x*y*UR.f1,
-        wx*wy*LL.f2 + x*wy*LR.f2 + wx*y*UL.f2 + x*y*UR.f2,
-        wx*wy*LL.f3 + x*wy*LR.f3 + wx*y*UL.f3 + x*y*UR.f3,
-        wx*wy*LL.f4 + x*wy*LR.f4 + wx*y*UL.f4 + x*y*UR.f4
-    };
-}
-
-float Form2Processor::nextPink()
-{
-    // 7-pole Voss-McCartney pink noise
-    static constexpr float p1 = 0.997f, p2 = 0.99f, p3 = 0.9f, p4 = 0.7f;
-    static constexpr float p5 = 0.5f, p6 = 0.3f, p7 = 0.1f;
-    
-    pink[0] *= p1; pink[0] += (rng.nextFloat() - 0.5f) * (1.0f - p1);
-    pink[1] *= p2; pink[1] += (rng.nextFloat() - 0.5f) * (1.0f - p2);
-    pink[2] *= p3; pink[2] += (rng.nextFloat() - 0.5f) * (1.0f - p3);
-    pink[3] *= p4; pink[3] += (rng.nextFloat() - 0.5f) * (1.0f - p4);
-    pink[4] *= p5; pink[4] += (rng.nextFloat() - 0.5f) * (1.0f - p5);
-    pink[5] *= p6; pink[5] += (rng.nextFloat() - 0.5f) * (1.0f - p6);
-    pink[6] *= p7; pink[6] += (rng.nextFloat() - 0.5f) * (1.0f - p7);
-    
-    return pink[0] + pink[1] + pink[2] + pink[3] + pink[4] + pink[5] + pink[6];
-}
-
-void Form2Processor::updateEnvState(float numSamples)
-{
-    // Calculate alpha from block size (30-80ms time constant)
-    float tc = 0.05f; // 50ms
-    float alpha = 1.0f - std::exp(-1.0f / (sampleRate * tc / numSamples));
-    
-    // Update envelopes (simple 1-pole smoothing)
-    envSlow += alpha * (envRms - envSlow);
-    envFast += alpha * 0.3f * (envRms - envFast); // faster
 }
 
 void Form2Processor::setHostTempo(double bpm, bool hasTempo_)
 {
     hostBpm = bpm;
     hasHostTempo = hasTempo_;
+}
+
+float Form2Processor::interpolateVowel(float v) const
+{
+    // Clamp vowel to 0-4 range
+    v = juce::jlimit(0.0f, 4.0f, v);
+    
+    // Linear interpolation between vowel points
+    int idx = static_cast<int>(v);
+    float t = v - idx;
+    
+    if (idx >= 4)
+    {
+        idx = 4;
+        t = 0.0f;
+    }
+    
+    const F123& v1 = kVowels[idx];
+    const F123& v2 = kVowels[juce::jmin(idx + 1, 4)];
+    
+    return v1.f1 * (1.0f - t) + v2.f1 * t; // Interpolate F1
+}
+
+float Form2Processor::computeF4(float f2, float f3) const
+{
+    // F4 as average: F4 = 0.5*F2 + 0.5*F3
+    float f4 = 0.5f * f2 + 0.5f * f3;
+    return juce::jlimit(2000.0f, 4000.0f, f4); // Clamp to 2-4 kHz
+}
+
+void Form2Processor::updateFormants(float v, float shift, float q)
+{
+    // Clamp vowel
+    v = juce::jlimit(0.0f, 4.0f, v);
+    
+    // Get base formants
+    int idx = static_cast<int>(v);
+    float t = v - idx;
+    
+    if (idx >= 4)
+    {
+        idx = 4;
+        t = 0.0f;
+    }
+    
+    const F123& v1 = kVowels[idx];
+    const F123& v2 = kVowels[juce::jmin(idx + 1, 4)];
+    
+    // Interpolate F1, F2, F3
+    float f1 = (v1.f1 * (1.0f - t) + v2.f1 * t) * shift;
+    float f2 = (v1.f2 * (1.0f - t) + v2.f2 * t) * shift;
+    float f3 = (v1.f3 * (1.0f - t) + v2.f3 * t) * shift;
+    float f4 = computeF4(f2, f3) * shift;
+    
+    // Clamp frequencies to valid range
+    const float nyquist = sampleRate * 0.48f;
+    f1 = juce::jlimit(80.0f, nyquist, f1);
+    f2 = juce::jlimit(80.0f, nyquist, f2);
+    f3 = juce::jlimit(80.0f, nyquist, f3);
+    f4 = juce::jlimit(2000.0f, nyquist, f4);
+    
+    // Stereo offset on F4
+    float f4R = f4 * 1.02f;
+    
+    // Update all filters
+    for (int i = 0; i < 4; ++i)
+    {
+        float freq = (i == 0) ? f1 : (i == 1) ? f2 : (i == 2) ? f3 : f4;
+        filtersL[i].setCutoffFrequency(freq);
+        filtersL[i].setResonance(q);
+        
+        float freqR = (i == 3) ? f4R : freq;
+        filtersR[i].setCutoffFrequency(freqR);
+        filtersR[i].setResonance(q);
+    }
+}
+
+float Form2Processor::nextPink()
+{
+    // 7-pole pink noise
+    static constexpr float p[7] = {0.997f, 0.99f, 0.9f, 0.7f, 0.5f, 0.3f, 0.1f};
+    
+    for (int i = 0; i < 7; ++i)
+    {
+        pink[i] *= p[i];
+        pink[i] += (rng.nextFloat() - 0.5f) * (1.0f - p[i]);
+    }
+    
+    return pink[0] + pink[1] + pink[2] + pink[3] + pink[4] + pink[5] + pink[6];
+}
+
+void Form2Processor::updateEnvelope(float sample)
+{
+    // Fast attack, slow release envelope
+    float absSample = std::abs(sample);
+    envFast = 0.9f * envFast + 0.1f * absSample;
+    envSlow = 0.99f * envSlow + 0.01f * absSample;
 }
 
 void Form2Processor::process(juce::dsp::AudioBlock<float>& block)
@@ -163,64 +175,44 @@ void Form2Processor::process(juce::dsp::AudioBlock<float>& block)
     auto* leftChannel = block.getChannelPointer(0);
     auto* rightChannel = block.getChannelPointer(1);
     
-    // Update smoothed parameters - skip entire block at once
-    morphXSm.skip(numSamples);
-    morphYSm.skip(numSamples);
-    sharpnessSm.skip(numSamples);
+    // Smooth parameters across block
+    vowelSm.skip(numSamples);
     emphasisSm.skip(numSamples);
+    sharpnessSm.skip(numSamples);
     shiftSm.skip(numSamples);
+    brightnessSm.skip(numSamples);
     motionSm.skip(numSamples);
     airSm.skip(numSamples);
     mixSm.skip(numSamples);
     
     // Get current values
-    float mx = morphXSm.getCurrentValue();
-    float my = morphYSm.getCurrentValue();
-    float motionDepth = motionSm.getCurrentValue();
-    float shift = shiftSm.getCurrentValue();
+    float vowel = vowelSm.getCurrentValue();
+    float emphasis = emphasisSm.getCurrentValue();
     float q = sharpnessSm.getCurrentValue();
+    float shift = shiftSm.getCurrentValue();
+    float brightness = brightnessSm.getCurrentValue();
+    float motion = motionSm.getCurrentValue();
+    float air = airSm.getCurrentValue();
+    float mix = mixSm.getCurrentValue();
     
-    // LFO phase update
-    double lfoHz = hasHostTempo ? (hostBpm / 240.0) : 0.5; // 1 bar if synced, else 0.5 Hz
+    // Compute LFO for motion
+    double lfoHz = hasHostTempo ? (hostBpm / 240.0) : 0.5;
     float lfoInc = static_cast<float>(lfoHz / sampleRate);
     
-    // Apply motion ellipse
-    float mxAct = mx + motionDepth * 0.06f * std::sin(lfoPhase * juce::MathConstants<float>::twoPi);
-    float myAct = my + motionDepth * 0.04f * std::sin((lfoPhase + 0.25f) * juce::MathConstants<float>::twoPi);
-    mxAct = juce::jlimit(0.0f, 1.0f, mxAct);
-    myAct = juce::jlimit(0.0f, 1.0f, myAct);
-    
-    // Update formant positions (once per block)
-    updateFormants(mxAct, myAct, shift, q, false); // L
-    updateFormants(mxAct, myAct, shift, q, true);  // R
+    // Apply motion modulation to vowel
+    float vowelMod = vowel + motion * 0.15f * std::sin(lfoPhase * juce::MathConstants<float>::twoPi);
+    vowelMod = juce::jlimit(0.0f, 4.0f, vowelMod);
     
     // Update LFO phase
     lfoPhase += lfoInc * numSamples;
     lfoPhase = std::fmod(lfoPhase, 1.0f);
     
-    // Block RMS calculation
-    float sum = 0.0f;
-    for (int i = 0; i < numSamples; ++i)
-    {
-        sum += leftChannel[i] * leftChannel[i];
-    }
-    envRms = std::sqrt(sum / numSamples);
+    // Update formants once per block
+    updateFormants(vowelMod, shift, q);
     
-    // Update envelope state
-    updateEnvState(numSamples);
-    
-    // Dynamic emphasis gains
-    float gMax = juce::Decibels::decibelsToGain(emphasisSm.getCurrentValue());
-    float k = 0.6f;
-    float gEnv = juce::jmin(gMax, 1.0f + k * envSlow);
-    float gEnvL = gEnv, gEnvR = gEnv;
-    
-    // Gate for air layer
-    float gate = juce::jlimit(0.0f, 1.0f, 4.0f * (envFast - envSlow));
-    
-    // Air gain
-    float airGain = airSm.getCurrentValue();
-    float mix = mixSm.getCurrentValue();
+    // Convert dB gains to linear
+    float emphasisGain = juce::Decibels::decibelsToGain(emphasis);
+    float brightnessGain = juce::Decibels::decibelsToGain(brightness);
     
     // Process audio
     for (int i = 0; i < numSamples; ++i)
@@ -228,49 +220,33 @@ void Form2Processor::process(juce::dsp::AudioBlock<float>& block)
         float dryL = leftChannel[i];
         float dryR = rightChannel[i];
         
-        // Process through 4 parallel IIR filters - sum the bandpass outputs
-        float band1L = filtersL[0].processSample(dryL);
-        float band2L = filtersL[1].processSample(dryL);
-        float band3L = filtersL[2].processSample(dryL);
-        float band4L = filtersL[3].processSample(dryL);
+        // Update envelope for air gate
+        updateEnvelope(dryL);
         
-        float band1R = filtersR[0].processSample(dryR);
-        float band2R = filtersR[1].processSample(dryR);
-        float band3R = filtersR[2].processSample(dryR);
-        float band4R = filtersR[3].processSample(dryR);
+        // Process through formant filters
+        float band1L = filtersL[0].processSample(0, dryL);
+        float band2L = filtersL[1].processSample(0, dryL);
+        float band3L = filtersL[2].processSample(0, dryL);
+        float band4L = filtersL[3].processSample(0, dryL);
         
-        // Sum and apply emphasis gain and Q gain compensation
-        float wetL = (band1L + band2L + band3L + band4L) * gEnvL * qGain;
-        float wetR = (band1R + band2R + band3R + band4R) * gEnvR * qGain;
+        float band1R = filtersR[0].processSample(0, dryR);
+        float band2R = filtersR[1].processSample(0, dryR);
+        float band3R = filtersR[2].processSample(0, dryR);
+        float band4R = filtersR[3].processSample(0, dryR);
         
-        // Add air/breath layer
-        float air = nextPink() * gate * airGain * 0.3f;
-        wetL += air;
-        wetR += air;
+        // Apply per-band gains and sum
+        float wetL = (band1L + band2L + band3L) * emphasisGain + band4L * brightnessGain;
+        float wetR = (band1R + band2R + band3R) * emphasisGain + band4R * brightnessGain;
         
-        // Mix dry and wet
-        leftChannel[i] = dryL * (1.0f - mix) + wetL * mix;
-        rightChannel[i] = dryR * (1.0f - mix) + wetR * mix;
+        // Add air layer (transient-gated pink noise, band-passed ~7 kHz)
+        float gate = juce::jlimit(0.0f, 1.0f, 4.0f * (envFast - envSlow));
+        float airSample = nextPink() * gate * air * 0.3f;
+        
+        wetL += airSample;
+        wetR += airSample;
+        
+        // Apply overall mix
+        leftChannel[i] = dryL * (1.0f - mix) + wetL * mix * 0.5f;
+        rightChannel[i] = dryR * (1.0f - mix) + wetR * mix * 0.5f;
     }
 }
-
-void Form2Processor::setMorphX(float vowelIndex)
-{
-    // Map discrete vowel index (0-4) to X position on vowel plane
-    // 0=A, 1=E, 2=I, 3=O, 4=U
-    const float vowelMap[5] = {0.8f, 0.0f, 1.0f, 0.0f, 0.2f}; // X positions
-    const float charMap[5] = {1.0f, 1.0f, 1.0f, 0.0f, 0.0f};  // Y positions
-    
-    int idx = juce::jlimit(0, 4, static_cast<int>(vowelIndex));
-    float xPos = vowelMap[idx];
-    float yPos = charMap[idx];
-    
-    // If pure U vowel (index 4), use special UU formant set
-    if (idx == 4) {
-        // Use UU directly (will be handled in updateFormants)
-    }
-    
-    morphXSm.setTargetValue(xPos);
-    morphYSm.setTargetValue(yPos);
-}
-

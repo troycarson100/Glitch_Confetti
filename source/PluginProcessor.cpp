@@ -146,14 +146,14 @@ PluginProcessor::PluginProcessor()
     
     // Initialize Form 2 step snapshots with defaults
     for (int i = 0; i < 16; ++i) {
-        form2StepSnapshots[i].form2.morphX = 2.0f;  // Default to I vowel (0=A, 1=E, 2=I, 3=O, 4=U)
-        form2StepSnapshots[i].form2.morphY = 0.5f;
-        form2StepSnapshots[i].form2.sharpness = 8.0f;
-        form2StepSnapshots[i].form2.emphasis = 6.0f;
-        form2StepSnapshots[i].form2.shift = 1.0f;
-        form2StepSnapshots[i].form2.motion = 0.35f;
-        form2StepSnapshots[i].form2.air = 0.20f;
-        form2StepSnapshots[i].form2.mix = 0.5f;
+        form2StepSnapshots[i].form2.vowel = 0.0f;        // Default to A vowel (0=A, 1=E, 2=I, 3=O, 4=U)
+        form2StepSnapshots[i].form2.emphasis = 12.0f;    // +12 dB for obvious vowel
+        form2StepSnapshots[i].form2.sharpness = 10.0f; // Q=10 for narrow resonance
+        form2StepSnapshots[i].form2.shift = 1.0f;       // Neutral gender/size
+        form2StepSnapshots[i].form2.brightness = 3.0f; // +3 dB for F4 clarity
+        form2StepSnapshots[i].form2.motion = 0.0f;       // No motion by default
+        form2StepSnapshots[i].form2.air = 0.0f;         // No air by default
+        form2StepSnapshots[i].form2.mix = 1.0f;         // 100% wet for obvious effect
     }
     form2Seq.enabled.store(true);
     form2Seq.active.store(false);
@@ -432,16 +432,16 @@ juce::AudioProcessorValueTreeState::ParameterLayout PluginProcessor::createParam
     params.push_back(std::make_unique<juce::AudioParameterBool>("formantEnabled", "Formant Enabled", false));
     params.push_back(std::make_unique<juce::AudioParameterBool>("formantStepEnabled", "Formant Step Enabled", true));
     
-    // Form 2 Parameters - 8 knobs for continuous vowel plane
+    // Form 2 Parameters - 8 knobs for musical vowel filter
     // Vowel parameter: 0=A, 1=E, 2=I, 3=O, 4=U
-    params.push_back(std::make_unique<juce::AudioParameterFloat>("form2MorphX", "Form 2 Vowel", 0.0f, 4.0f, 2.0f)); // Default to I
-    params.push_back(std::make_unique<juce::AudioParameterFloat>("form2MorphY", "Form 2 Character", 0.0f, 1.0f, 0.5f));
-    params.push_back(std::make_unique<juce::AudioParameterFloat>("form2Sharpness", "Form 2 Sharpness", 0.4f, 18.0f, 8.0f));
-    params.push_back(std::make_unique<juce::AudioParameterFloat>("form2Emphasis", "Form 2 Emphasis", -6.0f, 18.0f, 6.0f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("form2Vowel", "Form 2 Vowel", 0.0f, 4.0f, 0.0f)); // Default to A
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("form2Emphasis", "Form 2 Emphasis", -6.0f, 18.0f, 12.0f)); // +12 dB for obvious vowel
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("form2Sharpness", "Form 2 Sharpness", 0.4f, 18.0f, 10.0f)); // Q=10 for narrow resonance
     params.push_back(std::make_unique<juce::AudioParameterFloat>("form2Shift", "Form 2 Shift", 0.5f, 2.0f, 1.0f));
-    params.push_back(std::make_unique<juce::AudioParameterFloat>("form2Motion", "Form 2 Motion", 0.0f, 1.0f, 0.35f));
-    params.push_back(std::make_unique<juce::AudioParameterFloat>("form2Air", "Form 2 Air", 0.0f, 1.0f, 0.20f));
-    params.push_back(std::make_unique<juce::AudioParameterFloat>("form2Mix", "Form 2 Mix", 0.0f, 1.0f, 0.5f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("form2Brightness", "Form 2 Brightness", -12.0f, 12.0f, 3.0f)); // +3 dB for F4 clarity
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("form2Motion", "Form 2 Motion", 0.0f, 1.0f, 0.0f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("form2Air", "Form 2 Air", 0.0f, 1.0f, 0.0f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("form2Mix", "Form 2 Mix", 0.0f, 1.0f, 1.0f)); // 100% wet for obvious effect
     params.push_back(std::make_unique<juce::AudioParameterBool>("form2Enabled", "Form 2 Enabled", true));
     params.push_back(std::make_unique<juce::AudioParameterBool>("form2StepEnabled", "Form 2 Step Enabled", true));
     
@@ -1865,22 +1865,21 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                             StepSnapshot snapshot = getForm2SafeSnapshot(currentStep);
                             
                             // Safety check for parameter values
-                            snapshot.form2.morphX = juce::jlimit(0.0f, 1.0f, snapshot.form2.morphX);
-                            snapshot.form2.morphY = juce::jlimit(0.0f, 1.0f, snapshot.form2.morphY);
-                            snapshot.form2.sharpness = juce::jlimit(0.4f, 18.0f, snapshot.form2.sharpness);
+                            snapshot.form2.vowel = juce::jlimit(0.0f, 4.0f, snapshot.form2.vowel);
                             snapshot.form2.emphasis = juce::jlimit(-6.0f, 18.0f, snapshot.form2.emphasis);
+                            snapshot.form2.sharpness = juce::jlimit(0.4f, 18.0f, snapshot.form2.sharpness);
                             snapshot.form2.shift = juce::jlimit(0.5f, 2.0f, snapshot.form2.shift);
+                            snapshot.form2.brightness = juce::jlimit(-12.0f, 12.0f, snapshot.form2.brightness);
                             snapshot.form2.motion = juce::jlimit(0.0f, 1.0f, snapshot.form2.motion);
                             snapshot.form2.air = juce::jlimit(0.0f, 1.0f, snapshot.form2.air);
                             snapshot.form2.mix = juce::jlimit(0.0f, 1.0f, snapshot.form2.mix);
                             
                             // Set Form2 parameters from sequencer
-                            // morphX now holds vowel index (0-4) from knob, not XY position
-                            form2Processor.setMorphX(snapshot.form2.morphX); // This maps vowel index to XY internally
-                            form2Processor.setMorphY(snapshot.form2.morphY);
-                            form2Processor.setSharpness(snapshot.form2.sharpness);
+                            form2Processor.setVowel(snapshot.form2.vowel);
                             form2Processor.setEmphasis(snapshot.form2.emphasis);
+                            form2Processor.setSharpness(snapshot.form2.sharpness);
                             form2Processor.setShift(snapshot.form2.shift);
+                            form2Processor.setBrightness(snapshot.form2.brightness);
                             form2Processor.setMotion(snapshot.form2.motion);
                             form2Processor.setAir(snapshot.form2.air);
                             form2Processor.setMix(snapshot.form2.mix);
@@ -1902,24 +1901,24 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                     else
                     {
                         // Use static parameters when sequencer is disabled
-                        auto* morphXParam = valueTreeState.getRawParameterValue("form2MorphX");
-                        auto* morphYParam = valueTreeState.getRawParameterValue("form2MorphY");
-                        auto* sharpnessParam = valueTreeState.getRawParameterValue("form2Sharpness");
+                        auto* vowelParam = valueTreeState.getRawParameterValue("form2Vowel");
                         auto* emphasisParam = valueTreeState.getRawParameterValue("form2Emphasis");
+                        auto* sharpnessParam = valueTreeState.getRawParameterValue("form2Sharpness");
                         auto* shiftParam = valueTreeState.getRawParameterValue("form2Shift");
+                        auto* brightnessParam = valueTreeState.getRawParameterValue("form2Brightness");
                         auto* motionParam = valueTreeState.getRawParameterValue("form2Motion");
                         auto* airParam = valueTreeState.getRawParameterValue("form2Air");
                         auto* mixParam = valueTreeState.getRawParameterValue("form2Mix");
                         
-                        if (morphXParam && morphYParam && sharpnessParam && emphasisParam && 
-                            shiftParam && motionParam && airParam && mixParam)
+                        if (vowelParam && emphasisParam && sharpnessParam && shiftParam &&
+                            brightnessParam && motionParam && airParam && mixParam)
                         {
                             // Set Form2 parameters
-                            form2Processor.setMorphX(morphXParam->load());
-                            form2Processor.setMorphY(morphYParam->load());
-                            form2Processor.setSharpness(sharpnessParam->load());
+                            form2Processor.setVowel(vowelParam->load());
                             form2Processor.setEmphasis(emphasisParam->load());
+                            form2Processor.setSharpness(sharpnessParam->load());
                             form2Processor.setShift(shiftParam->load());
+                            form2Processor.setBrightness(brightnessParam->load());
                             form2Processor.setMotion(motionParam->load());
                             form2Processor.setAir(airParam->load());
                             form2Processor.setMix(mixParam->load());
@@ -3117,11 +3116,11 @@ void PluginProcessor::updateForm2CurrentStepSnapshot(int knobIndex, float value)
     
     // Update the specific Form 2 parameter in the snapshot
     switch (knobIndex) {
-        case 0: form2StepSnapshots[currentStep].form2.morphX = value; break;
-        case 1: form2StepSnapshots[currentStep].form2.morphY = value; break;
+        case 0: form2StepSnapshots[currentStep].form2.vowel = value; break;
+        case 1: form2StepSnapshots[currentStep].form2.emphasis = value; break;
         case 2: form2StepSnapshots[currentStep].form2.sharpness = value; break;
-        case 3: form2StepSnapshots[currentStep].form2.emphasis = value; break;
-        case 4: form2StepSnapshots[currentStep].form2.shift = value; break;
+        case 3: form2StepSnapshots[currentStep].form2.shift = value; break;
+        case 4: form2StepSnapshots[currentStep].form2.brightness = value; break;
         case 5: form2StepSnapshots[currentStep].form2.motion = value; break;
         case 6: form2StepSnapshots[currentStep].form2.air = value; break;
         case 7: form2StepSnapshots[currentStep].form2.mix = value; break;

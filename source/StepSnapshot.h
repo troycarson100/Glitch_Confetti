@@ -116,13 +116,13 @@ struct StepSnapshot {
        } formant;
        
        struct {
-           float morphX = 0.30f;        // 0-1 (horizontal vowel position)
-           float morphY = 0.65f;        // 0-1 (vertical vowel position)
-           float sharpness = 8.0f;      // 0.4-18 (Q factor/sharpness)
-           float emphasis = 6.0f;       // -6 to +18 dB (emphasis gain)
+           float vowel = 0.0f;          // 0-4 (A=0, E=1, I=2, O=3, U=4)
+           float emphasis = 12.0f;      // -6 to +18 dB (emphasis gain)
+           float sharpness = 10.0f;     // 0.4-18 (Q factor/sharpness)
            float shift = 1.0f;          // 0.5-2.0 (gender/size multiplier)
-           float motion = 0.35f;        // 0-1 (LFO motion depth)
-           float air = 0.20f;           // 0-1 (breath/air amount)
-           float mix = 0.5f;             // 0-1 (dry/wet mix)
+           float brightness = 3.0f;    // -12 to +12 dB (F4 brightness)
+           float motion = 0.0f;        // 0-1 (LFO motion depth)
+           float air = 0.0f;            // 0-1 (breath/air amount)
+           float mix = 1.0f;            // 0-1 (dry/wet mix)
        } form2;
 };

@@ -8395,11 +8395,11 @@ void PluginEditor::onEffectSelectorChanged(int slotIndex)
             
             // Load current snapshot values into knobs (8 knobs)
             StepSnapshot form2Snapshot = processorRef.getForm2SafeSnapshot(0); // Load step 0
-            if (form2Knobs[0]) form2Knobs[0]->setValue(form2Snapshot.form2.morphX, juce::dontSendNotification);
-            if (form2Knobs[1]) form2Knobs[1]->setValue(form2Snapshot.form2.morphY, juce::dontSendNotification);
+            if (form2Knobs[0]) form2Knobs[0]->setValue(form2Snapshot.form2.vowel, juce::dontSendNotification);
+            if (form2Knobs[1]) form2Knobs[1]->setValue(form2Snapshot.form2.emphasis, juce::dontSendNotification);
             if (form2Knobs[2]) form2Knobs[2]->setValue(form2Snapshot.form2.sharpness, juce::dontSendNotification);
-            if (form2Knobs[3]) form2Knobs[3]->setValue(form2Snapshot.form2.emphasis, juce::dontSendNotification);
-            if (form2Knobs[4]) form2Knobs[4]->setValue(form2Snapshot.form2.shift, juce::dontSendNotification);
+            if (form2Knobs[3]) form2Knobs[3]->setValue(form2Snapshot.form2.shift, juce::dontSendNotification);
+            if (form2Knobs[4]) form2Knobs[4]->setValue(form2Snapshot.form2.brightness, juce::dontSendNotification);
             if (form2Knobs[5]) form2Knobs[5]->setValue(form2Snapshot.form2.motion, juce::dontSendNotification);
             if (form2Knobs[6]) form2Knobs[6]->setValue(form2Snapshot.form2.air, juce::dontSendNotification);
             if (form2Knobs[7]) form2Knobs[7]->setValue(form2Snapshot.form2.mix, juce::dontSendNotification);
@@ -11434,22 +11434,22 @@ void PluginEditor::setupForm2Knobs()
     // Form 2 knob titles - 8 controls
     const juce::StringArray form2KnobTitles = {
         "Vowel",
-        "Character",
-        "Sharpness",
-        "Emphasis",
-        "Gender",
+        "Emphasis (dB)",
+        "Sharpness (Q)",
+        "Shift",
+        "Brightness (F4)",
         "Motion",
-        "Breath",
+        "Air",
         "Mix"
     };
     
     // Form 2 parameter IDs (must match APVTS order)
     const juce::StringArray form2ParamIDs = {
-        "form2MorphX",
-        "form2MorphY",
-        "form2Sharpness",
+        "form2Vowel",
         "form2Emphasis",
+        "form2Sharpness",
         "form2Shift",
+        "form2Brightness",
         "form2Motion",
         "form2Air",
         "form2Mix"
@@ -11486,37 +11486,37 @@ void PluginEditor::setupForm2Knobs()
         
         // Set knob ranges based on parameter
         switch (i) {
-            case 0: // Morph X (0-1)
-                form2Knobs[i]->setRange(0.0, 1.0, 0.01);
-                form2Knobs[i]->setValue(0.30, juce::dontSendNotification);
+            case 0: // Vowel (0-4)
+                form2Knobs[i]->setRange(0.0, 4.0, 0.01);
+                form2Knobs[i]->setValue(0.0, juce::dontSendNotification); // A
                 break;
-            case 1: // Morph Y (0-1)
-                form2Knobs[i]->setRange(0.0, 1.0, 0.01);
-                form2Knobs[i]->setValue(0.65, juce::dontSendNotification);
-                break;
-            case 2: // Sharpness (0.4-18)
-                form2Knobs[i]->setRange(0.4, 18.0, 0.1);
-                form2Knobs[i]->setValue(8.0, juce::dontSendNotification);
-                break;
-            case 3: // Emphasis (-6 to +18 dB)
+            case 1: // Emphasis (-6 to +18 dB)
                 form2Knobs[i]->setRange(-6.0, 18.0, 0.1);
-                form2Knobs[i]->setValue(6.0, juce::dontSendNotification);
+                form2Knobs[i]->setValue(12.0, juce::dontSendNotification);
                 break;
-            case 4: // Shift (0.5-2.0)
+            case 2: // Sharpness (0.4-18, Q)
+                form2Knobs[i]->setRange(0.4, 18.0, 0.1);
+                form2Knobs[i]->setValue(10.0, juce::dontSendNotification);
+                break;
+            case 3: // Shift (0.5-2.0)
                 form2Knobs[i]->setRange(0.5, 2.0, 0.01);
                 form2Knobs[i]->setValue(1.0, juce::dontSendNotification);
                 break;
+            case 4: // Brightness (-12 to +12 dB)
+                form2Knobs[i]->setRange(-12.0, 12.0, 0.1);
+                form2Knobs[i]->setValue(3.0, juce::dontSendNotification);
+                break;
             case 5: // Motion (0-1)
                 form2Knobs[i]->setRange(0.0, 1.0, 0.01);
-                form2Knobs[i]->setValue(0.35, juce::dontSendNotification);
+                form2Knobs[i]->setValue(0.25, juce::dontSendNotification);
                 break;
             case 6: // Air (0-1)
                 form2Knobs[i]->setRange(0.0, 1.0, 0.01);
-                form2Knobs[i]->setValue(0.20, juce::dontSendNotification);
+                form2Knobs[i]->setValue(0.2, juce::dontSendNotification);
                 break;
             case 7: // Mix (0-1)
                 form2Knobs[i]->setRange(0.0, 1.0, 0.01);
-                form2Knobs[i]->setValue(0.5, juce::dontSendNotification);
+                form2Knobs[i]->setValue(1.0, juce::dontSendNotification);
                 break;
         }
         
@@ -11673,11 +11673,11 @@ void PluginEditor::setupForm2Knobs()
                     for (int step = 0; step < 16; ++step) {
                         auto snapshot = processorRef.getForm2SafeSnapshot(step);
                         switch (i) {
-                            case 0: snapshot.form2.morphX = actualValue; break;
-                            case 1: snapshot.form2.morphY = actualValue; break;
+                            case 0: snapshot.form2.vowel = actualValue; break;
+                            case 1: snapshot.form2.emphasis = actualValue; break;
                             case 2: snapshot.form2.sharpness = actualValue; break;
-                            case 3: snapshot.form2.emphasis = actualValue; break;
-                            case 4: snapshot.form2.shift = actualValue; break;
+                            case 3: snapshot.form2.shift = actualValue; break;
+                            case 4: snapshot.form2.brightness = actualValue; break;
                             case 5: snapshot.form2.motion = actualValue; break;
                             case 6: snapshot.form2.air = actualValue; break;
                             case 7: snapshot.form2.mix = actualValue; break;
@@ -11894,11 +11894,12 @@ void PluginEditor::setupForm2SequencerArea()
         for (int i = 0; i < 16; ++i) {
             auto snapshot = processorRef.getForm2SafeSnapshot(i);
             // Randomize all parameters
-            snapshot.form2.morphX = juce::Random::getSystemRandom().nextFloat();
-            snapshot.form2.morphY = juce::Random::getSystemRandom().nextFloat();
+            snapshot.form2.vowel = juce::Random::getSystemRandom().nextFloat() * 4.0f; // 0-4 (A-E-I-O-U)
+            snapshot.form2.emphasis = juce::Random::getSystemRandom().nextFloat() * 24.0f - 6.0f; // -6 to +18
             snapshot.form2.sharpness = juce::Random::getSystemRandom().nextFloat() * 17.6f + 0.4f; // 0.4-18.0
             snapshot.form2.emphasis = juce::Random::getSystemRandom().nextFloat() * 24.0f - 6.0f; // -6 to +18 dB
             snapshot.form2.shift = juce::Random::getSystemRandom().nextFloat() * 1.5f + 0.5f; // 0.5-2.0
+            snapshot.form2.brightness = juce::Random::getSystemRandom().nextFloat() * 24.0f - 12.0f; // -12 to +12
             snapshot.form2.motion = juce::Random::getSystemRandom().nextFloat();
             snapshot.form2.air = juce::Random::getSystemRandom().nextFloat();
             snapshot.form2.mix = juce::Random::getSystemRandom().nextFloat();
@@ -11913,11 +11914,11 @@ void PluginEditor::setupForm2SequencerArea()
             auto currentSnapshot = processorRef.getForm2SafeSnapshot(form2UiSelectedStep);
             
             // Update all knob values from the current step's snapshot
-            if (form2Knobs[0]) form2Knobs[0]->setValue(currentSnapshot.form2.morphX, juce::dontSendNotification);
-            if (form2Knobs[1]) form2Knobs[1]->setValue(currentSnapshot.form2.morphY, juce::dontSendNotification);
+            if (form2Knobs[0]) form2Knobs[0]->setValue(currentSnapshot.form2.vowel, juce::dontSendNotification);
+            if (form2Knobs[1]) form2Knobs[1]->setValue(currentSnapshot.form2.emphasis, juce::dontSendNotification);
             if (form2Knobs[2]) form2Knobs[2]->setValue(currentSnapshot.form2.sharpness, juce::dontSendNotification);
-            if (form2Knobs[3]) form2Knobs[3]->setValue(currentSnapshot.form2.emphasis, juce::dontSendNotification);
-            if (form2Knobs[4]) form2Knobs[4]->setValue(currentSnapshot.form2.shift, juce::dontSendNotification);
+            if (form2Knobs[3]) form2Knobs[3]->setValue(currentSnapshot.form2.shift, juce::dontSendNotification);
+            if (form2Knobs[4]) form2Knobs[4]->setValue(currentSnapshot.form2.brightness, juce::dontSendNotification);
             if (form2Knobs[5]) form2Knobs[5]->setValue(currentSnapshot.form2.motion, juce::dontSendNotification);
             if (form2Knobs[6]) form2Knobs[6]->setValue(currentSnapshot.form2.air, juce::dontSendNotification);
             if (form2Knobs[7]) form2Knobs[7]->setValue(currentSnapshot.form2.mix, juce::dontSendNotification);
@@ -13965,11 +13966,11 @@ void PluginEditor::onForm2StepButtonClicked(int stepIndex)
     
     // Load step snapshot into knobs
     auto snapshot = processorRef.getForm2SafeSnapshot(stepIndex);
-    if (form2Knobs[0]) form2Knobs[0]->setValue(snapshot.form2.morphX, juce::dontSendNotification);
-    if (form2Knobs[1]) form2Knobs[1]->setValue(snapshot.form2.morphY, juce::dontSendNotification);
+    if (form2Knobs[0]) form2Knobs[0]->setValue(snapshot.form2.vowel, juce::dontSendNotification);
+    if (form2Knobs[1]) form2Knobs[1]->setValue(snapshot.form2.emphasis, juce::dontSendNotification);
     if (form2Knobs[2]) form2Knobs[2]->setValue(snapshot.form2.sharpness, juce::dontSendNotification);
-    if (form2Knobs[3]) form2Knobs[3]->setValue(snapshot.form2.emphasis, juce::dontSendNotification);
-    if (form2Knobs[4]) form2Knobs[4]->setValue(snapshot.form2.shift, juce::dontSendNotification);
+    if (form2Knobs[3]) form2Knobs[3]->setValue(snapshot.form2.shift, juce::dontSendNotification);
+    if (form2Knobs[4]) form2Knobs[4]->setValue(snapshot.form2.brightness, juce::dontSendNotification);
     if (form2Knobs[5]) form2Knobs[5]->setValue(snapshot.form2.motion, juce::dontSendNotification);
     if (form2Knobs[6]) form2Knobs[6]->setValue(snapshot.form2.air, juce::dontSendNotification);
     if (form2Knobs[7]) form2Knobs[7]->setValue(snapshot.form2.mix, juce::dontSendNotification);
@@ -14065,11 +14066,12 @@ void PluginEditor::randomizeEffectStepSnapshot(FxPageID effect, int step)
             auto snapshot = processorRef.getForm2SafeSnapshot(step);
             
             // Randomize Form 2 parameters (8 knobs)
-            if (!knobLocked[0]) snapshot.form2.morphX = juce::Random::getSystemRandom().nextFloat(); // 0-1
-            if (!knobLocked[1]) snapshot.form2.morphY = juce::Random::getSystemRandom().nextFloat(); // 0-1
+            if (!knobLocked[0]) snapshot.form2.vowel = juce::Random::getSystemRandom().nextFloat() * 4.0f; // 0-4
+            if (!knobLocked[1]) snapshot.form2.emphasis = juce::Random::getSystemRandom().nextFloat() * 24.0f - 6.0f; // -6 to +18
             if (!knobLocked[2]) snapshot.form2.sharpness = 0.4f + juce::Random::getSystemRandom().nextFloat() * (18.0f - 0.4f); // 0.4-18
             if (!knobLocked[3]) snapshot.form2.emphasis = -6.0f + juce::Random::getSystemRandom().nextFloat() * (18.0f + 6.0f); // -6 to +18
-            if (!knobLocked[4]) snapshot.form2.shift = 0.5f + juce::Random::getSystemRandom().nextFloat() * (2.0f - 0.5f); // 0.5-2.0
+            if (!knobLocked[3]) snapshot.form2.shift = 0.5f + juce::Random::getSystemRandom().nextFloat() * (2.0f - 0.5f); // 0.5-2.0
+            if (!knobLocked[4]) snapshot.form2.brightness = -12.0f + juce::Random::getSystemRandom().nextFloat() * (12.0f + 12.0f); // -12 to +12
             if (!knobLocked[5]) snapshot.form2.motion = juce::Random::getSystemRandom().nextFloat(); // 0-1
             if (!knobLocked[6]) snapshot.form2.air = juce::Random::getSystemRandom().nextFloat(); // 0-1
             if (!knobLocked[7]) snapshot.form2.mix = juce::Random::getSystemRandom().nextFloat(); // 0-1
@@ -14360,11 +14362,11 @@ void PluginEditor::loadSelectedStepIntoKnobs(FxPageID effect)
             const auto snapshot = processorRef.getForm2SafeSnapshot(selectedStep);
             
             // Load snapshot values into knobs
-            if (form2Knobs[0]) form2Knobs[0]->setValue(snapshot.form2.morphX, juce::dontSendNotification);
-            if (form2Knobs[1]) form2Knobs[1]->setValue(snapshot.form2.morphY, juce::dontSendNotification);
+            if (form2Knobs[0]) form2Knobs[0]->setValue(snapshot.form2.vowel, juce::dontSendNotification);
+            if (form2Knobs[1]) form2Knobs[1]->setValue(snapshot.form2.emphasis, juce::dontSendNotification);
             if (form2Knobs[2]) form2Knobs[2]->setValue(snapshot.form2.sharpness, juce::dontSendNotification);
-            if (form2Knobs[3]) form2Knobs[3]->setValue(snapshot.form2.emphasis, juce::dontSendNotification);
-            if (form2Knobs[4]) form2Knobs[4]->setValue(snapshot.form2.shift, juce::dontSendNotification);
+            if (form2Knobs[3]) form2Knobs[3]->setValue(snapshot.form2.shift, juce::dontSendNotification);
+            if (form2Knobs[4]) form2Knobs[4]->setValue(snapshot.form2.brightness, juce::dontSendNotification);
             if (form2Knobs[5]) form2Knobs[5]->setValue(snapshot.form2.motion, juce::dontSendNotification);
             if (form2Knobs[6]) form2Knobs[6]->setValue(snapshot.form2.air, juce::dontSendNotification);
             if (form2Knobs[7]) form2Knobs[7]->setValue(snapshot.form2.mix, juce::dontSendNotification);
