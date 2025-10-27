@@ -108,6 +108,13 @@ bool UiAssets::loadAll()
     formBackgroundTab3 = loadSVG (Form_Background_Tab3_svg, Form_Background_Tab3_svgSize);
     formBackgroundTab4 = loadSVG (Form_Background_Tab4_svg, Form_Background_Tab4_svgSize);
     
+    // Form 2 assets (uses Form_Icon and Form2_Background_Tab SVGs)
+    tabForm2Icon = loadSVG (Form_Icon_svg, Form_Icon_svgSize);
+    form2BackgroundTab1 = loadSVG (Form2_Background_Tab1_svg, Form2_Background_Tab1_svgSize);
+    form2BackgroundTab2 = loadSVG (Form2_Background_Tab2_svg, Form2_Background_Tab2_svgSize);
+    form2BackgroundTab3 = loadSVG (Form2_Background_Tab3_svg, Form2_Background_Tab3_svgSize);
+    form2BackgroundTab4 = loadSVG (Form2_Background_Tab4_svg, Form2_Background_Tab4_svgSize);
+    
     fxPowerOn         = loadSVG (FX_Power_On_svg, FX_Power_On_svgSize);
     stepPowerOn       = loadSVG (Step_Power_On_svg, Step_Power_On_svgSize);
     knobDice          = loadSVG (Knob_Basic_Dice_svg, Knob_Basic_Dice_svgSize);
@@ -160,6 +167,13 @@ bool UiAssets::loadAll()
     formBackgroundTab2 = loadSVGFromFile (assetsDir.getChildFile ("ui/Form_Background_Tab2.svg"));
     formBackgroundTab3 = loadSVGFromFile (assetsDir.getChildFile ("ui/Form_Background_Tab3.svg"));
     formBackgroundTab4 = loadSVGFromFile (assetsDir.getChildFile ("ui/Form_Background_Tab4.svg"));
+    
+    // Form 2 assets (use Form_Icon and Form2_Background_Tab SVGs)
+    tabForm2Icon = loadSVGFromFile (assetsDir.getChildFile ("ui/Form_Icon.svg"));
+    form2BackgroundTab1 = loadSVGFromFile (assetsDir.getChildFile ("ui/Form2_Background_Tab1.svg"));
+    form2BackgroundTab2 = loadSVGFromFile (assetsDir.getChildFile ("ui/Form2_Background_Tab2.svg"));
+    form2BackgroundTab3 = loadSVGFromFile (assetsDir.getChildFile ("ui/Form2_Background_Tab3.svg"));
+    form2BackgroundTab4 = loadSVGFromFile (assetsDir.getChildFile ("ui/Form2_Background_Tab4.svg"));
     
     // Comp Crush Tab assets (loaded via binary data above)
     

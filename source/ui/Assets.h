@@ -68,6 +68,10 @@ struct UiAssets {
     std::unique_ptr<juce::Drawable> tabFormantIcon; // Form_Icon.svg
     std::unique_ptr<juce::Drawable> formBackgroundTab1, formBackgroundTab2, formBackgroundTab3, formBackgroundTab4;
     
+    // Form 2 assets
+    std::unique_ptr<juce::Drawable> tabForm2Icon; // Form_Icon.svg (shared)
+    std::unique_ptr<juce::Drawable> form2BackgroundTab1, form2BackgroundTab2, form2BackgroundTab3, form2BackgroundTab4;
+    
     // Dub Delay backgrounds
     std::unique_ptr<juce::Drawable> dubdelayBackgroundTab1, dubdelayBackgroundTab2, dubdelayBackgroundTab3, dubdelayBackgroundTab4;
     

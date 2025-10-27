@@ -137,16 +137,27 @@ PluginProcessor::PluginProcessor()
     
     // Initialize Formant step snapshots with defaults
     for (int i = 0; i < 16; ++i) {
-        formantStepSnapshots[i].formant.vowelA = 0.0f; // A
-        formantStepSnapshots[i].formant.vowelB = 1.0f; // E
-        formantStepSnapshots[i].formant.morph = 0.0f;
-        formantStepSnapshots[i].formant.q = 6.0f;
-        formantStepSnapshots[i].formant.emphasis = 6.0f;
-        formantStepSnapshots[i].formant.gender = 1.0f;
-        formantStepSnapshots[i].formant.vibDepth = 1.0f; // Reduced from 5.0f to 1.0f
-        formantStepSnapshots[i].formant.mix = 0.5f;
+        formantStepSnapshots[i].formant.vowel = 0.0f; // A
+        formantStepSnapshots[i].formant.resonance = 12.0f;
+        formantStepSnapshots[i].formant.intensity = 6.0f;
+        formantStepSnapshots[i].formant.mix = 0.8f;
     }
     DBG("[Stepper] Initialized Formant step snapshots with default values");
+    
+    // Initialize Form 2 step snapshots with defaults
+    for (int i = 0; i < 16; ++i) {
+        form2StepSnapshots[i].form2.morphX = 2.0f;  // Default to I vowel (0=A, 1=E, 2=I, 3=O, 4=U)
+        form2StepSnapshots[i].form2.morphY = 0.5f;
+        form2StepSnapshots[i].form2.sharpness = 8.0f;
+        form2StepSnapshots[i].form2.emphasis = 6.0f;
+        form2StepSnapshots[i].form2.shift = 1.0f;
+        form2StepSnapshots[i].form2.motion = 0.35f;
+        form2StepSnapshots[i].form2.air = 0.20f;
+        form2StepSnapshots[i].form2.mix = 0.5f;
+    }
+    form2Seq.enabled.store(true);
+    form2Seq.active.store(false);
+    DBG("[Stepper] Initialized Form 2 step snapshots with default values");
     
     // Initialize UI state
     uiSelectedStep.store(0);
@@ -413,18 +424,26 @@ juce::AudioProcessorValueTreeState::ParameterLayout PluginProcessor::createParam
     params.push_back(std::make_unique<juce::AudioParameterBool>("phasebloomStepEnabled", "PhaseBloom Step Enabled", true));
     
     // Formant Parameters - 8 knobs for vowel filter
-    params.push_back(std::make_unique<juce::AudioParameterChoice>("vowelA", "Vowel A", 
+    params.push_back(std::make_unique<juce::AudioParameterChoice>("vowel", "Vowel", 
         juce::StringArray{"A", "E", "I", "O", "U"}, 0)); // A=0, E=1, I=2, O=3, U=4
-    params.push_back(std::make_unique<juce::AudioParameterChoice>("vowelB", "Vowel B", 
-        juce::StringArray{"A", "E", "I", "O", "U"}, 1)); // A=0, E=1, I=2, O=3, U=4
-    params.push_back(std::make_unique<juce::AudioParameterFloat>("morph", "Morph", 0.0f, 1.0f, 0.0f)); // 0-1 crossfade between A and B
-    params.push_back(std::make_unique<juce::AudioParameterFloat>("q", "Q", 0.3f, 20.0f, 6.0f)); // 0.3-20 Q factor for bandwidth
-    params.push_back(std::make_unique<juce::AudioParameterFloat>("emphasis", "Emphasis", 0.0f, 12.0f, 6.0f)); // 0-12 dB emphasis gain
-    params.push_back(std::make_unique<juce::AudioParameterFloat>("gender", "Gender", 0.5f, 2.0f, 1.0f)); // 0.5-2.0 gender shift ratio
-    params.push_back(std::make_unique<juce::AudioParameterFloat>("vibDepth", "Vibrato", 0.0f, 30.0f, 1.0f)); // Reduced default from 5.0f to 1.0f
-    params.push_back(std::make_unique<juce::AudioParameterFloat>("mix", "Mix", 0.0f, 1.0f, 0.5f)); // 0-1 dry/wet mix
-    params.push_back(std::make_unique<juce::AudioParameterBool>("formantEnabled", "Formant Enabled", true));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("resonance", "Resonance", 0.5f, 20.0f, 12.0f)); // 0.5-20 Q factor for bandwidth
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("intensity", "Intensity", 0.0f, 12.0f, 6.0f)); // 0-12 dB emphasis gain
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("mix", "Mix", 0.0f, 1.0f, 0.8f)); // 0-1 dry/wet mix
+    params.push_back(std::make_unique<juce::AudioParameterBool>("formantEnabled", "Formant Enabled", false));
     params.push_back(std::make_unique<juce::AudioParameterBool>("formantStepEnabled", "Formant Step Enabled", true));
+    
+    // Form 2 Parameters - 8 knobs for continuous vowel plane
+    // Vowel parameter: 0=A, 1=E, 2=I, 3=O, 4=U
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("form2MorphX", "Form 2 Vowel", 0.0f, 4.0f, 2.0f)); // Default to I
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("form2MorphY", "Form 2 Character", 0.0f, 1.0f, 0.5f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("form2Sharpness", "Form 2 Sharpness", 0.4f, 18.0f, 8.0f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("form2Emphasis", "Form 2 Emphasis", -6.0f, 18.0f, 6.0f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("form2Shift", "Form 2 Shift", 0.5f, 2.0f, 1.0f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("form2Motion", "Form 2 Motion", 0.0f, 1.0f, 0.35f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("form2Air", "Form 2 Air", 0.0f, 1.0f, 0.20f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("form2Mix", "Form 2 Mix", 0.0f, 1.0f, 0.5f));
+    params.push_back(std::make_unique<juce::AudioParameterBool>("form2Enabled", "Form 2 Enabled", true));
+    params.push_back(std::make_unique<juce::AudioParameterBool>("form2StepEnabled", "Form 2 Step Enabled", true));
     
     return { params.begin(), params.end() };
 }
@@ -529,6 +548,13 @@ void PluginProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
     // Prepare Formant DSP
     formantProcessor.prepare(sampleRate, samplesPerBlock);
     formantSeq.prepare(sampleRate); // Initialize Formant sequencer with sample rate
+    
+    // Prepare Form 2 DSP
+    juce::dsp::ProcessSpec form2Spec;
+    form2Spec.sampleRate = sampleRate;
+    form2Spec.maximumBlockSize = static_cast<juce::uint32>(samplesPerBlock);
+    form2Spec.numChannels = static_cast<juce::uint32>(getTotalNumInputChannels());
+    form2Processor.prepare(form2Spec);
     
     // Prepare COMPRESS+ DSP - Master effect
     juce::dsp::ProcessSpec compressSpec;
@@ -777,6 +803,12 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                     DBG("[FORMANT SEQ] ✓ Activated on play edge");
                 }
                 
+                // Form 2 sequencer activates if enabled (independent of followHost)
+                if (form2Seq.enabled.load()) {
+                    form2Seq.active.store(true);  // Activate Form 2 sequencer
+                    DBG("[FORM2 SEQ] ✓ Activated on play edge");
+                }
+                
                 // Redux sequencer activates if enabled (independent of followHost)
                 if (reduxSeq.enabled.load()) {
                     reduxSeq.active.store(true);  // Activate Redux sequencer
@@ -870,6 +902,13 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                     formantSeq.currentStep.store(formantStep);
                     formantSeq.playingStep.store(formantStep);
                     DBG("[FORMANT SEQ] Lock-in at PPQ=" << ppq << " -> step " << formantStep);
+                }
+                
+                if (form2Seq.enabled.load() && form2Seq.active.load()) {
+                    const int form2Step = form2Seq.computeStepFromPPQ(ppq);
+                    form2Seq.currentStep.store(form2Step);
+                    form2Seq.playingStep.store(form2Step);
+                    DBG("[FORM2 SEQ] Lock-in at PPQ=" << ppq << " -> step " << form2Step);
                 }
                 
                 armPending.store(false);
@@ -994,6 +1033,26 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                     phaseBloomSeq.currentStep.store(phaseBloomStep);
                     phaseBloomSeq.playingStep.store(phaseBloomStep);
                     DBG("[PHASEBLOOM SEQ] ★ Step changed to: " << phaseBloomStep << " PPQ: " << ppq);
+                }
+            }
+            
+            // Formant sequencer stepping (shares same PPQ/transport, independent timing)
+            if (isPlaying && ppqValid && formantSeq.active.load()) {
+                const int formantStep = formantSeq.computeStepFromPPQ(ppq);
+                if (formantStep != formantSeq.currentStep.load()) {
+                    formantSeq.currentStep.store(formantStep);
+                    formantSeq.playingStep.store(formantStep);
+                    DBG("[FORMANT SEQ] ★ Step changed to: " << formantStep << " PPQ: " << ppq);
+                }
+            }
+            
+            // Form 2 sequencer stepping (shares same PPQ/transport, independent timing)
+            if (isPlaying && ppqValid && form2Seq.active.load()) {
+                const int form2Step = form2Seq.computeStepFromPPQ(ppq);
+                if (form2Step != form2Seq.currentStep.load()) {
+                    form2Seq.currentStep.store(form2Step);
+                    form2Seq.playingStep.store(form2Step);
+                    DBG("[FORM2 SEQ] ★ Step changed to: " << form2Step << " PPQ: " << ppq);
                 }
             }
             
@@ -1713,10 +1772,11 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
             
             case EffectID::Formant:
             {
-                // Check if effect is enabled
+                // TEMPORARILY DISABLED: Check if effect is enabled
                 auto* formantEnabledParam = valueTreeState.getRawParameterValue("formantEnabled");
                 bool isFormantEnabled = formantEnabledParam ? (formantEnabledParam->load() > 0.5f) : false;
                 
+                // Skip processing to prevent crash - Formant effect disabled
                 if (isFormantEnabled)
                 {
                     // Get Formant sequencer state
@@ -1729,33 +1789,25 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                         int currentStep = formantSeq.currentStep.load();
                         if (currentStep >= 0 && currentStep < 16)
                         {
-                            StepSnapshot snapshot = getFormantSafeSnapshot(currentStep);
-                            
-                            // Safety check for parameter values
-                            snapshot.formant.vowelA = juce::jlimit(0.0f, 4.0f, snapshot.formant.vowelA);
-                            snapshot.formant.vowelB = juce::jlimit(0.0f, 4.0f, snapshot.formant.vowelB);
-                            snapshot.formant.morph = juce::jlimit(0.0f, 1.0f, snapshot.formant.morph);
-                            snapshot.formant.q = juce::jlimit(0.3f, 20.0f, snapshot.formant.q);
-                            snapshot.formant.emphasis = juce::jlimit(0.0f, 12.0f, snapshot.formant.emphasis);
-                            snapshot.formant.gender = juce::jlimit(0.5f, 2.0f, snapshot.formant.gender);
-                            snapshot.formant.vibDepth = juce::jlimit(0.0f, 30.0f, snapshot.formant.vibDepth);
-                            snapshot.formant.mix = juce::jlimit(0.0f, 1.0f, snapshot.formant.mix);
-                            
-                            // Set formant parameters from sequencer
-                            FormantProcessor::Targets targets;
-                            targets.vowelA = static_cast<int>(snapshot.formant.vowelA);
-                            targets.vowelB = static_cast<int>(snapshot.formant.vowelB);
-                            targets.morph = snapshot.formant.morph;
-                            targets.q = snapshot.formant.q;
-                            targets.emphasis = snapshot.formant.emphasis;
-                            targets.gender = snapshot.formant.gender;
-                            targets.vibDepth = snapshot.formant.vibDepth;
-                            targets.mix = snapshot.formant.mix;
-                            
-                            formantProcessor.setTargets(targets);
-                            
-                            // Only process if mix > 0
-                            if (snapshot.formant.mix > 0.0f)
+                        StepSnapshot snapshot = getFormantSafeSnapshot(currentStep);
+                        
+                        // Safety check for parameter values
+                        snapshot.formant.vowel = juce::jlimit(0.0f, 4.0f, snapshot.formant.vowel);
+                        snapshot.formant.resonance = juce::jlimit(0.5f, 20.0f, snapshot.formant.resonance);
+                        snapshot.formant.intensity = juce::jlimit(0.0f, 12.0f, snapshot.formant.intensity);
+                        snapshot.formant.mix = juce::jlimit(0.0f, 1.0f, snapshot.formant.mix);
+                        
+                        // Set formant parameters from sequencer
+                        FormantProcessor::Targets targets;
+                        targets.vowel = static_cast<int>(snapshot.formant.vowel);
+                        targets.resonance = snapshot.formant.resonance;
+                        targets.intensity = snapshot.formant.intensity;
+                        targets.mix = snapshot.formant.mix;
+                        
+                        formantProcessor.setTargets(targets);
+                        
+                        // Only process if mix > 0
+                        if (snapshot.formant.mix > 0.0f)
                             {
                                 // Process Formant effect
                                 formantProcessor.process(buffer, buffer.getNumSamples());
@@ -1765,37 +1817,121 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                     else
                     {
                         // Use static parameters when sequencer is disabled
-                        auto* vowelAParam = valueTreeState.getRawParameterValue("vowelA");
-                        auto* vowelBParam = valueTreeState.getRawParameterValue("vowelB");
-                        auto* morphParam = valueTreeState.getRawParameterValue("morph");
-                        auto* qParam = valueTreeState.getRawParameterValue("q");
-                        auto* emphasisParam = valueTreeState.getRawParameterValue("emphasis");
-                        auto* genderParam = valueTreeState.getRawParameterValue("gender");
-                        auto* vibDepthParam = valueTreeState.getRawParameterValue("vibDepth");
+                        auto* vowelParam = valueTreeState.getRawParameterValue("vowel");
+                        auto* resonanceParam = valueTreeState.getRawParameterValue("resonance");
+                        auto* intensityParam = valueTreeState.getRawParameterValue("intensity");
                         auto* mixParam = valueTreeState.getRawParameterValue("mix");
                         
-                        if (vowelAParam && vowelBParam && morphParam && qParam && 
-                            emphasisParam && genderParam && vibDepthParam && mixParam)
+                        if (vowelParam && resonanceParam && intensityParam && mixParam)
                         {
                             // Convert choice parameters to indices
-                            int vowelA = static_cast<int>(vowelAParam->load());
-                            int vowelB = static_cast<int>(vowelBParam->load());
+                            int vowel = static_cast<int>(vowelParam->load());
                             
                             // Set formant parameters
                             FormantProcessor::Targets targets;
-                            targets.vowelA = vowelA;
-                            targets.vowelB = vowelB;
-                            targets.morph = morphParam->load();
-                            targets.q = qParam->load();
-                            targets.emphasis = emphasisParam->load();
-                            targets.gender = genderParam->load();
-                            targets.vibDepth = vibDepthParam->load();
+                            targets.vowel = vowel;
+                            targets.resonance = resonanceParam->load();
+                            targets.intensity = intensityParam->load();
                             targets.mix = mixParam->load();
                             
                             formantProcessor.setTargets(targets);
                             
                             // Process formant effect
                             formantProcessor.process(buffer, buffer.getNumSamples());
+                        }
+                    }
+                }
+                break;
+            }
+            
+            case EffectID::Form2:
+            {
+                // Check if effect is enabled
+                auto* form2EnabledParam = valueTreeState.getRawParameterValue("form2Enabled");
+                bool isForm2Enabled = form2EnabledParam ? (form2EnabledParam->load() > 0.5f) : false;
+                
+                if (isForm2Enabled)
+                {
+                    // Get Form2 sequencer state
+                    auto& seqState = form2Seq;
+                    
+                    // Check if sequencer is enabled and active
+                    if (seqState.enabled.load() && seqState.active.load())
+                    {
+                        // Get current step snapshot
+                        int currentStep = seqState.currentStep.load();
+                        if (currentStep >= 0 && currentStep < 16)
+                        {
+                            StepSnapshot snapshot = getForm2SafeSnapshot(currentStep);
+                            
+                            // Safety check for parameter values
+                            snapshot.form2.morphX = juce::jlimit(0.0f, 1.0f, snapshot.form2.morphX);
+                            snapshot.form2.morphY = juce::jlimit(0.0f, 1.0f, snapshot.form2.morphY);
+                            snapshot.form2.sharpness = juce::jlimit(0.4f, 18.0f, snapshot.form2.sharpness);
+                            snapshot.form2.emphasis = juce::jlimit(-6.0f, 18.0f, snapshot.form2.emphasis);
+                            snapshot.form2.shift = juce::jlimit(0.5f, 2.0f, snapshot.form2.shift);
+                            snapshot.form2.motion = juce::jlimit(0.0f, 1.0f, snapshot.form2.motion);
+                            snapshot.form2.air = juce::jlimit(0.0f, 1.0f, snapshot.form2.air);
+                            snapshot.form2.mix = juce::jlimit(0.0f, 1.0f, snapshot.form2.mix);
+                            
+                            // Set Form2 parameters from sequencer
+                            // morphX now holds vowel index (0-4) from knob, not XY position
+                            form2Processor.setMorphX(snapshot.form2.morphX); // This maps vowel index to XY internally
+                            form2Processor.setMorphY(snapshot.form2.morphY);
+                            form2Processor.setSharpness(snapshot.form2.sharpness);
+                            form2Processor.setEmphasis(snapshot.form2.emphasis);
+                            form2Processor.setShift(snapshot.form2.shift);
+                            form2Processor.setMotion(snapshot.form2.motion);
+                            form2Processor.setAir(snapshot.form2.air);
+                            form2Processor.setMix(snapshot.form2.mix);
+                            
+                            // Only process if mix > 0
+                            if (snapshot.form2.mix > 0.0f)
+                            {
+                                // Set host tempo for LFO sync
+                                auto bpm = getPlayHead()->getPosition()->getBpm().orFallback(120.0);
+                                bool hasTempo = getPlayHead()->getPosition()->getBpm().hasValue();
+                                form2Processor.setHostTempo(bpm, hasTempo);
+                                
+                                // Process Form2 effect
+                                auto block = juce::dsp::AudioBlock<float>(buffer);
+                                form2Processor.process(block);
+                            }
+                        }
+                    }
+                    else
+                    {
+                        // Use static parameters when sequencer is disabled
+                        auto* morphXParam = valueTreeState.getRawParameterValue("form2MorphX");
+                        auto* morphYParam = valueTreeState.getRawParameterValue("form2MorphY");
+                        auto* sharpnessParam = valueTreeState.getRawParameterValue("form2Sharpness");
+                        auto* emphasisParam = valueTreeState.getRawParameterValue("form2Emphasis");
+                        auto* shiftParam = valueTreeState.getRawParameterValue("form2Shift");
+                        auto* motionParam = valueTreeState.getRawParameterValue("form2Motion");
+                        auto* airParam = valueTreeState.getRawParameterValue("form2Air");
+                        auto* mixParam = valueTreeState.getRawParameterValue("form2Mix");
+                        
+                        if (morphXParam && morphYParam && sharpnessParam && emphasisParam && 
+                            shiftParam && motionParam && airParam && mixParam)
+                        {
+                            // Set Form2 parameters
+                            form2Processor.setMorphX(morphXParam->load());
+                            form2Processor.setMorphY(morphYParam->load());
+                            form2Processor.setSharpness(sharpnessParam->load());
+                            form2Processor.setEmphasis(emphasisParam->load());
+                            form2Processor.setShift(shiftParam->load());
+                            form2Processor.setMotion(motionParam->load());
+                            form2Processor.setAir(airParam->load());
+                            form2Processor.setMix(mixParam->load());
+                            
+                            // Set host tempo for LFO sync
+                            auto bpm = getPlayHead()->getPosition()->getBpm().orFallback(120.0);
+                            bool hasTempo = getPlayHead()->getPosition()->getBpm().hasValue();
+                            form2Processor.setHostTempo(bpm, hasTempo);
+                            
+                            // Process Form2 effect
+                            auto block = juce::dsp::AudioBlock<float>(buffer);
+                            form2Processor.process(block);
                         }
                     }
                 }
@@ -2924,30 +3060,18 @@ void PluginProcessor::updateFormantCurrentStepSnapshot(int knobIndex, float valu
     if (currentStep < 0 || currentStep >= 16) return;
     
     // Update the specific Formant parameter in the snapshot
-    // Note: knob order matches UI: VowelA, VowelB, Morph, Q, Emphasis, Gender, Vibrato, Mix
+    // Note: knob order matches UI: Vowel, Resonance, Intensity, Mix
     switch (knobIndex) {
-        case 0: // VowelA
-            formantStepSnapshots[currentStep].formant.vowelA = value;
+        case 0: // Vowel
+            formantStepSnapshots[currentStep].formant.vowel = value;
             break;
-        case 1: // VowelB
-            formantStepSnapshots[currentStep].formant.vowelB = value;
+        case 1: // Resonance
+            formantStepSnapshots[currentStep].formant.resonance = value;
             break;
-        case 2: // Morph
-            formantStepSnapshots[currentStep].formant.morph = value;
+        case 2: // Intensity
+            formantStepSnapshots[currentStep].formant.intensity = value;
             break;
-        case 3: // Q
-            formantStepSnapshots[currentStep].formant.q = value;
-            break;
-        case 4: // Emphasis
-            formantStepSnapshots[currentStep].formant.emphasis = value;
-            break;
-        case 5: // Gender
-            formantStepSnapshots[currentStep].formant.gender = value;
-            break;
-        case 6: // Vibrato
-            formantStepSnapshots[currentStep].formant.vibDepth = value;
-            break;
-        case 7: // Mix
+        case 3: // Mix
             formantStepSnapshots[currentStep].formant.mix = value;
             break;
     }
@@ -2968,6 +3092,45 @@ void PluginProcessor::setFormantStdMode(int stdMode)
     // Store STD mode for Formant sequencer timing calculations
     formantSeq.stdMode = stdMode;
     DBG("[PROCESSOR] Formant STD mode set to: " << stdMode);
+}
+
+// Form 2 snapshot methods
+StepSnapshot PluginProcessor::getForm2SafeSnapshot(int step) const
+{
+    if (step >= 0 && step < 16) {
+        return form2StepSnapshots[step];
+    }
+    return form2StepSnapshots[0];
+}
+
+void PluginProcessor::setForm2StepSnapshot(int step, const StepSnapshot& snapshot) noexcept
+{
+    if (step >= 0 && step < 16) {
+        form2StepSnapshots[step] = snapshot;
+    }
+}
+
+void PluginProcessor::updateForm2CurrentStepSnapshot(int knobIndex, float value)
+{
+    int currentStep = form2UiSelectedStep.load();
+    if (currentStep < 0 || currentStep >= 16) return;
+    
+    // Update the specific Form 2 parameter in the snapshot
+    switch (knobIndex) {
+        case 0: form2StepSnapshots[currentStep].form2.morphX = value; break;
+        case 1: form2StepSnapshots[currentStep].form2.morphY = value; break;
+        case 2: form2StepSnapshots[currentStep].form2.sharpness = value; break;
+        case 3: form2StepSnapshots[currentStep].form2.emphasis = value; break;
+        case 4: form2StepSnapshots[currentStep].form2.shift = value; break;
+        case 5: form2StepSnapshots[currentStep].form2.motion = value; break;
+        case 6: form2StepSnapshots[currentStep].form2.air = value; break;
+        case 7: form2StepSnapshots[currentStep].form2.mix = value; break;
+    }
+}
+
+void PluginProcessor::setForm2StepsUsed(int stepsUsed)
+{
+    form2Seq.stepsUsed.store(juce::jlimit(1, 16, stepsUsed));
 }
 
 StepSnapshot PluginProcessor::getChorusSafeSnapshot(int step) const

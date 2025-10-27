@@ -51,6 +51,26 @@ public:
     }
     
     /**
+     * Set whether formant filter overlay should be displayed
+     */
+    void setFormantOverlayEnabled(bool enabled) { formantOverlayEnabled = enabled; }
+    
+    /**
+     * Set formant filter parameters for overlay calculation
+     */
+    void setFormantParameters(float f1Hz, float f2Hz, float f3Hz, float q, float emphasisDb)
+    {
+        formantF1 = f1Hz;
+        formantF2 = f2Hz;
+        formantF3 = f3Hz;
+        formantQ = q;
+        formantEmphasisDb = emphasisDb;
+    }
+    
+    // Callback for dragging formant peaks
+    std::function<void(int formantIndex, float newFreq, float newQ)> onFormantDragged;
+    
+    /**
      * Push a new spectrum frame from the audio thread
      * Thread-safe: uses atomic index
      */
@@ -98,6 +118,12 @@ public:
         
         // === LIVE CURVE (on top) ===
         drawSpectrumCurve(g, drawBounds, currentFrame, 1.0f, 0.0f, true);
+        
+        // === FORMANT FILTER OVERLAY (when enabled) ===
+        if (formantOverlayEnabled)
+        {
+            drawFormantOverlay(g, drawBounds);
+        }
     }
     
     void resized() override
@@ -152,6 +178,191 @@ private:
             float y = dbToY(db, bounds);
             g.drawHorizontalLine((int)y, bounds.getX(), bounds.getRight());
         }
+    }
+    
+    void drawFormantOverlay(juce::Graphics& g, const juce::Rectangle<float>& bounds)
+    {
+        // Color-coded formant peaks with morphing
+        const juce::Colour f1Color(0xFF4A9FD8); // Blue for F1 (lowest frequency)
+        const juce::Colour f2Color(0xFF4AD84A); // Green for F2 (mid frequency)  
+        const juce::Colour f3Color(0xFFD84A4A); // Red for F3 (highest frequency)
+        
+        const float overlayAlpha = 0.85f; // Increased opacity for better visibility
+        
+        // Draw morphing formant response with color transitions
+        drawConnectedFormantResponse(g, bounds, f1Color.withAlpha(overlayAlpha), f2Color.withAlpha(overlayAlpha), f3Color.withAlpha(overlayAlpha));
+        
+        // Draw draggable peak markers with individual Q values
+        drawFormantPeak(g, bounds, formantF1, formantQ1, f1Color.withAlpha(overlayAlpha));
+        drawFormantPeak(g, bounds, formantF2, formantQ2, f2Color.withAlpha(overlayAlpha));
+        drawFormantPeak(g, bounds, formantF3, formantQ3, f3Color.withAlpha(overlayAlpha));
+    }
+    
+    void drawConnectedFormantResponse(juce::Graphics& g, const juce::Rectangle<float>& bounds,
+                                     juce::Colour f1Color, juce::Colour f2Color, juce::Colour f3Color)
+    {
+        const float width = bounds.getWidth();
+        const int numPoints = (int)width;
+        const float strokeThickness = 8.0f;
+        const float glowThickness = 16.0f;
+        
+        // Create path segments with interpolated colors
+        for (int i = 0; i < numPoints - 1; ++i)
+        {
+            float t1 = i / (float)(numPoints - 1);
+            float t2 = (i + 1) / (float)(numPoints - 1);
+            float freq1 = 20.0f * std::pow(1000.0f, t1); // 20 Hz to 20 kHz log scale
+            float freq2 = 20.0f * std::pow(1000.0f, t2);
+            
+            // Calculate combined formant response with individual Q values
+            float f1Response1 = calculateBandpassResponse(freq1, formantF1, formantQ1);
+            float f2Response1 = calculateBandpassResponse(freq1, formantF2, formantQ2);
+            float f3Response1 = calculateBandpassResponse(freq1, formantF3, formantQ3);
+            float combinedResponse1 = (f1Response1 + f2Response1 + f3Response1) * juce::Decibels::decibelsToGain(formantEmphasisDb);
+            
+            float f1Response2 = calculateBandpassResponse(freq2, formantF1, formantQ1);
+            float f2Response2 = calculateBandpassResponse(freq2, formantF2, formantQ2);
+            float f3Response2 = calculateBandpassResponse(freq2, formantF3, formantQ3);
+            float combinedResponse2 = (f1Response2 + f2Response2 + f3Response2) * juce::Decibels::decibelsToGain(formantEmphasisDb);
+            
+            // Convert to dB
+            float responseDb1 = 20.0f * std::log10(combinedResponse1 + 1e-12f);
+            float responseDb2 = 20.0f * std::log10(combinedResponse2 + 1e-12f);
+            responseDb1 = juce::jlimit(-90.0f, 24.0f, responseDb1);
+            responseDb2 = juce::jlimit(-90.0f, 24.0f, responseDb2);
+            
+            float x1 = bounds.getX() + i;
+            float y1 = dbToY(responseDb1, bounds);
+            float x2 = bounds.getX() + (i + 1);
+            float y2 = dbToY(responseDb2, bounds);
+            
+            // Interpolate color based on frequency position
+            juce::Colour segmentColor;
+            if (t1 < 0.33f)
+            {
+                // Transition from F1 (blue) to F2 (green)
+                float interp = t1 / 0.33f;
+                segmentColor = f1Color.interpolatedWith(f2Color, interp);
+            }
+            else if (t1 < 0.66f)
+            {
+                // Transition from F2 (green) to F3 (red)
+                float interp = (t1 - 0.33f) / 0.33f;
+                segmentColor = f2Color.interpolatedWith(f3Color, interp);
+            }
+            else
+            {
+                // Mostly F3 (red) at high frequencies
+                float interp = (t1 - 0.66f) / 0.34f;
+                segmentColor = f3Color.interpolatedWith(f3Color, interp); // Stay red
+            }
+            
+            // Draw glow
+            g.setColour(segmentColor.withAlpha(0.5f));
+            g.drawLine(x1, y1, x2, y2, glowThickness);
+            
+            // Draw main line
+            g.setColour(segmentColor.withAlpha(0.95f));
+            g.drawLine(x1, y1, x2, y2, strokeThickness);
+        }
+    }
+    
+    void drawFormantPeak(juce::Graphics& g, const juce::Rectangle<float>& bounds, 
+                        float centerFreq, float q, juce::Colour color)
+    {
+        if (centerFreq <= 0.0f || q <= 0.0f) return;
+        
+        // Draw the bandpass filter response curve to show Q width
+        juce::Path peakPath;
+        bool firstPoint = true;
+        
+        const float width = bounds.getWidth();
+        const int numPoints = (int)width;
+        
+        // Calculate bandwidth from Q factor (higher Q = narrower peak)
+        float bandwidth = centerFreq / q;
+        float freqLow = juce::jmax(20.0f, centerFreq - bandwidth * 2.0f);
+        float freqHigh = juce::jmin(20000.0f, centerFreq + bandwidth * 2.0f);
+        
+        for (int i = 0; i < numPoints; ++i)
+        {
+            float t = i / (float)(numPoints - 1);
+            float freq = 20.0f * std::pow(1000.0f, t); // 20 Hz to 20 kHz log scale
+            
+            // Only draw frequencies within the peak range
+            if (freq < freqLow || freq > freqHigh) continue;
+            
+            // Calculate bandpass filter response
+            float response = calculateBandpassResponse(freq, centerFreq, q);
+            
+            // Apply emphasis gain
+            response *= juce::Decibels::decibelsToGain(formantEmphasisDb);
+            
+            // Convert to dB
+            float responseDb = 20.0f * std::log10(response + 1e-12f);
+            responseDb = juce::jlimit(-90.0f, 24.0f, responseDb);
+            
+            float x = bounds.getX() + i;
+            float y = dbToY(responseDb, bounds);
+            
+            if (firstPoint)
+            {
+                peakPath.startNewSubPath(x, y);
+                firstPoint = false;
+            }
+            else
+            {
+                peakPath.lineTo(x, y);
+            }
+        }
+        
+        // Draw the peak curve with Q-based width
+        g.setColour(color);
+        g.strokePath(peakPath, juce::PathStrokeType(3.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+        
+        // Draw glow effect with Q-based width
+        g.setColour(color.withAlpha(0.4f));
+        g.strokePath(peakPath, juce::PathStrokeType(8.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+        
+        // Draw interactive dot at the peak center
+        float centerX = freqToX(centerFreq, bounds);
+        float centerY = dbToY(0.0f, bounds);
+        
+        // Draw glow effect
+        g.setColour(color.withAlpha(0.6f));
+        g.fillEllipse(centerX - 12, centerY - 12, 24, 24);
+        
+        // Draw main dot
+        g.setColour(color);
+        g.fillEllipse(centerX - 10, centerY - 10, 20, 20);
+        
+        // Add white outline to dot
+        g.setColour(juce::Colours::white.withAlpha(0.9f));
+        g.drawEllipse(centerX - 10, centerY - 10, 20, 20, 2.0f);
+    }
+    
+    void drawFormantLegend(juce::Graphics& g, const juce::Rectangle<float>& bounds)
+    {
+        // Draw legend at the top of the spectrum analyzer
+        const float legendY = bounds.getY() + 5;
+        const float legendX = bounds.getX() + 10;
+        
+        g.setColour(juce::Colours::white.withAlpha(0.8f));
+        g.setFont(12.0f);
+        
+        // No text labels - just visual
+    }
+    
+    float calculateBandpassResponse(float freq, float centerFreq, float q) const
+    {
+        // Simplified band-pass filter response calculation
+        float normalizedFreq = freq / centerFreq;
+        float bandwidth = 1.0f / q;
+        
+        // Calculate response magnitude (simplified Butterworth band-pass)
+        float response = 1.0f / std::sqrt(1.0f + std::pow((normalizedFreq - 1.0f) / (bandwidth * 0.5f), 2.0f));
+        
+        return response;
     }
     
     void drawSpectrumCurve(juce::Graphics& g, const juce::Rectangle<float>& bounds, 
@@ -251,6 +462,96 @@ private:
     SpectrumFrame currentFrame;
     std::array<SpectrumFrame, MaxTrails> trailFrames;
     int currentTrailIndex = 0;
+    
+    // Formant filter overlay state
+    bool formantOverlayEnabled = false;
+    float formantF1 = 730.0f;  // Default A vowel F1
+    float formantF2 = 1090.0f; // Default A vowel F2
+    float formantF3 = 2440.0f; // Default A vowel F3
+    float formantQ = 6.0f;     // Default Q factor
+    float formantQ1 = 12.0f;   // Q for F1
+    float formantQ2 = 12.0f;   // Q for F2
+    float formantQ3 = 12.0f;   // Q for F3
+    float formantEmphasisDb = 6.0f; // Default emphasis
+    
+    // Mouse interaction state
+    int draggedFormantIndex = -1; // -1 = none, 0 = F1, 1 = F2, 2 = F3
+    float initialMouseY = 0.0f;
+    bool isFormantOverlayEnabled() const { return formantOverlayEnabled && onFormantDragged; }
+    
+    void mouseDown(const juce::MouseEvent& event) override
+    {
+        if (!formantOverlayEnabled || !onFormantDragged) return;
+        
+        auto bounds = this->getLocalBounds();
+        
+        // Check if mouse is near any formant peak
+        float x = event.position.x;
+        float y = event.position.y;
+        initialMouseY = y; // Store initial Y for vertical drag
+        const float dotSize = 22.0f; // Size of interactive dot
+        
+        // Get bounds for spectrum drawing
+        auto drawBounds = bounds.toFloat();
+        
+        for (int i = 0; i < 3; ++i)
+        {
+            float freq = (i == 0) ? formantF1 : (i == 1) ? formantF2 : formantF3;
+            float centerX = freqToX(freq, drawBounds);
+            float centerY = dbToY(0.0f, drawBounds);
+            
+            float dist = std::sqrt((x - centerX) * (x - centerX) + (y - centerY) * (y - centerY));
+            if (dist < dotSize)
+            {
+                draggedFormantIndex = i;
+                return;
+            }
+        }
+        
+        draggedFormantIndex = -1;
+    }
+    
+    void mouseDrag(const juce::MouseEvent& event) override
+    {
+        if (!formantOverlayEnabled || !onFormantDragged || draggedFormantIndex < 0) return;
+        
+        auto bounds = this->getLocalBounds();
+        float x = event.position.x;
+        float y = event.position.y;
+        
+        // Convert X position to frequency (horizontal drag)
+        float xNorm = (x - bounds.getX()) / bounds.getWidth();
+        float freq = 20.0f * std::pow(1000.0f, xNorm); // 20 Hz to 20 kHz log scale
+        freq = juce::jlimit(20.0f, 20000.0f, freq);
+        
+        // Convert Y position to Q/resonance (vertical drag - inverted: lower Y = higher Q)
+        float yNorm = (y - bounds.getY()) / bounds.getHeight();
+        float q = 0.5f + (1.0f - yNorm) * 19.5f; // 0.5 to 20.0 Q, higher on screen = higher Q
+        q = juce::jlimit(0.5f, 20.0f, q);
+        
+        // Update frequency
+        if (draggedFormantIndex == 0) {
+            formantF1 = freq;
+            formantQ1 = q;
+        }
+        else if (draggedFormantIndex == 1) {
+            formantF2 = freq;
+            formantQ2 = q;
+        }
+        else if (draggedFormantIndex == 2) {
+            formantF3 = freq;
+            formantQ3 = q;
+        }
+        
+        // Call callback with both frequency and Q
+        onFormantDragged(draggedFormantIndex, freq, q);
+        repaint();
+    }
+    
+    void mouseUp(const juce::MouseEvent&) override
+    {
+        draggedFormantIndex = -1;
+    }
     
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(OutputSpectrumView)
 };

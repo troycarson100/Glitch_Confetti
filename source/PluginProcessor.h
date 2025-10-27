@@ -13,6 +13,7 @@
 #include "dsp/CompressEngine.h"
 #include "dsp/PhaseBloomEngine.h"
 #include "dsp/FormantProcessor.h"
+#include "dsp/Form2Processor.h"
 #include "Effects/Redux/ReduxBank.h"
 #include "dsp/DspFlags.h"
 #include "StepSnapshot.h"
@@ -203,6 +204,7 @@ public:
             formantSeq.active.store(true);
         }
     }
+    SeqState& getFormantSeqState() { return formantSeq; }
     const SeqState& getFormantSeqState() const { return formantSeq; }
     int getFormantPlayingStep() const noexcept { return formantSeq.playingStep.load(); }
     int getFormantCurrentStep() const noexcept { return formantSeq.currentStep.load(); }
@@ -267,6 +269,24 @@ public:
     void setFormantStepSnapshot(int step, const StepSnapshot& snapshot) noexcept;
     void updateFormantCurrentStepSnapshot(int knobIndex, float value);
     void setFormantStepsUsed(int stepsUsed);
+    
+    // Step snapshot access (Form 2)
+    StepSnapshot getForm2SafeSnapshot(int step) const;
+    void setForm2StepSnapshot(int step, const StepSnapshot& snapshot) noexcept;
+    void updateForm2CurrentStepSnapshot(int knobIndex, float value);
+    void setForm2StepsUsed(int stepsUsed);
+    void setForm2DivisionIndex(int divisionIndex) noexcept {
+        form2Seq.divisionIndex.store(juce::jlimit(0, 8, divisionIndex));
+    }
+    void setForm2SequencerEnabled(bool enabled) noexcept {
+        form2Seq.enabled.store(enabled);
+        if (enabled) {
+            form2Seq.active.store(true);
+        }
+    }
+    const SeqState& getForm2SeqState() const { return form2Seq; }
+    int getForm2PlayingStep() const noexcept { return form2Seq.playingStep.load(); }
+    int getForm2CurrentStep() const noexcept { return form2Seq.currentStep.load(); }
     void setFormantDivisionIndex(int divisionIndex);
     void setFormantStdMode(int stdMode);
     
@@ -441,6 +461,10 @@ private:
     SeqState formantSeq;
     std::atomic<int> formantUiSelectedStep { 0 };  // Formant editor's selected step
     
+    // Form 2 sequencer state (independent from other effects)
+    SeqState form2Seq;
+    std::atomic<int> form2UiSelectedStep { 0 };  // Form 2 editor's selected step
+    
     // Chorus Sequencer State (independent from Delay, AutoPan, and Dirt)
     SeqState chorusSeq;
     std::atomic<int> chorusUiSelectedStep { 0 };  // Chorus editor's selected step
@@ -472,6 +496,7 @@ private:
     std::array<StepSnapshot, 16> reduxStepSnapshots;
     std::array<StepSnapshot, 16> phaseBloomStepSnapshots;
     std::array<StepSnapshot, 16> formantStepSnapshots;
+    std::array<StepSnapshot, 16> form2StepSnapshots;
     std::array<StepSnapshot, 16> chorusStepSnapshots;
     std::array<StepSnapshot, 16> reverbStepSnapshots;
     std::array<StepSnapshot, 16> granularStepSnapshots;
@@ -535,6 +560,13 @@ public:
     
     // Formant DSP Implementation
     FormantProcessor formantProcessor;
+    
+    FormantProcessor& getFormantProcessor() { return formantProcessor; }
+    
+    // Form 2 DSP Implementation
+    Form2Processor form2Processor;
+    
+    Form2Processor& getForm2Processor() { return form2Processor; }
     
     // Redux DSP Implementation
     ReduxBank reduxBank;

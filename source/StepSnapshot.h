@@ -109,13 +109,20 @@ struct StepSnapshot {
        } phasebloom;
        
        struct {
-           float vowelA = 0.0f;                 // 0-4 (A=0, E=1, I=2, O=3, U=4)
-           float vowelB = 1.0f;                 // 0-4 (A=0, E=1, I=2, O=3, U=4)
-           float morph = 0.0f;                  // 0-1 (crossfade between A and B)
-           float q = 6.0f;                      // 0.3-20 (Q factor for bandwidth)
-           float emphasis = 6.0f;               // 0-12 dB (emphasis gain)
-           float gender = 1.0f;                 // 0.5-2.0 (gender shift ratio)
-           float vibDepth = 5.0f;               // 0-30 cents (vibrato depth)
-           float mix = 0.5f;                    // 0-1 (dry/wet mix)
+           float vowel = 0.0f;                  // 0-4 (A=0, E=1, I=2, O=3, U=4)
+           float resonance = 12.0f;             // 0.5-20 (Q factor for bandwidth)
+           float intensity = 6.0f;               // 0-12 dB (emphasis gain)
+           float mix = 0.8f;                     // 0-1 (dry/wet mix)
        } formant;
+       
+       struct {
+           float morphX = 0.30f;        // 0-1 (horizontal vowel position)
+           float morphY = 0.65f;        // 0-1 (vertical vowel position)
+           float sharpness = 8.0f;      // 0.4-18 (Q factor/sharpness)
+           float emphasis = 6.0f;       // -6 to +18 dB (emphasis gain)
+           float shift = 1.0f;          // 0.5-2.0 (gender/size multiplier)
+           float motion = 0.35f;        // 0-1 (LFO motion depth)
+           float air = 0.20f;           // 0-1 (breath/air amount)
+           float mix = 0.5f;             // 0-1 (dry/wet mix)
+       } form2;
 };

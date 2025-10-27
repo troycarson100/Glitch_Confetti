@@ -66,6 +66,8 @@ set(SourceFiles
     ${CMAKE_CURRENT_SOURCE_DIR}/source/dsp/PhaseBloomEngine.h
     ${CMAKE_CURRENT_SOURCE_DIR}/source/dsp/FormantProcessor.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/source/dsp/FormantProcessor.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/source/dsp/Form2Processor.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/source/dsp/Form2Processor.h
     ${CMAKE_CURRENT_SOURCE_DIR}/source/ui/UiFlags.h
     ${CMAKE_CURRENT_SOURCE_DIR}/source/ui/Assets.h
     ${CMAKE_CURRENT_SOURCE_DIR}/source/ui/Assets.cpp

@@ -1,132 +1,162 @@
-<!-- f8815ee8-e613-4d71-b763-a13c63933429 1388a70b-043f-40b8-80c0-c252e5c03533 -->
-# Fix Space Delay Sync Mode Knob Issue
+<!-- f8815ee8-e613-4d71-b763-a13c63933429 c1cf0380-a62e-479e-aa90-0a01eda224ae -->
+# Fix Form 2 UI Implementation
 
-## Problem Analysis
-The Space Delay time knob in sync mode (0-19 range for 20 divisions) keeps snapping back to 1/64 when released. Root causes:
+## Critical Issues Identified
 
-1. **Timer Callback Interference**: The `timerCallback()` function (lines 793-842) runs every 16ms and reads from `getParameters().getUnchecked(0)` which is the `timeMs` parameter, not `delayTimeDiv`. Even though line 807 has a guard, there may be edge cases or timing issues.
+The Form 2 UI has several structural problems that prevent it from working like other effect pages:
 
-2. **Outdated Label Logic**: Lines 821-834 use old division display logic that assumes 8 divisions and a 0-1 knob range, incompatible with our new 0-19 range.
-
-3. **Parameter Confusion**: The knob index 0 is tied to `timeMs` parameter in `getParameters()` array, but in sync mode we want it to control `delayTimeDiv` parameter instead.
-
-## Solution
-
-### 1. Update Timer Callback (lines 793-842 in `PluginEditor.cpp`)
-- **Fix the guard condition** on line 807 to be more robust
-- **Skip ALL timer updates** for knob 0 when in sync mode (not just setValue, but also label updates)
-- **Call `updateSpaceDelayTimeLabel()`** instead of the old division logic (lines 821-834)
-
-Replace lines 795-840 with:
-```cpp
-for (int i = 0; i < 8; ++i)
-{
-    if (knobs[i] != nullptr && i < processorRef.getParameters().size())
-    {
-        // Special handling for Time knob in sync mode
-        if (i == 0 && timeSyncEnabled) {
-            // In sync mode, skip timer-based updates entirely
-            // The knob is controlled by delayTimeDiv parameter, not timeMs
-            // Label is updated by updateSpaceDelayTimeLabel()
-            continue;
-        }
-        
-        auto* param = processorRef.getParameters().getUnchecked(i);
-        float paramValue = param->getValue();
-        
-        // Only update knob value if it's not currently being dragged
-        if (!knobs[i]->isMouseButtonDown())
-        {
-            knobs[i]->setValue(paramValue, juce::dontSendNotification);
-        }
-        
-        // Update value label
-        if (valueLabels[i] != nullptr)
-        {
-            // Format value based on parameter type
-            juce::String valueText;
-            if (auto* floatParam = dynamic_cast<juce::AudioParameterFloat*>(param))
-            {
-                float actualValue = floatParam->convertFrom0to1(paramValue);
-                if (i == 0) {
-                    // Time knob in non-sync mode
-                    valueText = juce::String(actualValue, 0) + "ms";
-                } else if (i == 5 || i == 6) {
-                    // Hi-Cut, Low-Cut - show in Hz
-                    valueText = juce::String((int) std::round(actualValue)) + "Hz";
-                } else {
-                    // Other knobs show percentage
-                    valueText = juce::String((int) std::round(actualValue * 100));
-                }
-            }
-            valueLabels[i]->setText(valueText, juce::dontSendNotification);
-        }
-        
-        // Update indicator bar
-        if (indicatorBars[i] != nullptr)
-        {
-            indicatorBars[i]->setValue(paramValue);
-        }
-    }
-}
-```
-
-### 2. Verify Guard Condition in onValueChange (line 2103)
-The condition `if (i != 0 || !timeSyncEnabled)` should prevent calling `updateParameterFromKnob(0)` when in sync mode. This is correct but add a debug log to confirm:
-
-```cpp
-// Always update parameter from knob for non-sync knobs or after sync handling
-if (i != 0 || !timeSyncEnabled) {
-    updateParameterFromKnob(i);
-} else {
-    DBG("[SYNC] Skipping updateParameterFromKnob for knob 0 in sync mode");
-}
-```
-
-### 3. Add Defensive Check in updateParameterFromKnob (line 4054)
-Add a safety check to prevent updating `timeMs` parameter when in sync mode:
-
-```cpp
-void PluginEditor::updateParameterFromKnob(int knobIndex)
-{
-    // Safety: never update timeMs parameter (index 0) when in sync mode
-    if (knobIndex == 0 && timeSyncEnabled) {
-        DBG("[SYNC] Blocked updateParameterFromKnob for knob 0 in sync mode");
-        return;
-    }
-    
-    if (knobIndex >= 0 && knobIndex < 8 && knobs[knobIndex] != nullptr && knobIndex < processorRef.getParameters().size())
-    {
-        // ... rest of existing code
-    }
-}
-```
+1. **Wrong sequencer area bounds** - Using `(25, 410, 413, 156)` instead of `(25, 374, 413, 140)`
+2. **Missing snapshot update in knob callbacks** - Knobs don't call `updateForm2CurrentStepSnapshot()`
+3. **Missing "All Steps" logic in knob callbacks** - No code to update all 16 steps when toggle is active
+4. **Wrong power button positioning** - Effects and step power buttons are incorrectly placed
+5. **Missing step button save/load** - Step buttons don't save current step before switching
+6. **Syntax error in form2Group** - Line 11744 missing semicolon after `form2Knobs[i])`
+7. **Missing sequencer UI elements** - Step dice, rate dropdown, STD toggle callbacks not implemented
+8. **Wrong "All Steps" toggle position** - Should be in effect area, not step area
 
 ## Files to Modify
-- `source/PluginEditor.cpp`:
-  - Timer callback function (~lines 793-842)
-  - onValueChange lambda (~line 2103)
-  - updateParameterFromKnob function (~line 4054)
+
+### `source/PluginEditor.cpp`
+
+**1. Fix `setupForm2Knobs()` - Add snapshot update callbacks (lines 11526-11550)**
+
+Current knob callback only updates UI labels. Need to add:
+- Call to `processorRef.updateForm2CurrentStepSnapshot(i, value)`
+- "All Steps" logic that updates all 16 step snapshots when toggle is active
+- Match PhaseBloom pattern exactly (lines 13061-13154)
+
+**2. Fix `setupForm2EffectsArea()` - Power button positioning (lines 11563-11613)**
+
+Current: `form2FxPowerButton->setBounds(effectArea.getX() + 10, effectArea.getY() + 38, 50, 50);`
+
+Should match PhaseBloom (line 13186):
+```cpp
+const int buttonSize = 46;
+form2FxPowerButton->setBounds(effectArea.getX() + effectArea.getWidth() - buttonSize - 8 + 8 + 3, 
+                             effectArea.getY() + 6 - 20 + 4, buttonSize, buttonSize);
+```
+
+Also need to add dice button setup with proper positioning and assets.
+
+**3. Fix `setupForm2SequencerArea()` - Complete rewrite (lines 11615-11701)**
+
+Current issues:
+- Wrong bounds: `auto stepArea = juce::Rectangle<int>(25, 410, 413, 156);`
+- Should be: `auto sequencerArea = juce::Rectangle<int>(25, 374, 413, 140);`
+- Missing proper step button grid (should be 2x8 with 40px buttons, 8px spacing)
+- Missing step amount TextEditor with callbacks
+- Missing rate dropdown with 8 items and proper styling
+- Missing STD toggle with cycling behavior
+- Missing step dice button with randomization logic
+- Wrong step power button positioning
+
+Match PhaseBloom pattern exactly (lines 13221-13350):
+- Step title: "STEP" (not "FORM 2 MOD")
+- Proper step button grid with onClick handlers
+- TextEditor for step amount (not Label)
+- Rate dropdown with transparent styling
+- STD toggle with "-" initial text
+- Step dice button with proper callback
+- Step power button at top-right corner
+
+**4. Fix `setupForm2AllStepsToggle()` - Move to effect area (lines 11703-11766)**
+
+Current position: `stepArea.getX() + 380, stepArea.getY() + 10`
+
+Should match PhaseBloom (line 9939):
+```cpp
+auto effectArea = juce::Rectangle<int>(25, 54, 413, 296);
+form2AllStepsToggle->setBounds(effectArea.getX() + effectArea.getWidth()/2 - buttonSize/2 + 30, 
+                               effectArea.getY() - 1, buttonSize, buttonSize);
+```
+
+Also fix label position and font (should be 14.4f bold, not 10.0f plain).
+
+**5. Fix `form2Group` population (line 11744)**
+
+Current: `if (form2Knobs[i]) form2Group.push_back(form2Knobs[i].get());`
+
+Missing semicolon - should be:
+```cpp
+if (form2Knobs[i]) form2Group.push_back(form2Knobs[i].get());
+```
+
+**6. Add `onForm2StepButtonClicked()` handler**
+
+Create new method matching PhaseBloom pattern (lines 13693-13712):
+- Save current step snapshot before switching (if not "All Steps" mode)
+- Update `form2UiSelectedStep`
+- Call `processorRef.setForm2SelectedStep()`
+- Load new step snapshot into all 8 knobs
+- Call `updateForm2SequencerUI()`
+
+**7. Implement `updateForm2SequencerUI()`**
+
+Match PhaseBloom pattern (lines 13669-13691):
+- Update step button selected/playing/enabled states
+- Update step amount display
+- Call repaint()
+
+**8. Add Form 2 cases to unified methods**
+
+Add `case FxPageID::Form2:` to:
+- `randomizeEffectStepSnapshot()` - randomize all 8 parameters
+- `loadSelectedStepIntoKnobs()` - load 8 parameters from snapshot
+- `saveCurrentStepSnapshot()` - save 8 parameters to snapshot
+- `updateSnapshotValue()` - update single parameter in snapshot
+- `getParameterIdForKnob()` - return correct parameter ID
+
+### `source/PluginProcessor.cpp`
+
+**9. Verify Form 2 snapshot methods exist**
+
+Ensure these are implemented:
+- `getForm2SafeSnapshot(int step)`
+- `setForm2StepSnapshot(int step, StepSnapshot snapshot)`
+- `updateForm2CurrentStepSnapshot(int knobIndex, float value)`
+- `setForm2StepsUsed(int steps)`
+- `setForm2DivisionIndex(int index)`
+- `setForm2StdMode(int mode)`
+- `setForm2SelectedStep(int step)`
+- `setForm2SequencerEnabled(bool enabled)`
+- `getForm2CurrentStep()`
+- `getForm2SeqState()` (non-const)
+
+## Implementation Order
+
+1. Fix sequencer area bounds in `setupForm2SequencerArea()`
+2. Rewrite sequencer area to match PhaseBloom exactly
+3. Fix power button positions in effects area
+4. Move "All Steps" toggle to effect area
+5. Add snapshot update logic to knob callbacks
+6. Add "All Steps" logic to knob callbacks
+7. Implement `onForm2StepButtonClicked()` handler
+8. Implement `updateForm2SequencerUI()`
+9. Fix `form2Group` syntax error
+10. Add Form 2 cases to unified methods
+11. Verify processor methods exist
+12. Build and test standalone
+13. Update AU plugin
+
+## Key Patterns to Follow
+
+**Sequencer Area Bounds**: Always `juce::Rectangle<int>(25, 374, 413, 140)`
+
+**Step Button Grid**: 40px buttons, 8px spacing, 2 rows of 8, starting at `sequencerArea.getX() + 20, sequencerArea.getY() + 35`
+
+**Power Button Position**: Effects power at top-right, step power at top-right of sequencer
+
+**"All Steps" Toggle**: In effect area, centered horizontally with +30px offset
+
+**Knob Callbacks**: Must call `updateCurrentStepSnapshot()` and handle "All Steps" mode
+
+**Step Button Click**: Save current step (if not "All Steps"), load new step, update UI
 
 
 ### To-dos
 
-- [ ] Create source/ui/pages/ directory for effect page files
-- [ ] Create EffectPageBase.h/.cpp with common effect page interface and shared functionality
-- [ ] Extract Space Delay page as first template - move all Space Delay code to SpaceDelayPage.h/.cpp
-- [ ] Test that Space Delay works correctly after extraction
-- [ ] Extract AutoPan page following Space Delay pattern
-- [ ] Extract Dirt page following Space Delay pattern
-- [ ] Extract Chorus page following Space Delay pattern
-- [ ] Extract Reverb page following Space Delay pattern
-- [ ] Extract Granular page following Space Delay pattern
-- [ ] Extract Slicer page following Space Delay pattern
-- [ ] Extract Dub Delay page following Space Delay pattern
-- [ ] Extract Redux page following Space Delay pattern
-- [ ] Extract PhaseBloom page following Space Delay pattern
-- [ ] Extract COMPRESS+ page following Space Delay pattern
-- [ ] Create MasterSection.h/.cpp and move all master area code
-- [ ] Create SequencerSection, PowerButtonManager, and VisibilityManager utility classes
-- [ ] Update CMakeLists.txt to include all new source files
-- [ ] Test all effects and functionality work correctly after refactoring
-- [ ] Verify that the refactored code builds successfully for Standalone and AU
+- [ ] Reduce formant knobs from 8 to 4 (Vowel, Resonance, Intensity, Mix) in setupFormantKnobs()
+- [ ] Change DSP from bandpass to peaking filters and remove LFO vibrato
+- [ ] Update APVTS parameters and step snapshot structure to match 4-knob design
+- [ ] Remove drag interaction from visualization, keep as read-only formant position display
+- [ ] Test each vowel (A/E/I/O/U) to verify clear vowel character without phaser artifacts

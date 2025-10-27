@@ -196,6 +196,13 @@ PluginEditor::PluginEditor (PluginProcessor& p)
         setupFormantSequencerArea();
         setupFormantAllStepsToggle();
         
+        // Setup Form 2 page
+        DBG("[UI] Setting up Form 2 page...");
+        setupForm2Knobs();
+        setupForm2EffectsArea();
+        setupForm2SequencerArea();
+        setupForm2AllStepsToggle();
+        
         // Setup COMPRESS+ sliders
         DBG("[UI] Setting up COMPRESS+ page...");
         setupCompressSliders();
@@ -436,6 +443,21 @@ void PluginEditor::paint (juce::Graphics& g)
                     return assets.formBackgroundTab4.get();
                 }
                 break;
+                
+            case EffectID::Form2:
+                if (tabNumber == 1 && assets.form2BackgroundTab1) {
+                    return assets.form2BackgroundTab1.get();
+                }
+                else if (tabNumber == 2 && assets.form2BackgroundTab2) {
+                    return assets.form2BackgroundTab2.get();
+                }
+                else if (tabNumber == 3 && assets.form2BackgroundTab3) {
+                    return assets.form2BackgroundTab3.get();
+                }
+                else if (tabNumber == 4 && assets.form2BackgroundTab4) {
+                    return assets.form2BackgroundTab4.get();
+                }
+                break;
         }
         return nullptr;
     };
@@ -485,6 +507,7 @@ void PluginEditor::paint (juce::Graphics& g)
             case EffectID::Redux:       return assets.tabReduxIcon.get();       // Redux_Icon
             case EffectID::PhaseBloom:  return assets.tabPhaseBloomIcon.get();  // PhaseBloom_Icon
             case EffectID::Formant:     return assets.tabFormantIcon.get();     // Form_Icon
+            case EffectID::Form2:       return assets.tabForm2Icon.get();      // Form_Icon (shared)
         }
         return nullptr;
     };
@@ -1393,6 +1416,9 @@ void PluginEditor::timerCallback()
     
     // Update Dub Delay sequencer UI
     updateDubDelaySequencerUI();
+    
+    // Update Form 2 sequencer UI  
+    updateForm2SequencerUI();
     
     // Update Dub Delay time label (handles sync mode display)
     updateDubDelayTimeLabel();
@@ -3171,6 +3197,25 @@ void PluginEditor::setupMasterKnobs()
         outputSpectrumView = std::make_unique<OutputSpectrumView>();
         addAndMakeVisible(*outputSpectrumView);
         
+        // Connect drag-to-knob: dragging formant dots updates vowel knobs
+        outputSpectrumView->onFormantDragged = [this](int formantIndex, float newFreq, float newQ)
+        {
+            // Map formant index to knob: 0=F1 (affects Vowel A), 1=F2 (affects Vowel A), 2=F3 (affects Vowel B)
+            // For simplicity, let's just update Vowel A knob to indirectly control F1/F2
+            // and Vowel B knob to control F2/F3
+            
+            DBG("[FORMANT DRAG] Formant " << formantIndex << " dragged to " << newFreq << " Hz, Q=" << newQ);
+            
+            // Update Resonance knob if dragging vertically (resonance adjustment)
+            if (formantKnobs[1]) // Resonance knob is now index 1
+            {
+                formantKnobs[1]->setValue(newQ, juce::dontSendNotification);
+            }
+            
+            // For now, just update the overlay - the knobs will update the overlay automatically
+            // when they change, so dragging should just update visualization
+        };
+        
         // Connect spectrum analyzer to the view
         processorRef.spectrumAnalyzer.setOutputView(outputSpectrumView.get());
         
@@ -3456,7 +3501,7 @@ void PluginEditor::setupSpaceDelayUI()
     effectTypeDropdown->addItem("Dub Echo", 8);
     effectTypeDropdown->addItem("Redux", 9);
     effectTypeDropdown->addItem("PhaseBloom", 10);
-    effectTypeDropdown->addItem("Form", 11);
+    effectTypeDropdown->addItem("Form", 12);
     effectTypeDropdown->setSelectedId(1, juce::dontSendNotification);
     
     // Position dropdown with proper height for closed control
@@ -4441,7 +4486,7 @@ void PluginEditor::setupTabSystem()
         selector->addItem("Dub Echo", 8);
         selector->addItem("Redux", 9);
         selector->addItem("PhaseBloom", 10);
-        selector->addItem("Form", 11);
+        selector->addItem("Form", 12);
         
         // Hide text when closed - just show carrot icon
         selector->setTextWhenNothingSelected("");
@@ -4803,6 +4848,7 @@ void PluginEditor::showPage(FxPageID id)
     setVisibleVec(reduxGroup, false);
     setVisibleVec(phaseBloomGroup, false);
     setVisibleVec(formantGroup, false);
+    setVisibleVec(form2Group, false);
     
     // Show only the group for the effect assigned to this slot
     switch (assignedEffect)
@@ -5041,6 +5087,42 @@ void PluginEditor::showPage(FxPageID id)
             updateFormantSequencerUI();
             
             break;
+        case EffectID::Form2:
+            DBG("[ROUTER] Form 2 case triggered - form2Group size: " << form2Group.size());
+            setVisibleVec(form2Group, true);
+            DBG("[ROUTER] Showing Form 2 UI for slot " << slotIndex);
+            
+            // Restore UI state from APVTS parameters
+            {
+                auto* fxEnabledParam = processorRef.getAPVTS().getRawParameterValue("form2Enabled");
+                form2FxAreaEnabled = fxEnabledParam ? (fxEnabledParam->load() > 0.5f) : true;
+                
+                if (form2FxPowerButton) {
+                    form2FxPowerButton->setToggleState(form2FxAreaEnabled, juce::dontSendNotification);
+                }
+                
+                // Restore sequencer enabled state
+                form2StepAreaEnabled = processorRef.getForm2SeqState().enabled.load();
+                if (form2StepPowerButton) {
+                    form2StepPowerButton->setToggleState(form2StepAreaEnabled, juce::dontSendNotification);
+                }
+                
+                updateForm2FxAreaVisibility();
+                updateForm2StepAreaVisibility();
+            }
+            
+            // Trigger initial value label updates
+            for (int i = 0; i < 8; ++i) {
+                if (form2Knobs[i]) {
+                    form2Knobs[i]->onValueChange();
+                }
+            }
+            
+            // Update sequencer UI to show first step as selected
+            form2UiSelectedStep = 0;
+            updateForm2SequencerUI();
+            
+            break;
     }
 
     // Raise the active tab to front
@@ -5050,6 +5132,7 @@ void PluginEditor::showPage(FxPageID id)
     else if (id == FxPageID::Chorus && tabChorus) tabChorus->toFront(false);
     else if (id == FxPageID::PhaseBloom && tabPhaseBloom) tabPhaseBloom->toFront(false);
     else if (id == FxPageID::Formant && tabFormant) tabFormant->toFront(false);
+    else if (id == FxPageID::Form2 && tabFormant) tabFormant->toFront(false); // Form 2 uses same tab as Formant
     
     // Bring step amount editors to front when page is shown
     if (id == FxPageID::Panner && autopanStepAmountLabel) {
@@ -7960,7 +8043,7 @@ void PluginEditor::onEffectSelectorChanged(int slotIndex)
     int selectedEffectID = selector->getSelectedId() - 1; // ComboBox IDs are 1-based
     DBG("[ROUTER] Selected effect ID: " << selectedEffectID);
     
-    if (selectedEffectID < 0 || selectedEffectID > 10) {
+    if (selectedEffectID < 0 || selectedEffectID > 11) {
         DBG("[ROUTER] ERROR: Invalid effect ID " << selectedEffectID);
         return;
     }
@@ -8066,6 +8149,7 @@ void PluginEditor::onEffectSelectorChanged(int slotIndex)
     setVisibleVec(reduxGroup, false);
     setVisibleVec(phaseBloomGroup, false);
     setVisibleVec(formantGroup, false);
+    setVisibleVec(form2Group, false);
     DBG("[ROUTER] ✓ All groups hidden");
     
     // Show the correct effect for the current page based on new assignment
@@ -8273,21 +8357,64 @@ void PluginEditor::onEffectSelectorChanged(int slotIndex)
                 updateFormantStepAreaVisibility();
             }
             
-            // Load current snapshot values into knobs
+            // Load current snapshot values into knobs (now only 4)
             StepSnapshot formantSnapshot = processorRef.getFormantSafeSnapshot(0); // Load step 0
-            if (formantKnobs[0]) formantKnobs[0]->setValue((float)formantSnapshot.formant.vowelA, juce::dontSendNotification);
-            if (formantKnobs[1]) formantKnobs[1]->setValue((float)formantSnapshot.formant.vowelB, juce::dontSendNotification);
-            if (formantKnobs[2]) formantKnobs[2]->setValue(formantSnapshot.formant.morph, juce::dontSendNotification);
-            if (formantKnobs[3]) formantKnobs[3]->setValue(formantSnapshot.formant.q, juce::dontSendNotification);
-            if (formantKnobs[4]) formantKnobs[4]->setValue(formantSnapshot.formant.emphasis, juce::dontSendNotification);
-            if (formantKnobs[5]) formantKnobs[5]->setValue(formantSnapshot.formant.gender, juce::dontSendNotification);
-            if (formantKnobs[6]) formantKnobs[6]->setValue(formantSnapshot.formant.vibDepth, juce::dontSendNotification);
-            if (formantKnobs[7]) formantKnobs[7]->setValue(formantSnapshot.formant.mix, juce::dontSendNotification);
+            if (formantKnobs[0]) formantKnobs[0]->setValue((float)formantSnapshot.formant.vowel, juce::dontSendNotification);
+            if (formantKnobs[1]) formantKnobs[1]->setValue(formantSnapshot.formant.resonance, juce::dontSendNotification);
+            if (formantKnobs[2]) formantKnobs[2]->setValue(formantSnapshot.formant.intensity, juce::dontSendNotification);
+            if (formantKnobs[3]) formantKnobs[3]->setValue(formantSnapshot.formant.mix, juce::dontSendNotification);
             
             DBG("[ROUTER] ✓ Formant group shown");
+            
+            // Enable formant overlay on spectrum analyzer
+            updateFormantOverlay();
+            break;
+        }
+        case EffectID::Form2:
+        {
+            DBG("[ROUTER] Showing Form 2 group (" << form2Group.size() << " components)");
+            setVisibleVec(form2Group, true);
+            
+            // Restore UI state from APVTS parameters
+            {
+                auto* fxEnabledParam = processorRef.getAPVTS().getRawParameterValue("form2Enabled");
+                form2FxAreaEnabled = fxEnabledParam ? (fxEnabledParam->load() > 0.5f) : true;
+                if (form2FxPowerButton) {
+                    form2FxPowerButton->setToggleState(form2FxAreaEnabled, juce::dontSendNotification);
+                }
+                
+                // Restore sequencer enabled state
+                form2StepAreaEnabled = processorRef.getForm2SeqState().enabled.load();
+                if (form2StepPowerButton) {
+                    form2StepPowerButton->setToggleState(form2StepAreaEnabled, juce::dontSendNotification);
+                }
+                
+                updateForm2FxAreaVisibility();
+                updateForm2StepAreaVisibility();
+            }
+            
+            // Load current snapshot values into knobs (8 knobs)
+            StepSnapshot form2Snapshot = processorRef.getForm2SafeSnapshot(0); // Load step 0
+            if (form2Knobs[0]) form2Knobs[0]->setValue(form2Snapshot.form2.morphX, juce::dontSendNotification);
+            if (form2Knobs[1]) form2Knobs[1]->setValue(form2Snapshot.form2.morphY, juce::dontSendNotification);
+            if (form2Knobs[2]) form2Knobs[2]->setValue(form2Snapshot.form2.sharpness, juce::dontSendNotification);
+            if (form2Knobs[3]) form2Knobs[3]->setValue(form2Snapshot.form2.emphasis, juce::dontSendNotification);
+            if (form2Knobs[4]) form2Knobs[4]->setValue(form2Snapshot.form2.shift, juce::dontSendNotification);
+            if (form2Knobs[5]) form2Knobs[5]->setValue(form2Snapshot.form2.motion, juce::dontSendNotification);
+            if (form2Knobs[6]) form2Knobs[6]->setValue(form2Snapshot.form2.air, juce::dontSendNotification);
+            if (form2Knobs[7]) form2Knobs[7]->setValue(form2Snapshot.form2.mix, juce::dontSendNotification);
+            
+            // Update sequencer UI to show first step as selected
+            form2UiSelectedStep = 0;
+            updateForm2SequencerUI();
+            
+            DBG("[ROUTER] ✓ Form 2 group shown");
             break;
         }
     }
+    
+    // Update formant overlay (disable if not Formant effect)
+    updateFormantOverlay();
     
     // Repaint to show new background
     DBG("[ROUTER] Calling repaint...");
@@ -10719,7 +10846,7 @@ void PluginEditor::updateFormantFxAreaVisibility()
 {
     float alpha = formantFxAreaEnabled ? 1.0f : 0.3f;
     
-    for (int i = 0; i < 8; ++i) {
+    for (int i = 0; i < 4; ++i) { // Only 4 knobs now
         if (formantKnobs[i]) { 
             formantKnobs[i]->setAlpha(alpha); 
             formantKnobs[i]->setEnabled(formantFxAreaEnabled); 
@@ -10765,27 +10892,19 @@ void PluginEditor::updateFormantSequencerUI()
 
 void PluginEditor::setupFormantKnobs()
 {
-    // Formant knob titles for vowel filter controls
+    // Formant knob titles - simplified to 4 controls
     const juce::StringArray formantKnobTitles = {
-        "Vowel A",
-        "Vowel B", 
-        "Morph",
-        "Q",
-        "Emphasis",
-        "Gender",
-        "Vibrato",
+        "Vowel",
+        "Resonance",
+        "Intensity",
         "Mix"
     };
     
     // Formant parameter IDs (must match APVTS order)
     const juce::StringArray formantParamIDs = {
-        "vowelA",
-        "vowelB",
-        "morph", 
-        "q",
-        "emphasis",
-        "gender",
-        "vibDepth",
+        "vowel",
+        "resonance",
+        "intensity",
         "mix"
     };
     
@@ -10798,8 +10917,8 @@ void PluginEditor::setupFormantKnobs()
     const int startX = effectArea.getX() + 15;
     const int startY = effectArea.getY() + effectArea.getHeight() - 210;
 
-    // Create and setup knobs
-    for (int i = 0; i < 8; ++i)
+    // Create and setup knobs - now only 4
+    for (int i = 0; i < 4; ++i)
     {
         // Position 8 knobs in 2 rows of 4 (EXACT same as other effects)
         int x = startX + (i % 4) * (knobSize + knobSpacing);
@@ -10818,39 +10937,23 @@ void PluginEditor::setupFormantKnobs()
         formantKnobs[i]->setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
         formantKnobs[i]->setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
         
-        // Set knob ranges based on parameter (UI order)
+        // Set knob ranges based on parameter (UI order - simplified to 4 knobs)
         switch (i) {
-            case 0: // Vowel A (0-4, discrete steps)
+            case 0: // Vowel (0-4, discrete steps: A/E/I/O/U)
                 formantKnobs[i]->setRange(0.0, 4.0, 1.0);
                 formantKnobs[i]->setValue(0.0, juce::dontSendNotification);
                 break;
-            case 1: // Vowel B (0-4, discrete steps)
-                formantKnobs[i]->setRange(0.0, 4.0, 1.0);
-                formantKnobs[i]->setValue(1.0, juce::dontSendNotification);
+            case 1: // Resonance (Q factor: 0.5-20)
+                formantKnobs[i]->setRange(0.5, 20.0, 0.1);
+                formantKnobs[i]->setValue(12.0, juce::dontSendNotification);
                 break;
-            case 2: // Morph (0-1)
-                formantKnobs[i]->setRange(0.0, 1.0, 0.01);
-                formantKnobs[i]->setValue(0.0, juce::dontSendNotification);
-                break;
-            case 3: // Q (0.3-20)
-                formantKnobs[i]->setRange(0.3, 20.0, 0.1);
-                formantKnobs[i]->setValue(6.0, juce::dontSendNotification);
-                break;
-            case 4: // Emphasis (0-12 dB)
+            case 2: // Intensity (emphasis: 0-12 dB)
                 formantKnobs[i]->setRange(0.0, 12.0, 0.1);
                 formantKnobs[i]->setValue(6.0, juce::dontSendNotification);
                 break;
-            case 5: // Gender (0.5-2.0)
-                formantKnobs[i]->setRange(0.5, 2.0, 0.01);
-                formantKnobs[i]->setValue(1.0, juce::dontSendNotification);
-                break;
-            case 6: // Vibrato (0-30 cents)
-                formantKnobs[i]->setRange(0.0, 30.0, 0.1);
-                formantKnobs[i]->setValue(1.0, juce::dontSendNotification); // Reduced from 5.0 to 1.0
-                break;
-            case 7: // Mix (0-1)
+            case 3: // Mix (dry/wet: 0-1)
                 formantKnobs[i]->setRange(0.0, 1.0, 0.01);
-                formantKnobs[i]->setValue(0.5, juce::dontSendNotification);
+                formantKnobs[i]->setValue(0.8, juce::dontSendNotification);
                 break;
         }
         
@@ -10910,8 +11013,7 @@ void PluginEditor::setupFormantKnobs()
                 juce::String valueText;
                 
                 switch (i) {
-                    case 0: // Vowel A
-                    case 1: // Vowel B
+                    case 0: // Vowel
                         {
                             static const char* vowelNames[] = {"A", "E", "I", "O", "U"};
                             int vowelIndex = static_cast<int>(value);
@@ -10919,12 +11021,9 @@ void PluginEditor::setupFormantKnobs()
                             valueText = vowelNames[vowelIndex];
                         }
                         break;
-                    case 2: valueText = juce::String(value, 2); break; // Morph
-                    case 3: valueText = juce::String(value, 1); break; // Q
-                    case 4: valueText = juce::String(value, 1) + " dB"; break; // Emphasis
-                    case 5: valueText = juce::String(value, 2); break; // Gender
-                    case 6: valueText = juce::String(value, 1) + "¢"; break; // Vibrato
-                    case 7: valueText = juce::String(value, 2); break; // Mix
+                    case 1: valueText = juce::String(value, 1); break; // Resonance (Q)
+                    case 2: valueText = juce::String(value, 1) + " dB"; break; // Intensity
+                    case 3: valueText = juce::String(value, 2); break; // Mix
                 }
                 
                 formantValueLabels[i]->setText(valueText, juce::dontSendNotification);
@@ -10943,18 +11042,17 @@ void PluginEditor::setupFormantKnobs()
                     for (int step = 0; step < 16; ++step) {
                         auto snapshot = processorRef.getFormantSafeSnapshot(step);
                         switch (i) {
-                            case 0: snapshot.formant.vowelA = value; break;
-                            case 1: snapshot.formant.vowelB = value; break;
-                            case 2: snapshot.formant.morph = value; break;
-                            case 3: snapshot.formant.q = value; break;
-                            case 4: snapshot.formant.emphasis = value; break;
-                            case 5: snapshot.formant.gender = value; break;
-                            case 6: snapshot.formant.vibDepth = value; break;
-                            case 7: snapshot.formant.mix = value; break;
+                            case 0: snapshot.formant.vowel = value; break;
+                            case 1: snapshot.formant.resonance = value; break;
+                            case 2: snapshot.formant.intensity = value; break;
+                            case 3: snapshot.formant.mix = value; break;
                         }
                         processorRef.setFormantStepSnapshot(step, snapshot);
                     }
                 }
+                
+                // Update formant overlay when knobs change
+                updateFormantOverlay();
             }
         };
     }
@@ -11302,7 +11400,7 @@ void PluginEditor::setupFormantAllStepsToggle()
     formantGroup.clear();
     
     // Add all Formant components to the group
-    for (int i = 0; i < 8; ++i) {
+    for (int i = 0; i < 4; ++i) { // Only 4 knobs now
         if (formantKnobs[i]) formantGroup.push_back(formantKnobs[i].get());
         if (formantKnobLabels[i]) formantGroup.push_back(formantKnobLabels[i].get());
         if (formantValueLabels[i]) formantGroup.push_back(formantValueLabels[i].get());
@@ -11331,6 +11429,601 @@ void PluginEditor::setupFormantAllStepsToggle()
     DBG("[UI] Formant page setup complete");
 }
 
+void PluginEditor::setupForm2Knobs()
+{
+    // Form 2 knob titles - 8 controls
+    const juce::StringArray form2KnobTitles = {
+        "Vowel",
+        "Character",
+        "Sharpness",
+        "Emphasis",
+        "Gender",
+        "Motion",
+        "Breath",
+        "Mix"
+    };
+    
+    // Form 2 parameter IDs (must match APVTS order)
+    const juce::StringArray form2ParamIDs = {
+        "form2MorphX",
+        "form2MorphY",
+        "form2Sharpness",
+        "form2Emphasis",
+        "form2Shift",
+        "form2Motion",
+        "form2Air",
+        "form2Mix"
+    };
+    
+    DBG("[UI] Setting up Form 2 knobs...");
+
+    // Effect area bounds (same as other pages)
+    auto effectArea = juce::Rectangle<int>(25, 54, 413, 296);
+    const int knobSize = 80;
+    const int knobSpacing = 20;
+    const int startX = effectArea.getX() + 15;
+    const int startY = effectArea.getY() + effectArea.getHeight() - 210;
+
+    // Create and setup 8 knobs
+    for (int i = 0; i < 8; ++i)
+    {
+        // Position 8 knobs in 2 rows of 4
+        int x = startX + (i % 4) * (knobSize + knobSpacing);
+        int y = startY + (i / 4) * (knobSize + 20);
+        
+        // Position adjustments
+        if (i < 4)
+            y -= 23;
+        else
+            y -= 1;
+        
+        // Create knob
+        form2Knobs[i] = std::make_unique<CustomKnob>();
+        addAndMakeVisible(form2Knobs[i].get());
+        form2Knobs[i]->setVisible(false);
+        form2Knobs[i]->setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
+        form2Knobs[i]->setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
+        
+        // Set knob ranges based on parameter
+        switch (i) {
+            case 0: // Morph X (0-1)
+                form2Knobs[i]->setRange(0.0, 1.0, 0.01);
+                form2Knobs[i]->setValue(0.30, juce::dontSendNotification);
+                break;
+            case 1: // Morph Y (0-1)
+                form2Knobs[i]->setRange(0.0, 1.0, 0.01);
+                form2Knobs[i]->setValue(0.65, juce::dontSendNotification);
+                break;
+            case 2: // Sharpness (0.4-18)
+                form2Knobs[i]->setRange(0.4, 18.0, 0.1);
+                form2Knobs[i]->setValue(8.0, juce::dontSendNotification);
+                break;
+            case 3: // Emphasis (-6 to +18 dB)
+                form2Knobs[i]->setRange(-6.0, 18.0, 0.1);
+                form2Knobs[i]->setValue(6.0, juce::dontSendNotification);
+                break;
+            case 4: // Shift (0.5-2.0)
+                form2Knobs[i]->setRange(0.5, 2.0, 0.01);
+                form2Knobs[i]->setValue(1.0, juce::dontSendNotification);
+                break;
+            case 5: // Motion (0-1)
+                form2Knobs[i]->setRange(0.0, 1.0, 0.01);
+                form2Knobs[i]->setValue(0.35, juce::dontSendNotification);
+                break;
+            case 6: // Air (0-1)
+                form2Knobs[i]->setRange(0.0, 1.0, 0.01);
+                form2Knobs[i]->setValue(0.20, juce::dontSendNotification);
+                break;
+            case 7: // Mix (0-1)
+                form2Knobs[i]->setRange(0.0, 1.0, 0.01);
+                form2Knobs[i]->setValue(0.5, juce::dontSendNotification);
+                break;
+        }
+        
+        // Set knob images
+        if (assets.knobRing != nullptr)
+            form2Knobs[i]->setRingImage(assets.knobRing->createCopy());
+        if (assets.knobInside != nullptr)
+            form2Knobs[i]->setInnerImage(assets.knobInside->createCopy());
+
+        // Position knob
+        form2Knobs[i]->setBounds(x, y, knobSize, knobSize);
+        
+        // Create knob label
+        form2KnobLabels[i] = std::make_unique<juce::Label>();
+        addAndMakeVisible(form2KnobLabels[i].get());
+        form2KnobLabels[i]->setVisible(false);
+        form2KnobLabels[i]->setText(form2KnobTitles[i], juce::dontSendNotification);
+        form2KnobLabels[i]->setJustificationType(juce::Justification::centred);
+        form2KnobLabels[i]->setColour(juce::Label::textColourId, juce::Colours::white);
+        form2KnobLabels[i]->setFont(juce::Font(12.0f, juce::Font::bold));
+        form2KnobLabels[i]->setBounds(x, y - 15, knobSize, 20);
+        
+        // Create value label
+        form2ValueLabels[i] = std::make_unique<juce::Label>();
+        addAndMakeVisible(form2ValueLabels[i].get());
+        form2ValueLabels[i]->setVisible(false);
+        form2ValueLabels[i]->setText("0", juce::dontSendNotification);
+        form2ValueLabels[i]->setJustificationType(juce::Justification::centred);
+        form2ValueLabels[i]->setColour(juce::Label::textColourId, juce::Colours::white);
+        form2ValueLabels[i]->setFont(juce::Font(10.0f, juce::Font::plain));
+        form2ValueLabels[i]->setBounds(x, y + knobSize - 10, knobSize, 15);
+        
+        // Create indicator bar
+        form2IndicatorBars[i] = std::make_unique<IndicatorBar>();
+        addAndMakeVisible(form2IndicatorBars[i].get());
+        form2IndicatorBars[i]->setVisible(false);
+        form2IndicatorBars[i]->setValue(0.5f);
+        form2IndicatorBars[i]->setBounds(x + 10, y + knobSize + 8, knobSize - 20, 13);
+        
+        // Create lock button
+        form2LockButtons[i] = std::make_unique<LockButton>();
+        addAndMakeVisible(form2LockButtons[i].get());
+        form2LockButtons[i]->setVisible(false);
+        
+        // Position lock button at end of title text
+        juce::Font labelFont(12.0f, juce::Font::bold);
+        int textWidth = labelFont.getStringWidth(form2KnobTitles[i]);
+        const int lockSize = 10;
+        const int lockSpacing = 5;
+        int lockX = x + (knobSize / 2) + (textWidth / 2) + lockSpacing;
+        int lockY = y - 10;
+        
+        form2LockButtons[i]->setBounds(lockX, lockY, lockSize, lockSize);
+        
+        // Set lock button images
+        if (assets.unlockedIcon && assets.lockedIcon) {
+            auto imgUnlocked = assets.unlockedIcon->createCopy();
+            auto imgLocked = assets.lockedIcon->createCopy();
+            form2LockButtons[i]->setImages(std::move(imgUnlocked), std::move(imgLocked));
+        }
+        form2LockButtons[i]->setToggleState(form2KnobLocked[i], juce::dontSendNotification);
+        form2LockButtons[i]->onClick = [this, i]() {
+            form2KnobLocked[i] = form2LockButtons[i]->getToggleState();
+        };
+        
+        // Create APVTS attachment
+        form2Attachments[i] = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+            processorRef.getAPVTS(), form2ParamIDs[i], *form2Knobs[i]);
+        
+        // Add value change callback
+        form2Knobs[i]->onValueChange = [this, i]() {
+            if (isLoadingFromSnapshot.load()) return;
+            
+            if (form2Knobs[i] && form2ValueLabels[i] && form2IndicatorBars[i]) {
+                float value = form2Knobs[i]->getValue();
+                juce::String valueText;
+                
+                switch (i) {
+                    case 0: { // Vowel - show letter
+                        const char* vowels[5] = {"A", "E", "I", "O", "U"};
+                        int vowelIdx = juce::jlimit(0, 4, static_cast<int>(value));
+                        valueText = vowels[vowelIdx];
+                        break;
+                    }
+                    case 1: // Character
+                        valueText = juce::String(value, 2); break;
+                    case 2: // Sharpness
+                        valueText = juce::String(value, 1); break;
+                    case 3: valueText = juce::String(value, 1) + " dB"; break; // Emphasis
+                    case 4: // Gender
+                    case 5: // Motion
+                    case 6: // Breath
+                    case 7: // Mix
+                        valueText = juce::String(value, 2); break;
+                }
+                
+                form2ValueLabels[i]->setText(valueText, juce::dontSendNotification);
+                
+                // Update indicator bar
+                form2IndicatorBars[i]->setValue(value);
+                
+                // Update current step snapshot with new value
+                processorRef.updateForm2CurrentStepSnapshot(i, value);
+                
+                // If All Steps toggle is active, update all step snapshots
+                if (form2AllStepsEnabled) {
+                    DBG("[All Steps] Form 2 knob " << i << " changed, form2AllStepsEnabled=true");
+                    
+                    // Convert knob value to actual parameter value using APVTS parameter ranges
+                    float actualValue = value;
+                    switch (i) {
+                    case 0: { // Vowel
+                        auto* param = processorRef.getAPVTS().getParameter("form2MorphX");
+                        if (param) actualValue = param->convertFrom0to1(value);
+                        break;
+                    }
+                        case 1: { // Morph Y
+                            auto* param = processorRef.getAPVTS().getParameter("form2MorphY");
+                            if (param) actualValue = param->convertFrom0to1(value);
+                            break;
+                        }
+                        case 2: { // Sharpness
+                            auto* param = processorRef.getAPVTS().getParameter("form2Sharpness");
+                            if (param) actualValue = param->convertFrom0to1(value);
+                            break;
+                        }
+                        case 3: { // Emphasis
+                            auto* param = processorRef.getAPVTS().getParameter("form2Emphasis");
+                            if (param) actualValue = param->convertFrom0to1(value);
+                            break;
+                        }
+                        case 4: { // Shift
+                            auto* param = processorRef.getAPVTS().getParameter("form2Shift");
+                            if (param) actualValue = param->convertFrom0to1(value);
+                            break;
+                        }
+                        case 5: { // Motion
+                            auto* param = processorRef.getAPVTS().getParameter("form2Motion");
+                            if (param) actualValue = param->convertFrom0to1(value);
+                            break;
+                        }
+                        case 6: { // Air
+                            auto* param = processorRef.getAPVTS().getParameter("form2Air");
+                            if (param) actualValue = param->convertFrom0to1(value);
+                            break;
+                        }
+                        case 7: { // Mix
+                            auto* param = processorRef.getAPVTS().getParameter("form2Mix");
+                            if (param) actualValue = param->convertFrom0to1(value);
+                            break;
+                        }
+                    }
+                    
+                    for (int step = 0; step < 16; ++step) {
+                        auto snapshot = processorRef.getForm2SafeSnapshot(step);
+                        switch (i) {
+                            case 0: snapshot.form2.morphX = actualValue; break;
+                            case 1: snapshot.form2.morphY = actualValue; break;
+                            case 2: snapshot.form2.sharpness = actualValue; break;
+                            case 3: snapshot.form2.emphasis = actualValue; break;
+                            case 4: snapshot.form2.shift = actualValue; break;
+                            case 5: snapshot.form2.motion = actualValue; break;
+                            case 6: snapshot.form2.air = actualValue; break;
+                            case 7: snapshot.form2.mix = actualValue; break;
+                        }
+                        processorRef.setForm2StepSnapshot(step, snapshot);
+                    }
+                } else {
+                    DBG("[All Steps] Form 2 knob " << i << " changed, form2AllStepsEnabled=false, skipping All Steps update");
+                }
+            }
+        };
+    }
+    
+    DBG("[UI] Form 2 knobs setup complete");
+}
+
+void PluginEditor::setupForm2EffectsArea()
+{
+    DBG("[UI] Setting up Form 2 effects area...");
+    
+    // Effect area bounds (match other pages exactly)
+    auto effectArea = juce::Rectangle<int>(25, 54, 413, 296);
+    
+    // Create "EFFECT" title label (ALWAYS "EFFECT", NOT the effect name!)
+    form2EffectsTitle = std::make_unique<juce::Label>();
+    form2EffectsTitle->setText("EFFECT", juce::dontSendNotification);
+    form2EffectsTitle->setFont(juce::Font(27.648f, juce::Font::bold));
+    form2EffectsTitle->setColour(juce::Label::textColourId, juce::Colours::white);
+    form2EffectsTitle->setJustificationType(juce::Justification::centredLeft);
+    form2EffectsTitle->setBounds(effectArea.getX() + 10, effectArea.getY() + 5, 100, 30);
+    addAndMakeVisible(form2EffectsTitle.get());
+    form2EffectsTitle->setVisible(false);
+    
+    // Create FX power button
+    form2FxPowerButton = std::make_unique<juce::DrawableButton>("Form2EffectPower", juce::DrawableButton::ImageFitted);
+    form2FxPowerButton->setClickingTogglesState(true);
+    form2FxPowerButton->setColour(juce::DrawableButton::backgroundColourId, juce::Colours::transparentBlack);
+    form2FxPowerButton->setColour(juce::DrawableButton::backgroundOnColourId, juce::Colours::transparentBlack);
+    if (assets.fxPowerOn) {
+        form2FxPowerButton->setImages(assets.fxPowerOn.get());
+    }
+    const int buttonSize = 46;
+    form2FxPowerButton->setBounds(effectArea.getX() + effectArea.getWidth() - buttonSize - 8 + 8 + 3, 
+                                 effectArea.getY() + 6 - 20 + 4, buttonSize, buttonSize);
+    addAndMakeVisible(form2FxPowerButton.get());
+    form2FxPowerButton->setVisible(false);
+    
+    // Create dice button
+    form2DiceButton = std::make_unique<CustomDiceButton>();
+    const int diceSize = 32;
+    form2DiceButton->setBounds(effectArea.getX() + 130, effectArea.getY() + 5, diceSize, diceSize);
+    if (assets.diceLarge != nullptr) {
+        form2DiceButton->setDiceImage(assets.diceLarge->createCopy());
+    }
+    addAndMakeVisible(form2DiceButton.get());
+    form2DiceButton->setVisible(false);
+    
+    // Set up FX power button callback
+    form2FxPowerButton->onClick = [this]() {
+        form2FxAreaEnabled = form2FxPowerButton->getToggleState();
+        updateForm2FxAreaVisibility();
+        
+        // Update the actual parameter that the processor checks
+        auto* form2EnabledParam = processorRef.getAPVTS().getParameter("form2Enabled");
+        if (form2EnabledParam) {
+            form2EnabledParam->setValueNotifyingHost(form2FxAreaEnabled ? 1.0f : 0.0f);
+        }
+    };
+    
+    // Set up dice button callback
+    form2DiceButton->onClick = [this]() {
+        randomizeForm2KnobValues();
+    };
+    
+    DBG("[UI] Form 2 effects area setup complete");
+}
+
+void PluginEditor::setupForm2SequencerArea()
+{
+    DBG("[UI] Setting up Form 2 sequencer area...");
+    
+    // Sequencer area bounds (EXACT same as other pages)
+    auto sequencerArea = juce::Rectangle<int>(25, 374, 413, 140);
+    
+    // Create step title
+    form2StepTitle = std::make_unique<juce::Label>();
+    form2StepTitle->setText("STEP", juce::dontSendNotification);
+    form2StepTitle->setFont(juce::Font(22.118f, juce::Font::bold));
+    form2StepTitle->setColour(juce::Label::textColourId, juce::Colours::white);
+    form2StepTitle->setJustificationType(juce::Justification::centredLeft);
+    form2StepTitle->setBounds(sequencerArea.getX() + 10, sequencerArea.getY(), 80, 30);
+    addAndMakeVisible(form2StepTitle.get());
+    form2StepTitle->setVisible(false);
+    
+    // Create step buttons (2x8 grid)
+    const int buttonSize = 40;
+    const int buttonSpacing = 8;
+    const int startX = sequencerArea.getX() + 20;
+    const int startY = sequencerArea.getY() + 35;
+    
+    for (int i = 0; i < 16; ++i) {
+        auto button = std::make_unique<StepButton>(i);
+        int x = startX + (i % 8) * (buttonSize + buttonSpacing);
+        int y = startY + (i / 8) * (buttonSize + buttonSpacing);
+        button->setBounds(x, y, buttonSize, buttonSize);
+        button->onClick = [this, i]() { onForm2StepButtonClicked(i); };
+        
+        // Set step button images before adding
+        if (assets.stepActive && assets.stepInactive) {
+            button->setActiveImage(assets.stepActive->createCopy());
+            button->setInactiveImage(assets.stepInactive->createCopy());
+        }
+        
+        addAndMakeVisible(button.get());
+        button->setVisible(false);
+        form2StepButtons[i] = std::move(button);
+    }
+    
+    // Create step amount label (TextEditor)
+    form2StepAmountLabel = std::make_unique<juce::TextEditor>();
+    form2StepAmountLabel->setText("16");
+    form2StepAmountLabel->setFont(juce::Font(16.0f, juce::Font::bold));
+    form2StepAmountLabel->setColour(juce::TextEditor::textColourId, juce::Colours::white);
+    form2StepAmountLabel->setColour(juce::TextEditor::backgroundColourId, juce::Colours::transparentBlack);
+    form2StepAmountLabel->setColour(juce::TextEditor::outlineColourId, juce::Colours::white);
+    form2StepAmountLabel->setColour(juce::TextEditor::focusedOutlineColourId, juce::Colours::white);
+    form2StepAmountLabel->setJustification(juce::Justification::centred);
+    form2StepAmountLabel->setBorder(juce::BorderSize<int>(2));
+    form2StepAmountLabel->setIndents(0, 0);
+    form2StepAmountLabel->setInputRestrictions(2, "0123456789");
+    form2StepAmountLabel->setBounds(sequencerArea.getX() + 180, sequencerArea.getY() - 10, 30, 25);
+    addAndMakeVisible(form2StepAmountLabel.get());
+    form2StepAmountLabel->setVisible(false);
+    
+    // Add callback for step amount changes
+    form2StepAmountLabel->onTextChange = [this]() {
+        int newStepsUsed = form2StepAmountLabel->getText().getIntValue();
+        newStepsUsed = juce::jlimit(1, 16, newStepsUsed);
+        processorRef.setForm2StepsUsed(newStepsUsed);
+        updateForm2SequencerUI();
+    };
+    
+    // Create rate dropdown
+    form2RateDropdown = std::make_unique<juce::ComboBox>();
+    form2RateDropdown->addItem("4", 1);
+    form2RateDropdown->addItem("2", 2);
+    form2RateDropdown->addItem("1", 3);
+    form2RateDropdown->addItem("1/2", 4);
+    form2RateDropdown->addItem("1/4", 5);
+    form2RateDropdown->addItem("1/8", 6);
+    form2RateDropdown->addItem("1/16", 7);
+    form2RateDropdown->addItem("1/32", 8);
+    form2RateDropdown->setSelectedId(5); // Default to 1/4
+    form2RateDropdown->setColour(juce::ComboBox::backgroundColourId, juce::Colours::transparentBlack);
+    form2RateDropdown->setColour(juce::ComboBox::outlineColourId, juce::Colours::transparentBlack);
+    form2RateDropdown->setColour(juce::ComboBox::buttonColourId, juce::Colours::transparentBlack);
+    form2RateDropdown->setColour(juce::ComboBox::textColourId, juce::Colours::white);
+    form2RateDropdown->setColour(juce::ComboBox::arrowColourId, juce::Colours::white);
+    form2RateDropdown->setBounds(sequencerArea.getX() + 220, sequencerArea.getY() - 10, 74, 25);
+    addAndMakeVisible(form2RateDropdown.get());
+    form2RateDropdown->setVisible(false);
+    
+    // Add callback for rate dropdown changes
+    form2RateDropdown->onChange = [this]() {
+        int selectedId = form2RateDropdown->getSelectedId();
+        int divisionIndex = selectedId - 1; // Convert 1-based to 0-based
+        processorRef.setForm2DivisionIndex(divisionIndex);
+    };
+    
+    // Create STD toggle
+    form2StdToggle = std::make_unique<CircularToggleButton>();
+    form2StdToggle->setButtonText("-");
+    form2StdToggle->setBounds(sequencerArea.getX() + 288, sequencerArea.getY() - 14, 30, 30);
+    addAndMakeVisible(form2StdToggle.get());
+    form2StdToggle->setVisible(false);
+    
+    // Create step dice button
+    form2StepDiceButton = std::make_unique<CustomDiceButton>();
+    int stepDiceSize = static_cast<int>(35 * 0.7); // 30% smaller
+    form2StepDiceButton->setBounds(sequencerArea.getX() + 75, sequencerArea.getY() + 5, stepDiceSize, stepDiceSize);
+    if (assets.diceLarge != nullptr) {
+        form2StepDiceButton->setDiceImage(assets.diceLarge->createCopy());
+    }
+    addAndMakeVisible(form2StepDiceButton.get());
+    form2StepDiceButton->setVisible(false);
+    
+    // Create step power button
+    form2StepPowerButton = std::make_unique<juce::DrawableButton>("Form2StepPower", juce::DrawableButton::ImageFitted);
+    form2StepPowerButton->setColour(juce::DrawableButton::backgroundColourId, juce::Colours::transparentBlack);
+    form2StepPowerButton->setColour(juce::DrawableButton::backgroundOnColourId, juce::Colours::transparentBlack);
+    if (assets.stepPowerOn) {
+        form2StepPowerButton->setImages(assets.stepPowerOn.get());
+    }
+    form2StepPowerButton->setClickingTogglesState(true);
+    const int stepPowerSize = 40;
+    form2StepPowerButton->setBounds(sequencerArea.getX() + sequencerArea.getWidth() - stepPowerSize - 5 + 15 - 5 - 1, 
+                                     sequencerArea.getY() - 5 - stepPowerSize + 25 + 5, stepPowerSize, stepPowerSize);
+    addAndMakeVisible(form2StepPowerButton.get());
+    form2StepPowerButton->setVisible(false);
+    
+    // Add callback for step power button
+    form2StepPowerButton->onClick = [this]() {
+        form2StepAreaEnabled = form2StepPowerButton->getToggleState();
+        processorRef.setForm2SequencerEnabled(form2StepAreaEnabled);
+        updateForm2StepAreaVisibility();
+        DBG("[UI] Form 2 step power: " << (form2StepAreaEnabled ? "ON" : "OFF"));
+    };
+    
+    // Add callback for step dice button
+    form2StepDiceButton->onClick = [this]() {
+        DBG("[FORM2] Step dice button clicked - randomizing all step snapshots");
+        
+        // Randomize step sequencer
+        for (int i = 0; i < 16; ++i) {
+            auto snapshot = processorRef.getForm2SafeSnapshot(i);
+            // Randomize all parameters
+            snapshot.form2.morphX = juce::Random::getSystemRandom().nextFloat();
+            snapshot.form2.morphY = juce::Random::getSystemRandom().nextFloat();
+            snapshot.form2.sharpness = juce::Random::getSystemRandom().nextFloat() * 17.6f + 0.4f; // 0.4-18.0
+            snapshot.form2.emphasis = juce::Random::getSystemRandom().nextFloat() * 24.0f - 6.0f; // -6 to +18 dB
+            snapshot.form2.shift = juce::Random::getSystemRandom().nextFloat() * 1.5f + 0.5f; // 0.5-2.0
+            snapshot.form2.motion = juce::Random::getSystemRandom().nextFloat();
+            snapshot.form2.air = juce::Random::getSystemRandom().nextFloat();
+            snapshot.form2.mix = juce::Random::getSystemRandom().nextFloat();
+            processorRef.setForm2StepSnapshot(i, snapshot);
+        }
+        
+        // Update the UI to show the new random values
+        updateForm2SequencerUI();
+        
+        // Update knob values to reflect the current step's randomized data
+        if (form2UiSelectedStep >= 0 && form2UiSelectedStep < 16) {
+            auto currentSnapshot = processorRef.getForm2SafeSnapshot(form2UiSelectedStep);
+            
+            // Update all knob values from the current step's snapshot
+            if (form2Knobs[0]) form2Knobs[0]->setValue(currentSnapshot.form2.morphX, juce::dontSendNotification);
+            if (form2Knobs[1]) form2Knobs[1]->setValue(currentSnapshot.form2.morphY, juce::dontSendNotification);
+            if (form2Knobs[2]) form2Knobs[2]->setValue(currentSnapshot.form2.sharpness, juce::dontSendNotification);
+            if (form2Knobs[3]) form2Knobs[3]->setValue(currentSnapshot.form2.emphasis, juce::dontSendNotification);
+            if (form2Knobs[4]) form2Knobs[4]->setValue(currentSnapshot.form2.shift, juce::dontSendNotification);
+            if (form2Knobs[5]) form2Knobs[5]->setValue(currentSnapshot.form2.motion, juce::dontSendNotification);
+            if (form2Knobs[6]) form2Knobs[6]->setValue(currentSnapshot.form2.air, juce::dontSendNotification);
+            if (form2Knobs[7]) form2Knobs[7]->setValue(currentSnapshot.form2.mix, juce::dontSendNotification);
+            
+            // Update value labels to reflect the new knob values
+            for (int j = 0; j < 8; ++j) {
+                if (form2Knobs[j] && form2ValueLabels[j]) {
+                    float value = form2Knobs[j]->getValue();
+                    juce::String valueText;
+                    
+                    switch (j) {
+                        case 0: // Morph X
+                        case 1: // Morph Y
+                            valueText = juce::String(value, 2); break;
+                        case 2: // Sharpness
+                            valueText = juce::String(value, 1); break;
+                        case 3: valueText = juce::String(value, 1) + " dB"; break; // Emphasis
+                        case 4: // Shift
+                        case 5: // Motion
+                        case 6: // Air
+                        case 7: // Mix
+                            valueText = juce::String(value, 2); break;
+                    }
+                    
+                    form2ValueLabels[j]->setText(valueText, juce::dontSendNotification);
+                }
+            }
+        }
+        
+        DBG("[FORM2] Step randomization complete - UI updated");
+    };
+    
+    DBG("[UI] Form 2 sequencer area setup complete");
+}
+
+void PluginEditor::setupForm2AllStepsToggle()
+{
+    DBG("[UI] Setting up Form 2 all steps toggle...");
+    
+    // Effect area bounds (same as other pages)
+    auto effectArea = juce::Rectangle<int>(25, 54, 413, 296);
+    
+    form2AllStepsToggle = std::make_unique<AllStepsToggleButton>();
+    addAndMakeVisible(form2AllStepsToggle.get());
+    form2AllStepsToggle->setVisible(false);
+    
+    const int buttonSize = 29;
+    form2AllStepsToggle->setBounds(effectArea.getX() + effectArea.getWidth()/2 - buttonSize/2 + 30, 
+                                     effectArea.getY() - 1, buttonSize, buttonSize);
+    
+    if (assets.stepTopInactive && assets.stepTopActive) {
+        static_cast<AllStepsToggleButton*>(form2AllStepsToggle.get())->setImages(
+            assets.stepTopInactive->createCopy(),
+            assets.stepTopActive->createCopy()
+        );
+    }
+    
+    form2AllStepsToggle->setToggleState(false, juce::dontSendNotification);
+    form2AllStepsToggle->onClick = [this]() {
+        form2AllStepsEnabled = form2AllStepsToggle->getToggleState();
+        DBG("[UI] Form 2 All Steps toggle: " << (form2AllStepsEnabled ? "ON" : "OFF"));
+        form2AllStepsLabel->setAlpha(form2AllStepsEnabled ? 1.0f : 0.5f);
+    };
+    
+    form2AllStepsLabel = std::make_unique<juce::Label>();
+    form2AllStepsLabel->setText("All Steps", juce::dontSendNotification);
+    form2AllStepsLabel->setFont(juce::Font(14.4f, juce::Font::bold));
+    form2AllStepsLabel->setColour(juce::Label::textColourId, juce::Colours::white);
+    form2AllStepsLabel->setJustificationType(juce::Justification::centredLeft);
+    addAndMakeVisible(form2AllStepsLabel.get());
+    form2AllStepsLabel->setVisible(false);
+    form2AllStepsLabel->setAlpha(1.0f);
+    form2AllStepsLabel->setBounds(effectArea.getX() + effectArea.getWidth()/2 + buttonSize/2 + 5 + 30, 
+                                   effectArea.getY() + 1, 80, 24);
+    
+    form2Group.push_back(form2AllStepsToggle.get());
+    form2Group.push_back(form2AllStepsLabel.get());
+    
+    DBG("[UI] Form 2 all steps toggle setup complete");
+    
+    // Populate Form 2 group
+    form2Group.clear();
+    for (int i = 0; i < 8; ++i) {
+        if (form2Knobs[i]) form2Group.push_back(form2Knobs[i].get());
+        if (form2KnobLabels[i]) form2Group.push_back(form2KnobLabels[i].get());
+        if (form2ValueLabels[i]) form2Group.push_back(form2ValueLabels[i].get());
+        if (form2IndicatorBars[i]) form2Group.push_back(form2IndicatorBars[i].get());
+        if (form2LockButtons[i]) form2Group.push_back(form2LockButtons[i].get());
+    }
+    if (form2EffectsTitle) form2Group.push_back(form2EffectsTitle.get());
+    if (form2DiceButton) form2Group.push_back(form2DiceButton.get());
+    if (form2FxPowerButton) form2Group.push_back(form2FxPowerButton.get());
+    if (form2StepTitle) form2Group.push_back(form2StepTitle.get());
+    if (form2StepDiceButton) form2Group.push_back(form2StepDiceButton.get());
+    if (form2StepAmountLabel) form2Group.push_back(form2StepAmountLabel.get());
+    if (form2RateDropdown) form2Group.push_back(form2RateDropdown.get());
+    if (form2StdToggle) form2Group.push_back(form2StdToggle.get());
+    if (form2StepPowerButton) form2Group.push_back(form2StepPowerButton.get());
+    if (form2AllStepsToggle) form2Group.push_back(form2AllStepsToggle.get());
+    if (form2AllStepsLabel) form2Group.push_back(form2AllStepsLabel.get());
+    for (int i = 0; i < 16; ++i) {
+        if (form2StepButtons[i]) form2Group.push_back(form2StepButtons[i].get());
+    }
+    
+    DBG("[UI] Form 2 page setup complete");
+}
 
 void PluginEditor::updateDubDelayTimeLabel()
 {
@@ -13097,6 +13790,109 @@ void PluginEditor::randomizeFormantKnobValues()
     }
 }
 
+void PluginEditor::updateFormantOverlay()
+{
+    if (!outputSpectrumView) return;
+    
+    // Check if Formant page is currently active
+    auto& router = processorRef.getEffectRouter();
+    bool formantActive = false;
+    
+    // Check all 4 slots to see if any has Formant effect
+    for (int slot = 0; slot < 4; ++slot) {
+        if (router.getEffectInSlot(static_cast<SlotID>(slot)) == EffectID::Formant) {
+            formantActive = true;
+            break;
+        }
+    }
+    
+    if (formantActive) {
+        // Get current formant state from processor
+        auto formantState = processorRef.getFormantProcessor().getCurrentState();
+        
+        // Enable overlay and set parameters
+        outputSpectrumView->setFormantOverlayEnabled(true);
+        outputSpectrumView->setFormantParameters(
+            formantState.f1Hz,
+            formantState.f2Hz, 
+            formantState.f3Hz,
+            formantState.q,
+            formantState.emphasisDb
+        );
+        
+        DBG("[FORMANT OVERLAY] Enabled with F1=" << formantState.f1Hz << " F2=" << formantState.f2Hz << " F3=" << formantState.f3Hz);
+    } else {
+        // Disable overlay when Formant is not active
+        outputSpectrumView->setFormantOverlayEnabled(false);
+        DBG("[FORMANT OVERLAY] Disabled");
+    }
+}
+
+// Form 2 helper methods
+void PluginEditor::randomizeForm2KnobValues()
+{
+    DBG("[UI] Randomizing Form 2 knob values");
+    
+    for (int i = 0; i < 8; ++i) {
+        if (form2Knobs[i] != nullptr) {
+            float min = form2Knobs[i]->getMinimum();
+            float max = form2Knobs[i]->getMaximum();
+            float randomValue = min + (max - min) * juce::Random::getSystemRandom().nextFloat();
+            form2Knobs[i]->setValue(randomValue);
+        }
+    }
+}
+
+void PluginEditor::randomizeIndividualForm2Knob(int knobIndex)
+{
+    if (form2Knobs[knobIndex]) {
+        float min = form2Knobs[knobIndex]->getMinimum();
+        float max = form2Knobs[knobIndex]->getMaximum();
+        float randomValue = juce::Random::getSystemRandom().nextFloat() * (max - min) + min;
+        form2Knobs[knobIndex]->setValue(randomValue);
+    }
+}
+
+void PluginEditor::updateForm2FxAreaVisibility()
+{
+    float alpha = form2FxAreaEnabled ? 1.0f : 0.3f;
+    
+    for (int i = 0; i < 8; ++i) {
+        if (form2Knobs[i]) { 
+            form2Knobs[i]->setAlpha(alpha); 
+            form2Knobs[i]->setEnabled(form2FxAreaEnabled); 
+        }
+        if (form2KnobLabels[i]) form2KnobLabels[i]->setAlpha(alpha);
+        if (form2ValueLabels[i]) form2ValueLabels[i]->setAlpha(alpha);
+        if (form2IndicatorBars[i]) form2IndicatorBars[i]->setAlpha(alpha);
+        if (form2LockButtons[i]) { 
+            form2LockButtons[i]->setEnabled(form2FxAreaEnabled);
+            form2LockButtons[i]->setAlpha(alpha);
+        }
+    }
+}
+
+void PluginEditor::updateForm2StepAreaVisibility()
+{
+    float alpha = form2StepAreaEnabled ? 1.0f : 0.3f;
+    
+    for (int i = 0; i < 16; ++i) {
+        if (form2StepButtons[i]) {
+            form2StepButtons[i]->setAlpha(alpha);
+            form2StepButtons[i]->setEnabled(form2StepAreaEnabled);
+            form2StepButtons[i]->setVisible(true);
+        }
+    }
+}
+
+void PluginEditor::updateForm2ParameterFromKnob(int knobIndex)
+{
+    if (form2Knobs[knobIndex]) {
+        float value = form2Knobs[knobIndex]->getValue();
+        // TODO: Add processor method to update Form2 step snapshot
+    }
+}
+
 void PluginEditor::randomizeIndividualPhaseBloomKnob(int knobIndex)
 {
     if (phaseBloomKnobs[knobIndex]) {
@@ -13163,6 +13959,54 @@ void PluginEditor::onPhaseBloomStepButtonClicked(int stepIndex)
 void PluginEditor::ensurePhaseBloomAttachments() {}
 void PluginEditor::rebindPhaseBloomAttachments() {}
 
+void PluginEditor::onForm2StepButtonClicked(int stepIndex)
+{
+    form2UiSelectedStep = stepIndex;
+    
+    // Load step snapshot into knobs
+    auto snapshot = processorRef.getForm2SafeSnapshot(stepIndex);
+    if (form2Knobs[0]) form2Knobs[0]->setValue(snapshot.form2.morphX, juce::dontSendNotification);
+    if (form2Knobs[1]) form2Knobs[1]->setValue(snapshot.form2.morphY, juce::dontSendNotification);
+    if (form2Knobs[2]) form2Knobs[2]->setValue(snapshot.form2.sharpness, juce::dontSendNotification);
+    if (form2Knobs[3]) form2Knobs[3]->setValue(snapshot.form2.emphasis, juce::dontSendNotification);
+    if (form2Knobs[4]) form2Knobs[4]->setValue(snapshot.form2.shift, juce::dontSendNotification);
+    if (form2Knobs[5]) form2Knobs[5]->setValue(snapshot.form2.motion, juce::dontSendNotification);
+    if (form2Knobs[6]) form2Knobs[6]->setValue(snapshot.form2.air, juce::dontSendNotification);
+    if (form2Knobs[7]) form2Knobs[7]->setValue(snapshot.form2.mix, juce::dontSendNotification);
+    
+    updateForm2SequencerUI();
+    
+    DBG("[UI] Switched to Form 2 step " << stepIndex);
+}
+
+void PluginEditor::updateForm2SequencerUI()
+{
+    int selectedStep = form2UiSelectedStep;
+    int playingStep = processorRef.getForm2PlayingStep();
+    auto& seq = processorRef.getForm2SeqState();
+    const int stepsUsed = seq.stepsUsed.load();
+    
+    for (int i = 0; i < 16; ++i) {
+        if (form2StepButtons[i] != nullptr) {
+            form2StepButtons[i]->setSelected(i == selectedStep);
+            bool sequencerEnabled = seq.enabled.load();
+            form2StepButtons[i]->setPlaying(sequencerEnabled && (i == playingStep) && (i != selectedStep));
+            bool shouldBeEnabled = i < stepsUsed;
+            form2StepButtons[i]->setEnabledStep(shouldBeEnabled);
+        }
+    }
+    
+    // Update step amount display
+    if (form2StepAmountLabel != nullptr && !form2StepAmountLabel->hasKeyboardFocus(true)) {
+        form2StepAmountLabel->setText(juce::String(stepsUsed), false);
+    }
+    
+    if (form2RateDropdown != nullptr) {
+        int divisionIndex = seq.divisionIndex.load();
+        form2RateDropdown->setSelectedId(divisionIndex + 1);
+    }
+}
+
 //==============================================================================
 // Unified Effect Handling Methods
 //==============================================================================
@@ -13207,17 +14051,30 @@ void PluginEditor::randomizeEffectStepSnapshot(FxPageID effect, int step)
         case FxPageID::Formant: {
             auto snapshot = processorRef.getFormantSafeSnapshot(step);
             
-            // Randomize Formant parameters
-            if (!knobLocked[0]) snapshot.formant.vowelA = juce::Random::getSystemRandom().nextInt(5); // 0-4
-            if (!knobLocked[1]) snapshot.formant.vowelB = juce::Random::getSystemRandom().nextInt(5); // 0-4
-            if (!knobLocked[2]) snapshot.formant.morph = juce::Random::getSystemRandom().nextFloat(); // 0-1
-            if (!knobLocked[3]) snapshot.formant.q = 0.1f + juce::Random::getSystemRandom().nextFloat() * (10.0f - 0.1f); // 0.1-10
-            if (!knobLocked[4]) snapshot.formant.emphasis = juce::Random::getSystemRandom().nextFloat(); // 0-1
-            if (!knobLocked[5]) snapshot.formant.gender = 0.5f + juce::Random::getSystemRandom().nextFloat() * (2.0f - 0.5f); // 0.5-2
-            if (!knobLocked[6]) snapshot.formant.vibDepth = juce::Random::getSystemRandom().nextFloat(); // 0-1
-            if (!knobLocked[7]) snapshot.formant.mix = juce::Random::getSystemRandom().nextFloat(); // 0-1
+            // Randomize Formant parameters (now only 4)
+            if (!knobLocked[0]) snapshot.formant.vowel = juce::Random::getSystemRandom().nextInt(5); // 0-4
+            if (!knobLocked[1]) snapshot.formant.resonance = 0.5f + juce::Random::getSystemRandom().nextFloat() * (20.0f - 0.5f); // 0.5-20
+            if (!knobLocked[2]) snapshot.formant.intensity = juce::Random::getSystemRandom().nextFloat() * 12.0f; // 0-12
+            if (!knobLocked[3]) snapshot.formant.mix = juce::Random::getSystemRandom().nextFloat(); // 0-1
             
             processorRef.setFormantStepSnapshot(step, snapshot);
+            break;
+        }
+        
+        case FxPageID::Form2: {
+            auto snapshot = processorRef.getForm2SafeSnapshot(step);
+            
+            // Randomize Form 2 parameters (8 knobs)
+            if (!knobLocked[0]) snapshot.form2.morphX = juce::Random::getSystemRandom().nextFloat(); // 0-1
+            if (!knobLocked[1]) snapshot.form2.morphY = juce::Random::getSystemRandom().nextFloat(); // 0-1
+            if (!knobLocked[2]) snapshot.form2.sharpness = 0.4f + juce::Random::getSystemRandom().nextFloat() * (18.0f - 0.4f); // 0.4-18
+            if (!knobLocked[3]) snapshot.form2.emphasis = -6.0f + juce::Random::getSystemRandom().nextFloat() * (18.0f + 6.0f); // -6 to +18
+            if (!knobLocked[4]) snapshot.form2.shift = 0.5f + juce::Random::getSystemRandom().nextFloat() * (2.0f - 0.5f); // 0.5-2.0
+            if (!knobLocked[5]) snapshot.form2.motion = juce::Random::getSystemRandom().nextFloat(); // 0-1
+            if (!knobLocked[6]) snapshot.form2.air = juce::Random::getSystemRandom().nextFloat(); // 0-1
+            if (!knobLocked[7]) snapshot.form2.mix = juce::Random::getSystemRandom().nextFloat(); // 0-1
+            
+            processorRef.setForm2StepSnapshot(step, snapshot);
             break;
         }
         
@@ -13497,20 +14354,33 @@ void PluginEditor::loadSelectedStepIntoKnobs(FxPageID effect)
                 break;
         }
         
+        case FxPageID::Form2: {
+            int selectedStep = form2UiSelectedStep;
+            selectedStep = juce::jlimit(0, 15, selectedStep);
+            const auto snapshot = processorRef.getForm2SafeSnapshot(selectedStep);
+            
+            // Load snapshot values into knobs
+            if (form2Knobs[0]) form2Knobs[0]->setValue(snapshot.form2.morphX, juce::dontSendNotification);
+            if (form2Knobs[1]) form2Knobs[1]->setValue(snapshot.form2.morphY, juce::dontSendNotification);
+            if (form2Knobs[2]) form2Knobs[2]->setValue(snapshot.form2.sharpness, juce::dontSendNotification);
+            if (form2Knobs[3]) form2Knobs[3]->setValue(snapshot.form2.emphasis, juce::dontSendNotification);
+            if (form2Knobs[4]) form2Knobs[4]->setValue(snapshot.form2.shift, juce::dontSendNotification);
+            if (form2Knobs[5]) form2Knobs[5]->setValue(snapshot.form2.motion, juce::dontSendNotification);
+            if (form2Knobs[6]) form2Knobs[6]->setValue(snapshot.form2.air, juce::dontSendNotification);
+            if (form2Knobs[7]) form2Knobs[7]->setValue(snapshot.form2.mix, juce::dontSendNotification);
+                break;
+        }
+        
         case FxPageID::Formant: {
             int selectedStep = formantUiSelectedStep;
             selectedStep = juce::jlimit(0, 15, selectedStep);
             const auto snapshot = processorRef.getFormantSafeSnapshot(selectedStep);
             
-            // Load snapshot values into knobs
-            if (formantKnobs[0]) formantKnobs[0]->setValue((float)snapshot.formant.vowelA, juce::dontSendNotification);
-            if (formantKnobs[1]) formantKnobs[1]->setValue((float)snapshot.formant.vowelB, juce::dontSendNotification);
-            if (formantKnobs[2]) formantKnobs[2]->setValue(snapshot.formant.morph, juce::dontSendNotification);
-            if (formantKnobs[3]) formantKnobs[3]->setValue(snapshot.formant.q, juce::dontSendNotification);
-            if (formantKnobs[4]) formantKnobs[4]->setValue(snapshot.formant.emphasis, juce::dontSendNotification);
-            if (formantKnobs[5]) formantKnobs[5]->setValue(snapshot.formant.gender, juce::dontSendNotification);
-            if (formantKnobs[6]) formantKnobs[6]->setValue(snapshot.formant.vibDepth, juce::dontSendNotification);
-            if (formantKnobs[7]) formantKnobs[7]->setValue(snapshot.formant.mix, juce::dontSendNotification);
+            // Load snapshot values into knobs (now only 4)
+            if (formantKnobs[0]) formantKnobs[0]->setValue((float)snapshot.formant.vowel, juce::dontSendNotification);
+            if (formantKnobs[1]) formantKnobs[1]->setValue(snapshot.formant.resonance, juce::dontSendNotification);
+            if (formantKnobs[2]) formantKnobs[2]->setValue(snapshot.formant.intensity, juce::dontSendNotification);
+            if (formantKnobs[3]) formantKnobs[3]->setValue(snapshot.formant.mix, juce::dontSendNotification);
                 break;
         }
         
@@ -13598,8 +14468,8 @@ void PluginEditor::saveCurrentStepSnapshot()
             int currentStep = processorRef.getFormantUiSelectedStep();
             if (currentStep >= 0 && currentStep < 16) {
                 StepSnapshot currentSnapshot;
-                // Read current knob values and save to snapshot
-                for (int i = 0; i < 8; ++i) {
+                // Read current knob values and save to snapshot (now only 4 knobs)
+                for (int i = 0; i < 4; ++i) {
                     if (knobs[i] != nullptr) {
                         auto* param = processorRef.getAPVTS().getParameter(getParameterIdForKnob(i));
                         if (param != nullptr) {
@@ -13675,14 +14545,10 @@ void PluginEditor::updateSnapshotValue(StepSnapshot& snapshot, int knobIndex, fl
             
         case FxPageID::Formant:
             switch (knobIndex) {
-                case 0: snapshot.formant.vowelA = (int)value; break;
-                case 1: snapshot.formant.vowelB = (int)value; break;
-                case 2: snapshot.formant.morph = value; break;
-                case 3: snapshot.formant.q = value; break;
-                case 4: snapshot.formant.emphasis = value; break;
-                case 5: snapshot.formant.gender = value; break;
-                case 6: snapshot.formant.vibDepth = value; break;
-                case 7: snapshot.formant.mix = value; break;
+                case 0: snapshot.formant.vowel = (int)value; break;
+                case 1: snapshot.formant.resonance = value; break;
+                case 2: snapshot.formant.intensity = value; break;
+                case 3: snapshot.formant.mix = value; break;
             }
                 break;
             
@@ -13718,14 +14584,10 @@ juce::String PluginEditor::getParameterIdForKnob(int knobIndex)
             
         case FxPageID::Formant:
             switch (knobIndex) {
-                case 0: return "vowelA";
-                case 1: return "vowelB";
-                case 2: return "morph";
-                case 3: return "q";
-                case 4: return "emphasis";
-                case 5: return "gender";
-                case 6: return "vibDepth";
-                case 7: return "mix";
+                case 0: return "vowel";
+                case 1: return "resonance";
+                case 2: return "intensity";
+                case 3: return "mix";
             }
             break;
             

@@ -95,6 +95,18 @@ namespace BinaryData
     extern const char*   Feedback_svg;
     const int            Feedback_svgSize = 37363;
 
+    extern const char*   Form2_Background_Tab1_svg;
+    const int            Form2_Background_Tab1_svgSize = 6438;
+
+    extern const char*   Form2_Background_Tab2_svg;
+    const int            Form2_Background_Tab2_svgSize = 6630;
+
+    extern const char*   Form2_Background_Tab3_svg;
+    const int            Form2_Background_Tab3_svgSize = 6684;
+
+    extern const char*   Form2_Background_Tab4_svg;
+    const int            Form2_Background_Tab4_svgSize = 6682;
+
     extern const char*   Form_Background_Tab1_svg;
     const int            Form_Background_Tab1_svgSize = 6498;
 
@@ -357,7 +369,7 @@ namespace BinaryData
     const int            AlteHaasGroteskRegular_ttfSize = 143896;
 
     // Number of elements in the namedResourceList and originalFileNames arrays.
-    const int namedResourceListSize = 116;
+    const int namedResourceListSize = 120;
 
     // Points to the start of a list of resource names.
     extern const char* namedResourceList[];

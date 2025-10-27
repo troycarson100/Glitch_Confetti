@@ -21,7 +21,7 @@ class PresetBrowserOverlay;
 #include "ui/StepSequencer.h"
 
 // Tab system enum
-enum class FxPageID { SpaceDelay, Panner, Dirt, Chorus, Reverb, Granular, Slicer, Redux, PhaseBloom, Formant };
+enum class FxPageID { SpaceDelay, Panner, Dirt, Chorus, Reverb, Granular, Slicer, Redux, PhaseBloom, Formant, Form2 };
 
 // Forward declaration
 class PluginProcessor;
@@ -941,12 +941,12 @@ public:
     std::array<std::unique_ptr<CustomDiceButton>, 8> phaseBloomDiceButtons;
     
     // Formant page components (8 knobs)
-    std::array<std::unique_ptr<CustomKnob>, 8> formantKnobs;
-    std::array<std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>, 8> formantAttachments;
-    std::array<std::unique_ptr<juce::Label>, 8> formantKnobLabels;
-    std::array<std::unique_ptr<juce::Label>, 8> formantValueLabels;
-    std::array<std::unique_ptr<IndicatorBar>, 8> formantIndicatorBars;
-    std::array<std::unique_ptr<CustomDiceButton>, 8> formantDiceButtons;
+    std::array<std::unique_ptr<CustomKnob>, 4> formantKnobs;
+    std::array<std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>, 4> formantAttachments;
+    std::array<std::unique_ptr<juce::Label>, 4> formantKnobLabels;
+    std::array<std::unique_ptr<juce::Label>, 4> formantValueLabels;
+    std::array<std::unique_ptr<IndicatorBar>, 4> formantIndicatorBars;
+    std::array<std::unique_ptr<CustomDiceButton>, 4> formantDiceButtons;
     
     // Formant power buttons
     std::unique_ptr<juce::DrawableButton> formantFxPowerButton;
@@ -972,6 +972,40 @@ public:
         std::unique_ptr<AllStepsToggleButton> formantAllStepsToggle;
         std::unique_ptr<juce::Label> formantAllStepsLabel;
         bool formantAllStepsEnabled = false;
+    
+    // Form 2 page components (8 knobs)
+    std::array<std::unique_ptr<CustomKnob>, 8> form2Knobs;
+    std::array<std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>, 8> form2Attachments;
+    std::array<std::unique_ptr<juce::Label>, 8> form2KnobLabels;
+    std::array<std::unique_ptr<juce::Label>, 8> form2ValueLabels;
+    std::array<std::unique_ptr<IndicatorBar>, 8> form2IndicatorBars;
+    std::array<std::unique_ptr<LockButton>, 8> form2LockButtons;
+    std::array<bool, 8> form2KnobLocked { false, false, false, false, false, false, false, false };
+    
+    // Form 2 power buttons
+    std::unique_ptr<juce::DrawableButton> form2FxPowerButton;
+    std::unique_ptr<juce::DrawableButton> form2StepPowerButton;
+    bool form2FxAreaEnabled = true;
+    bool form2StepAreaEnabled = true;
+    
+    // Form 2 sequencer UI
+    std::unique_ptr<StepSequencer> form2StepSequencer;
+    std::atomic<int> form2UiSelectedStep { 0 };
+    
+    // Form 2 step buttons
+    std::array<std::unique_ptr<StepButton>, 16> form2StepButtons;
+    
+    // Form 2 titles and controls
+    std::unique_ptr<juce::Label> form2EffectsTitle;
+    std::unique_ptr<juce::Label> form2StepTitle;
+    std::unique_ptr<CustomDiceButton> form2DiceButton;
+    std::unique_ptr<CustomDiceButton> form2StepDiceButton;
+    std::unique_ptr<juce::TextEditor> form2StepAmountLabel;
+    std::unique_ptr<juce::ComboBox> form2RateDropdown;
+    std::unique_ptr<CircularToggleButton> form2StdToggle;
+    std::unique_ptr<AllStepsToggleButton> form2AllStepsToggle;
+    std::unique_ptr<juce::Label> form2AllStepsLabel;
+    bool form2AllStepsEnabled = false;
     std::array<std::unique_ptr<LockButton>, 8> phaseBloomLockButtons;
     std::array<bool, 8> phaseBloomKnobLocked { false, false, false, false, false, false, false, false };
     
@@ -1000,6 +1034,7 @@ public:
     std::vector<juce::Component*> reduxGroup; // All Redux UI components for visibility toggling
     std::vector<juce::Component*> phaseBloomGroup; // All PhaseBloom UI components for visibility toggling
     std::vector<juce::Component*> formantGroup; // All Formant UI components for visibility toggling
+    std::vector<juce::Component*> form2Group; // All Form 2 UI components for visibility toggling
     
     // Redux page container for isolation
     std::unique_ptr<juce::Component> reduxPage;
@@ -1170,9 +1205,22 @@ public:
         void setupFormantEffectsArea();
         void setupFormantSequencerArea();
         void setupFormantAllStepsToggle();
+        
+        void setupForm2Knobs();
+        void setupForm2EffectsArea();
+        void setupForm2SequencerArea();
+        void setupForm2AllStepsToggle();
+        void updateForm2FxAreaVisibility();
+        void updateForm2StepAreaVisibility();
+        void randomizeForm2KnobValues();
+        void randomizeIndividualForm2Knob(int knobIndex);
+        void updateForm2ParameterFromKnob(int knobIndex);
+        void updateForm2SequencerUI();
+        void onForm2StepButtonClicked(int stepIndex);
         void updateFormantFxAreaVisibility();
         void updateFormantStepAreaVisibility();
         void randomizeFormantKnobValues();
+        void updateFormantOverlay();
         void randomizeIndividualFormantKnob(int knobIndex);
         void updateFormantParameterFromKnob(int knobIndex);
         void updateFormantSequencerUI();
