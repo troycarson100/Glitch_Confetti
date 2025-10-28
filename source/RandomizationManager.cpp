@@ -72,7 +72,7 @@ void RandomizationManager::randomizeEffectRouter()
     
     // Get all available effects (excluding master/compressor)
     std::vector<EffectID> availableEffects;
-    for (int i = 0; i <= 9; ++i) { // EffectID::SpaceDelay to EffectID::PhaseBloom
+    for (int i = 0; i <= 12; ++i) { // EffectID::SpaceDelay (0) to EffectID::Saturate (12)
         availableEffects.push_back(static_cast<EffectID>(i));
     }
     
@@ -327,6 +327,25 @@ void RandomizationManager::applyParamChanges()
                 break;
             }
             
+            case EffectID::Form2:
+            {
+                int step = editor->form2UiSelectedStep;
+                if (step >= 0 && step < 16) {
+                    auto s = processor.getForm2SafeSnapshot(step);
+                    // Load into knobs (8 knobs) - map to 0.0-1.0 range
+                    if (editor->form2Knobs[0]) editor->form2Knobs[0]->setValue(s.form2.rootNote / 12.0f, juce::sendNotification);
+                    if (editor->form2Knobs[1]) editor->form2Knobs[1]->setValue(s.form2.scale / 7.0f, juce::sendNotification);
+                    if (editor->form2Knobs[2]) editor->form2Knobs[2]->setValue((s.form2.chordSize - 1) / 7.0f, juce::sendNotification);
+                    if (editor->form2Knobs[3]) editor->form2Knobs[3]->setValue(s.form2.shift, juce::sendNotification);
+                    if (editor->form2Knobs[4]) editor->form2Knobs[4]->setValue(s.form2.color, juce::sendNotification);
+                    if (editor->form2Knobs[5]) editor->form2Knobs[5]->setValue(s.form2.motion, juce::sendNotification);
+                    if (editor->form2Knobs[6]) editor->form2Knobs[6]->setValue(s.form2.resynth, juce::sendNotification);
+                    if (editor->form2Knobs[7]) editor->form2Knobs[7]->setValue(s.form2.mix, juce::sendNotification);
+                    DBG("[RAND]   Form2 step " + juce::String(step) + " reloaded");
+                }
+                break;
+            }
+            
             default:
                 break;
         }
@@ -471,6 +490,21 @@ void RandomizationManager::applyStepChanges()
                 break;
             }
             
+            case EffectID::Form2:
+            {
+                auto snapshot = processor.getForm2SafeSnapshot(target.stepIndex);
+                snapshot.form2.rootNote = static_cast<int>(rand01() * 12); // 0-11
+                snapshot.form2.scale = static_cast<int>(rand01() * 7); // 0-6
+                snapshot.form2.chordSize = 1 + static_cast<int>(rand01() * 8); // 1-8
+                snapshot.form2.shift = 0.5f + rand01() * 1.5f; // 0.5-2.0
+                snapshot.form2.color = -12.0f + rand01() * 24.0f; // -12 to +12
+                snapshot.form2.motion = rand01(); // 0-1
+                snapshot.form2.resynth = rand01(); // 0-1
+                snapshot.form2.mix = rand01(); // 0-1
+                processor.setForm2StepSnapshot(target.stepIndex, snapshot);
+                break;
+            }
+            
             default:
                 break;
         }
@@ -566,6 +600,12 @@ void RandomizationManager::applySequencerChanges()
                 processor.setPhaseBloomSequencerEnabled(sequencerEnabled);
                 processor.setPhaseBloomStepsUsed(stepsUsed);
                 processor.setPhaseBloomDivisionIndex(divisionIndex);
+                break;
+                
+            case EffectID::Form2:
+                processor.setForm2SequencerEnabled(sequencerEnabled);
+                processor.setForm2StepsUsed(stepsUsed);
+                processor.setForm2DivisionIndex(divisionIndex);
                 break;
         }
         

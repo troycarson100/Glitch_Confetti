@@ -1042,6 +1042,8 @@ public:
     std::array<std::unique_ptr<juce::Label>, 8> saturateValueLabels;
     std::array<std::unique_ptr<IndicatorBar>, 8> saturateIndicatorBars;
     std::array<std::unique_ptr<CustomDiceButton>, 8> saturateDiceButtons;
+    std::array<std::unique_ptr<LockButton>, 7> saturateLockButtons; // 7 knobs (oversample removed)
+    std::array<bool, 7> saturateKnobLocked { false, false, false, false, false, false, false };
     
     // Saturate effects area
     std::unique_ptr<juce::Label> saturateEffectsTitle;

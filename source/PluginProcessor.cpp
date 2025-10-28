@@ -476,7 +476,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout PluginProcessor::createParam
     params.push_back(std::make_unique<juce::AudioParameterFloat>("satOut", "Output", -24.0f, 12.0f, 0.0f));
     params.push_back(std::make_unique<juce::AudioParameterInt>("satOsMode", "Oversample", 0, 3, 2)); // 0=1×, 1=2×, 2=4×, 3=8×
     params.push_back(std::make_unique<juce::AudioParameterFloat>("satMix", "Mix", 0.0f, 1.0f, 1.0f));
-    params.push_back(std::make_unique<juce::AudioParameterBool>("saturateEnabled", "Saturate Enabled", false));
+    params.push_back(std::make_unique<juce::AudioParameterBool>("saturateEnabled", "Saturate Enabled", true)); // Default ON
     params.push_back(std::make_unique<juce::AudioParameterBool>("saturateStepEnabled", "Saturate Step Enabled", true));
     
     return { params.begin(), params.end() };
@@ -841,6 +841,12 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                     DBG("[FORMANT SEQ] ✓ Activated on play edge");
                 }
                 
+                // Saturate (Heat) sequencer activates if enabled (independent of followHost)
+                if (saturateSeq.enabled.load()) {
+                    saturateSeq.active.store(true);  // Activate Saturate sequencer
+                    DBG("[SATURATE SEQ] ✓ Activated on play edge");
+                }
+                
                 // Form 2 sequencer activates if enabled (independent of followHost)
                 if (form2Seq.enabled.load()) {
                     form2Seq.active.store(true);  // Activate Form 2 sequencer
@@ -1081,6 +1087,16 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                     formantSeq.currentStep.store(formantStep);
                     formantSeq.playingStep.store(formantStep);
                     DBG("[FORMANT SEQ] ★ Step changed to: " << formantStep << " PPQ: " << ppq);
+                }
+            }
+            
+            // Saturate (Heat) sequencer stepping (shares same PPQ/transport, independent timing)
+            if (isPlaying && ppqValid && saturateSeq.active.load()) {
+                const int saturateStep = saturateSeq.computeStepFromPPQ(ppq);
+                if (saturateStep != saturateSeq.currentStep.load()) {
+                    saturateSeq.currentStep.store(saturateStep);
+                    saturateSeq.playingStep.store(saturateStep);
+                    DBG("[SATURATE SEQ] ★ Step changed to: " << saturateStep << " PPQ: " << ppq);
                 }
             }
             
@@ -1870,6 +1886,75 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                 bool isSaturateEnabled = saturateEnabledParam ? (saturateEnabledParam->load() > 0.5f) : false;
                 
                 if (isSaturateEnabled) {
+                    // Get Saturate sequencer state
+                    auto& seqState = saturateSeq;
+                    
+                    // Check if sequencer is enabled and active - only update on step change
+                    static int lastSaturateStep = -1;
+                    
+                    // Only update parameters if sequencer is enabled, active, and step changed
+                    if (seqState.enabled.load() && seqState.active.load()) {
+                        int currentStep = seqState.currentStep.load();
+                        bool stepChanged = (currentStep != lastSaturateStep);
+                        
+                        if (stepChanged && currentStep >= 0 && currentStep < 16) {
+                        StepSnapshot snapshot = getSaturateSafeSnapshot(currentStep);
+                        
+                        // Update APVTS parameters from sequencer snapshot (only when step changes)
+                        // Use parameter's convertFrom0to1 to properly convert snapshot values
+                        auto* typeParam = valueTreeState.getParameter("satType");
+                        auto* driveParam = valueTreeState.getParameter("satDrive");
+                        auto* colorParam = valueTreeState.getParameter("satColor");
+                        auto* shapeParam = valueTreeState.getParameter("satShape");
+                        auto* biasParam = valueTreeState.getParameter("satBias");
+                        auto* outputParam = valueTreeState.getParameter("satOut");
+                        auto* mixParam = valueTreeState.getParameter("satMix");
+                        
+                        // Convert snapshot values to normalized 0-1 range, then let parameter convert to actual values
+                        if (typeParam) {
+                            float normType = snapshot.saturate.type / 7.0f;
+                            typeParam->setValueNotifyingHost(juce::jlimit(0.0f, 1.0f, normType));
+                        }
+                        if (driveParam) {
+                            float normDrive = snapshot.saturate.drive / 36.0f;
+                            driveParam->setValueNotifyingHost(juce::jlimit(0.0f, 1.0f, normDrive));
+                        }
+                        if (colorParam) {
+                            colorParam->setValueNotifyingHost(juce::jlimit(0.0f, 1.0f, snapshot.saturate.color));
+                        }
+                        if (shapeParam) {
+                            shapeParam->setValueNotifyingHost(juce::jlimit(0.0f, 1.0f, snapshot.saturate.shape));
+                        }
+                        if (biasParam) {
+                            float normBias = (snapshot.saturate.bias + 0.2f) / 0.4f;
+                            biasParam->setValueNotifyingHost(juce::jlimit(0.0f, 1.0f, normBias));
+                        }
+                        if (outputParam) {
+                            float normOut = (snapshot.saturate.output + 24.0f) / 36.0f;
+                            outputParam->setValueNotifyingHost(juce::jlimit(0.0f, 1.0f, normOut));
+                        }
+                        if (mixParam) {
+                            mixParam->setValueNotifyingHost(juce::jlimit(0.0f, 1.0f, snapshot.saturate.mix));
+                        }
+                            
+                            lastSaturateStep = currentStep;
+                        }
+                    } else {
+                        // Sequencer disabled or inactive - reset last step tracker
+                        lastSaturateStep = -1;
+                    }
+                    
+                    // Oversample always max (3 = 8×) - check once, not every block
+                    static bool osSet = false;
+                    if (!osSet) {
+                        auto* osParam = valueTreeState.getParameter("satOsMode");
+                        if (osParam && osParam->getValue() < 1.0f) {
+                            osParam->setValueNotifyingHost(1.0f); // 3/3 = max
+                        }
+                        osSet = true;
+                    }
+                    
+                    // Process Saturate effect (always uses current APVTS values)
                     saturateProcessor.process(buffer, buffer.getNumSamples(), valueTreeState);
                 }
                 break;
@@ -2381,6 +2466,22 @@ void PluginProcessor::getStateInformation (juce::MemoryBlock& destData)
     slicerSeqTree.setProperty("stdMode", slicerSeq.stdMode.load(), nullptr);
     seqSettings.addChild(slicerSeqTree, -1, nullptr);
     
+    // Formant sequencer
+    auto formantSeqTree = juce::ValueTree("FormantSequencer");
+    formantSeqTree.setProperty("enabled", formantSeq.enabled.load(), nullptr);
+    formantSeqTree.setProperty("stepsUsed", formantSeq.stepsUsed.load(), nullptr);
+    formantSeqTree.setProperty("divisionIndex", formantSeq.divisionIndex.load(), nullptr);
+    formantSeqTree.setProperty("stdMode", formantSeq.stdMode.load(), nullptr);
+    seqSettings.addChild(formantSeqTree, -1, nullptr);
+    
+    // Saturate (Heat) sequencer
+    auto saturateSeqTree = juce::ValueTree("SaturateSequencer");
+    saturateSeqTree.setProperty("enabled", saturateSeq.enabled.load(), nullptr);
+    saturateSeqTree.setProperty("stepsUsed", saturateSeq.stepsUsed.load(), nullptr);
+    saturateSeqTree.setProperty("divisionIndex", saturateSeq.divisionIndex.load(), nullptr);
+    saturateSeqTree.setProperty("stdMode", saturateSeq.stdMode.load(), nullptr);
+    seqSettings.addChild(saturateSeqTree, -1, nullptr);
+    
     state.addChild(seqSettings, -1, nullptr);
     
     // Save step snapshots for all effects
@@ -2483,6 +2584,32 @@ void PluginProcessor::getStateInformation (juce::MemoryBlock& destData)
         stepTree.setProperty("shape", slicerStepSnapshots[i].slicer.shape, nullptr);
         stepTree.setProperty("releaseMs", slicerStepSnapshots[i].slicer.releaseMs, nullptr);
         stepTree.setProperty("mix", slicerStepSnapshots[i].slicer.mix, nullptr);
+        stepsnapshots.addChild(stepTree, -1, nullptr);
+    }
+    
+    // Formant snapshots
+    for (int i = 0; i < 16; ++i)
+    {
+        auto stepTree = juce::ValueTree("FormantStep" + juce::String(i));
+        stepTree.setProperty("vowel", formantStepSnapshots[i].formant.vowel, nullptr);
+        stepTree.setProperty("resonance", formantStepSnapshots[i].formant.resonance, nullptr);
+        stepTree.setProperty("intensity", formantStepSnapshots[i].formant.intensity, nullptr);
+        stepTree.setProperty("mix", formantStepSnapshots[i].formant.mix, nullptr);
+        stepsnapshots.addChild(stepTree, -1, nullptr);
+    }
+    
+    // Saturate (Heat) snapshots
+    for (int i = 0; i < 16; ++i)
+    {
+        auto stepTree = juce::ValueTree("SaturateStep" + juce::String(i));
+        stepTree.setProperty("type", saturateStepSnapshots[i].saturate.type, nullptr);
+        stepTree.setProperty("drive", saturateStepSnapshots[i].saturate.drive, nullptr);
+        stepTree.setProperty("color", saturateStepSnapshots[i].saturate.color, nullptr);
+        stepTree.setProperty("shape", saturateStepSnapshots[i].saturate.shape, nullptr);
+        stepTree.setProperty("bias", saturateStepSnapshots[i].saturate.bias, nullptr);
+        stepTree.setProperty("output", saturateStepSnapshots[i].saturate.output, nullptr);
+        stepTree.setProperty("oversample", saturateStepSnapshots[i].saturate.oversample, nullptr);
+        stepTree.setProperty("mix", saturateStepSnapshots[i].saturate.mix, nullptr);
         stepsnapshots.addChild(stepTree, -1, nullptr);
     }
     
@@ -2609,6 +2736,26 @@ void PluginProcessor::setStateInformation (const void* data, int sizeInBytes)
                 slicerSeq.divisionIndex.store(slicerSeqTree.getProperty("divisionIndex", 3));
                 slicerSeq.stdMode.store(slicerSeqTree.getProperty("stdMode", 0));
             }
+            
+            // Formant sequencer
+            auto formantSeqTree = seqSettings.getChildWithName("FormantSequencer");
+            if (formantSeqTree.isValid())
+            {
+                formantSeq.enabled.store(formantSeqTree.getProperty("enabled", true));
+                formantSeq.stepsUsed.store(formantSeqTree.getProperty("stepsUsed", 16));
+                formantSeq.divisionIndex.store(formantSeqTree.getProperty("divisionIndex", 5));
+                formantSeq.stdMode.store(formantSeqTree.getProperty("stdMode", 0));
+            }
+            
+            // Saturate (Heat) sequencer
+            auto saturateSeqTree = seqSettings.getChildWithName("SaturateSequencer");
+            if (saturateSeqTree.isValid())
+            {
+                saturateSeq.enabled.store(saturateSeqTree.getProperty("enabled", true));
+                saturateSeq.stepsUsed.store(saturateSeqTree.getProperty("stepsUsed", 16));
+                saturateSeq.divisionIndex.store(saturateSeqTree.getProperty("divisionIndex", 5));
+                saturateSeq.stdMode.store(saturateSeqTree.getProperty("stdMode", 0));
+            }
         }
         
         // Restore step snapshots
@@ -2726,6 +2873,36 @@ void PluginProcessor::setStateInformation (const void* data, int sizeInBytes)
                     slicerStepSnapshots[i].slicer.shape = stepTree.getProperty("shape", 0.5f);
                     slicerStepSnapshots[i].slicer.releaseMs = stepTree.getProperty("releaseMs", 20.0f);
                     slicerStepSnapshots[i].slicer.mix = stepTree.getProperty("mix", 0.75f);
+                }
+            }
+            
+            // Formant snapshots
+            for (int i = 0; i < 16; ++i)
+            {
+                auto stepTree = stepsnapshots.getChildWithName("FormantStep" + juce::String(i));
+                if (stepTree.isValid())
+                {
+                    formantStepSnapshots[i].formant.vowel = stepTree.getProperty("vowel", 0.0f);
+                    formantStepSnapshots[i].formant.resonance = stepTree.getProperty("resonance", 12.0f);
+                    formantStepSnapshots[i].formant.intensity = stepTree.getProperty("intensity", 6.0f);
+                    formantStepSnapshots[i].formant.mix = stepTree.getProperty("mix", 0.8f);
+                }
+            }
+            
+            // Saturate (Heat) snapshots
+            for (int i = 0; i < 16; ++i)
+            {
+                auto stepTree = stepsnapshots.getChildWithName("SaturateStep" + juce::String(i));
+                if (stepTree.isValid())
+                {
+                    saturateStepSnapshots[i].saturate.type = stepTree.getProperty("type", 0.0f);
+                    saturateStepSnapshots[i].saturate.drive = stepTree.getProperty("drive", 12.0f);
+                    saturateStepSnapshots[i].saturate.color = stepTree.getProperty("color", 0.5f);
+                    saturateStepSnapshots[i].saturate.shape = stepTree.getProperty("shape", 0.4f);
+                    saturateStepSnapshots[i].saturate.bias = stepTree.getProperty("bias", 0.0f);
+                    saturateStepSnapshots[i].saturate.output = stepTree.getProperty("output", 0.0f);
+                    saturateStepSnapshots[i].saturate.oversample = stepTree.getProperty("oversample", 3.0f);
+                    saturateStepSnapshots[i].saturate.mix = stepTree.getProperty("mix", 1.0f);
                 }
             }
         }
@@ -3446,8 +3623,8 @@ void PluginProcessor::updateSaturateCurrentStepSnapshot(int knobIndex, float val
     int currentStep = saturateUiSelectedStep.load();
     if (currentStep < 0 || currentStep >= 16) return;
     
-    // Mix (knob 7) is global, not saved to snapshots
-    if (knobIndex == 7) return;
+    // Mix (knob 6) is global, not saved to snapshots
+    if (knobIndex == 6) return;
     
     // Update the specific Saturate parameter in the snapshot
     switch (knobIndex) {
@@ -3469,9 +3646,8 @@ void PluginProcessor::updateSaturateCurrentStepSnapshot(int knobIndex, float val
         case 5: // Output
             saturateStepSnapshots[currentStep].saturate.output = value;
             break;
-        case 6: // Oversample
-            saturateStepSnapshots[currentStep].saturate.oversample = value;
-            break;
+        // Oversample is always max (3 = 8×), handled separately
+        // Mix (case 6) is global, not saved per step
     }
 }
 

@@ -236,6 +236,25 @@ void PageTargetRegistry::buildRegistry()
         targets.maxSteps = 16;
         registry[EffectID::Form2] = targets;
     }
+    
+    // Saturate Page
+    {
+        PageTargets targets;
+        targets.pageId = "Heat";
+        targets.knobParamIds = {
+            "satType",      // Knob 0: Type
+            "satDrive",     // Knob 1: Drive
+            "satColor",     // Knob 2: Color (dynamic)
+            "satShape",     // Knob 3: Shape (dynamic)
+            "satBias",      // Knob 4: Bias (dynamic)
+            "satOut",       // Knob 5: Output
+            "satOsMode",    // Knob 6: Oversample
+            "satMix"        // Knob 7: Mix
+        };
+        targets.sequencerStepsUsedKey = "saturateStepsUsed";
+        targets.maxSteps = 16;
+        registry[EffectID::Saturate] = targets;
+    }
 }
 
 std::array<PageTargets, 4> PageTargetRegistry::getActivePages(
