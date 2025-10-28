@@ -115,6 +115,13 @@ bool UiAssets::loadAll()
     form2BackgroundTab3 = loadSVG (Form2_Background_Tab3_svg, Form2_Background_Tab3_svgSize);
     form2BackgroundTab4 = loadSVG (Form2_Background_Tab4_svg, Form2_Background_Tab4_svgSize);
     
+    // Saturate assets
+    tabSaturateIcon = loadSVG (Saturate_Icon_svg, Saturate_Icon_svgSize);
+    saturateBackgroundTab1 = loadSVG (Saturate_Background_Tab1_svg, Saturate_Background_Tab1_svgSize);
+    saturateBackgroundTab2 = loadSVG (Saturate_Background_Tab2_svg, Saturate_Background_Tab2_svgSize);
+    saturateBackgroundTab3 = loadSVG (Saturate_Background_Tab3_svg, Saturate_Background_Tab3_svgSize);
+    saturateBackgroundTab4 = loadSVG (Saturate_Background_Tab4_svg, Saturate_Background_Tab4_svgSize);
+    
     fxPowerOn         = loadSVG (FX_Power_On_svg, FX_Power_On_svgSize);
     stepPowerOn       = loadSVG (Step_Power_On_svg, Step_Power_On_svgSize);
     knobDice          = loadSVG (Knob_Basic_Dice_svg, Knob_Basic_Dice_svgSize);
@@ -174,6 +181,13 @@ bool UiAssets::loadAll()
     form2BackgroundTab2 = loadSVGFromFile (assetsDir.getChildFile ("ui/Form2_Background_Tab2.svg"));
     form2BackgroundTab3 = loadSVGFromFile (assetsDir.getChildFile ("ui/Form2_Background_Tab3.svg"));
     form2BackgroundTab4 = loadSVGFromFile (assetsDir.getChildFile ("ui/Form2_Background_Tab4.svg"));
+    
+    // Saturate assets
+    tabSaturateIcon = loadSVGFromFile (assetsDir.getChildFile ("ui/Saturate_Icon.svg"));
+    saturateBackgroundTab1 = loadSVGFromFile (assetsDir.getChildFile ("ui/Saturate_Background_Tab1.svg"));
+    saturateBackgroundTab2 = loadSVGFromFile (assetsDir.getChildFile ("ui/Saturate_Background_Tab2.svg"));
+    saturateBackgroundTab3 = loadSVGFromFile (assetsDir.getChildFile ("ui/Saturate_Background_Tab3.svg"));
+    saturateBackgroundTab4 = loadSVGFromFile (assetsDir.getChildFile ("ui/Saturate_Background_Tab4.svg"));
     
     // Comp Crush Tab assets (loaded via binary data above)
     

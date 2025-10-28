@@ -196,6 +196,13 @@ PluginEditor::PluginEditor (PluginProcessor& p)
         setupFormantSequencerArea();
         setupFormantAllStepsToggle();
         
+        // Setup Saturate page
+        DBG("[UI] Setting up Saturate page...");
+        setupSaturateKnobs();
+        setupSaturateEffectsArea();
+        setupSaturateSequencerArea();
+        setupSaturateAllStepsToggle();
+        
         // Setup Form 2 page
         DBG("[UI] Setting up Form 2 page...");
         setupForm2Knobs();
@@ -444,6 +451,21 @@ void PluginEditor::paint (juce::Graphics& g)
                 }
                 break;
                 
+            case EffectID::Saturate:
+                if (tabNumber == 1 && assets.saturateBackgroundTab1) {
+                    return assets.saturateBackgroundTab1.get();
+                }
+                else if (tabNumber == 2 && assets.saturateBackgroundTab2) {
+                    return assets.saturateBackgroundTab2.get();
+                }
+                else if (tabNumber == 3 && assets.saturateBackgroundTab3) {
+                    return assets.saturateBackgroundTab3.get();
+                }
+                else if (tabNumber == 4 && assets.saturateBackgroundTab4) {
+                    return assets.saturateBackgroundTab4.get();
+                }
+                break;
+                
             case EffectID::Form2:
                 if (tabNumber == 1 && assets.form2BackgroundTab1) {
                     return assets.form2BackgroundTab1.get();
@@ -507,6 +529,7 @@ void PluginEditor::paint (juce::Graphics& g)
             case EffectID::Redux:       return assets.tabReduxIcon.get();       // Redux_Icon
             case EffectID::PhaseBloom:  return assets.tabPhaseBloomIcon.get();  // PhaseBloom_Icon
             case EffectID::Formant:     return assets.tabFormantIcon.get();     // Form_Icon
+            case EffectID::Saturate:    return assets.tabSaturateIcon.get();
             case EffectID::Form2:       return assets.tabForm2Icon.get();      // Form_Icon (shared)
         }
         return nullptr;
@@ -4476,6 +4499,9 @@ void PluginEditor::setupTabSystem()
     // Populate dropdown items (1-based IDs for JUCE ComboBox)
     for (auto* selector : {effectSelector1.get(), effectSelector2.get(), effectSelector3.get(), effectSelector4.get()})
     {
+        // Clear any existing items first
+        selector->clear(juce::dontSendNotification);
+        
         selector->addItem("Space Delay", 1);
         selector->addItem("Auto Pan", 2);
         selector->addItem("Dirt", 3);
@@ -4487,6 +4513,13 @@ void PluginEditor::setupTabSystem()
         selector->addItem("Redux", 9);
         selector->addItem("PhaseBloom", 10);
         selector->addItem("Formant", 11);
+        selector->addItem("Saturate", 12); // Sequential ID for EffectID::Saturate (12)
+        
+        int numItems = selector->getNumItems();
+        DBG("[UI] Added dropdown items - total: " << numItems);
+        if (numItems >= 12) {
+            DBG("[UI] Last item (index 11): " << selector->getItemText(11));
+        }
         
         // Hide text when closed - just show carrot icon
         selector->setTextWhenNothingSelected("");
@@ -4848,6 +4881,7 @@ void PluginEditor::showPage(FxPageID id)
     setVisibleVec(reduxGroup, false);
     setVisibleVec(phaseBloomGroup, false);
     setVisibleVec(formantGroup, false);
+    setVisibleVec(saturateGroup, false);
     setVisibleVec(form2Group, false);
     
     // Show only the group for the effect assigned to this slot
@@ -5086,6 +5120,43 @@ void PluginEditor::showPage(FxPageID id)
             processorRef.setFormantSelectedStep(0);
             updateFormantSequencerUI();
             
+            break;
+        case EffectID::Saturate:
+            DBG("[ROUTER] Showing Saturate UI for slot " << slotIndex);
+            setVisibleVec(saturateGroup, true);
+            
+            // Restore UI state from APVTS parameters
+            {
+                auto* fxEnabledParam = processorRef.getAPVTS().getRawParameterValue("saturateEnabled");
+                saturateFxAreaEnabled = fxEnabledParam ? (fxEnabledParam->load() > 0.5f) : true; // Default ON
+                
+                if (saturateFxPowerButton) {
+                    saturateFxPowerButton->setToggleState(saturateFxAreaEnabled, juce::dontSendNotification);
+                }
+                
+                // Restore sequencer enabled state
+                saturateStepAreaEnabled = processorRef.getSaturateSeqState().enabled.load();
+                if (saturateStepPowerButton) {
+                    saturateStepPowerButton->setToggleState(saturateStepAreaEnabled, juce::dontSendNotification);
+                }
+                
+                updateSaturateFxAreaVisibility();
+                updateSaturateStepAreaVisibility();
+            }
+            
+            // Trigger initial value label updates (8 knobs)
+            for (int i = 0; i < 8; ++i) {
+                if (saturateKnobs[i]) {
+                    saturateKnobs[i]->onValueChange();
+                }
+            }
+            
+            // Update sequencer UI to show first step as selected
+            saturateUiSelectedStep = 0;
+            processorRef.setSaturateSelectedStep(0);
+            updateSaturateSequencerUI();
+            
+            DBG("[ROUTER] ✓ Saturate group shown");
             break;
         case EffectID::Form2:
             DBG("[ROUTER] Form 2 case triggered - form2Group size: " << form2Group.size());
@@ -8040,13 +8111,23 @@ void PluginEditor::onEffectSelectorChanged(int slotIndex)
         return;
     }
     
-    int selectedEffectID = selector->getSelectedId() - 1; // ComboBox IDs are 1-based
-    DBG("[ROUTER] Selected effect ID: " << selectedEffectID);
+    int selectedId = selector->getSelectedId(); // ComboBox IDs are 1-based (1, 2, 3, ..., 13)
+    DBG("[ROUTER] Selected dropdown ID: " << selectedId);
     
-    if (selectedEffectID < 0 || selectedEffectID > 11) {
-        DBG("[ROUTER] ERROR: Invalid effect ID " << selectedEffectID);
+    // Map dropdown IDs to EffectIDs
+    // Dropdown IDs: 1-12 map sequentially to EffectIDs 0-11 (SpaceDelay through Formant)
+    // Dropdown ID 12 maps to EffectID 12 (Saturate)
+    int selectedEffectID;
+    if (selectedId == 12) {
+        selectedEffectID = 12; // Saturate (EffectID::Saturate)
+    } else if (selectedId >= 1 && selectedId <= 11) {
+        selectedEffectID = selectedId - 1; // SpaceDelay(0) through Formant(10)
+    } else {
+        DBG("[ROUTER] ERROR: Invalid dropdown ID " << selectedId);
         return;
     }
+    
+    DBG("[ROUTER] Mapped to EffectID: " << selectedEffectID);
     
     auto& router = processorRef.getEffectRouter();
     EffectID targetEffect = static_cast<EffectID>(selectedEffectID);
@@ -8149,6 +8230,7 @@ void PluginEditor::onEffectSelectorChanged(int slotIndex)
     setVisibleVec(reduxGroup, false);
     setVisibleVec(phaseBloomGroup, false);
     setVisibleVec(formantGroup, false);
+    setVisibleVec(saturateGroup, false);
     setVisibleVec(form2Group, false);
     DBG("[ROUTER] ✓ All groups hidden");
     
@@ -8368,6 +8450,45 @@ void PluginEditor::onEffectSelectorChanged(int slotIndex)
             
             // Enable formant overlay on spectrum analyzer
             updateFormantOverlay();
+            break;
+        }
+        case EffectID::Saturate:
+        {
+            DBG("[ROUTER] Showing Saturate group (" << saturateGroup.size() << " components)");
+            setVisibleVec(saturateGroup, true);
+            
+            // Restore UI state from APVTS parameters
+            {
+                auto* fxEnabledParam = processorRef.getAPVTS().getRawParameterValue("saturateEnabled");
+                saturateFxAreaEnabled = fxEnabledParam ? (fxEnabledParam->load() > 0.5f) : true; // Default ON
+                
+                if (saturateFxPowerButton) {
+                    saturateFxPowerButton->setToggleState(saturateFxAreaEnabled, juce::dontSendNotification);
+                }
+                
+                // Restore sequencer enabled state
+                saturateStepAreaEnabled = processorRef.getSaturateSeqState().enabled.load();
+                if (saturateStepPowerButton) {
+                    saturateStepPowerButton->setToggleState(saturateStepAreaEnabled, juce::dontSendNotification);
+                }
+                
+                updateSaturateFxAreaVisibility();
+                updateSaturateStepAreaVisibility();
+            }
+            
+            // Trigger initial value label updates (8 knobs)
+            for (int i = 0; i < 8; ++i) {
+                if (saturateKnobs[i]) {
+                    saturateKnobs[i]->onValueChange();
+                }
+            }
+            
+            // Update sequencer UI to show first step as selected
+            saturateUiSelectedStep = 0;
+            processorRef.setSaturateSelectedStep(0);
+            updateSaturateSequencerUI();
+            
+            DBG("[ROUTER] ✓ Saturate group shown");
             break;
         }
         case EffectID::Form2:
@@ -11451,6 +11572,761 @@ void PluginEditor::setupFormantAllStepsToggle()
     }
     
     DBG("[UI] Formant page setup complete");
+}
+
+//==============================================================================
+// Saturate Page Implementation
+//==============================================================================
+
+void PluginEditor::setupSaturateKnobs()
+{
+    DBG("[UI] Setting up Saturate knobs...");
+
+    // Saturate knob names (8 knobs)
+    std::vector<juce::String> saturateKnobNames = {
+        "Type", "Drive", "Color", "Shape", "Bias", "Output", "Oversample", "Mix"
+    };
+    
+    // Parameter IDs for APVTS attachments
+    std::vector<juce::String> saturateParamIds = {
+        "satType", "satDrive", "satColor", "satShape", 
+        "satBias", "satOut", "satOsMode", "satMix"
+    };
+
+    // Effect area bounds (same as other pages)
+    auto effectArea = juce::Rectangle<int>(25, 54, 413, 296);
+    const int knobSize = 80;
+    const int knobSpacing = 20;
+    const int startX = effectArea.getX() + 15;
+    const int startY = effectArea.getY() + effectArea.getHeight() - 210;
+
+    for (int i = 0; i < 8; ++i)
+    {
+        saturateKnobs[i] = std::make_unique<CustomKnob>();
+        addAndMakeVisible(saturateKnobs[i].get());
+        saturateKnobs[i]->setVisible(false);
+        
+        saturateKnobs[i]->setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
+        saturateKnobs[i]->setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
+
+        // Set parameter ranges based on knob index
+        switch (i) {
+            case 0: // Type (0-7)
+                saturateKnobs[i]->setRange(0.0, 7.0, 1.0);
+                saturateKnobs[i]->setValue(0.0, juce::dontSendNotification);
+                break;
+            case 1: // Drive (0-36 dB)
+                saturateKnobs[i]->setRange(0.0, 36.0, 0.1);
+                saturateKnobs[i]->setValue(12.0, juce::dontSendNotification);
+                break;
+            case 2: // Color (0-1, dynamic)
+                saturateKnobs[i]->setRange(0.0, 1.0, 0.01);
+                saturateKnobs[i]->setValue(0.5, juce::dontSendNotification);
+                break;
+            case 3: // Shape (0-1, dynamic)
+                saturateKnobs[i]->setRange(0.0, 1.0, 0.01);
+                saturateKnobs[i]->setValue(0.4, juce::dontSendNotification);
+                break;
+            case 4: // Bias (-0.2 to 0.2, dynamic)
+                saturateKnobs[i]->setRange(-0.2, 0.2, 0.01);
+                saturateKnobs[i]->setValue(0.0, juce::dontSendNotification);
+                break;
+            case 5: // Output (-24 to +12 dB)
+                saturateKnobs[i]->setRange(-24.0, 12.0, 0.1);
+                saturateKnobs[i]->setValue(0.0, juce::dontSendNotification);
+                break;
+            case 6: // Oversample (0-3: 1x, 2x, 4x, 8x)
+                saturateKnobs[i]->setRange(0.0, 3.0, 1.0);
+                saturateKnobs[i]->setValue(2.0, juce::dontSendNotification);
+                break;
+            case 7: // Mix (0-1)
+                saturateKnobs[i]->setRange(0.0, 1.0, 0.01);
+                saturateKnobs[i]->setValue(1.0, juce::dontSendNotification);
+                break;
+        }
+        
+        // Set knob images
+        if (assets.knobRing != nullptr)
+            saturateKnobs[i]->setRingImage(assets.knobRing->createCopy());
+        if (assets.knobInside != nullptr)
+            saturateKnobs[i]->setInnerImage(assets.knobInside->createCopy());
+        
+        // Position knobs (same layout as Dub Delay)
+        int x = startX + (i % 4) * (knobSize + knobSpacing);
+        int y = startY + (i / 4) * (knobSize + 20);
+        
+        if (i < 4)
+            y -= 23;
+        else
+            y -= 1;
+            
+        saturateKnobs[i]->setBounds(x, y, knobSize, knobSize);
+        
+        // Create knob label
+        saturateKnobLabels[i] = std::make_unique<juce::Label>();
+        saturateKnobLabels[i]->setText(saturateKnobNames[i], juce::dontSendNotification);
+        saturateKnobLabels[i]->setJustificationType(juce::Justification::centred);
+        saturateKnobLabels[i]->setColour(juce::Label::textColourId, juce::Colours::white);
+        saturateKnobLabels[i]->setFont(juce::Font(12.0f, juce::Font::bold));
+        saturateKnobLabels[i]->setBounds(x, y - 15, knobSize, 20);
+        addAndMakeVisible(saturateKnobLabels[i].get());
+        saturateKnobLabels[i]->setVisible(false);
+        
+        // Create value label
+        saturateValueLabels[i] = std::make_unique<juce::Label>();
+        saturateValueLabels[i]->setText("0", juce::dontSendNotification);
+        saturateValueLabels[i]->setFont(juce::Font(10.0f, juce::Font::plain));
+        saturateValueLabels[i]->setColour(juce::Label::textColourId, juce::Colours::white);
+        saturateValueLabels[i]->setJustificationType(juce::Justification::centred);
+        addAndMakeVisible(saturateValueLabels[i].get());
+        saturateValueLabels[i]->setVisible(false);
+        saturateValueLabels[i]->setBounds(x, y + knobSize - 10, knobSize, 15);
+        
+        // Create indicator bar
+        saturateIndicatorBars[i] = std::make_unique<IndicatorBar>();
+        addAndMakeVisible(saturateIndicatorBars[i].get());
+        saturateIndicatorBars[i]->setVisible(false);
+        saturateIndicatorBars[i]->setBounds(x + 10, y + knobSize + 8, knobSize - 20, 13);
+        saturateIndicatorBars[i]->setValue(0.5f);
+        
+        // Create dice button (hidden like other pages - NOT added to component tree)
+        saturateDiceButtons[i] = std::make_unique<CustomDiceButton>();
+        // Do NOT call addAndMakeVisible - keep it hidden
+        saturateDiceButtons[i]->onClick = [this, i]() { 
+            randomizeIndividualSaturateKnob(i);
+        };
+        
+        // Create APVTS attachment
+        saturateAttachments[i] = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+            processorRef.getAPVTS(), saturateParamIds[i], *saturateKnobs[i]);
+        
+        // Add value change callback
+        saturateKnobs[i]->onValueChange = [this, i]() {
+            // Skip if loading from snapshot (prevents circular updates during randomization)
+            if (isLoadingFromSnapshot.load())
+                return;
+            
+            if (saturateKnobs[i] != nullptr && saturateValueLabels[i] != nullptr) {
+                float value = saturateKnobs[i]->getValue();
+                
+                // Update value label with appropriate formatting
+                juce::String valueText;
+                switch (i) {
+                    case 0: // Type - show model name
+                        {
+                            const char* modelNames[] = {"Spiral2", "Density2", "Drive", "Purest", "Mojo", "Console", "Coils", "Tubey"};
+                            int idx = static_cast<int>(value);
+                            valueText = modelNames[juce::jlimit(0, 7, idx)];
+                            
+                            // Update dynamic labels when Type changes
+                            updateSaturateKnobLabels(idx);
+                        }
+                        break;
+                    case 1: // Drive - show dB
+                        valueText = juce::String(value, 1) + " dB";
+                        break;
+                    case 2: // Color - show as percentage or Hz/dB depending on model
+                        valueText = juce::String(static_cast<int>(value * 100)) + "%";
+                        break;
+                    case 3: // Shape - show as percentage
+                        valueText = juce::String(static_cast<int>(value * 100)) + "%";
+                        break;
+                    case 4: // Bias - show as is
+                        valueText = juce::String(value, 2);
+                        break;
+                    case 5: // Output - show dB
+                        valueText = juce::String(value, 1) + " dB";
+                        break;
+                    case 6: // Oversample
+                        {
+                            int os = static_cast<int>(value);
+                            const char* osNames[] = {"1×", "2×", "4×", "8×"};
+                            valueText = osNames[juce::jlimit(0, 3, os)];
+                        }
+                        break;
+                    case 7: // Mix - show as percentage
+                        valueText = juce::String(static_cast<int>(value * 100)) + "%";
+                        break;
+                }
+                saturateValueLabels[i]->setText(valueText, juce::dontSendNotification);
+                
+                // Update indicator bar
+                if (saturateIndicatorBars[i]) {
+                    float normValue = 0.0f;
+                    switch (i) {
+                        case 0: normValue = value / 7.0f; break;
+                        case 1: normValue = value / 36.0f; break;
+                        case 2: case 3: case 7: normValue = value; break; // 0-1
+                        case 4: normValue = (value + 0.2f) / 0.4f; break; // -0.2 to 0.2
+                        case 5: normValue = (value + 24.0f) / 36.0f; break; // -24 to 12
+                        case 6: normValue = value / 3.0f; break;
+                    }
+                    saturateIndicatorBars[i]->setValue(normValue);
+                }
+                
+                // Save snapshot for current step
+                updateSaturateParameterFromKnob(i);
+                
+                // Handle all steps toggle - update all steps when enabled
+                if (saturateAllStepsEnabled && i != 7) { // Skip Mix (knob 7) which is global
+                    // Save current selected step first (done above), then update all others
+                    int currentStep = saturateUiSelectedStep;
+                    for (int step = 0; step < 16; ++step) {
+                        if (step != currentStep) {
+                            auto snapshot = processorRef.getSaturateSafeSnapshot(step);
+                            switch (i) {
+                                case 0: snapshot.saturate.type = value; break;
+                                case 1: snapshot.saturate.drive = value; break;
+                                case 2: snapshot.saturate.color = value; break;
+                                case 3: snapshot.saturate.shape = value; break;
+                                case 4: snapshot.saturate.bias = value; break;
+                                case 5: snapshot.saturate.output = value; break;
+                                case 6: snapshot.saturate.oversample = value; break;
+                            }
+                            processorRef.setSaturateStepSnapshot(step, snapshot);
+                        }
+                    }
+                }
+            }
+        };
+    }
+    
+    // Initialize dynamic labels for default type (Spiral2)
+    updateSaturateKnobLabels(0);
+    
+    // Note: saturateGroup is populated in setupSaturateEffectsArea and setupSaturateSequencerArea
+    // Do not populate here to avoid double-adds
+    
+    DBG("[UI] Saturate knobs setup complete");
+}
+
+void PluginEditor::setupSaturateEffectsArea()
+{
+    DBG("[UI] Setting up Saturate effects area...");
+    
+    auto effectArea = juce::Rectangle<int>(25, 54, 413, 296);
+    
+    // Effect title
+    saturateEffectsTitle = std::make_unique<juce::Label>();
+    saturateEffectsTitle->setText("EFFECT", juce::dontSendNotification);
+    saturateEffectsTitle->setFont(juce::Font(27.648f, juce::Font::bold));
+    saturateEffectsTitle->setColour(juce::Label::textColourId, juce::Colours::white);
+    saturateEffectsTitle->setJustificationType(juce::Justification::centredLeft);
+    addAndMakeVisible(saturateEffectsTitle.get());
+    saturateEffectsTitle->setVisible(false);
+    saturateEffectsTitle->setBounds(effectArea.getX() + 10, effectArea.getY() + 5, 100, 30);
+    
+    // Saturate dice button
+    saturateDiceButton = std::make_unique<CustomDiceButton>();
+    addAndMakeVisible(saturateDiceButton.get());
+    saturateDiceButton->setVisible(false);
+    
+    const int diceSize = 32;
+    saturateDiceButton->setBounds(effectArea.getX() + 130, effectArea.getY() + 5, diceSize, diceSize);
+    if (assets.diceLarge != nullptr) {
+        saturateDiceButton->setDiceImage(assets.diceLarge->createCopy());
+    }
+    saturateDiceButton->onClick = [this]() {
+        randomizeSaturateKnobValues();
+    };
+    
+    // FX Power Button
+    saturateFxPowerButton = std::make_unique<juce::DrawableButton>("SaturateFxPower", juce::DrawableButton::ImageFitted);
+    addAndMakeVisible(saturateFxPowerButton.get());
+    saturateFxPowerButton->setVisible(false);
+    saturateFxPowerButton->setClickingTogglesState(true);
+    
+    saturateFxPowerButton->setColour(juce::DrawableButton::backgroundColourId, juce::Colours::transparentBlack);
+    saturateFxPowerButton->setColour(juce::DrawableButton::backgroundOnColourId, juce::Colours::transparentBlack);
+    
+    if (assets.fxPowerOn) {
+        saturateFxPowerButton->setImages(assets.fxPowerOn.get());
+    }
+    
+    const int buttonSize = 46;
+    saturateFxPowerButton->setBounds(effectArea.getX() + effectArea.getWidth() - buttonSize - 8 + 8 + 3, 
+                                     effectArea.getY() + 6 - 20 + 4, buttonSize, buttonSize);
+    saturateFxPowerButton->setToggleState(true, juce::dontSendNotification); // Default ON
+    saturateFxAreaEnabled = true;
+    saturateFxPowerButton->onClick = [this]() {
+        saturateFxAreaEnabled = saturateFxPowerButton->getToggleState();
+        updateSaturateFxAreaVisibility();
+        auto* param = processorRef.getAPVTS().getParameter("saturateEnabled");
+        if (param)
+            param->setValueNotifyingHost(saturateFxAreaEnabled ? 1.0f : 0.0f);
+    };
+    
+    // Populate Saturate group for visibility management (EXACT match Dub Delay)
+    saturateGroup.clear();
+    
+    saturateGroup.push_back(saturateEffectsTitle.get());
+    saturateGroup.push_back(saturateDiceButton.get());
+    saturateGroup.push_back(saturateFxPowerButton.get());
+    
+    // Add knobs and related components
+    for (int i = 0; i < 8; ++i) {
+        if (saturateKnobs[i]) saturateGroup.push_back(saturateKnobs[i].get());
+        if (saturateKnobLabels[i]) saturateGroup.push_back(saturateKnobLabels[i].get());
+        if (saturateValueLabels[i]) saturateGroup.push_back(saturateValueLabels[i].get());
+        if (saturateIndicatorBars[i]) saturateGroup.push_back(saturateIndicatorBars[i].get());
+        if (saturateDiceButtons[i]) saturateGroup.push_back(saturateDiceButtons[i].get());
+        // Lock buttons not implemented for Saturate yet
+    }
+    
+    DBG("[UI] Saturate effects area setup complete");
+}
+
+void PluginEditor::setupSaturateSequencerArea()
+{
+    DBG("[UI] Setting up Saturate sequencer area...");
+    
+    auto sequencerArea = juce::Rectangle<int>(25, 374, 413, 140);
+    
+    // "STEP" title
+    saturateStepTitle = std::make_unique<juce::Label>();
+    saturateStepTitle->setText("STEP", juce::dontSendNotification);
+    saturateStepTitle->setFont(juce::Font(22.118f, juce::Font::bold));
+    saturateStepTitle->setColour(juce::Label::textColourId, juce::Colours::white);
+    saturateStepTitle->setJustificationType(juce::Justification::centredLeft);
+    addAndMakeVisible(saturateStepTitle.get());
+    saturateStepTitle->setVisible(false);
+    saturateStepTitle->setBounds(sequencerArea.getX() + 10, sequencerArea.getY(), 80, 30);
+    
+    // Step buttons (2x8 grid)
+    const int buttonSize = 40;
+    const int buttonSpacing = 8;
+    const int startX = sequencerArea.getX() + 20;
+    const int startY = sequencerArea.getY() + 35;
+    
+    for (int i = 0; i < 16; ++i)
+    {
+        saturateStepButtons[i] = std::make_unique<StepButton>(i);
+        addAndMakeVisible(saturateStepButtons[i].get());
+        saturateStepButtons[i]->setVisible(false);
+        
+        int col = i % 8;
+        int row = i / 8;
+        int x = startX + col * (buttonSize + buttonSpacing);
+        int y = startY + row * (buttonSize + buttonSpacing);
+        
+        saturateStepButtons[i]->setBounds(x, y, buttonSize, buttonSize);
+        
+        // Set images for step buttons
+        if (assets.stepActive != nullptr)
+            saturateStepButtons[i]->setActiveImage(assets.stepActive->createCopy());
+        if (assets.stepInactive != nullptr)
+            saturateStepButtons[i]->setInactiveImage(assets.stepInactive->createCopy());
+        
+        saturateStepButtons[i]->onClick = [this, i]() {
+            onSaturateStepButtonClicked(i);
+        };
+    }
+    
+    // Step amount label
+    saturateStepAmountLabel = std::make_unique<juce::TextEditor>();
+    saturateStepAmountLabel->setText("16");
+    saturateStepAmountLabel->setFont(juce::Font(16.0f, juce::Font::bold));
+    saturateStepAmountLabel->setColour(juce::TextEditor::textColourId, juce::Colours::white);
+    saturateStepAmountLabel->setColour(juce::TextEditor::backgroundColourId, juce::Colours::transparentBlack);
+    saturateStepAmountLabel->setColour(juce::TextEditor::outlineColourId, juce::Colours::white);
+    saturateStepAmountLabel->setColour(juce::TextEditor::focusedOutlineColourId, juce::Colours::white);
+    saturateStepAmountLabel->setJustification(juce::Justification::centred);
+    saturateStepAmountLabel->setBorder(juce::BorderSize<int>(2));
+    saturateStepAmountLabel->setIndents(0, 0);
+    saturateStepAmountLabel->setInputRestrictions(2, "0123456789");
+    addAndMakeVisible(saturateStepAmountLabel.get());
+    saturateStepAmountLabel->setVisible(false);
+    saturateStepAmountLabel->setBounds(sequencerArea.getX() + 180, sequencerArea.getY() - 10, 30, 25);
+    
+    // Rate dropdown (EXACT match Dub Delay)
+    saturateRateDropdown = std::make_unique<juce::ComboBox>();
+    saturateRateDropdown->addItem("4", 1);
+    saturateRateDropdown->addItem("2", 2);
+    saturateRateDropdown->addItem("1", 3);
+    saturateRateDropdown->addItem("1/2", 4);
+    saturateRateDropdown->addItem("1/4", 5);
+    saturateRateDropdown->addItem("1/8", 6);
+    saturateRateDropdown->addItem("1/16", 7);
+    saturateRateDropdown->addItem("1/32", 8);
+    saturateRateDropdown->setColour(juce::ComboBox::backgroundColourId, juce::Colours::transparentBlack);
+    saturateRateDropdown->setColour(juce::ComboBox::outlineColourId, juce::Colours::transparentBlack);
+    saturateRateDropdown->setColour(juce::ComboBox::buttonColourId, juce::Colours::transparentBlack);
+    saturateRateDropdown->setColour(juce::ComboBox::textColourId, juce::Colours::white);
+    saturateRateDropdown->setColour(juce::ComboBox::arrowColourId, juce::Colours::white);
+    
+    // Set selected ID from processor state (like Dub Delay)
+    int divIdx = processorRef.getSaturateSeqState().divisionIndex.load();
+    saturateRateDropdown->setSelectedId(divIdx + 1, juce::dontSendNotification);
+    
+    addAndMakeVisible(saturateRateDropdown.get());
+    saturateRateDropdown->setVisible(false);
+    saturateRateDropdown->setBounds(sequencerArea.getX() + 220, sequencerArea.getY() - 10, 74, 25);
+    
+    saturateRateDropdown->onChange = [this]() {
+        int selectedId = saturateRateDropdown->getSelectedId();
+        if (selectedId > 0) {
+            int divisionIndex = selectedId - 1;
+            processorRef.setSaturateDivisionIndex(divisionIndex);
+            DBG("[UI] Saturate rate changed to index: " << divisionIndex);
+        }
+    };
+    
+    // STD toggle
+    saturateStdToggle = std::make_unique<CircularToggleButton>();
+    saturateStdToggle->setButtonText("-");
+    addAndMakeVisible(saturateStdToggle.get());
+    saturateStdToggle->setVisible(false);
+    saturateStdToggle->setBounds(sequencerArea.getX() + 288, sequencerArea.getY() - 14, 30, 30);
+    
+    // Step dice button
+    saturateStepDiceButton = std::make_unique<CustomDiceButton>();
+    saturateStepDiceButton->setVisible(false);
+    int stepDiceSize = static_cast<int>(35 * 0.7);
+    saturateStepDiceButton->setBounds(sequencerArea.getX() + 75, sequencerArea.getY() + 5, stepDiceSize, stepDiceSize);
+    addAndMakeVisible(saturateStepDiceButton.get());
+    if (assets.diceLarge != nullptr) {
+        saturateStepDiceButton->setDiceImage(assets.diceLarge->createCopy());
+    }
+    saturateStepDiceButton->onClick = [this]() {
+        DBG("[UI] Saturate step dice button clicked - randomizing all step snapshots");
+        
+        juce::Random& rng = juce::Random::getSystemRandom();
+        
+        for (int step = 0; step < 16; ++step) {
+            auto snapshot = processorRef.getSaturateSafeSnapshot(step);
+            
+            // Randomize all Saturate parameters for this step
+            snapshot.saturate.type = static_cast<float>(rng.nextInt(8)); // 0-7
+            snapshot.saturate.drive = 6.0f + rng.nextFloat() * 24.0f; // 6-30 dB
+            snapshot.saturate.color = 0.3f + rng.nextFloat() * 0.5f; // 0.3-0.8
+            snapshot.saturate.shape = 0.2f + rng.nextFloat() * 0.6f; // 0.2-0.8
+            snapshot.saturate.bias = -0.15f + rng.nextFloat() * 0.3f; // -0.15 to 0.15
+            snapshot.saturate.output = -12.0f + rng.nextFloat() * 18.0f; // -12 to +6 dB
+            snapshot.saturate.oversample = static_cast<float>(rng.nextInt(4)); // 0-3
+            
+            processorRef.setSaturateStepSnapshot(step, snapshot);
+        }
+        
+        // Reload current step to UI (don't send notification to avoid triggering save)
+        auto currentSnapshot = processorRef.getSaturateSafeSnapshot(saturateUiSelectedStep);
+        if (saturateKnobs[0]) saturateKnobs[0]->setValue(currentSnapshot.saturate.type, juce::dontSendNotification);
+        if (saturateKnobs[1]) saturateKnobs[1]->setValue(currentSnapshot.saturate.drive, juce::dontSendNotification);
+        if (saturateKnobs[2]) saturateKnobs[2]->setValue(currentSnapshot.saturate.color, juce::dontSendNotification);
+        if (saturateKnobs[3]) saturateKnobs[3]->setValue(currentSnapshot.saturate.shape, juce::dontSendNotification);
+        if (saturateKnobs[4]) saturateKnobs[4]->setValue(currentSnapshot.saturate.bias, juce::dontSendNotification);
+        if (saturateKnobs[5]) saturateKnobs[5]->setValue(currentSnapshot.saturate.output, juce::dontSendNotification);
+        if (saturateKnobs[6]) saturateKnobs[6]->setValue(currentSnapshot.saturate.oversample, juce::dontSendNotification);
+        
+        // Update labels
+        updateSaturateKnobLabels(static_cast<int>(currentSnapshot.saturate.type));
+        for (int i = 0; i < 7; ++i) {
+            if (saturateKnobs[i] && saturateKnobs[i]->onValueChange) {
+                saturateKnobs[i]->onValueChange();
+            }
+        }
+        
+        DBG("[UI] All 16 Saturate steps randomized");
+    };
+    
+    // Step power button (EXACT match Dub Delay)
+    saturateStepPowerButton = std::make_unique<juce::DrawableButton>("SaturateStepPower", juce::DrawableButton::ImageFitted);
+    
+    // Make button background transparent (match Dub Delay)
+    saturateStepPowerButton->setColour(juce::DrawableButton::backgroundColourId, juce::Colours::transparentBlack);
+    saturateStepPowerButton->setColour(juce::DrawableButton::backgroundOnColourId, juce::Colours::transparentBlack);
+    
+    if (assets.stepPowerOn) {
+        saturateStepPowerButton->setImages(assets.stepPowerOn.get());
+    }
+    addAndMakeVisible(saturateStepPowerButton.get());
+    saturateStepPowerButton->setVisible(false);
+    saturateStepPowerButton->setClickingTogglesState(true);
+    const int stepPowerSize = 40;
+    saturateStepPowerButton->setBounds(sequencerArea.getX() + sequencerArea.getWidth() - stepPowerSize - 5 + 15 - 5 - 1, sequencerArea.getY() - 5 - stepPowerSize + 25 + 5, stepPowerSize, stepPowerSize);
+    saturateStepPowerButton->setToggleState(saturateStepAreaEnabled, juce::dontSendNotification);
+    saturateStepPowerButton->setClickingTogglesState(true);
+    saturateStepPowerButton->onClick = [this]() {
+        saturateStepAreaEnabled = saturateStepPowerButton->getToggleState();
+        processorRef.setSaturateSequencerEnabled(saturateStepAreaEnabled);
+        updateSaturateStepAreaVisibility();
+    };
+    
+    // Add sequencer components to group
+    if (saturateStepTitle) saturateGroup.push_back(saturateStepTitle.get());
+    if (saturateStepAmountLabel) saturateGroup.push_back(saturateStepAmountLabel.get());
+    if (saturateRateDropdown) saturateGroup.push_back(saturateRateDropdown.get());
+    if (saturateStdToggle) saturateGroup.push_back(saturateStdToggle.get());
+    if (saturateStepDiceButton) saturateGroup.push_back(saturateStepDiceButton.get());
+    if (saturateStepPowerButton) saturateGroup.push_back(saturateStepPowerButton.get());
+    
+    for (int i = 0; i < 16; ++i) {
+        if (saturateStepButtons[i]) saturateGroup.push_back(saturateStepButtons[i].get());
+    }
+    
+    DBG("[UI] Saturate sequencer area setup complete");
+}
+
+void PluginEditor::setupSaturateAllStepsToggle()
+{
+    DBG("[UI] Setting up Saturate all steps toggle...");
+    
+    auto effectArea = juce::Rectangle<int>(25, 54, 413, 296);
+    
+    // All Steps toggle button (EXACT match Dub Delay)
+    saturateAllStepsToggle = std::make_unique<AllStepsToggleButton>();
+    addAndMakeVisible(saturateAllStepsToggle.get());
+    saturateAllStepsToggle->setVisible(false);
+    
+    const int buttonSize = 29;
+    saturateAllStepsToggle->setBounds(effectArea.getX() + effectArea.getWidth()/2 - buttonSize/2 + 30, 
+                                       effectArea.getY() - 1, buttonSize, buttonSize);
+    
+    // CRITICAL: Must use static_cast and setImages BEFORE any other setup
+    if (assets.stepTopInactive && assets.stepTopActive) {
+        static_cast<AllStepsToggleButton*>(saturateAllStepsToggle.get())->setImages(
+            assets.stepTopInactive->createCopy(),
+            assets.stepTopActive->createCopy()
+        );
+    }
+    
+    saturateAllStepsToggle->setToggleState(false, juce::dontSendNotification);
+    saturateAllStepsToggle->onClick = [this]() {
+        saturateAllStepsEnabled = saturateAllStepsToggle->getToggleState();
+        DBG("[UI] Saturate All Steps toggle: " << (saturateAllStepsEnabled ? "ON" : "OFF"));
+        saturateAllStepsLabel->setAlpha(saturateAllStepsEnabled ? 1.0f : 0.5f);
+    };
+    
+    // All Steps label (match Dub Delay)
+    saturateAllStepsLabel = std::make_unique<juce::Label>();
+    saturateAllStepsLabel->setText("All Steps", juce::dontSendNotification);
+    saturateAllStepsLabel->setFont(juce::Font(14.4f, juce::Font::bold));
+    saturateAllStepsLabel->setColour(juce::Label::textColourId, juce::Colours::white);
+    saturateAllStepsLabel->setJustificationType(juce::Justification::centredLeft);
+    addAndMakeVisible(saturateAllStepsLabel.get());
+    saturateAllStepsLabel->setVisible(false);
+    saturateAllStepsLabel->setAlpha(1.0f); // Start fully visible (will grey when toggled off)
+    saturateAllStepsLabel->setBounds(effectArea.getX() + effectArea.getWidth()/2 + buttonSize/2 + 5 + 30, 
+                                effectArea.getY() + 1, 80, 24);
+    
+    // Add all steps toggle to group
+    if (saturateAllStepsToggle) saturateGroup.push_back(saturateAllStepsToggle.get());
+    if (saturateAllStepsLabel) saturateGroup.push_back(saturateAllStepsLabel.get());
+    
+    DBG("[UI] Saturate all steps toggle setup complete. Total components in saturateGroup: " << saturateGroup.size());
+}
+
+void PluginEditor::updateSaturateFxAreaVisibility()
+{
+    float alpha = saturateFxAreaEnabled ? 1.0f : 0.3f;
+    
+    // Update knobs and labels alpha
+    for (int i = 0; i < 8; ++i) {
+        if (saturateKnobs[i]) { 
+            saturateKnobs[i]->setAlpha(alpha); 
+            saturateKnobs[i]->setEnabled(saturateFxAreaEnabled);
+        }
+        if (saturateKnobLabels[i]) saturateKnobLabels[i]->setAlpha(alpha);
+        if (saturateValueLabels[i]) saturateValueLabels[i]->setAlpha(alpha);
+        if (saturateIndicatorBars[i]) saturateIndicatorBars[i]->setAlpha(alpha);
+    }
+    
+    if (saturateDiceButton) {
+        saturateDiceButton->setAlpha(alpha);
+        saturateDiceButton->setEnabled(saturateFxAreaEnabled);
+    }
+    if (saturateEffectsTitle) saturateEffectsTitle->setAlpha(alpha);
+    
+    repaint();
+}
+
+void PluginEditor::updateSaturateStepAreaVisibility()
+{
+    float alpha = saturateStepAreaEnabled ? 1.0f : 0.3f;
+    
+    // Update step buttons
+    for (int i = 0; i < 16; ++i) {
+        if (saturateStepButtons[i]) {
+            saturateStepButtons[i]->setAlpha(alpha);
+            saturateStepButtons[i]->setEnabled(saturateStepAreaEnabled);
+        }
+    }
+    
+    // Update sequencer controls
+    if (saturateStepAmountLabel) {
+        saturateStepAmountLabel->setAlpha(alpha);
+        saturateStepAmountLabel->setEnabled(saturateStepAreaEnabled);
+    }
+    if (saturateRateDropdown) {
+        saturateRateDropdown->setAlpha(alpha);
+        saturateRateDropdown->setEnabled(saturateStepAreaEnabled);
+    }
+    if (saturateStdToggle) {
+        saturateStdToggle->setAlpha(alpha);
+        saturateStdToggle->setEnabled(saturateStepAreaEnabled);
+    }
+    if (saturateStepDiceButton) {
+        saturateStepDiceButton->setAlpha(alpha);
+        saturateStepDiceButton->setEnabled(saturateStepAreaEnabled);
+    }
+    
+    repaint();
+}
+
+void PluginEditor::updateSaturateKnobLabels(int type)
+{
+    struct ModelInfo {
+        const char* label2;
+        const char* label3;
+        const char* label4;
+    };
+    
+    static const ModelInfo models[8] = {
+        {"Density", "Asym", "Bias"}, // Spiral2
+        {"Thickness", "Focus", "LoCut"}, // Density2
+        {"Hardness", "Asym", "LoCut"}, // Drive
+        {"Saturation", "AirGain", "LoCut"}, // PurestDrive
+        {"Warmth", "Presence", "HiCut"}, // Mojo
+        {"Trim", "Focus", "HiCut"}, // Console
+        {"Iron", "Asym", "HiBump"}, // Coils
+        {"EvenBlend", "Sag", "LoCut"}  // Tubey
+    };
+    
+    if (type < 0 || type >= 8) return;
+    
+    auto& info = models[type];
+    
+    // Update labels
+    if (saturateKnobLabels[2]) saturateKnobLabels[2]->setText(info.label2, juce::dontSendNotification);
+    if (saturateKnobLabels[3]) saturateKnobLabels[3]->setText(info.label3, juce::dontSendNotification);
+    if (saturateKnobLabels[4]) saturateKnobLabels[4]->setText(info.label4, juce::dontSendNotification);
+    
+    // Update ranges for knobs 2-4 (Color, Shape, Bias)
+    // Note: The knobs themselves remain normalized 0-1; we just update the display
+    // The actual DSP mapping happens in SaturateProcessor based on the model
+}
+
+void PluginEditor::onSaturateStepButtonClicked(int stepIndex)
+{
+    if (stepIndex < 0 || stepIndex >= 16) return;
+    
+    saturateUiSelectedStep = stepIndex;
+    processorRef.setSaturateSelectedStep(stepIndex);
+    
+    auto snapshot = processorRef.getSaturateSafeSnapshot(stepIndex);
+    
+    // Set flag to prevent snapshot saving during load
+    isLoadingFromSnapshot.store(true);
+    
+    if (!saturateAllStepsEnabled) {
+        // Update knobs with values from the snapshot
+        if (saturateKnobs[0]) saturateKnobs[0]->setValue(snapshot.saturate.type, juce::dontSendNotification);
+        if (saturateKnobs[1]) saturateKnobs[1]->setValue(snapshot.saturate.drive, juce::dontSendNotification);
+        if (saturateKnobs[2]) saturateKnobs[2]->setValue(snapshot.saturate.color, juce::dontSendNotification);
+        if (saturateKnobs[3]) saturateKnobs[3]->setValue(snapshot.saturate.shape, juce::dontSendNotification);
+        if (saturateKnobs[4]) saturateKnobs[4]->setValue(snapshot.saturate.bias, juce::dontSendNotification);
+        if (saturateKnobs[5]) saturateKnobs[5]->setValue(snapshot.saturate.output, juce::dontSendNotification);
+        if (saturateKnobs[6]) saturateKnobs[6]->setValue(snapshot.saturate.oversample, juce::dontSendNotification);
+        // Knob 7 (Mix) is global, not per-step
+        
+        // Update dynamic labels based on type
+        updateSaturateKnobLabels(static_cast<int>(snapshot.saturate.type));
+        
+        // Trigger value change callbacks to update labels (but not save snapshots)
+        for (int i = 0; i < 7; ++i) { // Only first 7 knobs, Mix is global
+            if (saturateKnobs[i] && saturateKnobs[i]->onValueChange) {
+                saturateKnobs[i]->onValueChange();
+            }
+        }
+    }
+    
+    // Clear flag
+    isLoadingFromSnapshot.store(false);
+    
+    updateSaturateSequencerUI();
+    repaint();
+}
+
+void PluginEditor::updateSaturateSequencerUI()
+{
+    int selectedStep = saturateUiSelectedStep;
+    int playingStep = processorRef.getSaturateCurrentStep();
+    const int stepsUsed = processorRef.getSaturateSeqState().stepsUsed.load();
+    
+    for (int i = 0; i < 16; ++i) {
+        if (saturateStepButtons[i] != nullptr) {
+            saturateStepButtons[i]->setSelected(i == selectedStep);
+            bool sequencerEnabled = processorRef.getSaturateSeqState().enabled.load();
+            saturateStepButtons[i]->setPlaying(sequencerEnabled && (i == playingStep) && (i != selectedStep));
+            bool shouldBeEnabled = i < stepsUsed;
+            saturateStepButtons[i]->setEnabledStep(shouldBeEnabled);
+        }
+    }
+    
+    // Update step amount display
+    if (saturateStepAmountLabel != nullptr && !saturateStepAmountLabel->hasKeyboardFocus(true)) {
+        saturateStepAmountLabel->setText(juce::String(stepsUsed), false);
+    }
+    
+    repaint();
+}
+
+void PluginEditor::updateSaturateParameterFromKnob(int knobIndex)
+{
+    if (knobIndex < 0 || knobIndex >= 8 || !saturateKnobs[knobIndex])
+        return;
+    
+    float value = saturateKnobs[knobIndex]->getValue();
+    
+    // Update current step snapshot
+    processorRef.updateSaturateCurrentStepSnapshot(knobIndex, value);
+}
+
+void PluginEditor::randomizeSaturateKnobValues()
+{
+    DBG("[UI] Randomizing Saturate knob values...");
+    for (int i = 0; i < 8; ++i) {
+        if (saturateKnobs[i]) {
+            randomizeIndividualSaturateKnob(i);
+        }
+    }
+}
+
+void PluginEditor::randomizeIndividualSaturateKnob(int knobIndex)
+{
+    if (knobIndex < 0 || knobIndex >= 8) return;
+    if (!saturateKnobs[knobIndex]) return;
+    
+    juce::Random rand;
+    float newValue = 0.0f;
+    
+    switch (knobIndex) {
+        case 0: // Type (0-7)
+            newValue = static_cast<float>(rand.nextInt(8));
+            break;
+        case 1: // Drive (0-36 dB)
+            newValue = 6.0f + rand.nextFloat() * 24.0f; // 6-30 dB (musical range)
+            break;
+        case 2: // Color (0-1)
+            newValue = 0.3f + rand.nextFloat() * 0.5f; // 0.3-0.8
+            break;
+        case 3: // Shape (0-1)
+            newValue = 0.2f + rand.nextFloat() * 0.6f; // 0.2-0.8
+            break;
+        case 4: // Bias (-0.2 to 0.2)
+            newValue = -0.15f + rand.nextFloat() * 0.3f; // -0.15 to 0.15
+            break;
+        case 5: // Output (-24 to +12 dB)
+            newValue = -12.0f + rand.nextFloat() * 18.0f; // -12 to +6 dB
+            break;
+        case 6: // Oversample (0-3)
+            newValue = static_cast<float>(rand.nextInt(4));
+            break;
+        case 7: // Mix (0-1)
+            newValue = 0.3f + rand.nextFloat() * 0.5f; // 0.3-0.8
+            break;
+    }
+    
+    saturateKnobs[knobIndex]->setValue(newValue, juce::sendNotification);
 }
 
 void PluginEditor::setupForm2Knobs()

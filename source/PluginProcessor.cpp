@@ -116,6 +116,26 @@ PluginProcessor::PluginProcessor()
     formantSeq.divisionIndex.store(5); // 1/8 default
     formantSeq.playingStep.store(0);
     
+    // Initialize Saturate sequencer
+    saturateSeq.enabled.store(true); // Start enabled
+    saturateSeq.stepsUsed.store(16);
+    saturateSeq.divisionIndex.store(5); // 1/8 default (index 5 = item ID 6)
+    saturateSeq.playingStep.store(0);
+    saturateUiSelectedStep.store(0); // Initialize UI selected step
+    
+    // Initialize Saturate step snapshots with defaults
+    for (int i = 0; i < 16; ++i) {
+        saturateStepSnapshots[i].saturate.type = 0.0f; // Spiral2
+        saturateStepSnapshots[i].saturate.drive = 12.0f;
+        saturateStepSnapshots[i].saturate.color = 0.5f;
+        saturateStepSnapshots[i].saturate.shape = 0.4f;
+        saturateStepSnapshots[i].saturate.bias = 0.0f;
+        saturateStepSnapshots[i].saturate.output = 0.0f;
+        saturateStepSnapshots[i].saturate.oversample = 2.0f; // 4×
+        saturateStepSnapshots[i].saturate.mix = 1.0f;
+    }
+    DBG("[Stepper] Initialized Saturate step snapshots with default values");
+    
     // Initialize Redux sequencer
     reduxSeq.enabled.store(true); // Start enabled
     reduxSeq.stepsUsed.store(16);
@@ -447,6 +467,18 @@ juce::AudioProcessorValueTreeState::ParameterLayout PluginProcessor::createParam
     params.push_back(std::make_unique<juce::AudioParameterBool>("form2Enabled", "Form 2 Enabled", true));
     params.push_back(std::make_unique<juce::AudioParameterBool>("form2StepEnabled", "Form 2 Step Enabled", true));
     
+    // Saturate Parameters
+    params.push_back(std::make_unique<juce::AudioParameterInt>("satType", "Saturate Type", 0, 7, 0));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("satDrive", "Drive", 0.0f, 36.0f, 12.0f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("satColor", "Color", 0.0f, 1.0f, 0.5f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("satShape", "Shape", 0.0f, 1.0f, 0.4f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("satBias", "Bias", -0.2f, 0.2f, 0.0f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("satOut", "Output", -24.0f, 12.0f, 0.0f));
+    params.push_back(std::make_unique<juce::AudioParameterInt>("satOsMode", "Oversample", 0, 3, 2)); // 0=1×, 1=2×, 2=4×, 3=8×
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("satMix", "Mix", 0.0f, 1.0f, 1.0f));
+    params.push_back(std::make_unique<juce::AudioParameterBool>("saturateEnabled", "Saturate Enabled", false));
+    params.push_back(std::make_unique<juce::AudioParameterBool>("saturateStepEnabled", "Saturate Step Enabled", true));
+    
     return { params.begin(), params.end() };
 }
 
@@ -550,6 +582,10 @@ void PluginProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
     // Prepare Formant DSP
     formantProcessor.prepare(sampleRate, samplesPerBlock);
     formantSeq.prepare(sampleRate); // Initialize Formant sequencer with sample rate
+    
+    // Prepare Saturate DSP
+    saturateProcessor.prepare(sampleRate, samplesPerBlock);
+    saturateSeq.prepare(sampleRate); // Initialize Saturate sequencer with sample rate
     
     // Prepare Form 2 DSP
     juce::dsp::ProcessSpec form2Spec;
@@ -1827,7 +1863,18 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                 }
                 break;
             }
-            
+
+            case EffectID::Saturate:
+            {
+                auto* saturateEnabledParam = valueTreeState.getRawParameterValue("saturateEnabled");
+                bool isSaturateEnabled = saturateEnabledParam ? (saturateEnabledParam->load() > 0.5f) : false;
+                
+                if (isSaturateEnabled) {
+                    saturateProcessor.process(buffer, buffer.getNumSamples(), valueTreeState);
+                }
+                break;
+            }
+
             case EffectID::Form2:
             {
                 // Check if effect is enabled
@@ -3374,6 +3421,56 @@ void PluginProcessor::updateDubDelayCurrentStepSnapshot(int knobIndex, float val
             break;
         case 6: // RegenDamp
             dubdelayStepSnapshots[currentStep].dubdelay.regenDamp = value;
+            break;
+    }
+}
+
+// Saturate snapshot accessors
+StepSnapshot PluginProcessor::getSaturateSafeSnapshot(int step) const
+{
+    if (step >= 0 && step < 16) {
+        return saturateStepSnapshots[step];
+    }
+    return saturateStepSnapshots[0];
+}
+
+void PluginProcessor::setSaturateStepSnapshot(int step, const StepSnapshot& snapshot) noexcept
+{
+    if (step >= 0 && step < 16) {
+        saturateStepSnapshots[step] = snapshot;
+    }
+}
+
+void PluginProcessor::updateSaturateCurrentStepSnapshot(int knobIndex, float value)
+{
+    int currentStep = saturateUiSelectedStep.load();
+    if (currentStep < 0 || currentStep >= 16) return;
+    
+    // Mix (knob 7) is global, not saved to snapshots
+    if (knobIndex == 7) return;
+    
+    // Update the specific Saturate parameter in the snapshot
+    switch (knobIndex) {
+        case 0: // Type
+            saturateStepSnapshots[currentStep].saturate.type = value;
+            break;
+        case 1: // Drive
+            saturateStepSnapshots[currentStep].saturate.drive = value;
+            break;
+        case 2: // Color
+            saturateStepSnapshots[currentStep].saturate.color = value;
+            break;
+        case 3: // Shape
+            saturateStepSnapshots[currentStep].saturate.shape = value;
+            break;
+        case 4: // Bias
+            saturateStepSnapshots[currentStep].saturate.bias = value;
+            break;
+        case 5: // Output
+            saturateStepSnapshots[currentStep].saturate.output = value;
+            break;
+        case 6: // Oversample
+            saturateStepSnapshots[currentStep].saturate.oversample = value;
             break;
     }
 }

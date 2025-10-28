@@ -116,13 +116,24 @@ struct StepSnapshot {
        } formant;
        
        struct {
-           float vowel = 0.0f;          // 0-4 (A=0, E=1, I=2, O=3, U=4)
-           float emphasis = 12.0f;      // -6 to +18 dB (emphasis gain)
-           float sharpness = 10.0f;     // 0.4-18 (Q factor/sharpness)
-           float shift = 1.0f;          // 0.5-2.0 (gender/size multiplier)
-           float brightness = 3.0f;    // -12 to +12 dB (F4 brightness)
-           float motion = 0.0f;        // 0-1 (LFO motion depth)
-           float air = 0.0f;            // 0-1 (breath/air amount)
-           float mix = 1.0f;            // 0-1 (dry/wet mix)
+           int rootNote = 0;         // 0-11 (C=0, C#=1, ... B=11)
+           int scale = 0;            // 0-6 (0=Major, 1=Minor, 2=Pent, 3=Blues, 4=Dorian, 5=Whole, 6=Chrom)
+           int chordSize = 4;        // 1-8 (number of voices in carrier)
+           float shift = 1.0f;       // 0.5-2.0 (pitch multiplier)
+           float color = 0.0f;       // -12 to +12 dB (vocoder band tilt)
+           float motion = 0.0f;     // 0-1 (LFO motion depth)
+           float resynth = 0.5f;     // 0-1 (formants vs vocoder mix)
+           float mix = 0.8f;         // 0-1 (dry/wet mix)
        } form2;
+       
+       struct {
+           float type = 0.0f;        // 0-7 (saturation model: Spiral2, Density2, Drive, Purest, Mojo, Console, Coils, Tubey)
+           float drive = 12.0f;      // 0-36 dB
+           float color = 0.5f;       // 0-1 (dynamic based on model)
+           float shape = 0.4f;       // 0-1 (dynamic based on model)
+           float bias = 0.0f;        // -0.2 to 0.2 (dynamic based on model)
+           float output = 0.0f;      // -24 to +12 dB
+           float oversample = 2.0f;  // 0-3 (1×, 2×, 4×, 8×)
+           float mix = 1.0f;         // 0-1 (dry/wet mix)
+       } saturate;
 };

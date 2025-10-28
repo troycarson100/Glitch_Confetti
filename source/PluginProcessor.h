@@ -13,6 +13,7 @@
 #include "dsp/CompressEngine.h"
 #include "dsp/PhaseBloomEngine.h"
 #include "dsp/FormantProcessor.h"
+#include "dsp/SaturateProcessor.h"
 #include "dsp/Form2Processor.h"
 #include "Effects/Redux/ReduxBank.h"
 #include "dsp/DspFlags.h"
@@ -485,6 +486,10 @@ private:
     SeqState dubdelaySeq;
     std::atomic<int> dubdelayUiSelectedStep { 0 };  // Dub Delay editor's selected step
     
+    // Saturate Sequencer State (independent from all other sequencers)
+    SeqState saturateSeq;
+    std::atomic<int> saturateUiSelectedStep { 0 };  // Saturate editor's selected step
+    
     // Space Delay Sequencer State (independent from all other sequencers)
     SeqState spacedelaySeq;
     std::atomic<int> spacedelayUiSelectedStep { 0 };  // Space Delay editor's selected step
@@ -502,6 +507,7 @@ private:
     std::array<StepSnapshot, 16> granularStepSnapshots;
     std::array<StepSnapshot, 16> slicerStepSnapshots;
     std::array<StepSnapshot, 16> dubdelayStepSnapshots;
+    std::array<StepSnapshot, 16> saturateStepSnapshots;
     std::array<StepSnapshot, 16> spacedelayStepSnapshots;
     
     // Level tracking for meters
@@ -562,6 +568,27 @@ public:
     FormantProcessor formantProcessor;
     
     FormantProcessor& getFormantProcessor() { return formantProcessor; }
+    
+    // Saturate DSP Implementation
+    SaturateProcessor saturateProcessor;
+    
+    SaturateProcessor& getSaturateProcessor() { return saturateProcessor; }
+    
+    // Saturate sequencer accessors
+    SeqState& getSaturateSeqState() { return saturateSeq; }
+    const SeqState& getSaturateSeqState() const { return saturateSeq; }
+    int getSaturatePlayingStep() const noexcept { return saturateSeq.playingStep.load(); }
+    int getSaturateCurrentStep() const noexcept { return saturateSeq.currentStep.load(); }
+    int getSaturateUiSelectedStep() const noexcept { return saturateUiSelectedStep.load(); }
+    void setSaturateSelectedStep(int step) noexcept { saturateUiSelectedStep.store(step); }
+    void setSaturateSequencerEnabled(bool enabled) noexcept { saturateSeq.enabled.store(enabled); }
+    void setSaturateStepsUsed(int steps) noexcept { saturateSeq.stepsUsed.store(juce::jlimit(1, 16, steps)); }
+    void setSaturateDivisionIndex(int idx) noexcept { saturateSeq.divisionIndex.store(juce::jlimit(0, 7, idx)); }
+    
+    // Saturate snapshot accessors
+    StepSnapshot getSaturateSafeSnapshot(int step) const;
+    void setSaturateStepSnapshot(int step, const StepSnapshot& snapshot) noexcept;
+    void updateSaturateCurrentStepSnapshot(int knobIndex, float value);
     
     // Form 2 DSP Implementation
     Form2Processor form2Processor;

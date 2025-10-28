@@ -1034,6 +1034,38 @@ public:
     std::vector<juce::Component*> reduxGroup; // All Redux UI components for visibility toggling
     std::vector<juce::Component*> phaseBloomGroup; // All PhaseBloom UI components for visibility toggling
     std::vector<juce::Component*> formantGroup; // All Formant UI components for visibility toggling
+    
+    // Saturate page components (8 knobs)
+    std::array<std::unique_ptr<CustomKnob>, 8> saturateKnobs;
+    std::array<std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>, 8> saturateAttachments;
+    std::array<std::unique_ptr<juce::Label>, 8> saturateKnobLabels;
+    std::array<std::unique_ptr<juce::Label>, 8> saturateValueLabels;
+    std::array<std::unique_ptr<IndicatorBar>, 8> saturateIndicatorBars;
+    std::array<std::unique_ptr<CustomDiceButton>, 8> saturateDiceButtons;
+    
+    // Saturate effects area
+    std::unique_ptr<juce::Label> saturateEffectsTitle;
+    std::unique_ptr<CustomDiceButton> saturateDiceButton;
+    std::unique_ptr<juce::DrawableButton> saturateFxPowerButton;
+    bool saturateFxAreaEnabled = true; // Default to enabled like other effects
+    
+    // Saturate step sequencer area
+    std::array<std::unique_ptr<StepButton>, 16> saturateStepButtons;
+    int saturateUiSelectedStep = 0;
+    std::unique_ptr<juce::TextEditor> saturateStepAmountLabel;
+    std::unique_ptr<juce::ComboBox> saturateRateDropdown;
+    std::unique_ptr<CircularToggleButton> saturateStdToggle;
+    std::unique_ptr<juce::Label> saturateStepTitle;
+    std::unique_ptr<CustomDiceButton> saturateStepDiceButton;
+    std::unique_ptr<juce::DrawableButton> saturateStepPowerButton;
+    bool saturateStepAreaEnabled = true;
+    
+    // Saturate All Steps toggle
+    std::unique_ptr<AllStepsToggleButton> saturateAllStepsToggle;
+    std::unique_ptr<juce::Label> saturateAllStepsLabel;
+    bool saturateAllStepsEnabled = false;
+    
+    std::vector<juce::Component*> saturateGroup; // All Saturate UI components for visibility toggling
     std::vector<juce::Component*> form2Group; // All Form 2 UI components for visibility toggling
     
     // Redux page container for isolation
@@ -1160,6 +1192,20 @@ public:
         void setupDubDelayEffectsArea();
         void setupDubDelaySequencerArea();
         void setupDubDelayAllStepsToggle();
+        
+        // Saturate page helper methods
+        void setupSaturateKnobs();
+        void setupSaturateEffectsArea();
+        void setupSaturateSequencerArea();
+        void setupSaturateAllStepsToggle();
+        void updateSaturateKnobLabels(int type);
+        void updateSaturateFxAreaVisibility();
+        void updateSaturateStepAreaVisibility();
+        void updateSaturateSequencerUI();
+        void onSaturateStepButtonClicked(int stepIndex);
+        void updateSaturateParameterFromKnob(int knobIndex);
+        void randomizeSaturateKnobValues();
+        void randomizeIndividualSaturateKnob(int knobIndex);
         void updateDubDelayFxAreaVisibility();
         void updateDubDelayStepAreaVisibility();
         void randomizeDubDelayKnobValues();
