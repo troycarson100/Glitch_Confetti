@@ -462,7 +462,7 @@ void SaturateProcessor::process(juce::AudioBuffer<float>& buffer, int numSamples
     }
 }
 
-void SaturateProcessor::processWithSnapshot(juce::AudioBuffer<float>& buffer, int numSamples, float type, float drive, float color, float shape, float bias, float output, float mix)
+void SaturateProcessor::processWithSnapshot(juce::AudioBuffer<float>& buffer, int numSamples, float type, float drive, float color, float shape, float bias, float output, float mix, bool stepChanged)
 {
     if (numSamples == 0 || sampleRate <= 0.0) return;
     if (buffer.getNumChannels() < 2) return;
@@ -502,13 +502,26 @@ void SaturateProcessor::processWithSnapshot(juce::AudioBuffer<float>& buffer, in
     int osFactor = 1 << osMode;
     currentOsFactor = osFactor;
     
-    // Update smoothed parameters
-    driveSm.setTargetValue(driveVal);
-    colorSm.setTargetValue(colorVal);
-    shapeSm.setTargetValue(shapeVal);
-    biasSm.setTargetValue(biasVal);
-    outSm.setTargetValue(outVal);
-    mixSm.setTargetValue(mixVal);
+    // Update smoothed parameters - reset smoothing on step change for instant response when needed
+    // But still use smoothing to prevent clicks during transitions
+    if (stepChanged) {
+        // On step change, reset smoothing to prevent clicks
+        // Keep current smoothing time but start from current values
+        driveSm.setCurrentAndTargetValue(driveVal);
+        colorSm.setCurrentAndTargetValue(colorVal);
+        shapeSm.setCurrentAndTargetValue(shapeVal);
+        biasSm.setCurrentAndTargetValue(biasVal);
+        outSm.setCurrentAndTargetValue(outVal);
+        mixSm.setCurrentAndTargetValue(mixVal);
+    } else {
+        // Normal smoothing between blocks
+        driveSm.setTargetValue(driveVal);
+        colorSm.setTargetValue(colorVal);
+        shapeSm.setTargetValue(shapeVal);
+        biasSm.setTargetValue(biasVal);
+        outSm.setTargetValue(outVal);
+        mixSm.setTargetValue(mixVal);
+    }
     
     // Get current smoothed values
     float driveCurrent = driveSm.getCurrentValue();

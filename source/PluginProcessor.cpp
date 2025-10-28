@@ -1907,6 +1907,10 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                     // Read parameters from sequencer snapshot OR APVTS (like Dub Delay)
                     // Only use sequencer if it's enabled, active, and has a valid playing step
                     if (seqEnabled && seqActive && playingStep >= 0 && playingStep < 16) {
+                        // Track step changes for smooth parameter transitions
+                        static int lastPlayingStep = -1;
+                        bool stepChanged = (playingStep != lastPlayingStep);
+                        
                         // Read from step snapshot - don't update APVTS to prevent knob jumping
                         StepSnapshot snapshot = getSaturateSafeSnapshot(playingStep);
                         float type = snapshot.saturate.type;
@@ -1918,8 +1922,12 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                         float mix = snapshot.saturate.mix;
                         
                         // Process with snapshot values directly (no APVTS update)
+                        // Pass stepChanged flag to enable smoother transitions
                         saturateProcessor.processWithSnapshot(buffer, buffer.getNumSamples(), 
-                                                             type, drive, color, shape, bias, output, mix);
+                                                             type, drive, color, shape, bias, output, mix,
+                                                             stepChanged);
+                        
+                        lastPlayingStep = playingStep;
                     } else {
                         // Sequencer not active - use APVTS values (responds to knob changes)
                         saturateProcessor.process(buffer, buffer.getNumSamples(), valueTreeState);
