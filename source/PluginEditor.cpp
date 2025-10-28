@@ -4486,7 +4486,7 @@ void PluginEditor::setupTabSystem()
         selector->addItem("Dub Echo", 8);
         selector->addItem("Redux", 9);
         selector->addItem("PhaseBloom", 10);
-        selector->addItem("Form", 12);
+        selector->addItem("Formant", 11);
         
         // Hide text when closed - just show carrot icon
         selector->setTextWhenNothingSelected("");
@@ -5058,7 +5058,7 @@ void PluginEditor::showPage(FxPageID id)
             // Restore UI state from APVTS parameters
             {
                 auto* fxEnabledParam = processorRef.getAPVTS().getRawParameterValue("formantEnabled");
-                formantFxAreaEnabled = fxEnabledParam ? (fxEnabledParam->load() > 0.5f) : true;
+                formantFxAreaEnabled = fxEnabledParam ? (fxEnabledParam->load() > 0.5f) : false;
                 
                 if (formantFxPowerButton) {
                     formantFxPowerButton->setToggleState(formantFxAreaEnabled, juce::dontSendNotification);
@@ -8342,7 +8342,7 @@ void PluginEditor::onEffectSelectorChanged(int slotIndex)
             // Restore UI state from APVTS parameters
             {
                 auto* fxEnabledParam = processorRef.getAPVTS().getRawParameterValue("formantEnabled");
-                formantFxAreaEnabled = fxEnabledParam ? (fxEnabledParam->load() > 0.5f) : true;
+                formantFxAreaEnabled = fxEnabledParam ? (fxEnabledParam->load() > 0.5f) : false;
                 if (formantFxPowerButton) {
                     formantFxPowerButton->setToggleState(formantFxAreaEnabled, juce::dontSendNotification);
                 }
@@ -8395,13 +8395,13 @@ void PluginEditor::onEffectSelectorChanged(int slotIndex)
             
             // Load current snapshot values into knobs (8 knobs)
             StepSnapshot form2Snapshot = processorRef.getForm2SafeSnapshot(0); // Load step 0
-            if (form2Knobs[0]) form2Knobs[0]->setValue(form2Snapshot.form2.vowel, juce::dontSendNotification);
-            if (form2Knobs[1]) form2Knobs[1]->setValue(form2Snapshot.form2.emphasis, juce::dontSendNotification);
-            if (form2Knobs[2]) form2Knobs[2]->setValue(form2Snapshot.form2.sharpness, juce::dontSendNotification);
+            if (form2Knobs[0]) form2Knobs[0]->setValue(form2Snapshot.form2.rootNote / 12.0f, juce::dontSendNotification);
+            if (form2Knobs[1]) form2Knobs[1]->setValue(form2Snapshot.form2.scale / 7.0f, juce::dontSendNotification);
+            if (form2Knobs[2]) form2Knobs[2]->setValue((form2Snapshot.form2.chordSize - 1) / 7.0f, juce::dontSendNotification);
             if (form2Knobs[3]) form2Knobs[3]->setValue(form2Snapshot.form2.shift, juce::dontSendNotification);
-            if (form2Knobs[4]) form2Knobs[4]->setValue(form2Snapshot.form2.brightness, juce::dontSendNotification);
+            if (form2Knobs[4]) form2Knobs[4]->setValue(form2Snapshot.form2.color, juce::dontSendNotification);
             if (form2Knobs[5]) form2Knobs[5]->setValue(form2Snapshot.form2.motion, juce::dontSendNotification);
-            if (form2Knobs[6]) form2Knobs[6]->setValue(form2Snapshot.form2.air, juce::dontSendNotification);
+            if (form2Knobs[6]) form2Knobs[6]->setValue(form2Snapshot.form2.resynth, juce::dontSendNotification);
             if (form2Knobs[7]) form2Knobs[7]->setValue(form2Snapshot.form2.mix, juce::dontSendNotification);
             
             // Update sequencer UI to show first step as selected
@@ -10846,7 +10846,7 @@ void PluginEditor::updateFormantFxAreaVisibility()
 {
     float alpha = formantFxAreaEnabled ? 1.0f : 0.3f;
     
-    for (int i = 0; i < 4; ++i) { // Only 4 knobs now
+    for (int i = 0; i < 8; ++i) { // All 8 knobs
         if (formantKnobs[i]) { 
             formantKnobs[i]->setAlpha(alpha); 
             formantKnobs[i]->setEnabled(formantFxAreaEnabled); 
@@ -10892,11 +10892,15 @@ void PluginEditor::updateFormantSequencerUI()
 
 void PluginEditor::setupFormantKnobs()
 {
-    // Formant knob titles - simplified to 4 controls
+    // Formant knob titles - 8 controls
     const juce::StringArray formantKnobTitles = {
         "Vowel",
-        "Resonance",
-        "Intensity",
+        "Sharpness",
+        "Emphasis",
+        "Shift",
+        "Brightness",
+        "Motion",
+        "Air",
         "Mix"
     };
     
@@ -10905,6 +10909,10 @@ void PluginEditor::setupFormantKnobs()
         "vowel",
         "resonance",
         "intensity",
+        "formantShift",
+        "formantBrightness",
+        "formantMotion",
+        "formantAir",
         "mix"
     };
     
@@ -10917,8 +10925,8 @@ void PluginEditor::setupFormantKnobs()
     const int startX = effectArea.getX() + 15;
     const int startY = effectArea.getY() + effectArea.getHeight() - 210;
 
-    // Create and setup knobs - now only 4
-    for (int i = 0; i < 4; ++i)
+    // Create and setup knobs - 8 knobs
+    for (int i = 0; i < 8; ++i)
     {
         // Position 8 knobs in 2 rows of 4 (EXACT same as other effects)
         int x = startX + (i % 4) * (knobSize + knobSpacing);
@@ -10937,23 +10945,39 @@ void PluginEditor::setupFormantKnobs()
         formantKnobs[i]->setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
         formantKnobs[i]->setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
         
-        // Set knob ranges based on parameter (UI order - simplified to 4 knobs)
+        // Set knob ranges based on parameter (8 knobs)
         switch (i) {
-            case 0: // Vowel (0-4, discrete steps: A/E/I/O/U)
-                formantKnobs[i]->setRange(0.0, 4.0, 1.0);
+            case 0: // Vowel (0-4, continuous)
+                formantKnobs[i]->setRange(0.0, 4.0, 0.01);
                 formantKnobs[i]->setValue(0.0, juce::dontSendNotification);
                 break;
-            case 1: // Resonance (Q factor: 0.5-20)
-                formantKnobs[i]->setRange(0.5, 20.0, 0.1);
+            case 1: // Sharpness (Q: 0.4-18)
+                formantKnobs[i]->setRange(0.4, 18.0, 0.1);
+                formantKnobs[i]->setValue(10.0, juce::dontSendNotification);
+                break;
+            case 2: // Emphasis (-6..+18 dB)
+                formantKnobs[i]->setRange(-6.0, 18.0, 0.1);
                 formantKnobs[i]->setValue(12.0, juce::dontSendNotification);
                 break;
-            case 2: // Intensity (emphasis: 0-12 dB)
-                formantKnobs[i]->setRange(0.0, 12.0, 0.1);
-                formantKnobs[i]->setValue(6.0, juce::dontSendNotification);
+            case 3: // Shift (0.5-2.0)
+                formantKnobs[i]->setRange(0.5, 2.0, 0.01);
+                formantKnobs[i]->setValue(1.0, juce::dontSendNotification);
                 break;
-            case 3: // Mix (dry/wet: 0-1)
+            case 4: // Brightness (-12..+12 dB)
+                formantKnobs[i]->setRange(-12.0, 12.0, 0.1);
+                formantKnobs[i]->setValue(3.0, juce::dontSendNotification);
+                break;
+            case 5: // Motion (0-1)
                 formantKnobs[i]->setRange(0.0, 1.0, 0.01);
-                formantKnobs[i]->setValue(0.8, juce::dontSendNotification);
+                formantKnobs[i]->setValue(0.25, juce::dontSendNotification);
+                break;
+            case 6: // Air (0-1)
+                formantKnobs[i]->setRange(0.0, 1.0, 0.01);
+                formantKnobs[i]->setValue(0.2, juce::dontSendNotification);
+                break;
+            case 7: // Mix (0-1)
+                formantKnobs[i]->setRange(0.0, 1.0, 0.01);
+                formantKnobs[i]->setValue(1.0, juce::dontSendNotification);
                 break;
         }
         
@@ -11400,7 +11424,7 @@ void PluginEditor::setupFormantAllStepsToggle()
     formantGroup.clear();
     
     // Add all Formant components to the group
-    for (int i = 0; i < 4; ++i) { // Only 4 knobs now
+    for (int i = 0; i < 8; ++i) { // All 8 knobs
         if (formantKnobs[i]) formantGroup.push_back(formantKnobs[i].get());
         if (formantKnobLabels[i]) formantGroup.push_back(formantKnobLabels[i].get());
         if (formantValueLabels[i]) formantGroup.push_back(formantValueLabels[i].get());
@@ -11433,21 +11457,21 @@ void PluginEditor::setupForm2Knobs()
 {
     // Form 2 knob titles - 8 controls
     const juce::StringArray form2KnobTitles = {
-        "Vowel",
-        "Emphasis (dB)",
-        "Sharpness (Q)",
+        "Root Note",
+        "Scale",
+        "Chord Size",
         "Shift",
-        "Brightness (F4)",
+        "Color",
         "Motion",
-        "Air",
+        "Resynth",
         "Mix"
     };
     
     // Form 2 parameter IDs (must match APVTS order)
     const juce::StringArray form2ParamIDs = {
-        "form2Vowel",
-        "form2Emphasis",
-        "form2Sharpness",
+        "form2RootNote",
+        "form2Scale",
+        "form2ChordSize",
         "form2Shift",
         "form2Brightness",
         "form2Motion",
@@ -11486,37 +11510,45 @@ void PluginEditor::setupForm2Knobs()
         
         // Set knob ranges based on parameter
         switch (i) {
-            case 0: // Vowel (0-4)
-                form2Knobs[i]->setRange(0.0, 4.0, 0.01);
-                form2Knobs[i]->setValue(0.0, juce::dontSendNotification); // A
+            case 0: // Root Note (C-B) - Map to 0.0-1.0 for AudioParameterInt
+                form2Knobs[i]->setRange(0.0, 1.0, 0.01);
+                form2Knobs[i]->setValue(0.0, juce::dontSendNotification);
+                form2Knobs[i]->textFromValueFunction = [](double v) {
+                    const char* notes[12] = {"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"};
+                    return notes[static_cast<int>(v * 12)];
+                };
                 break;
-            case 1: // Emphasis (-6 to +18 dB)
-                form2Knobs[i]->setRange(-6.0, 18.0, 0.1);
-                form2Knobs[i]->setValue(12.0, juce::dontSendNotification);
+            case 1: // Scale (Major, Minor, Pent, Blues, Dorian, Whole, Chrom) - Map to 0.0-1.0
+                form2Knobs[i]->setRange(0.0, 1.0, 0.01);
+                form2Knobs[i]->setValue(0.0, juce::dontSendNotification);
+                form2Knobs[i]->textFromValueFunction = [](double v) {
+                    const char* scales[7] = {"Major", "Minor", "Pent", "Blues", "Dorian", "Whole", "Chrom"};
+                    return scales[static_cast<int>(v * 7)];
+                };
                 break;
-            case 2: // Sharpness (0.4-18, Q)
-                form2Knobs[i]->setRange(0.4, 18.0, 0.1);
-                form2Knobs[i]->setValue(10.0, juce::dontSendNotification);
+            case 2: // Chord Size (1-8) - Map to 0.0-1.0
+                form2Knobs[i]->setRange(0.0, 1.0, 0.01);
+                form2Knobs[i]->setValue((4.0 - 1.0) / 7.0, juce::dontSendNotification); // 4 mapped to 0.0-1.0
                 break;
             case 3: // Shift (0.5-2.0)
                 form2Knobs[i]->setRange(0.5, 2.0, 0.01);
                 form2Knobs[i]->setValue(1.0, juce::dontSendNotification);
                 break;
-            case 4: // Brightness (-12 to +12 dB)
+            case 4: // Color (-12 to +12 dB)
                 form2Knobs[i]->setRange(-12.0, 12.0, 0.1);
-                form2Knobs[i]->setValue(3.0, juce::dontSendNotification);
+                form2Knobs[i]->setValue(0.0, juce::dontSendNotification);
                 break;
             case 5: // Motion (0-1)
                 form2Knobs[i]->setRange(0.0, 1.0, 0.01);
-                form2Knobs[i]->setValue(0.25, juce::dontSendNotification);
+                form2Knobs[i]->setValue(0.0, juce::dontSendNotification);
                 break;
-            case 6: // Air (0-1)
+            case 6: // Resynth (0-1)
                 form2Knobs[i]->setRange(0.0, 1.0, 0.01);
-                form2Knobs[i]->setValue(0.2, juce::dontSendNotification);
+                form2Knobs[i]->setValue(0.5, juce::dontSendNotification);
                 break;
             case 7: // Mix (0-1)
                 form2Knobs[i]->setRange(0.0, 1.0, 0.01);
-                form2Knobs[i]->setValue(1.0, juce::dontSendNotification);
+                form2Knobs[i]->setValue(0.8, juce::dontSendNotification);
                 break;
         }
         
@@ -11595,22 +11627,32 @@ void PluginEditor::setupForm2Knobs()
                 juce::String valueText;
                 
                 switch (i) {
-                    case 0: { // Vowel - show letter
-                        const char* vowels[5] = {"A", "E", "I", "O", "U"};
-                        int vowelIdx = juce::jlimit(0, 4, static_cast<int>(value));
-                        valueText = vowels[vowelIdx];
+                    case 0: { // Root Note - show note (0.0-1.0 mapped to C-B)
+                        const char* notes[12] = {"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"};
+                        int noteIdx = juce::jlimit(0, 11, static_cast<int>(value * 12));
+                        valueText = notes[noteIdx];
                         break;
                     }
-                    case 1: // Character
-                        valueText = juce::String(value, 2); break;
-                    case 2: // Sharpness
-                        valueText = juce::String(value, 1); break;
-                    case 3: valueText = juce::String(value, 1) + " dB"; break; // Emphasis
-                    case 4: // Gender
+                    case 1: { // Scale - show scale name (0.0-1.0 mapped to 0-6)
+                        const char* scales[7] = {"Major", "Minor", "Pent", "Blues", "Dorian", "Whole", "Chrom"};
+                        int scaleIdx = juce::jlimit(0, 6, static_cast<int>(value * 7));
+                        valueText = scales[scaleIdx];
+                        break;
+                    }
+                    case 2: // Chord Size - show as integer (0.0-1.0 mapped to 1-8)
+                        valueText = juce::String(1 + static_cast<int>(value * 7));
+                        break;
+                    case 3: // Shift
+                        valueText = juce::String(value, 2);
+                        break;
+                    case 4: // Color
+                        valueText = juce::String(value, 1) + " dB";
+                        break;
                     case 5: // Motion
-                    case 6: // Breath
+                    case 6: // Resynth
                     case 7: // Mix
-                        valueText = juce::String(value, 2); break;
+                        valueText = juce::String(value, 2);
+                        break;
                 }
                 
                 form2ValueLabels[i]->setText(valueText, juce::dontSendNotification);
@@ -11628,58 +11670,58 @@ void PluginEditor::setupForm2Knobs()
                     // Convert knob value to actual parameter value using APVTS parameter ranges
                     float actualValue = value;
                     switch (i) {
-                    case 0: { // Vowel
-                        auto* param = processorRef.getAPVTS().getParameter("form2MorphX");
+                    case 0: { // Root Note
+                        auto* param = processorRef.getAPVTS().getParameter("form2RootNote");
                         if (param) actualValue = param->convertFrom0to1(value);
                         break;
                     }
-                        case 1: { // Morph Y
-                            auto* param = processorRef.getAPVTS().getParameter("form2MorphY");
-                            if (param) actualValue = param->convertFrom0to1(value);
-                            break;
-                        }
-                        case 2: { // Sharpness
-                            auto* param = processorRef.getAPVTS().getParameter("form2Sharpness");
-                            if (param) actualValue = param->convertFrom0to1(value);
-                            break;
-                        }
-                        case 3: { // Emphasis
-                            auto* param = processorRef.getAPVTS().getParameter("form2Emphasis");
-                            if (param) actualValue = param->convertFrom0to1(value);
-                            break;
-                        }
-                        case 4: { // Shift
-                            auto* param = processorRef.getAPVTS().getParameter("form2Shift");
-                            if (param) actualValue = param->convertFrom0to1(value);
-                            break;
-                        }
-                        case 5: { // Motion
-                            auto* param = processorRef.getAPVTS().getParameter("form2Motion");
-                            if (param) actualValue = param->convertFrom0to1(value);
-                            break;
-                        }
-                        case 6: { // Air
-                            auto* param = processorRef.getAPVTS().getParameter("form2Air");
-                            if (param) actualValue = param->convertFrom0to1(value);
-                            break;
-                        }
-                        case 7: { // Mix
-                            auto* param = processorRef.getAPVTS().getParameter("form2Mix");
-                            if (param) actualValue = param->convertFrom0to1(value);
-                            break;
-                        }
+                    case 1: { // Scale
+                        auto* param = processorRef.getAPVTS().getParameter("form2Scale");
+                        if (param) actualValue = param->convertFrom0to1(value);
+                        break;
+                    }
+                    case 2: { // Chord Size
+                        auto* param = processorRef.getAPVTS().getParameter("form2ChordSize");
+                        if (param) actualValue = param->convertFrom0to1(value);
+                        break;
+                    }
+                    case 3: { // Shift
+                        auto* param = processorRef.getAPVTS().getParameter("form2Shift");
+                        if (param) actualValue = param->convertFrom0to1(value);
+                        break;
+                    }
+                    case 4: { // Color
+                        auto* param = processorRef.getAPVTS().getParameter("form2Brightness");
+                        if (param) actualValue = param->convertFrom0to1(value);
+                        break;
+                    }
+                    case 5: { // Motion
+                        auto* param = processorRef.getAPVTS().getParameter("form2Motion");
+                        if (param) actualValue = param->convertFrom0to1(value);
+                        break;
+                    }
+                    case 6: { // Resynth
+                        auto* param = processorRef.getAPVTS().getParameter("form2Air");
+                        if (param) actualValue = param->convertFrom0to1(value);
+                        break;
+                    }
+                    case 7: { // Mix
+                        auto* param = processorRef.getAPVTS().getParameter("form2Mix");
+                        if (param) actualValue = param->convertFrom0to1(value);
+                        break;
+                    }
                     }
                     
                     for (int step = 0; step < 16; ++step) {
                         auto snapshot = processorRef.getForm2SafeSnapshot(step);
                         switch (i) {
-                            case 0: snapshot.form2.vowel = actualValue; break;
-                            case 1: snapshot.form2.emphasis = actualValue; break;
-                            case 2: snapshot.form2.sharpness = actualValue; break;
+                            case 0: snapshot.form2.rootNote = static_cast<int>(actualValue); break;
+                            case 1: snapshot.form2.scale = static_cast<int>(actualValue); break;
+                            case 2: snapshot.form2.chordSize = static_cast<int>(actualValue); break;
                             case 3: snapshot.form2.shift = actualValue; break;
-                            case 4: snapshot.form2.brightness = actualValue; break;
+                            case 4: snapshot.form2.color = actualValue; break;
                             case 5: snapshot.form2.motion = actualValue; break;
-                            case 6: snapshot.form2.air = actualValue; break;
+                            case 6: snapshot.form2.resynth = actualValue; break;
                             case 7: snapshot.form2.mix = actualValue; break;
                         }
                         processorRef.setForm2StepSnapshot(step, snapshot);
@@ -11894,14 +11936,13 @@ void PluginEditor::setupForm2SequencerArea()
         for (int i = 0; i < 16; ++i) {
             auto snapshot = processorRef.getForm2SafeSnapshot(i);
             // Randomize all parameters
-            snapshot.form2.vowel = juce::Random::getSystemRandom().nextFloat() * 4.0f; // 0-4 (A-E-I-O-U)
-            snapshot.form2.emphasis = juce::Random::getSystemRandom().nextFloat() * 24.0f - 6.0f; // -6 to +18
-            snapshot.form2.sharpness = juce::Random::getSystemRandom().nextFloat() * 17.6f + 0.4f; // 0.4-18.0
-            snapshot.form2.emphasis = juce::Random::getSystemRandom().nextFloat() * 24.0f - 6.0f; // -6 to +18 dB
+            snapshot.form2.rootNote = juce::Random::getSystemRandom().nextInt(juce::Range(0, 12)); // 0-11
+            snapshot.form2.scale = juce::Random::getSystemRandom().nextInt(juce::Range(0, 7)); // 0-6
+            snapshot.form2.chordSize = juce::Random::getSystemRandom().nextInt(juce::Range(1, 9)); // 1-8
             snapshot.form2.shift = juce::Random::getSystemRandom().nextFloat() * 1.5f + 0.5f; // 0.5-2.0
-            snapshot.form2.brightness = juce::Random::getSystemRandom().nextFloat() * 24.0f - 12.0f; // -12 to +12
+            snapshot.form2.color = juce::Random::getSystemRandom().nextFloat() * 24.0f - 12.0f; // -12 to +12
             snapshot.form2.motion = juce::Random::getSystemRandom().nextFloat();
-            snapshot.form2.air = juce::Random::getSystemRandom().nextFloat();
+            snapshot.form2.resynth = juce::Random::getSystemRandom().nextFloat();
             snapshot.form2.mix = juce::Random::getSystemRandom().nextFloat();
             processorRef.setForm2StepSnapshot(i, snapshot);
         }
@@ -11914,13 +11955,13 @@ void PluginEditor::setupForm2SequencerArea()
             auto currentSnapshot = processorRef.getForm2SafeSnapshot(form2UiSelectedStep);
             
             // Update all knob values from the current step's snapshot
-            if (form2Knobs[0]) form2Knobs[0]->setValue(currentSnapshot.form2.vowel, juce::dontSendNotification);
-            if (form2Knobs[1]) form2Knobs[1]->setValue(currentSnapshot.form2.emphasis, juce::dontSendNotification);
-            if (form2Knobs[2]) form2Knobs[2]->setValue(currentSnapshot.form2.sharpness, juce::dontSendNotification);
+            if (form2Knobs[0]) form2Knobs[0]->setValue(currentSnapshot.form2.rootNote, juce::dontSendNotification);
+            if (form2Knobs[1]) form2Knobs[1]->setValue(currentSnapshot.form2.scale, juce::dontSendNotification);
+            if (form2Knobs[2]) form2Knobs[2]->setValue(currentSnapshot.form2.chordSize, juce::dontSendNotification);
             if (form2Knobs[3]) form2Knobs[3]->setValue(currentSnapshot.form2.shift, juce::dontSendNotification);
-            if (form2Knobs[4]) form2Knobs[4]->setValue(currentSnapshot.form2.brightness, juce::dontSendNotification);
+            if (form2Knobs[4]) form2Knobs[4]->setValue(currentSnapshot.form2.color, juce::dontSendNotification);
             if (form2Knobs[5]) form2Knobs[5]->setValue(currentSnapshot.form2.motion, juce::dontSendNotification);
-            if (form2Knobs[6]) form2Knobs[6]->setValue(currentSnapshot.form2.air, juce::dontSendNotification);
+            if (form2Knobs[6]) form2Knobs[6]->setValue(currentSnapshot.form2.resynth, juce::dontSendNotification);
             if (form2Knobs[7]) form2Knobs[7]->setValue(currentSnapshot.form2.mix, juce::dontSendNotification);
             
             // Update value labels to reflect the new knob values
@@ -13807,26 +13848,8 @@ void PluginEditor::updateFormantOverlay()
         }
     }
     
-    if (formantActive) {
-        // Get current formant state from processor
-        auto formantState = processorRef.getFormantProcessor().getCurrentState();
-        
-        // Enable overlay and set parameters
-        outputSpectrumView->setFormantOverlayEnabled(true);
-        outputSpectrumView->setFormantParameters(
-            formantState.f1Hz,
-            formantState.f2Hz, 
-            formantState.f3Hz,
-            formantState.q,
-            formantState.emphasisDb
-        );
-        
-        DBG("[FORMANT OVERLAY] Enabled with F1=" << formantState.f1Hz << " F2=" << formantState.f2Hz << " F3=" << formantState.f3Hz);
-    } else {
-        // Disable overlay when Formant is not active
-        outputSpectrumView->setFormantOverlayEnabled(false);
-        DBG("[FORMANT OVERLAY] Disabled");
-    }
+    // Disable formant overlay - not using gradient line with 3 dots
+    outputSpectrumView->setFormantOverlayEnabled(false);
 }
 
 // Form 2 helper methods
@@ -13966,13 +13989,14 @@ void PluginEditor::onForm2StepButtonClicked(int stepIndex)
     
     // Load step snapshot into knobs
     auto snapshot = processorRef.getForm2SafeSnapshot(stepIndex);
-    if (form2Knobs[0]) form2Knobs[0]->setValue(snapshot.form2.vowel, juce::dontSendNotification);
-    if (form2Knobs[1]) form2Knobs[1]->setValue(snapshot.form2.emphasis, juce::dontSendNotification);
-    if (form2Knobs[2]) form2Knobs[2]->setValue(snapshot.form2.sharpness, juce::dontSendNotification);
+    // Map actual values to 0.0-1.0 range for knobs
+    if (form2Knobs[0]) form2Knobs[0]->setValue(snapshot.form2.rootNote / 12.0f, juce::dontSendNotification);
+    if (form2Knobs[1]) form2Knobs[1]->setValue(snapshot.form2.scale / 7.0f, juce::dontSendNotification);
+    if (form2Knobs[2]) form2Knobs[2]->setValue((snapshot.form2.chordSize - 1) / 7.0f, juce::dontSendNotification);
     if (form2Knobs[3]) form2Knobs[3]->setValue(snapshot.form2.shift, juce::dontSendNotification);
-    if (form2Knobs[4]) form2Knobs[4]->setValue(snapshot.form2.brightness, juce::dontSendNotification);
+    if (form2Knobs[4]) form2Knobs[4]->setValue(snapshot.form2.color, juce::dontSendNotification);
     if (form2Knobs[5]) form2Knobs[5]->setValue(snapshot.form2.motion, juce::dontSendNotification);
-    if (form2Knobs[6]) form2Knobs[6]->setValue(snapshot.form2.air, juce::dontSendNotification);
+    if (form2Knobs[6]) form2Knobs[6]->setValue(snapshot.form2.resynth, juce::dontSendNotification);
     if (form2Knobs[7]) form2Knobs[7]->setValue(snapshot.form2.mix, juce::dontSendNotification);
     
     updateForm2SequencerUI();
@@ -14066,14 +14090,13 @@ void PluginEditor::randomizeEffectStepSnapshot(FxPageID effect, int step)
             auto snapshot = processorRef.getForm2SafeSnapshot(step);
             
             // Randomize Form 2 parameters (8 knobs)
-            if (!knobLocked[0]) snapshot.form2.vowel = juce::Random::getSystemRandom().nextFloat() * 4.0f; // 0-4
-            if (!knobLocked[1]) snapshot.form2.emphasis = juce::Random::getSystemRandom().nextFloat() * 24.0f - 6.0f; // -6 to +18
-            if (!knobLocked[2]) snapshot.form2.sharpness = 0.4f + juce::Random::getSystemRandom().nextFloat() * (18.0f - 0.4f); // 0.4-18
-            if (!knobLocked[3]) snapshot.form2.emphasis = -6.0f + juce::Random::getSystemRandom().nextFloat() * (18.0f + 6.0f); // -6 to +18
+            if (!knobLocked[0]) snapshot.form2.rootNote = juce::Random::getSystemRandom().nextInt(juce::Range(0, 12)); // 0-11
+            if (!knobLocked[1]) snapshot.form2.scale = juce::Random::getSystemRandom().nextInt(juce::Range(0, 7)); // 0-6
+            if (!knobLocked[2]) snapshot.form2.chordSize = juce::Random::getSystemRandom().nextInt(juce::Range(1, 9)); // 1-8
             if (!knobLocked[3]) snapshot.form2.shift = 0.5f + juce::Random::getSystemRandom().nextFloat() * (2.0f - 0.5f); // 0.5-2.0
-            if (!knobLocked[4]) snapshot.form2.brightness = -12.0f + juce::Random::getSystemRandom().nextFloat() * (12.0f + 12.0f); // -12 to +12
+            if (!knobLocked[4]) snapshot.form2.color = -12.0f + juce::Random::getSystemRandom().nextFloat() * (12.0f + 12.0f); // -12 to +12
             if (!knobLocked[5]) snapshot.form2.motion = juce::Random::getSystemRandom().nextFloat(); // 0-1
-            if (!knobLocked[6]) snapshot.form2.air = juce::Random::getSystemRandom().nextFloat(); // 0-1
+            if (!knobLocked[6]) snapshot.form2.resynth = juce::Random::getSystemRandom().nextFloat(); // 0-1
             if (!knobLocked[7]) snapshot.form2.mix = juce::Random::getSystemRandom().nextFloat(); // 0-1
             
             processorRef.setForm2StepSnapshot(step, snapshot);
@@ -14362,13 +14385,13 @@ void PluginEditor::loadSelectedStepIntoKnobs(FxPageID effect)
             const auto snapshot = processorRef.getForm2SafeSnapshot(selectedStep);
             
             // Load snapshot values into knobs
-            if (form2Knobs[0]) form2Knobs[0]->setValue(snapshot.form2.vowel, juce::dontSendNotification);
-            if (form2Knobs[1]) form2Knobs[1]->setValue(snapshot.form2.emphasis, juce::dontSendNotification);
-            if (form2Knobs[2]) form2Knobs[2]->setValue(snapshot.form2.sharpness, juce::dontSendNotification);
+            if (form2Knobs[0]) form2Knobs[0]->setValue(snapshot.form2.rootNote / 12.0f, juce::dontSendNotification);
+            if (form2Knobs[1]) form2Knobs[1]->setValue(snapshot.form2.scale / 7.0f, juce::dontSendNotification);
+            if (form2Knobs[2]) form2Knobs[2]->setValue((snapshot.form2.chordSize - 1) / 7.0f, juce::dontSendNotification);
             if (form2Knobs[3]) form2Knobs[3]->setValue(snapshot.form2.shift, juce::dontSendNotification);
-            if (form2Knobs[4]) form2Knobs[4]->setValue(snapshot.form2.brightness, juce::dontSendNotification);
+            if (form2Knobs[4]) form2Knobs[4]->setValue(snapshot.form2.color, juce::dontSendNotification);
             if (form2Knobs[5]) form2Knobs[5]->setValue(snapshot.form2.motion, juce::dontSendNotification);
-            if (form2Knobs[6]) form2Knobs[6]->setValue(snapshot.form2.air, juce::dontSendNotification);
+            if (form2Knobs[6]) form2Knobs[6]->setValue(snapshot.form2.resynth, juce::dontSendNotification);
             if (form2Knobs[7]) form2Knobs[7]->setValue(snapshot.form2.mix, juce::dontSendNotification);
                 break;
         }

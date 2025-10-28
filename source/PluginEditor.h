@@ -940,13 +940,13 @@ public:
     std::array<std::unique_ptr<IndicatorBar>, 8> phaseBloomIndicatorBars;
     std::array<std::unique_ptr<CustomDiceButton>, 8> phaseBloomDiceButtons;
     
-    // Formant page components (8 knobs)
-    std::array<std::unique_ptr<CustomKnob>, 4> formantKnobs;
-    std::array<std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>, 4> formantAttachments;
-    std::array<std::unique_ptr<juce::Label>, 4> formantKnobLabels;
-    std::array<std::unique_ptr<juce::Label>, 4> formantValueLabels;
-    std::array<std::unique_ptr<IndicatorBar>, 4> formantIndicatorBars;
-    std::array<std::unique_ptr<CustomDiceButton>, 4> formantDiceButtons;
+    // Formant page components (5 knobs)
+    std::array<std::unique_ptr<CustomKnob>, 8> formantKnobs;
+    std::array<std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>, 8> formantAttachments;
+    std::array<std::unique_ptr<juce::Label>, 8> formantKnobLabels;
+    std::array<std::unique_ptr<juce::Label>, 8> formantValueLabels;
+    std::array<std::unique_ptr<IndicatorBar>, 8> formantIndicatorBars;
+    std::array<std::unique_ptr<CustomDiceButton>, 8> formantDiceButtons;
     
     // Formant power buttons
     std::unique_ptr<juce::DrawableButton> formantFxPowerButton;

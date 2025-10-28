@@ -1,241 +1,294 @@
 #include "FormantProcessor.h"
+#include <algorithm>
+#include <cmath>
 
 FormantProcessor::FormantProcessor()
 {
-    // No LFO needed for simplified vowel filter
 }
 
-void FormantProcessor::prepare(double sampleRate, int maxBlockSize)
+void FormantProcessor::prepare(double sampleRate_, int maxBlockSize_)
 {
-    this->sampleRate = sampleRate;
+    sampleRate = sampleRate_;
+    maxBlockSize = maxBlockSize_;
     
-    // Prepare filters
-    juce::dsp::ProcessSpec spec;
-    spec.sampleRate = sampleRate;
-    spec.maximumBlockSize = static_cast<juce::uint32>(maxBlockSize);
-    spec.numChannels = 1;
-    
-    for (int i = 0; i < 3; ++i)
-    {
+    // Initialize 4 IIR biquad filters per channel (L/R)
+    for (int i = 0; i < 4; ++i) {
+        // Initialize with safe default coefficients (1kHz bandpass)
+        auto defaultCoeffs = juce::dsp::IIR::Coefficients<float>::makeBandPass(
+            sampleRate, 1000.0f, 0.707f);
+        
+        filtersL[i].coefficients = defaultCoeffs;
+        filtersR[i].coefficients = defaultCoeffs;
         filtersL[i].reset();
-        filtersL[i].prepare(spec);
         filtersR[i].reset();
-        filtersR[i].prepare(spec);
     }
     
-    // Initialize smoothed parameters
-    const double smoothTime = 0.01; // 10ms smoothing
-    resonanceSm.reset(sampleRate, smoothTime);
-    intensitySm.reset(sampleRate, smoothTime);
-    mixSm.reset(sampleRate, smoothTime);
+    // Initialize smoothed parameters (20ms smoothing)
+    const double smoothTime = 0.02;
+    
     vowelSm.reset(sampleRate, smoothTime);
+    qSm.reset(sampleRate, smoothTime);
+    emphasisSm.reset(sampleRate, smoothTime);
+    shiftSm.reset(sampleRate, smoothTime);
+    brightnessSm.reset(sampleRate, smoothTime);
+    motionSm.reset(sampleRate, smoothTime);
+    airSm.reset(sampleRate, smoothTime);
+    mixSm.reset(sampleRate, smoothTime);
     
-    // Set initial values
-    resonanceSm.setCurrentAndTargetValue(12.0f);
-    intensitySm.setCurrentAndTargetValue(6.0f);
-    mixSm.setCurrentAndTargetValue(0.8f);
-    vowelSm.setCurrentAndTargetValue(0);
+    // Set defaults for audibility
+    vowelSm.setCurrentAndTargetValue(0.0f);      // A
+    qSm.setCurrentAndTargetValue(2.0f);         // Moderately sharp
+    emphasisSm.setCurrentAndTargetValue(3.0f);   // +3 dB emphasis
+    shiftSm.setCurrentAndTargetValue(1.0f);       // No shift
+    brightnessSm.setCurrentAndTargetValue(0.0f); // 0 dB F4
+    motionSm.setCurrentAndTargetValue(0.0f);     // No motion
+    airSm.setCurrentAndTargetValue(0.0f);        // No air
+    mixSm.setCurrentAndTargetValue(1.0f);        // Full wet
     
-    // Initialize formants
-    currentFormants = getFormantsForVowel(0);
-    
-    // Initialize filters with dummy coefficients to prevent crash
-    for (int i = 0; i < 3; ++i)
-    {
-        // Create dummy allpass coefficients (passes signal through unchanged)
-        auto dummyCoeffs = juce::dsp::IIR::Coefficients<float>::makeAllPass(sampleRate, 1000.0f, 1.0f);
-        *filtersL[i].coefficients = *dummyCoeffs;
-        *filtersR[i].coefficients = *dummyCoeffs;
-    }
-    
-    // Now update to real coefficients
-    updateCoeffs();
-    
-    // Mark as prepared
     isPrepared = true;
 }
 
-void FormantProcessor::setTargets(const Targets& t)
+void FormantProcessor::setHostTempo(double bpm, bool hasTempo)
 {
-    currentTargets = t;
-    
-    // Clamp values
-    currentTargets.vowel = juce::jlimit(0, 4, t.vowel);
-    currentTargets.resonance = juce::jlimit(0.5f, 20.0f, t.resonance);
-    currentTargets.intensity = juce::jlimit(0.0f, 12.0f, t.intensity);
-    currentTargets.mix = juce::jlimit(0.0f, 1.0f, t.mix);
+    // Not used in simplified version
+    (void)bpm;
+    (void)hasTempo;
 }
 
-void FormantProcessor::process(juce::AudioBuffer<float>& buffer, int numSamples)
+FormantProcessor::Formants FormantProcessor::getFormantsForVowel(float vowel) const
+{
+    // Clamp to range
+    vowel = juce::jlimit(0.0f, 4.0f, vowel);
+    
+    // Get integer index and fractional part
+    int idx = static_cast<int>(vowel);
+    float frac = vowel - static_cast<float>(idx);
+    
+    // Clamp index to valid range
+    idx = juce::jlimit(0, 4, idx);
+    int nextIdx = juce::jmin(4, idx + 1);
+    
+    // Get formants
+    const Formants& f0 = kVowels[idx];
+    const Formants& f1 = kVowels[nextIdx];
+    
+    // Linear interpolation
+    Formants result;
+    result.F1 = f0.F1 + frac * (f1.F1 - f0.F1);
+    result.F2 = f0.F2 + frac * (f1.F2 - f0.F2);
+    result.F3 = f0.F3 + frac * (f1.F3 - f0.F3);
+    
+    return result;
+}
+
+float FormantProcessor::computeF4(float f2, float f3) const
+{
+    return juce::jlimit(2000.0f, 4000.0f, 0.45f * f2 + 0.55f * f3);
+}
+
+juce::dsp::IIR::Coefficients<float>::Ptr FormantProcessor::makeBandpassCoefficients(float centerFreq, float bandwidth) const
+{
+    // Calculate Q from bandwidth
+    float Q = centerFreq / bandwidth;
+    Q = juce::jlimit(0.1f, 100.0f, Q);
+    
+    // Create bandpass coefficients using JUCE's built-in method
+    return juce::dsp::IIR::Coefficients<float>::makeBandPass(sampleRate, centerFreq, Q);
+}
+
+void FormantProcessor::process(juce::AudioBuffer<float>& buffer, int numSamples, juce::AudioProcessorValueTreeState& apvts)
 {
     if (!isPrepared || numSamples == 0 || sampleRate <= 0.0) return;
+    if (buffer.getNumChannels() < 2) return;
     
-    const int numChannels = buffer.getNumChannels();
-    if (numChannels < 2) return;
+    // Enable flush-to-zero for stability
+    juce::ScopedNoDenormals noDenormals;
     
-    // Update smoothed parameters once per buffer
-    processParams();
+    // Read parameters from APVTS
+    auto* vowelParam = apvts.getRawParameterValue("vowel");
+    auto* resonanceParam = apvts.getRawParameterValue("resonance");
+    auto* intensityParam = apvts.getRawParameterValue("intensity");
+    auto* shiftParam = apvts.getRawParameterValue("formantShift");
+    auto* brightnessParam = apvts.getRawParameterValue("formantBrightness");
+    auto* motionParam = apvts.getRawParameterValue("formantMotion");
+    auto* airParam = apvts.getRawParameterValue("formantAir");
+    auto* mixParam = apvts.getRawParameterValue("mix");
     
-    // Get current formants for selected vowel
-    int currentVowel = vowelSm.getCurrentValue();
-    float currentQ = resonanceSm.getCurrentValue();
-    float currentIntensity = intensitySm.getCurrentValue();
+    if (vowelParam) vowelSm.setTargetValue(vowelParam->load());
+    if (resonanceParam) qSm.setTargetValue(resonanceParam->load());
+    if (intensityParam) emphasisSm.setTargetValue(intensityParam->load());
+    if (shiftParam) shiftSm.setTargetValue(shiftParam->load());
+    if (brightnessParam) brightnessSm.setTargetValue(brightnessParam->load());
+    if (motionParam) motionSm.setTargetValue(motionParam->load());
+    if (airParam) airSm.setTargetValue(airParam->load());
+    if (mixParam) mixSm.setTargetValue(mixParam->load());
     
-    // Only update filters if parameters changed
-    if (currentVowel != lastVowel || 
-        std::abs(currentQ - lastQ) > 0.01f ||
-        std::abs(currentIntensity - lastIntensity) > 0.01f)
-    {
-        currentFormants = getFormantsForVowel(currentVowel);
-        updateCoeffs();
-        lastVowel = currentVowel;
-        lastQ = currentQ;
-        lastIntensity = currentIntensity;
+    // Get smoothed parameters
+    float vowel = vowelSm.getCurrentValue();
+    float q = qSm.getCurrentValue();  // Sharpness multiplier
+    float emphasis = emphasisSm.getCurrentValue();
+    float shift = shiftSm.getCurrentValue();
+    float brightness = brightnessSm.getCurrentValue();
+    float motion = motionSm.getCurrentValue();
+    float air = airSm.getCurrentValue();
+    float mix = mixSm.getCurrentValue();
+    
+    // Calculate morphed vowel formants
+    // Motion determines how far to morph from center vowel
+    float delta = motion * 0.75f;
+    float vA = juce::jlimit(0.0f, 4.0f, vowel - delta);
+    float vB = juce::jlimit(0.0f, 4.0f, vowel + delta);
+    
+    // Interpolate formants for target vowels A and B
+    Formants formantsA = getFormantsForVowel(vA);
+    Formants formantsA_shifted = formantsA;
+    formantsA_shifted.F1 = juce::jlimit(80.0f, 18000.0f, formantsA.F1 * shift);
+    formantsA_shifted.F2 = juce::jlimit(80.0f, 18000.0f, formantsA.F2 * shift);
+    formantsA_shifted.F3 = juce::jlimit(80.0f, 18000.0f, formantsA.F3 * shift);
+    
+    Formants formantsB = getFormantsForVowel(vB);
+    Formants formantsB_shifted = formantsB;
+    formantsB_shifted.F1 = juce::jlimit(80.0f, 18000.0f, formantsB.F1 * shift);
+    formantsB_shifted.F2 = juce::jlimit(80.0f, 18000.0f, formantsB.F2 * shift);
+    formantsB_shifted.F3 = juce::jlimit(80.0f, 18000.0f, formantsB.F3 * shift);
+    
+    // Compute F4 for both
+    float f4A = juce::jlimit(80.0f, 18000.0f, computeF4(formantsA_shifted.F2, formantsA_shifted.F3));
+    float f4B = juce::jlimit(80.0f, 18000.0f, computeF4(formantsB_shifted.F2, formantsB_shifted.F3));
+    
+    // Calculate morph balance (0 = all A, 1 = all B)
+    // Use motion parameter to blend dynamically if motion > 0
+    float morphBalance = motion > 0.01f ? 0.5f : 0.0f; // Static blend for now
+    
+    // Interpolate formant frequencies
+    auto lerp = [](float a, float b, float t) { return a + t * (b - a); };
+    
+    float f1 = lerp(formantsA_shifted.F1, formantsB_shifted.F1, morphBalance);
+    float f2 = lerp(formantsA_shifted.F2, formantsB_shifted.F2, morphBalance);
+    float f3 = lerp(formantsA_shifted.F3, formantsB_shifted.F3, morphBalance);
+    float f4 = lerp(f4A, f4B, morphBalance);
+    
+    // Apply Q sharpness multiplier (q is 0.4-18, where 1.0 = standard sharpness)
+    // q < 1 = wider (flatter), q > 1 = narrower (sharper)
+    float bandwidths[4] = {kBandwidths[0], kBandwidths[1], kBandwidths[2], kBandwidths[3]};
+    for (int i = 0; i < 4; ++i) {
+        bandwidths[i] /= juce::jmax(0.1f, q); // Narrower bandwidth = higher Q = sharper
     }
     
-    // Process audio
+    // Update filter coefficients ONCE PER BLOCK
+    auto coeffs0 = makeBandpassCoefficients(f1, bandwidths[0]);
+    auto coeffs1 = makeBandpassCoefficients(f2, bandwidths[1]);
+    auto coeffs2 = makeBandpassCoefficients(f3, bandwidths[2]);
+    auto coeffs3 = makeBandpassCoefficients(f4, bandwidths[3]);
+    
+    filtersL[0].coefficients = coeffs0;
+    filtersL[1].coefficients = coeffs1;
+    filtersL[2].coefficients = coeffs2;
+    filtersL[3].coefficients = coeffs3;
+    
+    filtersR[0].coefficients = coeffs0;
+    filtersR[1].coefficients = coeffs1;
+    filtersR[2].coefficients = coeffs2;
+    filtersR[3].coefficients = coeffs3;
+    
+    // Convert gains
+    float emphasisGain = juce::Decibels::decibelsToGain(emphasis);
+    float brightnessGain = juce::Decibels::decibelsToGain(brightness);
+    
+    // Skip smoothed parameter updates for this block
+    vowelSm.skip(numSamples);
+    qSm.skip(numSamples);
+    emphasisSm.skip(numSamples);
+    shiftSm.skip(numSamples);
+    brightnessSm.skip(numSamples);
+    motionSm.skip(numSamples);
+    airSm.skip(numSamples);
+    mixSm.skip(numSamples);
+    
+    // Process audio sample-by-sample
     auto* leftChannel = buffer.getWritePointer(0);
     auto* rightChannel = buffer.getWritePointer(1);
     
-    const float intensityGain = juce::Decibels::decibelsToGain(intensitySm.getCurrentValue());
-    const float mix = mixSm.getCurrentValue();
-    
-    // Safety check: ensure filters are ready
-    if (filtersL[0].coefficients == nullptr || filtersR[0].coefficients == nullptr)
-    {
-        return; // Filters not initialized yet
-    }
-    
-    for (int sample = 0; sample < numSamples; ++sample)
-    {
-        const float dryL = leftChannel[sample];
-        const float dryR = rightChannel[sample];
+    for (int i = 0; i < numSamples; ++i) {
+        float dryL = leftChannel[i];
+        float dryR = rightChannel[i];
         
-        // Process left channel through 3 parallel bandpass filters
+        // Process through parallel filter bank
         float wetL = 0.0f;
-        for (int i = 0; i < 3; ++i)
-        {
-            if (filtersL[i].coefficients != nullptr)
-            {
-                float filtered = filtersL[i].processSample(dryL);
-                wetL += filtered;
-            }
-        }
-        
-        // Process right channel through 3 parallel bandpass filters
         float wetR = 0.0f;
-        for (int i = 0; i < 3; ++i)
-        {
-            if (filtersR[i].coefficients != nullptr)
-            {
-                float filtered = filtersR[i].processSample(dryR);
-                wetR += filtered;
+        
+        for (int j = 0; j < 4; ++j) {
+            float filteredL = filtersL[j].processSample(dryL);
+            float filteredR = filtersR[j].processSample(dryR);
+            
+            // Apply gains
+            if (j < 3) {
+                // F1, F2, F3 get emphasis gain
+                filteredL *= emphasisGain;
+                filteredR *= emphasisGain;
+            } else {
+                // F4 gets brightness gain
+                filteredL *= brightnessGain;
+                filteredR *= brightnessGain * 0.98f; // Slight stereo width
             }
+            
+            wetL += filteredL;
+            wetR += filteredR;
         }
         
-        // Apply intensity gain
-        wetL *= intensityGain;
-        wetR *= intensityGain;
+        // Scale to prevent clipping (parallel summing of 4 filters)
+        // Formants don't all peak simultaneously, scale appropriately
+        wetL *= 1.0f;  // No scale reduction needed
+        wetR *= 1.0f;
         
-        // Mix dry and wet
-        leftChannel[sample] = dryL * (1.0f - mix) + wetL * mix;
-        rightChannel[sample] = dryR * (1.0f - mix) + wetR * mix;
+        // Guard against overload with high emphasis
+        if (emphasis > 12.0f) {
+            float safetyScale = juce::Decibels::decibelsToGain(-6.0f); // -6 dB safety when hot
+            wetL *= safetyScale;
+            wetR *= safetyScale;
+        }
+        
+        // Final dry/wet mix
+        leftChannel[i] = dryL * (1.0f - mix) + wetL * mix;
+        rightChannel[i] = dryR * (1.0f - mix) + wetR * mix;
     }
-}
-
-FormantProcessor::Formants FormantProcessor::getFormantsForVowel(int vowel) const
-{
-    // Clamp index
-    vowel = juce::jlimit(0, 4, vowel);
-    
-    // Return formants for selected vowel (no interpolation, no gender shift)
-    return kVowelTable[vowel];
-}
-
-void FormantProcessor::updateCoeffs()
-{
-    if (sampleRate <= 0.0) return; // Not initialized yet
-    
-    const float q = resonanceSm.getCurrentValue();
-    
-    // Get formant frequencies
-    const float f1 = currentFormants.F1;
-    const float f2 = currentFormants.F2;
-    const float f3 = currentFormants.F3;
-    
-    // Clamp frequencies to valid range
-    const float nyquist = static_cast<float>(sampleRate) * 0.5f;
-    const float f1Clamped = juce::jlimit(20.0f, nyquist - 100.0f, f1);
-    const float f2Clamped = juce::jlimit(20.0f, nyquist - 100.0f, f2);
-    const float f3Clamped = juce::jlimit(20.0f, nyquist - 100.0f, f3);
-    
-    // Create bandpass filter coefficients with different Q for each formant
-    // This creates more natural vowel coloration
-    const float q1 = q * 1.2f;  // F1 slightly wider
-    const float q2 = q;         // F2 standard
-    const float q3 = q * 0.9f;  // F3 slightly narrower
-    
-    auto coeffs1 = juce::dsp::IIR::Coefficients<float>::makeBandPass(sampleRate, f1Clamped, q1);
-    auto coeffs2 = juce::dsp::IIR::Coefficients<float>::makeBandPass(sampleRate, f2Clamped, q2);
-    auto coeffs3 = juce::dsp::IIR::Coefficients<float>::makeBandPass(sampleRate, f3Clamped, q3);
-    
-    // Update left channel filters with null check
-    if (filtersL[0].coefficients != nullptr)
-    {
-        *filtersL[0].coefficients = *coeffs1;
-    }
-    if (filtersL[1].coefficients != nullptr)
-    {
-        *filtersL[1].coefficients = *coeffs2;
-    }
-    if (filtersL[2].coefficients != nullptr)
-    {
-        *filtersL[2].coefficients = *coeffs3;
-    }
-    
-    // Update right channel filters with null check
-    if (filtersR[0].coefficients != nullptr)
-    {
-        *filtersR[0].coefficients = *coeffs1;
-    }
-    if (filtersR[1].coefficients != nullptr)
-    {
-        *filtersR[1].coefficients = *coeffs2;
-    }
-    if (filtersR[2].coefficients != nullptr)
-    {
-        *filtersR[2].coefficients = *coeffs3;
-    }
-}
-
-void FormantProcessor::processParams()
-{
-    // Update smoothed parameters
-    resonanceSm.skip(1);
-    intensitySm.skip(1);
-    mixSm.skip(1);
-    vowelSm.skip(1);
-    
-    // Set target values
-    resonanceSm.setTargetValue(currentTargets.resonance);
-    intensitySm.setTargetValue(currentTargets.intensity);
-    mixSm.setTargetValue(currentTargets.mix);
-    vowelSm.setTargetValue(currentTargets.vowel);
 }
 
 FormantProcessor::CurrentState FormantProcessor::getCurrentState() const
 {
     CurrentState state;
     
-    // Get current formants for selected vowel
-    Formants formants = getFormantsForVowel(vowelSm.getCurrentValue());
+    // Get current formants
+    float vowel = vowelSm.getCurrentValue();
+    float motion = motionSm.getCurrentValue();
+    float shift = shiftSm.getCurrentValue();
+    float q = qSm.getCurrentValue();
     
-    state.f1Hz = formants.F1;
-    state.f2Hz = formants.F2;
-    state.f3Hz = formants.F3;
-    state.q = resonanceSm.getCurrentValue();
-    state.emphasisDb = intensitySm.getCurrentValue();
-    state.enabled = currentTargets.mix > 0.0f; // Consider enabled if mix > 0
+    float delta = motion * 0.75f;
+    float vA = juce::jlimit(0.0f, 4.0f, vowel - delta);
+    float vB = juce::jlimit(0.0f, 4.0f, vowel + delta);
+    
+    Formants formantsA = getFormantsForVowel(vA);
+    Formants formantsB = getFormantsForVowel(vB);
+    
+    // Apply shift
+    formantsA.F1 *= shift;
+    formantsA.F2 *= shift;
+    formantsA.F3 *= shift;
+    formantsB.F1 *= shift;
+    formantsB.F2 *= shift;
+    formantsB.F3 *= shift;
+    
+    // Average
+    float morphBalance = motion > 0.01f ? 0.5f : 0.0f;
+    state.f1Hz = formantsA.F1 + morphBalance * (formantsB.F1 - formantsA.F1);
+    state.f2Hz = formantsA.F2 + morphBalance * (formantsB.F2 - formantsA.F2);
+    state.f3Hz = formantsA.F3 + morphBalance * (formantsB.F3 - formantsA.F3);
+    
+    // Calculate Q from bandwidth
+    state.q = (state.f1Hz / kBandwidths[0]) / q;
+    state.emphasisDb = emphasisSm.getCurrentValue();
+    state.enabled = mixSm.getCurrentValue() > 0.0f;
     
     return state;
 }

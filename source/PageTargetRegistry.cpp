@@ -198,6 +198,44 @@ void PageTargetRegistry::buildRegistry()
         targets.maxSteps = 16;
         registry[EffectID::PhaseBloom] = targets;
     }
+    
+    // Formant Page
+    {
+        PageTargets targets;
+        targets.pageId = "Formant";
+        targets.knobParamIds = {
+            "vowel",              // Knob 0: Vowel
+            "resonance",          // Knob 1: Sharpness
+            "intensity",          // Knob 2: Emphasis
+            "formantShift",       // Knob 3: Shift
+            "formantBrightness",  // Knob 4: Brightness
+            "formantMotion",      // Knob 5: Motion
+            "formantAir",         // Knob 6: Air
+            "mix"                 // Knob 7: Mix
+        };
+        targets.sequencerStepsUsedKey = "formantStepsUsed";
+        targets.maxSteps = 16;
+        registry[EffectID::Formant] = targets;
+    }
+    
+    // Form2 Page
+    {
+        PageTargets targets;
+        targets.pageId = "Form2";
+        targets.knobParamIds = {
+            "form2RootNote",    // Knob 0: Root Note
+            "form2Scale",       // Knob 1: Scale
+            "form2ChordSize",   // Knob 2: Chord Size
+            "form2Shift",       // Knob 3: Shift
+            "form2Brightness",  // Knob 4: Color
+            "form2Motion",      // Knob 5: Motion
+            "form2Air",         // Knob 6: Resynth
+            "form2Mix"          // Knob 7: Mix
+        };
+        targets.sequencerStepsUsedKey = "form2StepsUsed";
+        targets.maxSteps = 16;
+        registry[EffectID::Form2] = targets;
+    }
 }
 
 std::array<PageTargets, 4> PageTargetRegistry::getActivePages(

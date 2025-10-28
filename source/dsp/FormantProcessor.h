@@ -2,7 +2,12 @@
 
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <juce_dsp/juce_dsp.h>
+#include <array>
 
+/**
+ * FormantProcessor - RBJ biquad formant filter
+ * Stable formant filtering using IIR biquad filters with coefficient interpolation
+ */
 class FormantProcessor
 {
 public:
@@ -10,16 +15,8 @@ public:
     ~FormantProcessor() = default;
 
     void prepare(double sampleRate, int maxBlockSize);
-    
-    struct Targets {
-        int vowel = 0;            // 0-4 (A,E,I,O,U)
-        float resonance = 12.0f;   // 0.5-20 Q factor for bandwidth
-        float intensity = 6.0f;   // 0-12 dB emphasis gain
-        float mix = 0.8f;         // 0-1 dry/wet mix
-    };
-    
-    void setTargets(const Targets& t);
-    void process(juce::AudioBuffer<float>& buffer, int numSamples);
+    void process(juce::AudioBuffer<float>& buffer, int numSamples, juce::AudioProcessorValueTreeState& apvts);
+    void setHostTempo(double bpm, bool hasTempo);
     
     // Access methods for UI visualization
     struct CurrentState {
@@ -32,43 +29,48 @@ public:
 
 private:
     // Vowel formant data (F1, F2, F3 in Hz)
-    enum Vowel { A_ = 0, E_ = 1, I_ = 2, O_ = 3, U_ = 4 };
     struct Formants { float F1, F2, F3; };
-    static constexpr Formants kVowelTable[5] = {
-        /*A*/ { 730.f, 1090.f, 2440.f },   // "Ah" - open vowel
-        /*E*/ { 530.f, 1840.f, 2480.f },   // "Eh" - mid-front vowel  
-        /*I*/ { 270.f, 2290.f, 3010.f },   // "Ee" - high-front vowel
-        /*O*/ { 570.f,  840.f, 2410.f },   // "Oh" - mid-back vowel
-        /*U*/ { 300.f,  870.f, 2240.f },   // "Oo" - high-back vowel
+    static constexpr Formants kVowels[5] = {
+        { 730.f, 1090.f, 2440.f }, // A (0)
+        { 530.f, 1840.f, 2480.f }, // E (1)
+        { 270.f, 2290.f, 3010.f }, // I (2)
+        { 570.f,  840.f, 2410.f }, // O (3)
+        { 300.f,  870.f, 2240.f }  // U (4)
     };
     
-    // Get formants for selected vowel
-    Formants getFormantsForVowel(int vowel) const;
+    // Formant bandwidths in Hz
+    static constexpr float kBandwidths[4] = {
+        110.0f, // F1
+        90.0f,  // F2
+        150.0f, // F3
+        200.0f  // F4
+    };
     
-    // Update filter coefficients
-    void updateCoeffs();
+    // Get formants for continuous vowel (0-4)
+    Formants getFormantsForVowel(float vowel) const;
     
-    // Process parameters
-    void processParams();
+    // Calculate F4 from F2 and F3
+    float computeF4(float f2, float f3) const;
+    
+    // Create RBJ bandpass coefficients
+    juce::dsp::IIR::Coefficients<float>::Ptr makeBandpassCoefficients(float centerFreq, float bandwidth) const;
     
     double sampleRate = 44100.0;
     
-    // 3 parallel bandpass filters per channel (6 total)
-    juce::dsp::IIR::Filter<float> filtersL[3], filtersR[3];
+    // Single filter bank with 4 IIR biquads per channel
+    std::array<juce::dsp::IIR::Filter<float>, 4> filtersL;  // F1, F2, F3, F4
+    std::array<juce::dsp::IIR::Filter<float>, 4> filtersR;  // F1, F2, F3, F4
     
-    // Smoothed parameters
-    juce::LinearSmoothedValue<float> resonanceSm, intensitySm, mixSm;
-    juce::LinearSmoothedValue<int> vowelSm;
+    // Parameters (all 8 for complete control)
+    juce::LinearSmoothedValue<float> vowelSm;       // 0-4
+    juce::LinearSmoothedValue<float> qSm;           // 0.4-18 (sharpness multiplier)
+    juce::LinearSmoothedValue<float> emphasisSm;    // -6..+18 dB
+    juce::LinearSmoothedValue<float> shiftSm;       // 0.5-2.0
+    juce::LinearSmoothedValue<float> brightnessSm;  // -12..+12 dB (F4)
+    juce::LinearSmoothedValue<float> motionSm;      // 0-1 (morph depth)
+    juce::LinearSmoothedValue<float> airSm;          // 0-1 (not used yet)
+    juce::LinearSmoothedValue<float> mixSm;          // 0-1
     
-    // Current parameters
-    Targets currentTargets;
-    Formants currentFormants;
-    
-    // Cache for optimization
-    int lastVowel = -1;
-    float lastQ = 0.0f;
-    float lastIntensity = 0.0f;
-    
-    // Prepared flag to prevent processing before initialization
     bool isPrepared = false;
+    int maxBlockSize = 512;
 };
