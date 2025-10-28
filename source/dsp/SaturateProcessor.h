@@ -38,6 +38,7 @@ public:
     
     void prepare(double sampleRate, int maxBlockSize);
     void process(juce::AudioBuffer<float>& buffer, int numSamples, juce::AudioProcessorValueTreeState& apvts);
+    void processWithSnapshot(juce::AudioBuffer<float>& buffer, int numSamples, float type, float drive, float color, float shape, float bias, float output, float mix);
     
 private:
     double sampleRate = 44100.0;

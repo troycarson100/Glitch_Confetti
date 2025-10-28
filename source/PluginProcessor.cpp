@@ -1081,7 +1081,7 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
             }
             
             // Formant sequencer stepping (shares same PPQ/transport, independent timing)
-            if (isPlaying && ppqValid && formantSeq.active.load()) {
+            if (isPlaying && ppqValid && formantSeq.enabled.load() && formantSeq.active.load()) {
                 const int formantStep = formantSeq.computeStepFromPPQ(ppq);
                 if (formantStep != formantSeq.currentStep.load()) {
                     formantSeq.currentStep.store(formantStep);
@@ -1090,14 +1090,24 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                 }
             }
             
+            // Deactivate sequencer if not playing
+            if (!isPlaying && formantSeq.active.load()) {
+                formantSeq.active.store(false);
+            }
+            
             // Saturate (Heat) sequencer stepping (shares same PPQ/transport, independent timing)
-            if (isPlaying && ppqValid && saturateSeq.active.load()) {
+            if (isPlaying && ppqValid && saturateSeq.enabled.load() && saturateSeq.active.load()) {
                 const int saturateStep = saturateSeq.computeStepFromPPQ(ppq);
                 if (saturateStep != saturateSeq.currentStep.load()) {
                     saturateSeq.currentStep.store(saturateStep);
                     saturateSeq.playingStep.store(saturateStep);
                     DBG("[SATURATE SEQ] ★ Step changed to: " << saturateStep << " PPQ: " << ppq);
                 }
+            }
+            
+            // Deactivate sequencer if not playing
+            if (!isPlaying && saturateSeq.active.load()) {
+                saturateSeq.active.store(false);
             }
             
             // Form 2 sequencer stepping (shares same PPQ/transport, independent timing)
@@ -1889,73 +1899,31 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                     // Get Saturate sequencer state
                     auto& seqState = saturateSeq;
                     
-                    // Check if sequencer is enabled and active - only update on step change
-                    static int lastSaturateStep = -1;
+                    // Check if sequencer is enabled and active
+                    bool seqEnabled = seqState.enabled.load();
+                    bool seqActive = seqState.active.load();
+                    int playingStep = seqState.playingStep.load();
                     
-                    // Only update parameters if sequencer is enabled, active, and step changed
-                    if (seqState.enabled.load() && seqState.active.load()) {
-                        int currentStep = seqState.currentStep.load();
-                        bool stepChanged = (currentStep != lastSaturateStep);
+                    // Read parameters from sequencer snapshot OR APVTS (like Dub Delay)
+                    // Only use sequencer if it's enabled, active, and has a valid playing step
+                    if (seqEnabled && seqActive && playingStep >= 0 && playingStep < 16) {
+                        // Read from step snapshot - don't update APVTS to prevent knob jumping
+                        StepSnapshot snapshot = getSaturateSafeSnapshot(playingStep);
+                        float type = snapshot.saturate.type;
+                        float drive = snapshot.saturate.drive;
+                        float color = snapshot.saturate.color;
+                        float shape = snapshot.saturate.shape;
+                        float bias = snapshot.saturate.bias;
+                        float output = snapshot.saturate.output;
+                        float mix = snapshot.saturate.mix;
                         
-                        if (stepChanged && currentStep >= 0 && currentStep < 16) {
-                        StepSnapshot snapshot = getSaturateSafeSnapshot(currentStep);
-                        
-                        // Update APVTS parameters from sequencer snapshot (only when step changes)
-                        // Use parameter's convertFrom0to1 to properly convert snapshot values
-                        auto* typeParam = valueTreeState.getParameter("satType");
-                        auto* driveParam = valueTreeState.getParameter("satDrive");
-                        auto* colorParam = valueTreeState.getParameter("satColor");
-                        auto* shapeParam = valueTreeState.getParameter("satShape");
-                        auto* biasParam = valueTreeState.getParameter("satBias");
-                        auto* outputParam = valueTreeState.getParameter("satOut");
-                        auto* mixParam = valueTreeState.getParameter("satMix");
-                        
-                        // Convert snapshot values to normalized 0-1 range, then let parameter convert to actual values
-                        if (typeParam) {
-                            float normType = snapshot.saturate.type / 7.0f;
-                            typeParam->setValueNotifyingHost(juce::jlimit(0.0f, 1.0f, normType));
-                        }
-                        if (driveParam) {
-                            float normDrive = snapshot.saturate.drive / 36.0f;
-                            driveParam->setValueNotifyingHost(juce::jlimit(0.0f, 1.0f, normDrive));
-                        }
-                        if (colorParam) {
-                            colorParam->setValueNotifyingHost(juce::jlimit(0.0f, 1.0f, snapshot.saturate.color));
-                        }
-                        if (shapeParam) {
-                            shapeParam->setValueNotifyingHost(juce::jlimit(0.0f, 1.0f, snapshot.saturate.shape));
-                        }
-                        if (biasParam) {
-                            float normBias = (snapshot.saturate.bias + 0.2f) / 0.4f;
-                            biasParam->setValueNotifyingHost(juce::jlimit(0.0f, 1.0f, normBias));
-                        }
-                        if (outputParam) {
-                            float normOut = (snapshot.saturate.output + 24.0f) / 36.0f;
-                            outputParam->setValueNotifyingHost(juce::jlimit(0.0f, 1.0f, normOut));
-                        }
-                        if (mixParam) {
-                            mixParam->setValueNotifyingHost(juce::jlimit(0.0f, 1.0f, snapshot.saturate.mix));
-                        }
-                            
-                            lastSaturateStep = currentStep;
-                        }
+                        // Process with snapshot values directly (no APVTS update)
+                        saturateProcessor.processWithSnapshot(buffer, buffer.getNumSamples(), 
+                                                             type, drive, color, shape, bias, output, mix);
                     } else {
-                        // Sequencer disabled or inactive - reset last step tracker
-                        lastSaturateStep = -1;
+                        // Sequencer not active - use APVTS values (responds to knob changes)
+                        saturateProcessor.process(buffer, buffer.getNumSamples(), valueTreeState);
                     }
-                    
-                    // Oversample always max (3 = 8×) - check once, not every block
-                    static bool osSet = false;
-                    if (!osSet) {
-                        auto* osParam = valueTreeState.getParameter("satOsMode");
-                        if (osParam && osParam->getValue() < 1.0f) {
-                            osParam->setValueNotifyingHost(1.0f); // 3/3 = max
-                        }
-                        osSet = true;
-                    }
-                    
-                    // Process Saturate effect (always uses current APVTS values)
-                    saturateProcessor.process(buffer, buffer.getNumSamples(), valueTreeState);
                 }
                 break;
             }

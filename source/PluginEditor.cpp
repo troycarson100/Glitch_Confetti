@@ -1443,6 +1443,12 @@ void PluginEditor::timerCallback()
     // Update Form 2 sequencer UI  
     updateForm2SequencerUI();
     
+    // Update Formant sequencer UI
+    updateFormantSequencerUI();
+    
+    // Update Saturate (Heat) sequencer UI
+    updateSaturateSequencerUI();
+    
     // Update Dub Delay time label (handles sync mode display)
     updateDubDelayTimeLabel();
     
@@ -12294,7 +12300,7 @@ void PluginEditor::onSaturateStepButtonClicked(int stepIndex)
 void PluginEditor::updateSaturateSequencerUI()
 {
     int selectedStep = saturateUiSelectedStep;
-    int playingStep = processorRef.getSaturateCurrentStep();
+    int playingStep = processorRef.getSaturatePlayingStep(); // Use playingStep, not currentStep
     const int stepsUsed = processorRef.getSaturateSeqState().stepsUsed.load();
     
     for (int i = 0; i < 16; ++i) {
@@ -12337,6 +12343,8 @@ void PluginEditor::randomizeSaturateKnobValues()
     DBG("[UI] Randomizing Saturate knob values...");
     for (int i = 0; i < 7; ++i) {
         if (saturateKnobs[i]) {
+            // Check if knob is locked - skip if locked
+            if (i < 7 && saturateKnobLocked[i]) continue;
             randomizeIndividualSaturateKnob(i);
         }
     }
@@ -12346,6 +12354,12 @@ void PluginEditor::randomizeIndividualSaturateKnob(int knobIndex)
 {
     if (knobIndex < 0 || knobIndex >= 7) return;
     if (!saturateKnobs[knobIndex]) return;
+    
+    // Check if knob is locked - don't randomize if locked
+    if (knobIndex < 7 && saturateKnobLocked[knobIndex]) {
+        DBG("[UI] Skipping locked Saturate knob " << knobIndex);
+        return;
+    }
     
     juce::Random rand;
     float newValue = 0.0f;

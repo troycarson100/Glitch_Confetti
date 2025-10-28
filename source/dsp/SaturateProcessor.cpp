@@ -311,7 +311,17 @@ void SaturateProcessor::switchModel(size_t type)
     if (type == static_cast<size_t>(currentType) || type >= 8) return;
     
     currentType = static_cast<int>(type);
-    currentModel = std::move(models[type]);
+    
+    // Ensure model exists before moving
+    if (models[type] != nullptr) {
+        currentModel = std::move(models[type]);
+        
+        // Create new model instance for next time
+        createModels();
+    } else {
+        // Fallback: create default model if something went wrong
+        currentModel = std::make_unique<SatSpiral2>();
+    }
     
     // Start crossfade
     crossfadeValue = 0.0f;
@@ -372,10 +382,13 @@ void SaturateProcessor::process(juce::AudioBuffer<float>& buffer, int numSamples
     float outVal = outSm.getCurrentValue();
     float mixVal = mixSm.getCurrentValue();
     
-    // Update model parameters
-    if (currentModel) {
-        currentModel->setParams(driveVal, colorVal, shapeVal, biasVal);
+    // Update model parameters - ensure model exists
+    if (!currentModel) {
+        // Fallback: create default model
+        currentModel = std::make_unique<SatSpiral2>();
+        createModels();
     }
+    currentModel->setParams(driveVal, colorVal, shapeVal, biasVal);
     
     // Convert out to linear gain
     float outGain = juce::Decibels::decibelsToGain(outVal);
@@ -403,9 +416,15 @@ void SaturateProcessor::process(juce::AudioBuffer<float>& buffer, int numSamples
         float filteredL = inputHPF.processSample(dryL);
         float filteredR = inputHPF.processSample(dryR);
         
-        // Saturate
-        float wetL = currentModel ? currentModel->process(filteredL) : filteredL;
-        float wetR = currentModel ? currentModel->process(filteredR) : filteredR;
+        // Saturate - ensure model exists
+        float wetL, wetR;
+        if (currentModel) {
+            wetL = currentModel->process(filteredL);
+            wetR = currentModel->process(filteredR);
+        } else {
+            wetL = filteredL;
+            wetR = filteredR;
+        }
         
         // Apply output gain
         wetL *= outGain;
@@ -440,6 +459,142 @@ void SaturateProcessor::process(juce::AudioBuffer<float>& buffer, int numSamples
         
         outLeft[i] = dryL * (1.0f - mixVal) + wetL * mixVal;
         outRight[i] = dryR * (1.0f - mixVal) + wetR * mixVal;
+    }
+}
+
+void SaturateProcessor::processWithSnapshot(juce::AudioBuffer<float>& buffer, int numSamples, float type, float drive, float color, float shape, float bias, float output, float mix)
+{
+    if (numSamples == 0 || sampleRate <= 0.0) return;
+    if (buffer.getNumChannels() < 2) return;
+    
+    juce::ScopedNoDenormals noDenormals;
+    
+    // Clamp and convert parameters
+    int typeInt = juce::jlimit(0, 7, static_cast<int>(type));
+    float driveVal = juce::jlimit(0.0f, 36.0f, drive);
+    float colorVal = juce::jlimit(0.0f, 1.0f, color);
+    float shapeVal = juce::jlimit(0.0f, 1.0f, shape);
+    float biasVal = juce::jlimit(-0.2f, 0.2f, bias);
+    float outVal = juce::jlimit(-24.0f, 12.0f, output);
+    float mixVal = juce::jlimit(0.0f, 1.0f, mix);
+    
+    // Switch model if needed - ensure we have a valid model
+    if (typeInt != currentType) {
+        if (typeInt >= 0 && typeInt < 8) {
+            switchModel(static_cast<size_t>(typeInt));
+        } else {
+            // Invalid type - ensure we have a valid model
+            if (!currentModel) {
+                currentModel = std::make_unique<SatSpiral2>();
+                createModels();
+            }
+        }
+    }
+    
+    // Safety check: ensure currentModel is valid
+    if (!currentModel) {
+        currentModel = std::make_unique<SatSpiral2>();
+        createModels();
+    }
+    
+    // Update oversampling (always 8×)
+    int osMode = 3;
+    int osFactor = 1 << osMode;
+    currentOsFactor = osFactor;
+    
+    // Update smoothed parameters
+    driveSm.setTargetValue(driveVal);
+    colorSm.setTargetValue(colorVal);
+    shapeSm.setTargetValue(shapeVal);
+    biasSm.setTargetValue(biasVal);
+    outSm.setTargetValue(outVal);
+    mixSm.setTargetValue(mixVal);
+    
+    // Get current smoothed values
+    float driveCurrent = driveSm.getCurrentValue();
+    float colorCurrent = colorSm.getCurrentValue();
+    float shapeCurrent = shapeSm.getCurrentValue();
+    float biasCurrent = biasSm.getCurrentValue();
+    float outCurrent = outSm.getCurrentValue();
+    float mixCurrent = mixSm.getCurrentValue();
+    
+    // Update model parameters - ensure model exists
+    if (!currentModel) {
+        // Fallback: create default model
+        currentModel = std::make_unique<SatSpiral2>();
+        createModels();
+    }
+    currentModel->setParams(driveCurrent, colorCurrent, shapeCurrent, biasCurrent);
+    
+    // Convert out to linear gain
+    float outGain = juce::Decibels::decibelsToGain(outCurrent);
+    
+    // Copy dry signal for mixing
+    juce::AudioBuffer<float> dryBuffer(buffer.getNumChannels(), buffer.getNumSamples());
+    for (int ch = 0; ch < buffer.getNumChannels(); ++ch) {
+        dryBuffer.copyFrom(ch, 0, buffer, ch, 0, buffer.getNumSamples());
+    }
+    
+    // Create DSP context for oversampling
+    juce::dsp::AudioBlock<float> block(buffer);
+    
+    // Process through oversampling
+    auto osBlock = oversampler->processSamplesUp(block);
+    
+    // Process sample-by-sample on oversampled data
+    int osNumSamples = static_cast<int>(osBlock.getNumSamples());
+    
+    for (int i = 0; i < osNumSamples; ++i) {
+        // HPF
+        float dryL = osBlock.getChannelPointer(0)[i];
+        float dryR = osBlock.getChannelPointer(1)[i];
+        
+        float filteredL = inputHPF.processSample(dryL);
+        float filteredR = inputHPF.processSample(dryR);
+        
+        // Saturate - ensure model exists
+        float wetL, wetR;
+        if (currentModel) {
+            wetL = currentModel->process(filteredL);
+            wetR = currentModel->process(filteredR);
+        } else {
+            wetL = filteredL;
+            wetR = filteredR;
+        }
+        
+        // Apply output gain
+        wetL *= outGain;
+        wetR *= outGain;
+        
+        // Store back
+        osBlock.getChannelPointer(0)[i] = wetL;
+        osBlock.getChannelPointer(1)[i] = wetR;
+        
+        // Update smoothed parameters (once per OS sample)
+        driveSm.skip(1);
+        colorSm.skip(1);
+        shapeSm.skip(1);
+        biasSm.skip(1);
+        outSm.skip(1);
+        mixSm.skip(1);
+    }
+    
+    // Downsample
+    oversampler->processSamplesDown(block);
+    
+    // Mix with dry
+    auto* outLeft = buffer.getWritePointer(0);
+    auto* outRight = buffer.getWritePointer(1);
+    
+    for (int i = 0; i < numSamples; ++i) {
+        float dryL = dryBuffer.getSample(0, i);
+        float dryR = dryBuffer.getSample(1, i);
+        
+        float wetL = buffer.getSample(0, i);
+        float wetR = buffer.getSample(1, i);
+        
+        outLeft[i] = dryL * (1.0f - mixCurrent) + wetL * mixCurrent;
+        outRight[i] = dryR * (1.0f - mixCurrent) + wetR * mixCurrent;
     }
 }
 
