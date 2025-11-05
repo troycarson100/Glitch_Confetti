@@ -15,6 +15,7 @@
 #include "dsp/FormantProcessor.h"
 #include "dsp/SaturateProcessor.h"
 #include "dsp/Form2Processor.h"
+#include "dsp/FxFilter.h"
 #include "Effects/Redux/ReduxBank.h"
 #include "dsp/DspFlags.h"
 #include "StepSnapshot.h"
@@ -594,6 +595,9 @@ public:
     Form2Processor form2Processor;
     
     Form2Processor& getForm2Processor() { return form2Processor; }
+    
+    // Filter processor
+    FxFilter filterProcessor;
     
     // Redux DSP Implementation
     ReduxBank reduxBank;

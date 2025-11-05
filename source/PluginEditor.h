@@ -1035,6 +1035,43 @@ public:
     std::vector<juce::Component*> phaseBloomGroup; // All PhaseBloom UI components for visibility toggling
     std::vector<juce::Component*> formantGroup; // All Formant UI components for visibility toggling
     
+    // Filter page components (8 knobs: Type, Cutoff, Res, Slope, Drive, Spread, Key Track, Mix)
+    std::unique_ptr<CustomKnob> filterTypeKnob;
+    std::unique_ptr<juce::Label> filterTypeLabel;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> filterTypeAttachment;
+    std::array<std::unique_ptr<CustomKnob>, 6> filterKnobs; // Cutoff, Res, Drive, Spread, Key Track, Mix
+    std::array<std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>, 6> filterAttachments;
+    std::unique_ptr<CustomKnob> filterSlopeKnob;
+    std::unique_ptr<juce::Label> filterSlopeLabel;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> filterSlopeAttachment;
+    std::array<std::unique_ptr<juce::Label>, 8> filterKnobLabels; // Labels for all 8 controls (Type, Cutoff, Res, Slope, Drive, Spread, Key Track, Mix)
+    std::array<std::unique_ptr<juce::Label>, 8> filterValueLabels; // Value labels for all 8 knobs
+    std::array<std::unique_ptr<IndicatorBar>, 8> filterIndicatorBars; // Indicators for all 8 knobs
+    std::array<std::unique_ptr<LockButton>, 8> filterLockButtons; // Lock buttons for all 8 knobs
+    std::array<bool, 8> filterKnobLocked { false, false, false, false, false, false, false, false };
+    std::unique_ptr<juce::Label> filterEffectsTitle;
+    std::unique_ptr<CustomDiceButton> filterDiceButton;
+    std::unique_ptr<juce::DrawableButton> filterFxPowerButton;
+    bool filterFxAreaEnabled = true;
+    
+    // Filter step sequencer area
+    std::array<std::unique_ptr<StepButton>, 16> filterStepButtons;
+    int filterUiSelectedStep = 0;
+    std::unique_ptr<juce::TextEditor> filterStepAmountLabel;
+    std::unique_ptr<juce::ComboBox> filterRateDropdown;
+    std::unique_ptr<CircularToggleButton> filterStdToggle;
+    std::unique_ptr<juce::Label> filterStepTitle;
+    std::unique_ptr<CustomDiceButton> filterStepDiceButton;
+    std::unique_ptr<juce::DrawableButton> filterStepPowerButton;
+    bool filterStepAreaEnabled = true;
+    
+    // Filter All Steps toggle
+    std::unique_ptr<AllStepsToggleButton> filterAllStepsToggle;
+    std::unique_ptr<juce::Label> filterAllStepsLabel;
+    bool filterAllStepsEnabled = false;
+    
+    std::vector<juce::Component*> filterGroup; // All Filter UI components for visibility toggling
+    
     // Saturate page components (8 knobs)
     std::array<std::unique_ptr<CustomKnob>, 8> saturateKnobs;
     std::array<std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>, 8> saturateAttachments;
@@ -1199,12 +1236,18 @@ public:
         void setupSaturateKnobs();
         void setupSaturateEffectsArea();
         void setupSaturateSequencerArea();
+        void setupFilterSequencerArea();
         void setupSaturateAllStepsToggle();
         void updateSaturateKnobLabels(int type);
         void updateSaturateFxAreaVisibility();
+        void updateFilterFxAreaVisibility();
         void updateSaturateStepAreaVisibility();
+        void updateFilterStepAreaVisibility();
         void updateSaturateSequencerUI();
         void onSaturateStepButtonClicked(int stepIndex);
+        
+        void updateFilterSequencerUI();
+        void onFilterStepButtonClicked(int stepIndex);
         void updateSaturateParameterFromKnob(int knobIndex);
         void randomizeSaturateKnobValues();
         void randomizeIndividualSaturateKnob(int knobIndex);
@@ -1250,6 +1293,10 @@ public:
         
         // Formant page helper methods
         void setupFormantKnobs();
+        void setupFilterKnobs();
+        void setupFilterEffectsArea();
+        void setupFilterAllStepsToggle();
+        void populateFilterGroup();
         void setupFormantEffectsArea();
         void setupFormantSequencerArea();
         void setupFormantAllStepsToggle();

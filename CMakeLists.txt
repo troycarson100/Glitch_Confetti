@@ -68,12 +68,18 @@ set(SourceFiles
     ${CMAKE_CURRENT_SOURCE_DIR}/source/dsp/FormantProcessor.h
     ${CMAKE_CURRENT_SOURCE_DIR}/source/dsp/Form2Processor.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/source/dsp/Form2Processor.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/source/dsp/SaturateProcessor.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/source/dsp/SaturateProcessor.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/source/dsp/FxFilter.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/source/dsp/FxFilter.h
     ${CMAKE_CURRENT_SOURCE_DIR}/source/ui/UiFlags.h
     ${CMAKE_CURRENT_SOURCE_DIR}/source/ui/Assets.h
     ${CMAKE_CURRENT_SOURCE_DIR}/source/ui/Assets.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/source/ui/CompressSlider.h
     ${CMAKE_CURRENT_SOURCE_DIR}/source/ui/DelayPage.h
     ${CMAKE_CURRENT_SOURCE_DIR}/source/ui/DelayPage.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/source/ui/FilterPage.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/source/ui/FilterPage.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/source/ui/PanIndicator.h
     ${CMAKE_CURRENT_SOURCE_DIR}/source/ui/PanIndicator.cpp
 )

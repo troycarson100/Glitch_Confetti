@@ -123,6 +123,25 @@ PluginProcessor::PluginProcessor()
     saturateSeq.playingStep.store(0);
     saturateUiSelectedStep.store(0); // Initialize UI selected step
     
+    // Initialize Shimmer sequencer - TODO: shimmerSeq needs to be declared
+    // shimmerSeq.enabled.store(true); // Start enabled
+    // shimmerSeq.stepsUsed.store(16);
+    // shimmerSeq.divisionIndex.store(5); // 1/8 default (index 5 = item ID 6)
+    // shimmerSeq.playingStep.store(0);
+    // shimmerUiSelectedStep.store(0); // Initialize UI selected step
+    
+    // Initialize Shimmer step snapshots with defaults - TODO: shimmerStepSnapshots needs to be declared
+    // for (int i = 0; i < 16; ++i) {
+    //     shimmerStepSnapshots[i].shimmer.mode = 0.0f; // A:+12
+    //     shimmerStepSnapshots[i].shimmer.size = 0.60f;
+    //     shimmerStepSnapshots[i].shimmer.decay = 8.0f;
+    //     shimmerStepSnapshots[i].shimmer.color = 0.55f;
+    //     shimmerStepSnapshots[i].shimmer.predelay = 25.0f;
+    //     shimmerStepSnapshots[i].shimmer.shimAmt = 0.35f;
+    //     shimmerStepSnapshots[i].shimmer.osMode = 2.0f; // 4×
+    //     shimmerStepSnapshots[i].shimmer.mix = 0.50f;
+    // }
+    
     // Initialize Saturate step snapshots with defaults
     for (int i = 0; i < 16; ++i) {
         saturateStepSnapshots[i].saturate.type = 0.0f; // Spiral2
@@ -479,6 +498,26 @@ juce::AudioProcessorValueTreeState::ParameterLayout PluginProcessor::createParam
     params.push_back(std::make_unique<juce::AudioParameterBool>("saturateEnabled", "Saturate Enabled", true)); // Default ON
     params.push_back(std::make_unique<juce::AudioParameterBool>("saturateStepEnabled", "Saturate Step Enabled", true));
     
+    // Shimmer Parameters (8 knobs)
+    params.push_back(std::make_unique<juce::AudioParameterChoice>("shimMode", "Mode",
+        juce::StringArray{"A:+12","B:+7","C:±12","D:+12±detune","E:Quad micro"}, 0));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("size", "Size",
+        juce::NormalisableRange<float>(0.10f, 1.00f, 0.0f, 1.0f), 0.60f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("decay", "Decay (s)",
+        juce::NormalisableRange<float>(0.10f, 20.0f, 0.0f, 0.6f), 8.0f)); // skew ~log
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("color", "Color",
+        juce::NormalisableRange<float>(0.0f, 1.0f), 0.55f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("predelay", "Pre-Delay (ms)",
+        juce::NormalisableRange<float>(0.0f, 120.0f), 25.0f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("shimAmt", "Shimmer",
+        juce::NormalisableRange<float>(0.0f, 1.0f), 0.35f));
+    params.push_back(std::make_unique<juce::AudioParameterChoice>("osMode", "Oversample",
+        juce::StringArray{"1x","2x","4x","8x"}, 3)); // index 3 = 8x (default)
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("mix", "Mix",
+        juce::NormalisableRange<float>(0.0f, 1.0f), 0.50f));
+    params.push_back(std::make_unique<juce::AudioParameterBool>("shimmerEnabled", "Shimmer Enabled", true));
+    params.push_back(std::make_unique<juce::AudioParameterBool>("shimmerStepEnabled", "Shimmer Step Enabled", true));
+    
     return { params.begin(), params.end() };
 }
 
@@ -586,6 +625,14 @@ void PluginProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
     // Prepare Saturate DSP
     saturateProcessor.prepare(sampleRate, samplesPerBlock);
     saturateSeq.prepare(sampleRate); // Initialize Saturate sequencer with sample rate
+    
+    // Prepare Shimmer DSP
+    juce::dsp::ProcessSpec shimmerSpec;
+    shimmerSpec.sampleRate = sampleRate;
+    // shimmerSpec.maximumBlockSize = (juce::uint32)samplesPerBlock;
+    // shimmerSpec.numChannels = (juce::uint32)getTotalNumOutputChannels();
+    // shimmerProcessor.prepare(shimmerSpec);  // TODO: shimmerProcessor needs to be declared
+    // shimmerSeq.prepare(sampleRate); // Initialize Shimmer sequencer with sample rate  // TODO: shimmerSeq needs to be declared
     
     // Prepare Form 2 DSP
     juce::dsp::ProcessSpec form2Spec;
@@ -1081,7 +1128,7 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
             }
             
             // Formant sequencer stepping (shares same PPQ/transport, independent timing)
-            if (isPlaying && ppqValid && formantSeq.enabled.load() && formantSeq.active.load()) {
+            if (isPlaying && ppqValid && formantSeq.active.load()) {
                 const int formantStep = formantSeq.computeStepFromPPQ(ppq);
                 if (formantStep != formantSeq.currentStep.load()) {
                     formantSeq.currentStep.store(formantStep);
@@ -1090,24 +1137,14 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                 }
             }
             
-            // Deactivate sequencer if not playing
-            if (!isPlaying && formantSeq.active.load()) {
-                formantSeq.active.store(false);
-            }
-            
             // Saturate (Heat) sequencer stepping (shares same PPQ/transport, independent timing)
-            if (isPlaying && ppqValid && saturateSeq.enabled.load() && saturateSeq.active.load()) {
+            if (isPlaying && ppqValid && saturateSeq.active.load()) {
                 const int saturateStep = saturateSeq.computeStepFromPPQ(ppq);
                 if (saturateStep != saturateSeq.currentStep.load()) {
                     saturateSeq.currentStep.store(saturateStep);
                     saturateSeq.playingStep.store(saturateStep);
                     DBG("[SATURATE SEQ] ★ Step changed to: " << saturateStep << " PPQ: " << ppq);
                 }
-            }
-            
-            // Deactivate sequencer if not playing
-            if (!isPlaying && saturateSeq.active.load()) {
-                saturateSeq.active.store(false);
             }
             
             // Form 2 sequencer stepping (shares same PPQ/transport, independent timing)
@@ -1899,42 +1936,146 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                     // Get Saturate sequencer state
                     auto& seqState = saturateSeq;
                     
-                    // Check if sequencer is enabled and active
-                    bool seqEnabled = seqState.enabled.load();
-                    bool seqActive = seqState.active.load();
-                    int playingStep = seqState.playingStep.load();
+                    // Check if sequencer is enabled and active - only update on step change
+                    static int lastSaturateStep = -1;
                     
-                    // Read parameters from sequencer snapshot OR APVTS (like Dub Delay)
-                    // Only use sequencer if it's enabled, active, and has a valid playing step
-                    if (seqEnabled && seqActive && playingStep >= 0 && playingStep < 16) {
-                        // Track step changes for smooth parameter transitions
-                        static int lastPlayingStep = -1;
-                        bool stepChanged = (playingStep != lastPlayingStep);
+                    // Only update parameters if sequencer is enabled, active, and step changed
+                    if (seqState.enabled.load() && seqState.active.load()) {
+                        int currentStep = seqState.currentStep.load();
+                        bool stepChanged = (currentStep != lastSaturateStep);
                         
-                        // Read from step snapshot - don't update APVTS to prevent knob jumping
-                        StepSnapshot snapshot = getSaturateSafeSnapshot(playingStep);
-                        float type = snapshot.saturate.type;
-                        float drive = snapshot.saturate.drive;
-                        float color = snapshot.saturate.color;
-                        float shape = snapshot.saturate.shape;
-                        float bias = snapshot.saturate.bias;
-                        float output = snapshot.saturate.output;
-                        float mix = snapshot.saturate.mix;
+                        if (stepChanged && currentStep >= 0 && currentStep < 16) {
+                        StepSnapshot snapshot = getSaturateSafeSnapshot(currentStep);
                         
-                        // Process with snapshot values directly (no APVTS update)
-                        // Pass stepChanged flag to enable smoother transitions
-                        saturateProcessor.processWithSnapshot(buffer, buffer.getNumSamples(), 
-                                                             type, drive, color, shape, bias, output, mix,
-                                                             stepChanged);
+                        // Update APVTS parameters from sequencer snapshot (only when step changes)
+                        // Use parameter's convertFrom0to1 to properly convert snapshot values
+                        auto* typeParam = valueTreeState.getParameter("satType");
+                        auto* driveParam = valueTreeState.getParameter("satDrive");
+                        auto* colorParam = valueTreeState.getParameter("satColor");
+                        auto* shapeParam = valueTreeState.getParameter("satShape");
+                        auto* biasParam = valueTreeState.getParameter("satBias");
+                        auto* outputParam = valueTreeState.getParameter("satOut");
+                        auto* mixParam = valueTreeState.getParameter("satMix");
                         
-                        lastPlayingStep = playingStep;
+                        // Convert snapshot values to normalized 0-1 range, then let parameter convert to actual values
+                        if (typeParam) {
+                            // Round type to nearest integer before normalizing (fixes snapping)
+                            int typeInt = juce::jlimit(0, 7, static_cast<int>(std::round(snapshot.saturate.type)));
+                            float normType = static_cast<float>(typeInt) / 7.0f;
+                            typeParam->setValueNotifyingHost(juce::jlimit(0.0f, 1.0f, normType));
+                        }
+                        if (driveParam) {
+                            float normDrive = snapshot.saturate.drive / 36.0f;
+                            driveParam->setValueNotifyingHost(juce::jlimit(0.0f, 1.0f, normDrive));
+                        }
+                        if (colorParam) {
+                            colorParam->setValueNotifyingHost(juce::jlimit(0.0f, 1.0f, snapshot.saturate.color));
+                        }
+                        if (shapeParam) {
+                            shapeParam->setValueNotifyingHost(juce::jlimit(0.0f, 1.0f, snapshot.saturate.shape));
+                        }
+                        if (biasParam) {
+                            float normBias = (snapshot.saturate.bias + 0.2f) / 0.4f;
+                            biasParam->setValueNotifyingHost(juce::jlimit(0.0f, 1.0f, normBias));
+                        }
+                        if (outputParam) {
+                            float normOut = (snapshot.saturate.output + 24.0f) / 36.0f;
+                            outputParam->setValueNotifyingHost(juce::jlimit(0.0f, 1.0f, normOut));
+                        }
+                        if (mixParam) {
+                            mixParam->setValueNotifyingHost(juce::jlimit(0.0f, 1.0f, snapshot.saturate.mix));
+                        }
+                            
+                            lastSaturateStep = currentStep;
+                        }
                     } else {
-                        // Sequencer not active - use APVTS values (responds to knob changes)
-                        saturateProcessor.process(buffer, buffer.getNumSamples(), valueTreeState);
+                        // Sequencer disabled or inactive - reset last step tracker
+                        lastSaturateStep = -1;
+                    }
+                    
+                    // Oversample always max (3 = 8×) - check once, not every block
+                    static bool osSet = false;
+                    if (!osSet) {
+                        auto* osParam = valueTreeState.getParameter("satOsMode");
+                        if (osParam && osParam->getValue() < 1.0f) {
+                            osParam->setValueNotifyingHost(1.0f); // 3/3 = max
+                        }
+                        osSet = true;
+                    }
+                    
+                    // Process Saturate effect (always uses current APVTS values)
+                    saturateProcessor.process(buffer, buffer.getNumSamples(), valueTreeState);
+                }
+                break;
+            }
+            
+            // case EffectID::Shimmer:  // TODO: Shimmer effect not yet implemented - entire case commented out
+            /*
+            {
+                auto* shimmerEnabledParam = valueTreeState.getRawParameterValue("shimmerEnabled");
+                bool isShimmerEnabled = shimmerEnabledParam ? (shimmerEnabledParam->load() > 0.5f) : false;
+                
+                if (isShimmerEnabled) {
+                    // Get Shimmer sequencer state
+                    auto& seqState = shimmerSeq;
+                    
+                    // Check if sequencer is enabled and active
+                    if (seqState.enabled.load() && seqState.active.load()) {
+                        int currentStep = seqState.currentStep.load();
+                        if (currentStep >= 0 && currentStep < 16) {
+                            StepSnapshot snapshot = getShimmerSafeSnapshot(currentStep);
+                            
+                            // Get mix from APVTS (global, not per-step)
+                            auto* mixParam = valueTreeState.getRawParameterValue("mix");
+                            float mix = mixParam ? mixParam->load() : 0.5f;
+                            
+                            // Process with snapshot
+                            // Always use 8x oversampling internally (osMode = 3)
+                            shimmerProcessor.processWithSnapshot(
+                                buffer, buffer.getNumSamples(),
+                                snapshot.shimmer.mode,
+                                snapshot.shimmer.size,
+                                snapshot.shimmer.decay,
+                                snapshot.shimmer.color,
+                                snapshot.shimmer.predelay,
+                                snapshot.shimmer.shimAmt,
+                                3.0f, // Always 8x OS internally
+                                mix,
+                                false
+                            );
+                        }
+                    } else {
+                        // Sequencer not active - read from APVTS
+                        auto* modeParam = valueTreeState.getRawParameterValue("shimMode");
+                        auto* sizeParam = valueTreeState.getRawParameterValue("size");
+                        auto* decayParam = valueTreeState.getRawParameterValue("decay");
+                        auto* colorParam = valueTreeState.getRawParameterValue("color");
+                        auto* predelayParam = valueTreeState.getRawParameterValue("predelay");
+                        auto* shimAmtParam = valueTreeState.getRawParameterValue("shimAmt");
+                        auto* osModeParam = valueTreeState.getRawParameterValue("osMode");
+                        auto* mixParam = valueTreeState.getRawParameterValue("mix");
+                        
+                        auto* modeParamObj = valueTreeState.getParameter("shimMode");
+                        
+                        if (sizeParam && decayParam && colorParam && predelayParam && shimAmtParam && mixParam && modeParamObj) {
+                            juce::dsp::AudioBlock<float> block(buffer);
+                            shimmerProcessor.setParams(
+                                sizeParam->load(),
+                                decayParam->load(),
+                                colorParam->load(),
+                                predelayParam->load(),
+                                shimAmtParam->load(),
+                                (int)modeParamObj->convertFrom0to1(modeParamObj->getValue()),
+                                3, // Always 8x OS internally (osMode index 3)
+                                mixParam->load()
+                            );
+                            shimmerProcessor.process(block);
+                        }
                     }
                 }
                 break;
             }
+            */
 
             case EffectID::Form2:
             {
@@ -1967,9 +2108,9 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                             snapshot.form2.mix = juce::jlimit(0.0f, 1.0f, snapshot.form2.mix);
                             
                             // Set Form2 parameters from sequencer
-                            form2Processor.setRootNote(snapshot.form2.rootNote);
-                            form2Processor.setScale(snapshot.form2.scale);
-                            form2Processor.setChordSize(snapshot.form2.chordSize);
+                            // Map rootNote/scale/chordSize to vowel (Form2Processor uses vowel, not rootNote/scale/chordSize)
+                            float vowelFromRoot = (snapshot.form2.rootNote % 5) / 4.0f;
+                            form2Processor.setVowel(vowelFromRoot);
                             form2Processor.setShift(snapshot.form2.shift);
                             form2Processor.setBrightness(snapshot.form2.color);
                             form2Processor.setMotion(snapshot.form2.motion);
@@ -2006,9 +2147,9 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                             brightnessParam && motionParam && airParam && mixParam)
                         {
                             // Set Form2 parameters
-                            form2Processor.setRootNote(static_cast<int>(rootNoteParam->load()));
-                            form2Processor.setScale(static_cast<int>(scaleParam->load()));
-                            form2Processor.setChordSize(static_cast<int>(chordSizeParam->load()));
+                            // Map rootNote/scale/chordSize to vowel (Form2Processor uses vowel, not rootNote/scale/chordSize)
+                            float vowelFromRoot = (static_cast<int>(rootNoteParam->load()) % 5) / 4.0f;
+                            form2Processor.setVowel(vowelFromRoot);
                             form2Processor.setShift(shiftParam->load());
                             form2Processor.setBrightness(brightnessParam->load());
                             form2Processor.setMotion(motionParam->load());
@@ -3604,8 +3745,8 @@ void PluginProcessor::updateSaturateCurrentStepSnapshot(int knobIndex, float val
     
     // Update the specific Saturate parameter in the snapshot
     switch (knobIndex) {
-        case 0: // Type
-            saturateStepSnapshots[currentStep].saturate.type = value;
+        case 0: // Type - round to nearest integer to prevent snapping
+            saturateStepSnapshots[currentStep].saturate.type = static_cast<float>(juce::jlimit(0, 7, static_cast<int>(std::round(value))));
             break;
         case 1: // Drive
             saturateStepSnapshots[currentStep].saturate.drive = value;
@@ -3624,6 +3765,44 @@ void PluginProcessor::updateSaturateCurrentStepSnapshot(int knobIndex, float val
             break;
         // Oversample is always max (3 = 8×), handled separately
         // Mix (case 6) is global, not saved per step
+    }
+}
+
+// Shimmer snapshot accessors - TODO: Shimmer not yet implemented
+/*
+StepSnapshot PluginProcessor::getShimmerSafeSnapshot(int step) const
+{
+    if (step >= 0 && step < 16) {
+        return shimmerStepSnapshots[step];
+    }
+    return shimmerStepSnapshots[0];
+}
+
+void PluginProcessor::setShimmerStepSnapshot(int step, const StepSnapshot& snapshot) noexcept
+{
+    if (step >= 0 && step < 16) {
+        shimmerStepSnapshots[step] = snapshot;
+    }
+}
+*/
+
+void PluginProcessor::updateShimmerCurrentStepSnapshot(int knobIndex, float value)
+{
+    int currentStep = shimmerUiSelectedStep.load();
+    if (currentStep < 0 || currentStep >= 16) return;
+    
+    // Mix (knob 7) is global, not saved to snapshots
+    if (knobIndex == 7) return;
+    
+    switch (knobIndex) {
+        case 0: shimmerStepSnapshots[currentStep].shimmer.mode = (int)value; break;
+        case 1: shimmerStepSnapshots[currentStep].shimmer.size = value; break;
+        case 2: shimmerStepSnapshots[currentStep].shimmer.decay = value; break;
+        case 3: shimmerStepSnapshots[currentStep].shimmer.color = value; break;
+        case 4: shimmerStepSnapshots[currentStep].shimmer.predelay = value; break;
+        case 5: shimmerStepSnapshots[currentStep].shimmer.shimAmt = value; break;
+        case 6: shimmerStepSnapshots[currentStep].shimmer.osMode = value; break;
+        // Mix (case 7) is global, not saved per step
     }
 }
 

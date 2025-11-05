@@ -122,6 +122,13 @@ bool UiAssets::loadAll()
     saturateBackgroundTab3 = loadSVG (Saturate_Background_Tab3_svg, Saturate_Background_Tab3_svgSize);
     saturateBackgroundTab4 = loadSVG (Saturate_Background_Tab4_svg, Saturate_Background_Tab4_svgSize);
     
+    // Filter assets
+    tabFilterIcon = loadSVG (Filter_Icon_svg, Filter_Icon_svgSize);
+    filterBackgroundTab1 = loadSVG (Filter_Background_Tab1_svg, Filter_Background_Tab1_svgSize);
+    filterBackgroundTab2 = loadSVG (Filter_Background_Tab2_svg, Filter_Background_Tab2_svgSize);
+    filterBackgroundTab3 = loadSVG (Filter_Background_Tab3_svg, Filter_Background_Tab3_svgSize);
+    filterBackgroundTab4 = loadSVG (Filter_Background_Tab4_svg, Filter_Background_Tab4_svgSize);
+    
     fxPowerOn         = loadSVG (FX_Power_On_svg, FX_Power_On_svgSize);
     stepPowerOn       = loadSVG (Step_Power_On_svg, Step_Power_On_svgSize);
     knobDice          = loadSVG (Knob_Basic_Dice_svg, Knob_Basic_Dice_svgSize);

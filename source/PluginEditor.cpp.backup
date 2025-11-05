@@ -4826,6 +4826,7 @@ void PluginEditor::setupTabSystem()
         selector->addItem("Dub Echo", 8);
         selector->addItem("Redux", 9);
         selector->addItem("PhaseBloom", 10);
+        selector->addItem("Filter", 14); // ID 14 for EffectID::Filter (13)
         
         // Hide text when closed - just show carrot icon
         selector->setTextWhenNothingSelected("");

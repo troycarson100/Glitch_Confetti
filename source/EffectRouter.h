@@ -22,7 +22,9 @@ enum class EffectID {
     Redux = 8,
     PhaseBloom = 9,
     Formant = 10,
-    Form2 = 11
+    Form2 = 11,
+    Saturate = 12,
+    Filter = 13
 };
 
 enum class SlotID {
@@ -144,10 +146,10 @@ public:
         // Restore assignment from individual properties (XML-friendly)
         if (tree.hasProperty("slot0"))
         {
-            assignment[0] = static_cast<EffectID>(juce::jlimit(0, 8, static_cast<int>(tree.getProperty("slot0", 0))));
-            assignment[1] = static_cast<EffectID>(juce::jlimit(0, 8, static_cast<int>(tree.getProperty("slot1", 1))));
-            assignment[2] = static_cast<EffectID>(juce::jlimit(0, 8, static_cast<int>(tree.getProperty("slot2", 2))));
-            assignment[3] = static_cast<EffectID>(juce::jlimit(0, 8, static_cast<int>(tree.getProperty("slot3", 3))));
+            assignment[0] = static_cast<EffectID>(juce::jlimit(0, 14, static_cast<int>(tree.getProperty("slot0", 0))));
+            assignment[1] = static_cast<EffectID>(juce::jlimit(0, 14, static_cast<int>(tree.getProperty("slot1", 1))));
+            assignment[2] = static_cast<EffectID>(juce::jlimit(0, 14, static_cast<int>(tree.getProperty("slot2", 2))));
+            assignment[3] = static_cast<EffectID>(juce::jlimit(0, 14, static_cast<int>(tree.getProperty("slot3", 3))));
         }
         else
         {
@@ -161,7 +163,7 @@ public:
                     for (int i = 0; i < 4; ++i)
                     {
                         int effectID = static_cast<int>(arr->getReference(i));
-                        assignment[i] = static_cast<EffectID>(juce::jlimit(0, 8, effectID));
+                        assignment[i] = static_cast<EffectID>(juce::jlimit(0, 14, effectID));
                     }
                 }
             }
@@ -171,14 +173,14 @@ public:
     }
     
     // Validate assignment (ensure no duplicates in the 4 slots)
-    // Note: With 9 effects and 4 slots, five effects will always be unassigned
+    // Note: With many effects and 4 slots, some effects will always be unassigned
     bool isValid() const
     {
-        bool seen[10] = { false, false, false, false, false, false, false, false, false, false };
+        bool seen[15] = { false, false, false, false, false, false, false, false, false, false, false, false, false, false, false };
         for (int i = 0; i < 4; ++i)
         {
             int effectIdx = static_cast<int>(assignment[i]);
-            if (effectIdx < 0 || effectIdx > 9 || seen[effectIdx])
+            if (effectIdx < 0 || effectIdx > 14 || seen[effectIdx])
                 return false;
             seen[effectIdx] = true;
         }
