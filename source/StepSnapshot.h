@@ -136,4 +136,15 @@ struct StepSnapshot {
            float oversample = 2.0f;  // 0-3 (1×, 2×, 4×, 8×)
            float mix = 1.0f;         // 0-1 (dry/wet mix)
        } saturate;
+       
+       struct {
+           float type = 0.0f;        // 0-4 (0=LP, 1=HP, 2=BP, 3=Comb-, 4=Comb+)
+           float cutoff = 1200.0f;   // 20-20000 Hz
+           float resonance = 0.35f;   // 0-0.95
+           float slope = 1.0f;       // 0-1 (0=12dB, 1=24dB)
+           float drive = 6.0f;       // 0-36 dB
+           float spread = 0.0f;      // -50 to +50 cents
+           float keytrack = 0.0f;    // 0-1
+           float mix = 1.0f;         // 0-1 (dry/wet mix)
+       } filter;
 };

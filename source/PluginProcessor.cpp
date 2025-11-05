@@ -5,6 +5,46 @@
 #include <chrono>
 
 //==============================================================================
+// Filter Cutoff Conversion Functions
+// Custom curve: 0-75% knob = 20Hz-5000Hz, 75-100% knob = 5000Hz-20000Hz
+//==============================================================================
+static float convertNormalizedCutoffToFrequency(float normalized)
+{
+    // Clamp normalized to 0-1
+    normalized = juce::jlimit(0.0f, 1.0f, normalized);
+    
+    if (normalized <= 0.75f)
+    {
+        // Linear: 0-0.75 → 20Hz to 5000Hz
+        return 20.0f + (5000.0f - 20.0f) * (normalized / 0.75f);
+    }
+    else
+    {
+        // Exponential: 0.75-1.0 → 5000Hz to 20000Hz
+        float t = (normalized - 0.75f) / 0.25f; // 0-1 in the 75-100% range
+        return 5000.0f * std::pow(4.0f, t); // 4x multiplier from 5k to 20k
+    }
+}
+
+static float convertFrequencyToNormalizedCutoff(float frequency)
+{
+    // Clamp frequency to valid range
+    frequency = juce::jlimit(20.0f, 20000.0f, frequency);
+    
+    if (frequency <= 5000.0f)
+    {
+        // Reverse linear: 20Hz to 5000Hz → 0-0.75
+        return 0.75f * (frequency - 20.0f) / (5000.0f - 20.0f);
+    }
+    else
+    {
+        // Reverse exponential: 5000Hz to 20000Hz → 0.75-1.0
+        float t = std::log(frequency / 5000.0f) / std::log(4.0f);
+        return 0.75f + 0.25f * t;
+    }
+}
+
+//==============================================================================
 PluginProcessor::PluginProcessor()
      : AudioProcessor (BusesProperties()
                        .withInput  ("Input",  juce::AudioChannelSet::stereo(), true)
@@ -498,6 +538,27 @@ juce::AudioProcessorValueTreeState::ParameterLayout PluginProcessor::createParam
     params.push_back(std::make_unique<juce::AudioParameterBool>("saturateEnabled", "Saturate Enabled", true)); // Default ON
     params.push_back(std::make_unique<juce::AudioParameterBool>("saturateStepEnabled", "Saturate Step Enabled", true));
     
+    // Filter Parameters (8 knobs: fType, cutoff, res, slope, drive, spread, keytrack, filterMix)
+    params.push_back(std::make_unique<juce::AudioParameterInt>("fType", "Filter Type", 0, 4, 0)); // 0=LP, 1=HP, 2=BP, 3=Comb-, 4=Comb+
+    // Custom frequency range: 0-75% knob = 20Hz-5000Hz, 75-100% knob = 5000Hz-20000Hz
+    // Parameter stores normalized value (0.0-1.0) for linear knob rotation
+    // Conversion to frequency happens in processBlock using convertNormalizedToFrequency()
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("cutoff", "Cutoff", 
+        juce::NormalisableRange<float>(0.0f, 1.0f, 0.001f), 0.18f)); // Normalized: ~0.18 = 1200Hz
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("res", "Resonance", 
+        juce::NormalisableRange<float>(0.0f, 1.0f, 0.01f), 0.35f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("slope", "Slope", 
+        juce::NormalisableRange<float>(0.0f, 1.0f, 0.01f), 1.0f)); // 0=12dB, 1=24dB
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("drive", "Drive", 
+        juce::NormalisableRange<float>(0.0f, 36.0f, 0.1f), 6.0f)); // dB
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("spread", "Spread", 
+        juce::NormalisableRange<float>(-50.0f, 50.0f, 0.1f), 0.0f)); // cents
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("keytrack", "Key Track", 
+        juce::NormalisableRange<float>(0.0f, 1.0f, 0.01f), 0.0f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("filterMix", "Filter Mix", 
+        juce::NormalisableRange<float>(0.0f, 1.0f, 0.01f), 1.0f));
+    params.push_back(std::make_unique<juce::AudioParameterBool>("filterEnabled", "Filter Enabled", true)); // Default ON
+    
     // Shimmer Parameters (8 knobs)
     params.push_back(std::make_unique<juce::AudioParameterChoice>("shimMode", "Mode",
         juce::StringArray{"A:+12","B:+7","C:±12","D:+12±detune","E:Quad micro"}, 0));
@@ -594,6 +655,8 @@ void PluginProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
     hall.prepare(sampleRate, samplesPerBlock, 300); // Prepare JUCE Hall (300ms max predelay)
     granular.prepare(sampleRate, samplesPerBlock, getTotalNumOutputChannels()); // Prepare Granular engine
     slicer.prepare(sampleRate, samplesPerBlock, getTotalNumOutputChannels()); // Prepare Slicer engine
+    filterProcessor.prepare(sampleRate, samplesPerBlock); // Prepare Filter processor
+    filterSeq.prepare(sampleRate); // Initialize Filter sequencer with sample rate
     seq.prepare(sampleRate); // Initialize delay sequencer with sample rate
     autopanSeq.prepare(sampleRate); // Initialize AutoPan sequencer with sample rate
     dirtSeq.prepare(sampleRate); // Initialize Dirt sequencer with sample rate
@@ -2166,6 +2229,139 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                             form2Processor.process(block);
                         }
                     }
+                }
+                break;
+            }
+            
+            case EffectID::Filter:
+            {
+                // Process filter (enabled check is handled by UI power button, but we process if in routing)
+                // Note: filterEnabled parameter may not exist, so we process regardless
+                {
+                    // Get Filter sequencer state
+                    auto& seqState = filterSeq;
+                    
+                    // Read filter parameters (from sequencer snapshot if active, else APVTS)
+                    FilterTargets targets;
+                    
+                    if (seqState.enabled.load() && seqState.active.load())
+                    {
+                        // Get current step snapshot
+                        int currentStep = seqState.currentStep.load();
+                        if (currentStep >= 0 && currentStep < 16)
+                        {
+                            StepSnapshot snapshot = getFilterSafeSnapshot(currentStep);
+                            
+                            targets.type = static_cast<int>(snapshot.filter.type);
+                            targets.cutoff = snapshot.filter.cutoff;
+                            targets.res = snapshot.filter.resonance;
+                            targets.slope = (snapshot.filter.slope > 0.5f) ? 1 : 0;
+                            targets.drive = snapshot.filter.drive;
+                            targets.spread = snapshot.filter.spread;
+                            targets.keytrack = snapshot.filter.keytrack;
+                            // Mix is always from APVTS (global, not per-step)
+                            auto* mixParam = valueTreeState.getRawParameterValue("filterMix");
+                            targets.mix = mixParam ? mixParam->load() : 1.0f;
+                        }
+                        else
+                        {
+                            // Fallback to APVTS if step invalid
+                            auto* typeParam = valueTreeState.getRawParameterValue("fType");
+                            auto* cutoffParam = valueTreeState.getRawParameterValue("cutoff");
+                            auto* resParam = valueTreeState.getRawParameterValue("res");
+                            auto* slopeParam = valueTreeState.getRawParameterValue("slope");
+                            auto* driveParam = valueTreeState.getRawParameterValue("drive");
+                            auto* spreadParam = valueTreeState.getRawParameterValue("spread");
+                            auto* keytrackParam = valueTreeState.getRawParameterValue("keytrack");
+                            auto* mixParam = valueTreeState.getRawParameterValue("filterMix");
+                            
+                            if (typeParam && cutoffParam && resParam && slopeParam && 
+                                driveParam && spreadParam && keytrackParam && mixParam)
+                            {
+                            targets.type = static_cast<int>(typeParam->load());
+                            // Convert normalized cutoff (0-1) to frequency using custom curve
+                            float normalized = juce::jlimit(0.0f, 1.0f, cutoffParam->load());
+                            targets.cutoff = convertNormalizedCutoffToFrequency(normalized);
+                            targets.res = juce::jlimit(0.0f, 1.0f, resParam->load());
+                                targets.slope = (slopeParam->load() > 0.5f) ? 1 : 0;
+                                targets.drive = juce::jlimit(0.0f, 36.0f, driveParam->load());
+                                targets.spread = juce::jlimit(-50.0f, 50.0f, spreadParam->load());
+                                targets.keytrack = juce::jlimit(0.0f, 1.0f, keytrackParam->load());
+                                targets.mix = juce::jlimit(0.0f, 1.0f, mixParam->load());
+                            }
+                            else
+                            {
+                                // Use defaults if parameters missing
+                                targets.type = 0;
+                                targets.cutoff = 1200.0f;
+                                targets.res = 0.35f;
+                                targets.slope = 1;
+                                targets.drive = 6.0f;
+                                targets.spread = 0.0f;
+                                targets.keytrack = 0.0f;
+                                targets.mix = 1.0f;
+                            }
+                        }
+                    }
+                    else
+                    {
+                        // Sequencer not active - read from APVTS
+                        auto* typeParam = valueTreeState.getRawParameterValue("fType");
+                        auto* cutoffParam = valueTreeState.getRawParameterValue("cutoff");
+                        auto* resParam = valueTreeState.getRawParameterValue("res");
+                        auto* slopeParam = valueTreeState.getRawParameterValue("slope");
+                        auto* driveParam = valueTreeState.getRawParameterValue("drive");
+                        auto* spreadParam = valueTreeState.getRawParameterValue("spread");
+                        auto* keytrackParam = valueTreeState.getRawParameterValue("keytrack");
+                        auto* mixParam = valueTreeState.getRawParameterValue("filterMix");
+                        
+                        if (typeParam && cutoffParam && resParam && slopeParam && 
+                            driveParam && spreadParam && keytrackParam && mixParam)
+                        {
+                            targets.type = static_cast<int>(typeParam->load());
+                            // Convert normalized cutoff (0-1) to frequency using custom curve
+                            float normalized = juce::jlimit(0.0f, 1.0f, cutoffParam->load());
+                            targets.cutoff = convertNormalizedCutoffToFrequency(normalized);
+                            targets.res = juce::jlimit(0.0f, 1.0f, resParam->load());
+                            targets.slope = (slopeParam->load() > 0.5f) ? 1 : 0;
+                            targets.drive = juce::jlimit(0.0f, 36.0f, driveParam->load());
+                            targets.spread = juce::jlimit(-50.0f, 50.0f, spreadParam->load());
+                            targets.keytrack = juce::jlimit(0.0f, 1.0f, keytrackParam->load());
+                            targets.mix = juce::jlimit(0.0f, 1.0f, mixParam->load());
+                        }
+                        else
+                        {
+                            // Use defaults if parameters missing
+                            targets.type = 0;
+                            targets.cutoff = 1200.0f;
+                            targets.res = 0.35f;
+                            targets.slope = 1;
+                            targets.drive = 6.0f;
+                            targets.spread = 0.0f;
+                            targets.keytrack = 0.0f;
+                            targets.mix = 1.0f;
+                        }
+                    }
+                    
+                    // Get current MIDI note for key tracking (if available)
+                    if (targets.keytrack > 0.001f && midiMessages.getNumEvents() > 0)
+                    {
+                        for (const auto metadata : midiMessages)
+                        {
+                            auto message = metadata.getMessage();
+                            if (message.isNoteOn())
+                            {
+                                filterProcessor.setCurrentMIDINote(message.getNoteNumber());
+                                break;
+                            }
+                        }
+                    }
+                    
+                    // Set filter targets
+                    filterProcessor.setTargets(targets);
+                    
+                    // Process filter
+                    filterProcessor.process(buffer, buffer.getNumSamples());
                 }
                 break;
             }
@@ -3768,6 +3964,60 @@ void PluginProcessor::updateSaturateCurrentStepSnapshot(int knobIndex, float val
     }
 }
 
+// Filter snapshot accessors
+StepSnapshot PluginProcessor::getFilterSafeSnapshot(int step) const
+{
+    if (step >= 0 && step < 16) {
+        return filterStepSnapshots[step];
+    }
+    return filterStepSnapshots[0];
+}
+
+void PluginProcessor::setFilterStepSnapshot(int step, const StepSnapshot& snapshot) noexcept
+{
+    if (step >= 0 && step < 16) {
+        filterStepSnapshots[step] = snapshot;
+    }
+}
+
+void PluginProcessor::updateFilterCurrentStepSnapshot(int knobIndex, float value)
+{
+    int currentStep = filterUiSelectedStep.load();
+    if (currentStep < 0 || currentStep >= 16) return;
+    
+    // Mix knob (filterKnobs[5]) is global, not saved to snapshots
+    if (knobIndex == 5) return;
+    
+    // Update the specific Filter parameter in the snapshot
+    // knobIndex: -1 = Type, -2 = Slope, 0-4 = filterKnobs[0-4] (Cutoff, Res, Drive, Spread, Key Track)
+    if (knobIndex == -1) {
+        // Type - round to nearest integer to prevent snapping
+        filterStepSnapshots[currentStep].filter.type = static_cast<float>(juce::jlimit(0, 4, static_cast<int>(std::round(value))));
+    } else if (knobIndex == -2) {
+        // Slope
+        filterStepSnapshots[currentStep].filter.slope = value;
+    } else {
+        switch (knobIndex) {
+            case 0: // Cutoff - convert normalized value (0-1) to frequency for snapshot
+                filterStepSnapshots[currentStep].filter.cutoff = convertNormalizedCutoffToFrequency(value);
+                break;
+            case 1: // Resonance
+                filterStepSnapshots[currentStep].filter.resonance = value;
+                break;
+            case 2: // Drive
+                filterStepSnapshots[currentStep].filter.drive = value;
+                break;
+            case 3: // Spread
+                filterStepSnapshots[currentStep].filter.spread = value;
+                break;
+            case 4: // Key Track
+                filterStepSnapshots[currentStep].filter.keytrack = value;
+                break;
+            // Mix (case 5) is global, not saved per step
+        }
+    }
+}
+
 // Shimmer snapshot accessors - TODO: Shimmer not yet implemented
 /*
 StepSnapshot PluginProcessor::getShimmerSafeSnapshot(int step) const
@@ -3786,6 +4036,8 @@ void PluginProcessor::setShimmerStepSnapshot(int step, const StepSnapshot& snaps
 }
 */
 
+// TODO: Shimmer not yet implemented
+/*
 void PluginProcessor::updateShimmerCurrentStepSnapshot(int knobIndex, float value)
 {
     int currentStep = shimmerUiSelectedStep.load();
@@ -3805,6 +4057,7 @@ void PluginProcessor::updateShimmerCurrentStepSnapshot(int knobIndex, float valu
         // Mix (case 7) is global, not saved per step
     }
 }
+*/
 
 // Space Delay snapshot accessors
 StepSnapshot PluginProcessor::getSpaceDelaySafeSnapshot(int step) const

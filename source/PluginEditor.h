@@ -1248,6 +1248,7 @@ public:
         
         void updateFilterSequencerUI();
         void onFilterStepButtonClicked(int stepIndex);
+        void updateFilterParameterFromKnob(int knobIndex);
         void updateSaturateParameterFromKnob(int knobIndex);
         void randomizeSaturateKnobValues();
         void randomizeIndividualSaturateKnob(int knobIndex);

@@ -1474,6 +1474,9 @@ void PluginEditor::timerCallback()
     // Update Saturate (Heat) sequencer UI
     updateSaturateSequencerUI();
     
+    // Update Filter sequencer UI
+    updateFilterSequencerUI();
+    
     // Update Dub Delay time label (handles sync mode display)
     updateDubDelayTimeLabel();
     
@@ -5225,8 +5228,8 @@ void PluginEditor::showPage(FxPageID id)
             }
             
             filterUiSelectedStep = 0;
-            // TODO: processorRef.setFilterSelectedStep(0); when method exists
-            // updateFilterSequencerUI();
+            processorRef.setFilterSelectedStep(0);
+            updateFilterSequencerUI();
             DBG("[ROUTER] ✓ Filter group shown");
             break;
         case EffectID::Form2:
@@ -8600,8 +8603,8 @@ void PluginEditor::onEffectSelectorChanged(int slotIndex)
             }
             
             filterUiSelectedStep = 0;
-            // TODO: processorRef.setFilterSelectedStep(0); when method exists
-            // updateFilterSequencerUI();
+            processorRef.setFilterSelectedStep(0);
+            updateFilterSequencerUI();
             DBG("[ROUTER] ✓ Filter group shown");
             break;
         }
@@ -12302,12 +12305,13 @@ void PluginEditor::setupFilterKnobs()
             
             // Set parameter ranges
             switch (regularKnobIdx) {
-                case 0: // Cutoff
-                    filterKnobs[regularKnobIdx]->setRange(20.0, 20000.0, 1.0);
-                    filterKnobs[regularKnobIdx]->setValue(1200.0, juce::dontSendNotification);
+                case 0: // Cutoff - linear rotation (0-1), custom frequency mapping in processor
+                    // Knob rotates linearly 0-1, processor converts to frequency: 0-0.75 → 20-5000Hz, 0.75-1.0 → 5000-20000Hz
+                    filterKnobs[regularKnobIdx]->setRange(0.0, 1.0, 0.001);
+                    filterKnobs[regularKnobIdx]->setValue(0.18, juce::dontSendNotification); // ~0.18 = 1200Hz
                     break;
                 case 1: // Res
-                    filterKnobs[regularKnobIdx]->setRange(0.0, 0.95, 0.01);
+                    filterKnobs[regularKnobIdx]->setRange(0.0, 1.0, 0.01);
                     filterKnobs[regularKnobIdx]->setValue(0.35, juce::dontSendNotification);
                     break;
                 case 2: // Drive
@@ -12409,6 +12413,10 @@ void PluginEditor::setupFilterKnobs()
     
     // Setup value change callbacks for all knobs
     filterTypeKnob->onValueChange = [this]() {
+        // Skip if loading from snapshot (prevents circular updates)
+        if (isLoadingFromSnapshot.load())
+            return;
+            
         float value = filterTypeKnob->getValue();
         juce::String types[] = {"LP", "HP", "BP", "Comb-", "Comb+"};
         int idx = static_cast<int>(value);
@@ -12416,24 +12424,45 @@ void PluginEditor::setupFilterKnobs()
             filterValueLabels[0]->setText(types[idx], juce::dontSendNotification);
         }
         if (filterIndicatorBars[0]) filterIndicatorBars[0]->setValue(value / 4.0f);
+        
+        // Save to snapshot
+        updateFilterParameterFromKnob(-1); // -1 = Type knob
     };
     
     filterSlopeKnob->onValueChange = [this]() {
+        // Skip if loading from snapshot (prevents circular updates)
+        if (isLoadingFromSnapshot.load())
+            return;
+            
         float value = filterSlopeKnob->getValue();
         filterValueLabels[3]->setText(value > 0.5f ? "24dB" : "12dB", juce::dontSendNotification);
         if (filterIndicatorBars[3]) filterIndicatorBars[3]->setValue(value);
+        
+        // Save to snapshot
+        updateFilterParameterFromKnob(-2); // -2 = Slope knob
     };
     
     for (int i = 0; i < 6; ++i) {
         if (filterKnobs[i]) {
             filterKnobs[i]->onValueChange = [this, i]() {
+                // Skip if loading from snapshot (prevents circular updates)
+                if (isLoadingFromSnapshot.load())
+                    return;
+                    
                 if (!filterKnobs[i]) return;
                 float value = filterKnobs[i]->getValue();
                 juce::String text;
                 int knobLabelIdx = (i == 0) ? 1 : (i == 1) ? 2 : (i == 2) ? 4 : (i == 3) ? 5 : (i == 4) ? 6 : 7;
                 
                 switch (i) {
-                    case 0: text = juce::String(static_cast<int>(value)) + " Hz"; break;
+                    case 0: {
+                        // Convert normalized value (0-1) to frequency for display
+                        float freq = value <= 0.75f 
+                            ? 20.0f + (5000.0f - 20.0f) * (value / 0.75f)
+                            : 5000.0f * std::pow(4.0f, (value - 0.75f) / 0.25f);
+                        text = juce::String(static_cast<int>(freq)) + " Hz";
+                        break;
+                    }
                     case 1: text = juce::String(static_cast<int>(value * 100)) + "%"; break;
                     case 2: text = juce::String(value, 1) + " dB"; break;
                     case 3: text = juce::String(static_cast<int>(value)) + " ct"; break;
@@ -12447,12 +12476,17 @@ void PluginEditor::setupFilterKnobs()
                 if (filterIndicatorBars[knobLabelIdx]) {
                     float norm = 0.0f;
                     switch (i) {
-                        case 0: norm = (value - 20.0f) / 19980.0f; break;
+                        case 0: norm = value; break; // Already normalized 0-1
                         case 1: case 4: case 5: norm = value; break;
                         case 2: norm = value / 36.0f; break;
                         case 3: norm = (value + 50.0f) / 100.0f; break;
                     }
                     filterIndicatorBars[knobLabelIdx]->setValue(norm);
+                }
+                
+                // Save to snapshot (Mix knob 5 is global, not saved per step)
+                if (i != 5) {
+                    updateFilterParameterFromKnob(i);
                 }
             };
         }
@@ -12594,8 +12628,8 @@ void PluginEditor::setupFilterSequencerArea()
     filterStepAmountLabel->onTextChange = [this]() {
         int newAmount = filterStepAmountLabel->getText().getIntValue();
         if (newAmount >= 1 && newAmount <= 16) {
-            // TODO: processorRef.setFilterStepAmount(newAmount);
-            // updateFilterSequencerUI();
+            processorRef.setFilterStepAmount(newAmount);
+            updateFilterSequencerUI();
         }
     };
     filterStepAmountLabel->onReturnKey = [this]() {
@@ -12639,7 +12673,7 @@ void PluginEditor::setupFilterSequencerArea()
     // FIX 3: Working step power button with visibility function
     filterStepPowerButton->onClick = [this]() {
         filterStepAreaEnabled = filterStepPowerButton->getToggleState();
-        // TODO: processorRef.setFilterSequencerEnabled(filterStepAreaEnabled);
+        processorRef.setFilterSequencerEnabled(filterStepAreaEnabled);
         updateFilterStepAreaVisibility();
     };
     
@@ -12878,15 +12912,96 @@ void PluginEditor::updateFilterStepAreaVisibility()
 
 void PluginEditor::onFilterStepButtonClicked(int stepIndex)
 {
-    DBG("[UI] Filter step button " << stepIndex << " clicked");
+    if (stepIndex < 0 || stepIndex >= 16) return;
+    
     filterUiSelectedStep = stepIndex;
-    // TODO: processorRef.setFilterSelectedStep(stepIndex);
-    // updateFilterSequencerUI();
+    processorRef.setFilterSelectedStep(stepIndex);
+    
+    auto snapshot = processorRef.getFilterSafeSnapshot(stepIndex);
+    
+    // Set flag to prevent snapshot saving during load
+    isLoadingFromSnapshot.store(true);
+    
+    if (!filterAllStepsEnabled) {
+        // Update knobs with values from the snapshot
+        if (filterTypeKnob) filterTypeKnob->setValue(snapshot.filter.type, juce::dontSendNotification);
+        // Convert frequency from snapshot to normalized value for cutoff knob
+        if (filterKnobs[0]) {
+            float freq = snapshot.filter.cutoff;
+            float normalized = freq <= 5000.0f 
+                ? 0.75f * (freq - 20.0f) / (5000.0f - 20.0f)
+                : 0.75f + 0.25f * (std::log(freq / 5000.0f) / std::log(4.0f));
+            normalized = juce::jlimit(0.0f, 1.0f, normalized);
+            filterKnobs[0]->setValue(normalized, juce::dontSendNotification);
+        }
+        if (filterKnobs[1]) filterKnobs[1]->setValue(snapshot.filter.resonance, juce::dontSendNotification);
+        if (filterSlopeKnob) filterSlopeKnob->setValue(snapshot.filter.slope, juce::dontSendNotification);
+        if (filterKnobs[2]) filterKnobs[2]->setValue(snapshot.filter.drive, juce::dontSendNotification);
+        if (filterKnobs[3]) filterKnobs[3]->setValue(snapshot.filter.spread, juce::dontSendNotification);
+        if (filterKnobs[4]) filterKnobs[4]->setValue(snapshot.filter.keytrack, juce::dontSendNotification);
+        // Mix knob (filterKnobs[5]) is global, not per-step
+        
+        // Trigger value change callbacks to update labels (but not save snapshots)
+        if (filterTypeKnob && filterTypeKnob->onValueChange) filterTypeKnob->onValueChange();
+        if (filterSlopeKnob && filterSlopeKnob->onValueChange) filterSlopeKnob->onValueChange();
+        for (int i = 0; i < 5; ++i) { // Only first 5 knobs (Mix knob 5 is global)
+            if (filterKnobs[i] && filterKnobs[i]->onValueChange) {
+                filterKnobs[i]->onValueChange();
+            }
+        }
+    }
+    
+    // Clear flag
+    isLoadingFromSnapshot.store(false);
+    
+    updateFilterSequencerUI();
+    repaint();
+}
+
+void PluginEditor::updateFilterParameterFromKnob(int knobIndex)
+{
+    // knobIndex: -1 = Type, -2 = Slope, 0-4 = filterKnobs[0-4] (Cutoff, Res, Drive, Spread, Key Track)
+    // Mix knob (filterKnobs[5]) is global, not saved per step
+    
+    // Get current step
+    int currentStep = filterUiSelectedStep;
+    if (currentStep < 0 || currentStep >= 16) return;
+    
+    // Get value and save to snapshot
+    float value = 0.0f;
+    if (knobIndex == -1) {
+        value = filterTypeKnob->getValue();
+    } else if (knobIndex == -2) {
+        value = filterSlopeKnob->getValue();
+    } else if (knobIndex >= 0 && knobIndex < 5) {
+        value = filterKnobs[knobIndex]->getValue();
+    }
+    processorRef.updateFilterCurrentStepSnapshot(knobIndex, value);
 }
 
 void PluginEditor::updateFilterSequencerUI()
 {
-    // TODO: Update step button states based on processor state
+    int selectedStep = filterUiSelectedStep;
+    int playingStep = processorRef.getFilterPlayingStep();
+    const int stepsUsed = processorRef.getFilterSeqState().stepsUsed.load();
+    
+    for (int i = 0; i < 16; ++i) {
+        if (filterStepButtons[i] != nullptr) {
+            bool isSelected = (i == selectedStep);
+            filterStepButtons[i]->setSelected(isSelected);
+            bool sequencerEnabled = processorRef.getFilterSeqState().enabled.load();
+            filterStepButtons[i]->setPlaying(sequencerEnabled && (i == playingStep) && (i != selectedStep));
+            bool shouldBeEnabled = i < stepsUsed;
+            filterStepButtons[i]->setEnabledStep(shouldBeEnabled);
+        }
+    }
+    
+    // Update step amount display
+    if (filterStepAmountLabel != nullptr && !filterStepAmountLabel->hasKeyboardFocus(true)) {
+        filterStepAmountLabel->setText(juce::String(stepsUsed), false);
+    }
+    
+    repaint();
 }
 
 void PluginEditor::updateSaturateKnobLabels(int type)
