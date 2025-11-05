@@ -947,6 +947,8 @@ public:
     std::array<std::unique_ptr<juce::Label>, 8> formantValueLabels;
     std::array<std::unique_ptr<IndicatorBar>, 8> formantIndicatorBars;
     std::array<std::unique_ptr<CustomDiceButton>, 8> formantDiceButtons;
+    std::array<std::unique_ptr<LockButton>, 8> formantLockButtons;
+    std::array<bool, 8> formantKnobLocked { false, false, false, false, false, false, false, false };
     
     // Formant power buttons
     std::unique_ptr<juce::DrawableButton> formantFxPowerButton;
@@ -1039,8 +1041,8 @@ public:
     std::unique_ptr<CustomKnob> filterTypeKnob;
     std::unique_ptr<juce::Label> filterTypeLabel;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> filterTypeAttachment;
-    std::array<std::unique_ptr<CustomKnob>, 6> filterKnobs; // Cutoff, Res, Drive, Spread, Key Track, Mix
-    std::array<std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>, 6> filterAttachments;
+    std::array<std::unique_ptr<CustomKnob>, 5> filterKnobs; // Cutoff, Res, Drive, Key Track, Mix (Spread removed)
+    std::array<std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>, 5> filterAttachments;
     std::unique_ptr<CustomKnob> filterSlopeKnob;
     std::unique_ptr<juce::Label> filterSlopeLabel;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> filterSlopeAttachment;

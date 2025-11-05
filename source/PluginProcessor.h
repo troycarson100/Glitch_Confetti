@@ -492,7 +492,8 @@ private:
     std::atomic<int> saturateUiSelectedStep { 0 };  // Saturate editor's selected step
     
     // Filter Sequencer State (independent from all other sequencers)
-    SeqState filterSeq;
+    // SeqState has default member initializers, so it's safe to access immediately
+    SeqState filterSeq {};
     std::atomic<int> filterUiSelectedStep { 0 };  // Filter editor's selected step
     
     // Space Delay Sequencer State (independent from all other sequencers)
@@ -513,7 +514,7 @@ private:
     std::array<StepSnapshot, 16> slicerStepSnapshots;
     std::array<StepSnapshot, 16> dubdelayStepSnapshots;
     std::array<StepSnapshot, 16> saturateStepSnapshots;
-    std::array<StepSnapshot, 16> filterStepSnapshots;
+    std::array<StepSnapshot, 16> filterStepSnapshots;  // Default-constructed StepSnapshot elements (safe due to default member initializers)
     std::array<StepSnapshot, 16> spacedelayStepSnapshots;
     
     // Level tracking for meters
@@ -597,13 +598,32 @@ public:
     void updateSaturateCurrentStepSnapshot(int knobIndex, float value);
     
     // Filter sequencer state access
-    const SeqState& getFilterSeqState() const { return filterSeq; }
-    int getFilterPlayingStep() const noexcept { return filterSeq.playingStep.load(); }
-    int getFilterCurrentStep() const noexcept { return filterSeq.currentStep.load(); }
+    // Safe accessors - SeqState has default member initializers so always safe to access
+    const SeqState& getFilterSeqState() const noexcept { 
+        return filterSeq; 
+    }
+    int getFilterPlayingStep() const noexcept { 
+        return filterSeq.playingStep.load(std::memory_order_acquire); 
+    }
+    int getFilterCurrentStep() const noexcept { 
+        return filterSeq.currentStep.load(std::memory_order_acquire); 
+    }
     void setFilterSelectedStep(int step) noexcept { filterUiSelectedStep.store(step); }
-    void setFilterSequencerEnabled(bool enabled) noexcept { filterSeq.enabled.store(enabled); }
-    void setFilterStepAmount(int steps) noexcept { filterSeq.stepsUsed.store(juce::jlimit(1, 16, steps)); }
-    void setFilterDivisionIndex(int idx) noexcept { filterSeq.divisionIndex.store(juce::jlimit(0, 7, idx)); }
+    void setFilterSequencerEnabled(bool enabled) noexcept {
+        filterSeq.enabled.store(enabled, std::memory_order_release);
+        if (enabled) {
+            filterSeq.active.store(true, std::memory_order_release);
+        }
+    }
+    void setFilterStepAmount(int steps) noexcept { 
+        filterSeq.stepsUsed.store(juce::jlimit(1, 16, steps), std::memory_order_release); 
+    }
+    void setFilterDivisionIndex(int idx) noexcept { 
+        filterSeq.divisionIndex.store(juce::jlimit(0, 7, idx), std::memory_order_release); 
+    }
+    void setFilterStdMode(int mode) noexcept { 
+        filterSeq.stdMode.store(juce::jlimit(0, 2, mode), std::memory_order_release); 
+    }
     
     // Filter snapshot accessors
     StepSnapshot getFilterSafeSnapshot(int step) const;

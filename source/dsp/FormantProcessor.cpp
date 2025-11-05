@@ -35,10 +35,10 @@ void FormantProcessor::prepare(double sampleRate_, int maxBlockSize_)
     airSm.reset(sampleRate, smoothTime);
     mixSm.reset(sampleRate, smoothTime);
     
-    // Set defaults for audibility
+    // Set defaults for audibility and better sound
     vowelSm.setCurrentAndTargetValue(0.0f);      // A
-    qSm.setCurrentAndTargetValue(2.0f);         // Moderately sharp
-    emphasisSm.setCurrentAndTargetValue(3.0f);   // +3 dB emphasis
+    qSm.setCurrentAndTargetValue(2.5f);         // Sharper for more pronounced formants
+    emphasisSm.setCurrentAndTargetValue(6.0f);   // +6 dB emphasis (more audible)
     shiftSm.setCurrentAndTargetValue(1.0f);       // No shift
     brightnessSm.setCurrentAndTargetValue(0.0f); // 0 dB F4
     motionSm.setCurrentAndTargetValue(0.0f);     // No motion
@@ -236,17 +236,33 @@ void FormantProcessor::process(juce::AudioBuffer<float>& buffer, int numSamples,
             wetR += filteredR;
         }
         
-        // Scale to prevent clipping (parallel summing of 4 filters)
-        // Formants don't all peak simultaneously, scale appropriately
-        wetL *= 1.0f;  // No scale reduction needed
-        wetR *= 1.0f;
+        // Apply output gain compensation for better audibility
+        // Formant filters in parallel can reduce signal, so boost output
+        // Base gain: +3dB to compensate for parallel filter summing
+        // Additional gain based on emphasis to make formants more pronounced
+        float outputGain = juce::Decibels::decibelsToGain(3.0f + (emphasis * 0.3f));
+        wetL *= outputGain;
+        wetR *= outputGain;
         
-        // Guard against overload with high emphasis
-        if (emphasis > 12.0f) {
-            float safetyScale = juce::Decibels::decibelsToGain(-6.0f); // -6 dB safety when hot
+        // Guard against overload with high emphasis (only if very high)
+        if (emphasis > 18.0f) {
+            float safetyScale = juce::Decibels::decibelsToGain(-3.0f); // -3 dB safety when very hot
             wetL *= safetyScale;
             wetR *= safetyScale;
         }
+        
+        // Soft limiting to prevent harsh clipping
+        auto softLimit = [](float x) {
+            const float threshold = 0.9f;
+            if (std::abs(x) > threshold) {
+                float sign = (x > 0.0f) ? 1.0f : -1.0f;
+                float excess = std::abs(x) - threshold;
+                return sign * (threshold + excess * 0.3f); // Soft knee
+            }
+            return x;
+        };
+        wetL = softLimit(wetL);
+        wetR = softLimit(wetR);
         
         // Final dry/wet mix
         leftChannel[i] = dryL * (1.0f - mix) + wetL * mix;

@@ -774,6 +774,24 @@ void PluginEditor::paint (juce::Graphics& g)
                 }
             }
             break;
+            
+        case EffectID::Formant:
+            // Draw lock buttons for formant knobs (8 knobs)
+            for (int i = 0; i < 8; ++i)
+            {
+                if (formantLockButtons[i] != nullptr)
+                {
+                    auto b = formantLockButtons[i]->getBounds().toFloat();
+                    if (formantKnobLocked[i]) {
+                        if (assets.lockedIcon != nullptr)
+                            assets.lockedIcon->drawWithin(g, b, juce::RectanglePlacement::centred, 1.0f);
+                    } else {
+                        if (assets.unlockedIcon != nullptr)
+                            assets.unlockedIcon->drawWithin(g, b, juce::RectanglePlacement::centred, 1.0f);
+                    }
+                }
+            }
+            break;
     }
     
     // Draw carrot icons on dropdowns (FX_Type_Carrot_Inactive.svg)
@@ -4546,7 +4564,7 @@ void PluginEditor::setupTabSystem()
         selector->addItem("Dub Echo", 8);
         selector->addItem("Redux", 9);
         selector->addItem("PhaseBloom", 10);
-        selector->addItem("Formant", 11);
+        selector->addItem("Form", 11);
         selector->addItem("Heat", 12); // Sequential ID for EffectID::Saturate (12)
         selector->addItem("Filter", 14); // ID 14 for EffectID::Filter (13)
         
@@ -5221,7 +5239,7 @@ void PluginEditor::showPage(FxPageID id)
             // Trigger initial value label updates
             if (filterTypeKnob) filterTypeKnob->onValueChange();
             if (filterSlopeKnob) filterSlopeKnob->onValueChange();
-            for (int i = 0; i < 6; ++i) {
+            for (int i = 0; i < 5; ++i) { // 5 knobs (Spread removed)
                 if (filterKnobs[i]) {
                     filterKnobs[i]->onValueChange();
                 }
@@ -8278,6 +8296,17 @@ void PluginEditor::onEffectSelectorChanged(int slotIndex)
     router.assignEffectToSlot(targetEffect, targetSlot);
     DBG("[ROUTER] ✓ Router assignment complete");
     
+    // Enable Form effect by default when selected
+    if (targetEffect == EffectID::Formant)
+    {
+        auto* formantEnabledParam = processorRef.getAPVTS().getParameter("formantEnabled");
+        if (formantEnabledParam)
+        {
+            formantEnabledParam->setValueNotifyingHost(1.0f); // Enable (true = 1.0)
+            DBG("[ROUTER] ✓ Form effect enabled by default");
+        }
+    }
+    
     // Update all dropdowns to reflect the swap (skip the one that was just changed)
     updateAllEffectSelectors(slotIndex);
     DBG("[ROUTER] ✓ Dropdowns updated");
@@ -8596,7 +8625,7 @@ void PluginEditor::onEffectSelectorChanged(int slotIndex)
             // Trigger initial value label updates
             if (filterTypeKnob) filterTypeKnob->onValueChange();
             if (filterSlopeKnob) filterSlopeKnob->onValueChange();
-            for (int i = 0; i < 6; ++i) {
+            for (int i = 0; i < 5; ++i) { // 5 knobs (Spread removed)
                 if (filterKnobs[i]) {
                     filterKnobs[i]->onValueChange();
                 }
@@ -11260,6 +11289,30 @@ void PluginEditor::setupFormantKnobs()
         addAndMakeVisible(formantDiceButtons[i].get());
         formantDiceButtons[i]->setVisible(false);
         
+        // Create lock button
+        formantLockButtons[i] = std::make_unique<LockButton>();
+        addAndMakeVisible(formantLockButtons[i].get());
+        formantLockButtons[i]->setVisible(false);
+        formantLockButtons[i]->setClickingTogglesState(true);
+        
+        // Position lock button (same as other effects - top right of knob)
+        const int lockSize = 24;
+        int lockX = x + knobSize - lockSize - 5;
+        int lockY = y + 5;
+        formantLockButtons[i]->setBounds(lockX, lockY, lockSize, lockSize);
+        
+        if (assets.unlockedIcon && assets.lockedIcon) {
+            auto imgUnlocked = assets.unlockedIcon->createCopy();
+            auto imgLocked = assets.lockedIcon->createCopy();
+            formantLockButtons[i]->setImages(std::move(imgUnlocked), std::move(imgLocked));
+        }
+        
+        formantLockButtons[i]->setToggleState(formantKnobLocked[i], juce::dontSendNotification);
+        formantLockButtons[i]->onClick = [this, i]() {
+            formantKnobLocked[i] = formantLockButtons[i]->getToggleState();
+            repaint();
+        };
+        
         // Create APVTS attachment
         formantAttachments[i] = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
             processorRef.getAPVTS(), formantParamIDs[i], *formantKnobs[i]);
@@ -11421,8 +11474,58 @@ void PluginEditor::setupFormantSequencerArea()
     formantStepDiceButton->onClick = [this]() {
         DBG("[UI] Formant step dice button clicked - randomizing all step snapshots");
         
+        auto& rng = juce::Random::getSystemRandom();
+        
         for (int step = 0; step < 16; ++step) {
-            randomizeEffectStepSnapshot(FxPageID::Formant, step);
+            // Get current snapshot
+            auto snapshot = processorRef.getFormantSafeSnapshot(step);
+            
+            // Randomize the 4 snapshot parameters (respecting lock states)
+            if (!formantKnobLocked[0]) {
+                snapshot.formant.vowel = static_cast<float>(rng.nextInt(5)); // 0-4
+            }
+            if (!formantKnobLocked[1]) {
+                snapshot.formant.resonance = 0.4f + rng.nextFloat() * 17.6f; // 0.4-18.0
+            }
+            if (!formantKnobLocked[2]) {
+                snapshot.formant.intensity = -6.0f + rng.nextFloat() * 24.0f; // -6 to +18 dB
+            }
+            if (!formantKnobLocked[3]) {
+                snapshot.formant.mix = rng.nextFloat(); // 0-1
+            }
+            
+            processorRef.setFormantStepSnapshot(step, snapshot);
+            
+            // Also randomize the bottom 4 APVTS parameters (shift, brightness, motion, air)
+            // These aren't stored in snapshots, so we randomize them directly (respecting lock states)
+            if (!formantKnobLocked[4]) {
+                auto* shiftParam = processorRef.getAPVTS().getParameter("formantShift");
+                if (shiftParam) {
+                    float randomShift = 0.5f + rng.nextFloat() * 1.5f; // 0.5-2.0
+                    shiftParam->setValueNotifyingHost(shiftParam->convertTo0to1(randomShift));
+                }
+            }
+            if (!formantKnobLocked[5]) {
+                auto* brightnessParam = processorRef.getAPVTS().getParameter("formantBrightness");
+                if (brightnessParam) {
+                    float randomBrightness = -12.0f + rng.nextFloat() * 24.0f; // -12 to +12 dB
+                    brightnessParam->setValueNotifyingHost(brightnessParam->convertTo0to1(randomBrightness));
+                }
+            }
+            if (!formantKnobLocked[6]) {
+                auto* motionParam = processorRef.getAPVTS().getParameter("formantMotion");
+                if (motionParam) {
+                    float randomMotion = rng.nextFloat(); // 0-1
+                    motionParam->setValueNotifyingHost(randomMotion);
+                }
+            }
+            if (!formantKnobLocked[7]) {
+                auto* airParam = processorRef.getAPVTS().getParameter("formantAir");
+                if (airParam) {
+                    float randomAir = rng.nextFloat(); // 0-1
+                    airParam->setValueNotifyingHost(randomAir);
+                }
+            }
         }
         
         // Update UI to show the changes
@@ -11430,6 +11533,13 @@ void PluginEditor::setupFormantSequencerArea()
         
         // Load the current step's randomized values into the knobs
         loadSelectedStepIntoKnobs(FxPageID::Formant);
+        
+        // Trigger value change callbacks to update labels for all knobs
+        for (int i = 0; i < 8; ++i) {
+            if (formantKnobs[i] && formantKnobs[i]->onValueChange) {
+                formantKnobs[i]->onValueChange();
+            }
+        }
     };
     
     // Set the dice image
@@ -11465,7 +11575,7 @@ void PluginEditor::setupFormantSequencerArea()
     
     // Create rate dropdown (EXACT same as Space Delay page)
     formantRateDropdown = std::make_unique<juce::ComboBox>();
-    // Slower divisions added: 4 and 2 bars; and rename 1/1 to 1
+    // Slower divisions added: 4 and 2 bars; and rename 1/1 to 1; limit to 1/64
     formantRateDropdown->addItem("4", 1);      // 4 bars (16 beats)
     formantRateDropdown->addItem("2", 2);      // 2 bars (8 beats)
     formantRateDropdown->addItem("1", 3);      // 1 bar  (4 beats)
@@ -11475,17 +11585,6 @@ void PluginEditor::setupFormantSequencerArea()
     formantRateDropdown->addItem("1/16", 7);
     formantRateDropdown->addItem("1/32", 8);
     formantRateDropdown->addItem("1/64", 9);
-    formantRateDropdown->addItem("1/128", 10);
-    formantRateDropdown->addItem("1/256", 11);
-    formantRateDropdown->addItem("1/512", 12);
-    formantRateDropdown->addItem("1/1024", 13);
-    formantRateDropdown->addItem("1/2048", 14);
-    formantRateDropdown->addItem("1/4096", 15);
-    formantRateDropdown->addItem("1/8192", 16);
-    formantRateDropdown->addItem("1/16384", 17);
-    formantRateDropdown->addItem("1/32768", 18);
-    formantRateDropdown->addItem("1/65536", 19);
-    formantRateDropdown->addItem("1/131072", 20);
     formantRateDropdown->setSelectedId(5); // Default to 1/4
     // Make dropdown transparent (no background or border) - EXACT same as Space Delay
     formantRateDropdown->setColour(juce::ComboBox::backgroundColourId, juce::Colours::transparentBlack);
@@ -11668,6 +11767,7 @@ void PluginEditor::setupFormantAllStepsToggle()
         if (formantValueLabels[i]) formantGroup.push_back(formantValueLabels[i].get());
         if (formantIndicatorBars[i]) formantGroup.push_back(formantIndicatorBars[i].get());
         if (formantDiceButtons[i]) formantGroup.push_back(formantDiceButtons[i].get());
+        if (formantLockButtons[i]) formantGroup.push_back(formantLockButtons[i].get());
     }
     
     // Add other Formant components to group
@@ -12243,17 +12343,17 @@ void PluginEditor::setupFilterKnobs()
     const int startX = effectArea.getX() + 15;
     const int startY = effectArea.getY() + effectArea.getHeight() - 210;
     
-    // Parameter IDs for all 8 knobs
+    // Parameter IDs for 7 knobs (Type, Cutoff, Res, Slope, Drive, Key Track, Mix) - Spread removed
     std::vector<juce::String> filterParamIds = {
-        "fType", "cutoff", "res", "slope", "drive", "spread", "keytrack", "filterMix"
+        "fType", "cutoff", "res", "slope", "drive", "keytrack", "filterMix"
     };
     
-    // Knob names for all 8 knobs
+    // Knob names for 7 knobs (Spread removed)
     std::vector<juce::String> filterKnobNames = {
-        "Type", "Cutoff", "Resonance", "Slope", "Drive", "Spread", "Key Track", "Mix"
+        "Type", "Cutoff", "Resonance", "Slope", "Drive", "Key Track", "Mix"
     };
     
-    // Create all 8 knobs in a 2x4 grid
+    // Create 8 knobs in a 2x4 grid (skip spread position at knobIdx 5)
     for (int knobIdx = 0; knobIdx < 8; ++knobIdx)
     {
         int col = knobIdx % 4;
@@ -12295,9 +12395,41 @@ void PluginEditor::setupFilterKnobs()
             filterSlopeKnob->setBounds(x, y, knobSize, knobSize);
             addAndMakeVisible(filterSlopeKnob.get());
             filterSlopeKnob->setVisible(false);
-        } else {
-            // Regular knobs (Cutoff, Res, Drive, Spread, Key Track, Mix)
-            int regularKnobIdx = (knobIdx == 1) ? 0 : (knobIdx == 2) ? 1 : (knobIdx == 4) ? 2 : (knobIdx == 5) ? 3 : (knobIdx == 6) ? 4 : 5;
+        } else if (knobIdx == 5 || knobIdx == 6) {
+            // Regular knobs (Key Track, Mix) - Now filling positions 5 and 6
+            // Map: knobIdx 5→3 (Key Track), 6→4 (Mix)
+            int regularKnobIdx = (knobIdx == 5) ? 3 : 4;
+            
+            filterKnobs[regularKnobIdx] = std::make_unique<CustomKnob>();
+            filterKnobs[regularKnobIdx]->setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
+            filterKnobs[regularKnobIdx]->setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
+            
+            // Set parameter ranges
+            if (regularKnobIdx == 3) { // Key Track
+                filterKnobs[regularKnobIdx]->setRange(0.0, 1.0, 0.01);
+                filterKnobs[regularKnobIdx]->setValue(0.0, juce::dontSendNotification);
+            } else { // Mix (regularKnobIdx == 4)
+                filterKnobs[regularKnobIdx]->setRange(0.0, 1.0, 0.01);
+                filterKnobs[regularKnobIdx]->setValue(1.0, juce::dontSendNotification);
+            }
+            
+            if (assets.knobRing != nullptr)
+                filterKnobs[regularKnobIdx]->setRingImage(assets.knobRing->createCopy());
+            if (assets.knobInside != nullptr)
+                filterKnobs[regularKnobIdx]->setInnerImage(assets.knobInside->createCopy());
+            
+            filterKnobs[regularKnobIdx]->setBounds(x, y, knobSize, knobSize);
+            addAndMakeVisible(filterKnobs[regularKnobIdx].get());
+            filterKnobs[regularKnobIdx]->setVisible(false);
+            
+            // Create attachment - Map knobIdx to filterParamIds index: 5→5 (Key Track), 6→6 (Mix)
+            int paramIdsIdx = (knobIdx == 5) ? 5 : 6;
+            filterAttachments[regularKnobIdx] = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+                processorRef.getAPVTS(), filterParamIds[paramIdsIdx], *filterKnobs[regularKnobIdx]);
+        } else if (knobIdx == 1 || knobIdx == 2 || knobIdx == 4) {
+            // Regular knobs (Cutoff, Res, Drive) - Skip Type (0), Slope (3), and empty position 7
+            // Map: knobIdx 1→0 (Cutoff), 2→1 (Res), 4→2 (Drive)
+            int regularKnobIdx = (knobIdx == 1) ? 0 : (knobIdx == 2) ? 1 : 2;
             
             filterKnobs[regularKnobIdx] = std::make_unique<CustomKnob>();
             filterKnobs[regularKnobIdx]->setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
@@ -12314,21 +12446,9 @@ void PluginEditor::setupFilterKnobs()
                     filterKnobs[regularKnobIdx]->setRange(0.0, 1.0, 0.01);
                     filterKnobs[regularKnobIdx]->setValue(0.35, juce::dontSendNotification);
                     break;
-                case 2: // Drive
-                    filterKnobs[regularKnobIdx]->setRange(0.0, 36.0, 0.1);
+                case 2: // Drive - larger increments for more noticeable changes
+                    filterKnobs[regularKnobIdx]->setRange(0.0, 36.0, 0.5);
                     filterKnobs[regularKnobIdx]->setValue(6.0, juce::dontSendNotification);
-                    break;
-                case 3: // Spread
-                    filterKnobs[regularKnobIdx]->setRange(-50.0, 50.0, 1.0);
-                    filterKnobs[regularKnobIdx]->setValue(0.0, juce::dontSendNotification);
-                    break;
-                case 4: // Key Track
-                    filterKnobs[regularKnobIdx]->setRange(0.0, 1.0, 0.01);
-                    filterKnobs[regularKnobIdx]->setValue(0.0, juce::dontSendNotification);
-                    break;
-                case 5: // Mix
-                    filterKnobs[regularKnobIdx]->setRange(0.0, 1.0, 0.01);
-                    filterKnobs[regularKnobIdx]->setValue(1.0, juce::dontSendNotification);
                     break;
             }
             
@@ -12341,56 +12461,64 @@ void PluginEditor::setupFilterKnobs()
             addAndMakeVisible(filterKnobs[regularKnobIdx].get());
             filterKnobs[regularKnobIdx]->setVisible(false);
             
-            // Create attachment
+            // Create attachment - Map knobIdx to filterParamIds index: 1→1 (cutoff), 2→2 (res), 4→4 (drive)
+            int paramIdsIdx = knobIdx;
             filterAttachments[regularKnobIdx] = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
-                processorRef.getAPVTS(), filterParamIds[knobIdx], *filterKnobs[regularKnobIdx]);
+                processorRef.getAPVTS(), filterParamIds[paramIdsIdx], *filterKnobs[regularKnobIdx]);
         }
+        // Note: knobIdx 7 is now empty (was Mix, moved to position 6)
         
-        // Create label for all knobs
-        filterKnobLabels[knobIdx] = std::make_unique<juce::Label>();
-        filterKnobLabels[knobIdx]->setText(filterKnobNames[knobIdx], juce::dontSendNotification);
-        filterKnobLabels[knobIdx]->setFont(juce::Font(12.0f, juce::Font::bold));
-        filterKnobLabels[knobIdx]->setColour(juce::Label::textColourId, juce::Colours::white);
-        filterKnobLabels[knobIdx]->setJustificationType(juce::Justification::centred);
-        addAndMakeVisible(filterKnobLabels[knobIdx].get());
-        filterKnobLabels[knobIdx]->setVisible(false);
-        filterKnobLabels[knobIdx]->setBounds(x, y - 15, knobSize, 20);
-        
-        // Create value label for all knobs
-        filterValueLabels[knobIdx] = std::make_unique<juce::Label>();
-        filterValueLabels[knobIdx]->setText("0", juce::dontSendNotification);
-        filterValueLabels[knobIdx]->setFont(juce::Font(10.0f, juce::Font::plain));
-        filterValueLabels[knobIdx]->setColour(juce::Label::textColourId, juce::Colours::white);
-        filterValueLabels[knobIdx]->setJustificationType(juce::Justification::centred);
-        addAndMakeVisible(filterValueLabels[knobIdx].get());
-        filterValueLabels[knobIdx]->setVisible(false);
-        filterValueLabels[knobIdx]->setBounds(x, y + knobSize - 10, knobSize, 15);
-        
-        // Create indicator bar for all knobs - FIX 1: Correct bounds
-        filterIndicatorBars[knobIdx] = std::make_unique<IndicatorBar>();
-        addAndMakeVisible(filterIndicatorBars[knobIdx].get());
-        filterIndicatorBars[knobIdx]->setVisible(false);
-        filterIndicatorBars[knobIdx]->setBounds(x + 10, y + knobSize + 8, knobSize - 20, 13);
-        filterIndicatorBars[knobIdx]->setValue(0.5f);
-        
-        // Create lock button for all knobs
-        filterLockButtons[knobIdx] = std::make_unique<LockButton>();
-        addAndMakeVisible(filterLockButtons[knobIdx].get());
-        filterLockButtons[knobIdx]->setVisible(false);
-        
-        juce::Font labelFont(12.0f, juce::Font::bold);
-        int textWidth = labelFont.getStringWidth(filterKnobNames[knobIdx]);
-        int lockX = x + (knobSize / 2) + (textWidth / 2) + 5;
-        int lockY = y - 10;
-        filterLockButtons[knobIdx]->setBounds(lockX, lockY, 10, 10);
-        
-        if (assets.unlockedIcon && assets.lockedIcon) {
-            auto imgUnlocked = assets.unlockedIcon->createCopy();
-            auto imgLocked = assets.lockedIcon->createCopy();
-            filterLockButtons[knobIdx]->setImages(std::move(imgUnlocked), std::move(imgLocked));
+        // Create label for all knobs (skip empty position - knobIdx 7)
+        if (knobIdx != 7) { // Skip empty position 7
+            // Map knobIdx to filterKnobNames index: 0→0, 1→1, 2→2, 3→3, 4→4, 5→5 (Key Track), 6→6 (Mix)
+            int namesIdx = (knobIdx <= 6) ? knobIdx : 0;
+            // Label indices match knobIdx directly (0-7), except knobIdx 5 (spread) is skipped
+            int labelIdx = knobIdx; // Use same index as knobIdx (labels array has 8 elements, spread slot 5 is empty)
+            filterKnobLabels[labelIdx] = std::make_unique<juce::Label>();
+            filterKnobLabels[labelIdx]->setText(filterKnobNames[namesIdx], juce::dontSendNotification);
+            filterKnobLabels[labelIdx]->setFont(juce::Font(12.0f, juce::Font::bold));
+            filterKnobLabels[labelIdx]->setColour(juce::Label::textColourId, juce::Colours::white);
+            filterKnobLabels[labelIdx]->setJustificationType(juce::Justification::centred);
+            addAndMakeVisible(filterKnobLabels[labelIdx].get());
+            filterKnobLabels[labelIdx]->setVisible(false);
+            filterKnobLabels[labelIdx]->setBounds(x, y - 15, knobSize, 20);
+            
+            // Create value label for all knobs
+            filterValueLabels[labelIdx] = std::make_unique<juce::Label>();
+            filterValueLabels[labelIdx]->setText("0", juce::dontSendNotification);
+            filterValueLabels[labelIdx]->setFont(juce::Font(10.0f, juce::Font::plain));
+            filterValueLabels[labelIdx]->setColour(juce::Label::textColourId, juce::Colours::white);
+            filterValueLabels[labelIdx]->setJustificationType(juce::Justification::centred);
+            addAndMakeVisible(filterValueLabels[labelIdx].get());
+            filterValueLabels[labelIdx]->setVisible(false);
+            filterValueLabels[labelIdx]->setBounds(x, y + knobSize - 10, knobSize, 15);
+            
+            // Create indicator bar for all knobs - FIX 1: Correct bounds
+            filterIndicatorBars[labelIdx] = std::make_unique<IndicatorBar>();
+            addAndMakeVisible(filterIndicatorBars[labelIdx].get());
+            filterIndicatorBars[labelIdx]->setVisible(false);
+            filterIndicatorBars[labelIdx]->setBounds(x + 10, y + knobSize + 8, knobSize - 20, 13);
+            filterIndicatorBars[labelIdx]->setValue(0.5f);
+            
+            // Create lock button for all knobs
+            filterLockButtons[labelIdx] = std::make_unique<LockButton>();
+            addAndMakeVisible(filterLockButtons[labelIdx].get());
+            filterLockButtons[labelIdx]->setVisible(false);
+            
+            juce::Font labelFont(12.0f, juce::Font::bold);
+            int textWidth = labelFont.getStringWidth(filterKnobNames[namesIdx]);
+            int lockX = x + (knobSize / 2) + (textWidth / 2) + 5;
+            int lockY = y - 10;
+            filterLockButtons[labelIdx]->setBounds(lockX, lockY, 10, 10);
+            
+            if (assets.unlockedIcon && assets.lockedIcon) {
+                auto imgUnlocked = assets.unlockedIcon->createCopy();
+                auto imgLocked = assets.lockedIcon->createCopy();
+                filterLockButtons[labelIdx]->setImages(std::move(imgUnlocked), std::move(imgLocked));
+            }
+            
+            filterLockButtons[labelIdx]->setToggleState(filterKnobLocked[labelIdx], juce::dontSendNotification);
         }
-        
-        filterLockButtons[knobIdx]->setToggleState(filterKnobLocked[knobIdx], juce::dontSendNotification);
     }
     
     // Create Type label
@@ -12427,6 +12555,18 @@ void PluginEditor::setupFilterKnobs()
         
         // Save to snapshot
         updateFilterParameterFromKnob(-1); // -1 = Type knob
+        
+        // Handle all steps toggle - update all steps when enabled
+        if (filterAllStepsEnabled) {
+            int currentStep = filterUiSelectedStep;
+            for (int step = 0; step < 16; ++step) {
+                if (step != currentStep) {
+                    auto snapshot = processorRef.getFilterSafeSnapshot(step);
+                    snapshot.filter.type = value;
+                    processorRef.setFilterStepSnapshot(step, snapshot);
+                }
+            }
+        }
     };
     
     filterSlopeKnob->onValueChange = [this]() {
@@ -12440,9 +12580,21 @@ void PluginEditor::setupFilterKnobs()
         
         // Save to snapshot
         updateFilterParameterFromKnob(-2); // -2 = Slope knob
+        
+        // Handle all steps toggle - update all steps when enabled
+        if (filterAllStepsEnabled) {
+            int currentStep = filterUiSelectedStep;
+            for (int step = 0; step < 16; ++step) {
+                if (step != currentStep) {
+                    auto snapshot = processorRef.getFilterSafeSnapshot(step);
+                    snapshot.filter.slope = value;
+                    processorRef.setFilterStepSnapshot(step, snapshot);
+                }
+            }
+        }
     };
     
-    for (int i = 0; i < 6; ++i) {
+    for (int i = 0; i < 5; ++i) { // 5 knobs: Cutoff, Res, Drive, Key Track, Mix (Spread removed)
         if (filterKnobs[i]) {
             filterKnobs[i]->onValueChange = [this, i]() {
                 // Skip if loading from snapshot (prevents circular updates)
@@ -12452,7 +12604,9 @@ void PluginEditor::setupFilterKnobs()
                 if (!filterKnobs[i]) return;
                 float value = filterKnobs[i]->getValue();
                 juce::String text;
-                int knobLabelIdx = (i == 0) ? 1 : (i == 1) ? 2 : (i == 2) ? 4 : (i == 3) ? 5 : (i == 4) ? 6 : 7;
+                // Map filterKnobs index to knobLabelIdx: 0→1 (Cutoff), 1→2 (Res), 2→4 (Drive), 3→5 (Key Track), 4→6 (Mix)
+                // Skip empty position (knobIdx 7) in labels
+                int knobLabelIdx = (i == 0) ? 1 : (i == 1) ? 2 : (i == 2) ? 4 : (i == 3) ? 5 : 6;
                 
                 switch (i) {
                     case 0: {
@@ -12464,10 +12618,29 @@ void PluginEditor::setupFilterKnobs()
                         break;
                     }
                     case 1: text = juce::String(static_cast<int>(value * 100)) + "%"; break;
-                    case 2: text = juce::String(value, 1) + " dB"; break;
-                    case 3: text = juce::String(static_cast<int>(value)) + " ct"; break;
-                    case 4: text = juce::String(static_cast<int>(value * 100)) + "%"; break;
-                    case 5: text = juce::String(static_cast<int>(value * 100)) + "%"; break;
+                    case 2: {
+                        // Drive: convert 0-36 dB to 0-100% for display
+                        // SliderAttachment normalizes the value, so we must read from parameter
+                        // and convert from normalized (0-1) to actual dB (0-36)
+                        auto* driveParam = processorRef.getAPVTS().getParameter("drive");
+                        float driveDb = 0.0f;
+                        
+                        if (driveParam) {
+                            // Get normalized value (0-1) and convert to actual dB (0-36)
+                            float normalized = driveParam->getValue(); // 0-1
+                            driveDb = driveParam->convertFrom0to1(normalized); // Convert to 0-36 dB
+                        } else {
+                            // Fallback: use knob value directly (should be 0-36 if no attachment)
+                            driveDb = value;
+                        }
+                        
+                        driveDb = juce::jlimit(0.0f, 36.0f, driveDb);
+                        float drivePercent = (driveDb / 36.0f) * 100.0f;
+                        text = juce::String(static_cast<int>(drivePercent)) + "%";
+                        break;
+                    }
+                    case 3: text = juce::String(static_cast<int>(value * 100)) + "%"; break; // Key Track
+                    case 4: text = juce::String(static_cast<int>(value * 100)) + "%"; break; // Mix
                 }
                 if (filterValueLabels[knobLabelIdx]) {
                     filterValueLabels[knobLabelIdx]->setText(text, juce::dontSendNotification);
@@ -12476,17 +12649,50 @@ void PluginEditor::setupFilterKnobs()
                 if (filterIndicatorBars[knobLabelIdx]) {
                     float norm = 0.0f;
                     switch (i) {
-                        case 0: norm = value; break; // Already normalized 0-1
-                        case 1: case 4: case 5: norm = value; break;
-                        case 2: norm = value / 36.0f; break;
-                        case 3: norm = (value + 50.0f) / 100.0f; break;
+                        case 0: norm = value; break; // Cutoff - already normalized 0-1
+                        case 1: norm = value; break; // Res - already normalized 0-1
+                        case 2: norm = value / 36.0f; break; // Drive - normalize 0-36 to 0-1
+                        case 3: norm = value; break; // Key Track - already normalized 0-1
+                        case 4: norm = value; break; // Mix - already normalized 0-1
                     }
                     filterIndicatorBars[knobLabelIdx]->setValue(norm);
                 }
                 
-                // Save to snapshot (Mix knob 5 is global, not saved per step)
-                if (i != 5) {
+                // Save to snapshot (Mix knob at index 4 is global, not saved per step)
+                if (i != 4) { // Mix is at index 4 now
                     updateFilterParameterFromKnob(i);
+                    
+                    // Handle all steps toggle - update all steps when enabled
+                    if (filterAllStepsEnabled) {
+                        // Save current selected step first (done above), then update all others
+                        int currentStep = filterUiSelectedStep;
+                        float value = filterKnobs[i]->getValue();
+                        for (int step = 0; step < 16; ++step) {
+                            if (step != currentStep) {
+                                auto snapshot = processorRef.getFilterSafeSnapshot(step);
+                                switch (i) {
+                                    case 0: { // Cutoff - convert normalized value to frequency
+                                        // Use the same conversion logic as in processor
+                                        float freq = value <= 0.75f 
+                                            ? 20.0f + (5000.0f - 20.0f) * (value / 0.75f)
+                                            : 5000.0f * std::pow(4.0f, (value - 0.75f) / 0.25f);
+                                        snapshot.filter.cutoff = juce::jlimit(20.0f, 20000.0f, freq);
+                                        break;
+                                    }
+                                    case 1: // Resonance
+                                        snapshot.filter.resonance = value;
+                                        break;
+                                    case 2: // Drive
+                                        snapshot.filter.drive = value;
+                                        break;
+                                    case 3: // Key Track
+                                        snapshot.filter.keytrack = value;
+                                        break;
+                                }
+                                processorRef.setFilterStepSnapshot(step, snapshot);
+                            }
+                        }
+                    }
                 }
             };
         }
@@ -12572,13 +12778,59 @@ void PluginEditor::setupFilterSequencerArea()
     filterStepDiceButton = std::make_unique<CustomDiceButton>();
     addAndMakeVisible(filterStepDiceButton.get());
     filterStepDiceButton->setVisible(false);
-    const int stepDiceSize = 32;
+    int stepDiceSize = static_cast<int>(35 * 0.7); // 30% smaller than 35px = ~24px
     filterStepDiceButton->setBounds(sequencerArea.getX() + 75, sequencerArea.getY() + 5, stepDiceSize, stepDiceSize);
     if (assets.diceLarge != nullptr) {
         filterStepDiceButton->setDiceImage(assets.diceLarge->createCopy());
     }
     filterStepDiceButton->onClick = [this]() {
-        // TODO: randomizeFilterStepValues();
+        DBG("[UI] Filter step dice button clicked - randomizing all step snapshots");
+        
+        juce::Random& rng = juce::Random::getSystemRandom();
+        
+        for (int step = 0; step < 16; ++step) {
+            auto snapshot = processorRef.getFilterSafeSnapshot(step);
+            
+            // Randomize all Filter parameters for this step
+            snapshot.filter.type = static_cast<float>(rng.nextInt(5)); // 0-4 (LP, HP, BP, Comb-, Comb+)
+            snapshot.filter.cutoff = 20.0f + rng.nextFloat() * 19800.0f; // 20-20000 Hz
+            snapshot.filter.resonance = rng.nextFloat(); // 0-1
+            snapshot.filter.slope = rng.nextFloat(); // 0-1 (12dB or 24dB)
+            snapshot.filter.drive = rng.nextFloat() * 36.0f; // 0-36 dB
+            snapshot.filter.keytrack = rng.nextFloat(); // 0-1
+            // Mix is global, not randomized per step
+            
+            processorRef.setFilterStepSnapshot(step, snapshot);
+        }
+        
+        // Reload current step to UI (don't send notification to avoid triggering save)
+        isLoadingFromSnapshot.store(true);
+        auto currentSnapshot = processorRef.getFilterSafeSnapshot(filterUiSelectedStep);
+        if (filterTypeKnob) filterTypeKnob->setValue(currentSnapshot.filter.type, juce::dontSendNotification);
+        if (filterSlopeKnob) filterSlopeKnob->setValue(currentSnapshot.filter.slope, juce::dontSendNotification);
+        // Convert frequency from snapshot to normalized value for cutoff knob
+        if (filterKnobs[0]) {
+            float freq = currentSnapshot.filter.cutoff;
+            float normalized = freq <= 5000.0f 
+                ? 0.75f * (freq - 20.0f) / (5000.0f - 20.0f)
+                : 0.75f + 0.25f * (std::log(freq / 5000.0f) / std::log(20000.0f / 5000.0f));
+            filterKnobs[0]->setValue(juce::jlimit(0.0f, 1.0f, normalized), juce::dontSendNotification);
+        }
+        if (filterKnobs[1]) filterKnobs[1]->setValue(currentSnapshot.filter.resonance, juce::dontSendNotification);
+        if (filterKnobs[2]) filterKnobs[2]->setValue(currentSnapshot.filter.drive, juce::dontSendNotification);
+        if (filterKnobs[3]) filterKnobs[3]->setValue(currentSnapshot.filter.keytrack, juce::dontSendNotification);
+        isLoadingFromSnapshot.store(false);
+        
+        // Trigger value change callbacks to update labels
+        if (filterTypeKnob && filterTypeKnob->onValueChange) filterTypeKnob->onValueChange();
+        if (filterSlopeKnob && filterSlopeKnob->onValueChange) filterSlopeKnob->onValueChange();
+        for (int i = 0; i < 5; ++i) {
+            if (filterKnobs[i] && filterKnobs[i]->onValueChange) {
+                filterKnobs[i]->onValueChange();
+            }
+        }
+        
+        DBG("[UI] All 16 Filter steps randomized");
     };
     
     // Create step buttons (16 steps)
@@ -12651,10 +12903,41 @@ void PluginEditor::setupFilterSequencerArea()
     filterRateDropdown->setColour(juce::ComboBox::buttonColourId, juce::Colours::transparentBlack);
     filterRateDropdown->setColour(juce::ComboBox::textColourId, juce::Colours::white);
     filterRateDropdown->setColour(juce::ComboBox::arrowColourId, juce::Colours::white);
-    filterRateDropdown->setSelectedId(7, juce::dontSendNotification);
+    // Set selected ID from processor state (like Saturate)
+    int divIdx = processorRef.getFilterSeqState().divisionIndex.load();
+    filterRateDropdown->setSelectedId(divIdx + 1, juce::dontSendNotification);
+    
     addAndMakeVisible(filterRateDropdown.get());
     filterRateDropdown->setVisible(false);
     filterRateDropdown->setBounds(sequencerArea.getX() + 220, sequencerArea.getY() - 10, 74, 25);
+    
+    filterRateDropdown->onChange = [this]() {
+        int selectedId = filterRateDropdown->getSelectedId();
+        if (selectedId > 0) {
+            int divisionIndex = selectedId - 1;
+            processorRef.setFilterDivisionIndex(divisionIndex);
+            DBG("[UI] Filter rate changed to index: " << divisionIndex);
+        }
+    };
+    
+    // Create STD toggle
+    filterStdToggle = std::make_unique<CircularToggleButton>();
+    filterStdToggle->setButtonText("-");
+    addAndMakeVisible(filterStdToggle.get());
+    filterStdToggle->setVisible(false);
+    filterStdToggle->setBounds(sequencerArea.getX() + 288, sequencerArea.getY() - 14, 30, 30);
+    
+    // Set up STD toggle callback
+    filterStdToggle->onClick = [this]() {
+        // Cycle through -/t/. states
+        static int stdState = 0; // 0=-, 1=t, 2=.
+        stdState = (stdState + 1) % 3;
+        const char* labels[] = {"-", "t", "."};
+        filterStdToggle->setButtonText(labels[stdState]);
+        // Inform processor of new STD mode for timing
+        processorRef.setFilterStdMode(stdState);
+        DBG("[UI] Filter STD toggle clicked: state=" << stdState << " label=" << labels[stdState]);
+    };
     
     // Create step power button
     filterStepPowerButton = std::make_unique<juce::DrawableButton>("filterStepPower", juce::DrawableButton::ButtonStyle::ImageFitted);
@@ -12699,11 +12982,12 @@ void PluginEditor::setupFilterAllStepsToggle()
         );
     }
     filterAllStepsToggle->setToggleState(false, juce::dontSendNotification);
+    filterAllStepsEnabled = false;
     filterAllStepsToggle->onClick = [this]() {
-        bool enabled = filterAllStepsToggle->getToggleState();
-        DBG("[UI] Filter All Steps toggle: " << (enabled ? "ON" : "OFF"));
+        filterAllStepsEnabled = filterAllStepsToggle->getToggleState();
+        DBG("[UI] Filter All Steps toggle: " << (filterAllStepsEnabled ? "ON" : "OFF"));
         if (filterAllStepsLabel) {
-            filterAllStepsLabel->setAlpha(enabled ? 1.0f : 0.5f);
+            filterAllStepsLabel->setAlpha(filterAllStepsEnabled ? 1.0f : 0.5f);
         }
     };
     
@@ -12735,8 +13019,8 @@ void PluginEditor::populateFilterGroup()
     if (filterSlopeKnob) filterGroup.push_back(filterSlopeKnob.get());
     if (filterTypeLabel) filterGroup.push_back(filterTypeLabel.get());
     
-    // Add regular knobs (6 knobs: Cutoff, Res, Drive, Spread, Key Track, Mix)
-    for (int i = 0; i < 6; ++i) {
+    // Add regular knobs (5 knobs: Cutoff, Res, Drive, Key Track, Mix - Spread removed)
+    for (int i = 0; i < 5; ++i) {
         if (filterKnobs[i]) filterGroup.push_back(filterKnobs[i].get());
     }
     
@@ -12751,6 +13035,8 @@ void PluginEditor::populateFilterGroup()
     // Add sequencer components
     if (filterStepTitle) filterGroup.push_back(filterStepTitle.get());
     if (filterStepAmountLabel) filterGroup.push_back(filterStepAmountLabel.get());
+    if (filterRateDropdown) filterGroup.push_back(filterRateDropdown.get());
+    if (filterStdToggle) filterGroup.push_back(filterStdToggle.get());
     if (filterStepDiceButton) filterGroup.push_back(filterStepDiceButton.get());
     if (filterStepPowerButton) filterGroup.push_back(filterStepPowerButton.get());
     if (filterAllStepsToggle) filterGroup.push_back(filterAllStepsToggle.get());
@@ -12885,15 +13171,18 @@ void PluginEditor::updateFilterFxAreaVisibility()
         filterSlopeKnob->setAlpha(alpha);
         filterSlopeKnob->setEnabled(filterFxAreaEnabled);
     }
-    for (int i = 0; i < 6; ++i) {
+    for (int i = 0; i < 5; ++i) { // 5 knobs (Spread removed)
+        // Map filterKnobs index to label index: 0→1 (Cutoff), 1→2 (Res), 2→4 (Drive), 3→5 (Key Track), 4→6 (Mix)
+        int labelIdx = (i == 0) ? 1 : (i == 1) ? 2 : (i == 2) ? 4 : (i == 3) ? 5 : 6;
+        
         if (filterKnobs[i]) {
             filterKnobs[i]->setAlpha(alpha);
             filterKnobs[i]->setEnabled(filterFxAreaEnabled);
         }
-        if (filterKnobLabels[i]) filterKnobLabels[i]->setAlpha(alpha);
-        if (filterValueLabels[i]) filterValueLabels[i]->setAlpha(alpha);
-        if (filterIndicatorBars[i]) filterIndicatorBars[i]->setAlpha(alpha);
-        if (filterLockButtons[i]) filterLockButtons[i]->setAlpha(alpha);
+        if (filterKnobLabels[labelIdx]) filterKnobLabels[labelIdx]->setAlpha(alpha);
+        if (filterValueLabels[labelIdx]) filterValueLabels[labelIdx]->setAlpha(alpha);
+        if (filterIndicatorBars[labelIdx]) filterIndicatorBars[labelIdx]->setAlpha(alpha);
+        if (filterLockButtons[labelIdx]) filterLockButtons[labelIdx]->setAlpha(alpha);
     }
 }
 
@@ -12904,6 +13193,10 @@ void PluginEditor::updateFilterStepAreaVisibility()
     if (filterStepTitle) filterStepTitle->setAlpha(alpha);
     if (filterStepAmountLabel) filterStepAmountLabel->setAlpha(alpha);
     if (filterRateDropdown) filterRateDropdown->setAlpha(alpha);
+    if (filterStdToggle) {
+        filterStdToggle->setAlpha(alpha);
+        filterStdToggle->setEnabled(filterStepAreaEnabled);
+    }
     if (filterStepDiceButton) filterStepDiceButton->setAlpha(alpha);
     for (int i = 0; i < 16; ++i) {
         if (filterStepButtons[i]) filterStepButtons[i]->setAlpha(alpha);
@@ -12937,16 +13230,22 @@ void PluginEditor::onFilterStepButtonClicked(int stepIndex)
         if (filterKnobs[1]) filterKnobs[1]->setValue(snapshot.filter.resonance, juce::dontSendNotification);
         if (filterSlopeKnob) filterSlopeKnob->setValue(snapshot.filter.slope, juce::dontSendNotification);
         if (filterKnobs[2]) filterKnobs[2]->setValue(snapshot.filter.drive, juce::dontSendNotification);
-        if (filterKnobs[3]) filterKnobs[3]->setValue(snapshot.filter.spread, juce::dontSendNotification);
-        if (filterKnobs[4]) filterKnobs[4]->setValue(snapshot.filter.keytrack, juce::dontSendNotification);
-        // Mix knob (filterKnobs[5]) is global, not per-step
+        // Key Track knob (filterKnobs[3])
+        if (filterKnobs[3]) filterKnobs[3]->setValue(snapshot.filter.keytrack, juce::dontSendNotification);
+        // Mix knob (filterKnobs[4]) is global, not per-step
+        
+        // Clear flag before triggering callbacks so labels update
+        isLoadingFromSnapshot.store(false);
         
         // Trigger value change callbacks to update labels (but not save snapshots)
         if (filterTypeKnob && filterTypeKnob->onValueChange) filterTypeKnob->onValueChange();
         if (filterSlopeKnob && filterSlopeKnob->onValueChange) filterSlopeKnob->onValueChange();
         for (int i = 0; i < 5; ++i) { // Only first 5 knobs (Mix knob 5 is global)
             if (filterKnobs[i] && filterKnobs[i]->onValueChange) {
+                // Temporarily set flag to prevent saving during callback
+                isLoadingFromSnapshot.store(true);
                 filterKnobs[i]->onValueChange();
+                isLoadingFromSnapshot.store(false);
             }
         }
     }
@@ -12960,8 +13259,8 @@ void PluginEditor::onFilterStepButtonClicked(int stepIndex)
 
 void PluginEditor::updateFilterParameterFromKnob(int knobIndex)
 {
-    // knobIndex: -1 = Type, -2 = Slope, 0-4 = filterKnobs[0-4] (Cutoff, Res, Drive, Spread, Key Track)
-    // Mix knob (filterKnobs[5]) is global, not saved per step
+    // knobIndex: -1 = Type, -2 = Slope, 0-3 = filterKnobs[0-3] (Cutoff, Res, Drive, Key Track)
+    // Mix knob (filterKnobs[4]) is global, not saved per step
     
     // Get current step
     int currentStep = filterUiSelectedStep;
@@ -12981,19 +13280,25 @@ void PluginEditor::updateFilterParameterFromKnob(int knobIndex)
 
 void PluginEditor::updateFilterSequencerUI()
 {
-    int selectedStep = filterUiSelectedStep;
-    int playingStep = processorRef.getFilterPlayingStep();
-    const int stepsUsed = processorRef.getFilterSeqState().stepsUsed.load();
-    
-    for (int i = 0; i < 16; ++i) {
-        if (filterStepButtons[i] != nullptr) {
-            bool isSelected = (i == selectedStep);
-            filterStepButtons[i]->setSelected(isSelected);
-            bool sequencerEnabled = processorRef.getFilterSeqState().enabled.load();
-            filterStepButtons[i]->setPlaying(sequencerEnabled && (i == playingStep) && (i != selectedStep));
-            bool shouldBeEnabled = i < stepsUsed;
-            filterStepButtons[i]->setEnabledStep(shouldBeEnabled);
+    int stepsUsed = 16; // Default value
+    try {
+        int selectedStep = filterUiSelectedStep;
+        int playingStep = processorRef.getFilterPlayingStep();
+        const auto& seqState = processorRef.getFilterSeqState();
+        stepsUsed = seqState.stepsUsed.load();
+        
+        for (int i = 0; i < 16; ++i) {
+            if (filterStepButtons[i] != nullptr) {
+                bool isSelected = (i == selectedStep);
+                filterStepButtons[i]->setSelected(isSelected);
+                bool sequencerEnabled = seqState.enabled.load();
+                filterStepButtons[i]->setPlaying(sequencerEnabled && (i == playingStep) && (i != selectedStep));
+                bool shouldBeEnabled = i < stepsUsed;
+                filterStepButtons[i]->setEnabledStep(shouldBeEnabled);
+            }
         }
+    } catch (...) {
+        DBG("[UI] Error updating Filter sequencer UI");
     }
     
     // Update step amount display
@@ -15542,6 +15847,10 @@ void PluginEditor::randomizeFormantKnobValues()
     DBG("[UI] Randomizing Formant knob values");
     
     for (int i = 0; i < 8; ++i) {
+        if (formantKnobLocked[i]) {
+            continue; // Skip locked knobs
+        }
+        
         if (formantKnobs[i] != nullptr) {
             float min = formantKnobs[i]->getMinimum();
             float max = formantKnobs[i]->getMaximum();

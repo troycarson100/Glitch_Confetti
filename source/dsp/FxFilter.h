@@ -78,8 +78,12 @@ private:
     // Helper for key tracking
     float applyKeyTracking(float baseCutoff, float keytrackVal, int midiNote);
     
-    // Helper to map resonance (0-1) to Q (0.5-12.0)
-    static float mapResToQ(float res);
+    // Helper to map resonance (0-1) to Q (0.5-12.0 for LP/HP, 0.5-6.0 for BP)
+    static float mapResToQ(float res, int filterType);
+    
+    // Helper to map resonance (0-1) to feedback (0-0.9) for comb filters
+    // Uses quadratic curve to make resonance audible at lower values
+    static float mapResToCombFeedback(float res);
     
     // Helper to apply drive with saturation
     float applyDrive(float sample, float driveDb);

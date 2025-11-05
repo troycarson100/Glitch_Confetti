@@ -96,14 +96,41 @@ float FxFilter::applyKeyTracking(float baseCutoff, float keytrackVal, int midiNo
     return baseCutoff * std::pow(2.0f, semitoneOffset / 12.0f);
 }
 
-float FxFilter::mapResToQ(float res)
+float FxFilter::mapResToQ(float res, int filterType)
 {
     // Clamp res to 0-1.0 and map to Q (allows up to 100% resonance)
     res = juce::jlimit(0.0f, 1.0f, res);
-    // Use linear mapping for predictable, responsive control
-    // Q ranges from 0.5 (min) to 12.0 (max) for full resonance control
-    // Linear ensures resonance knob works across full range
-    return 0.5f + (res * 11.5f); // Linear: 0.5 at res=0, 12.0 at res=1.0
+    
+    // BP mode (type == 2) uses a gentler, smoother Q curve to prevent harsh resonance
+    if (filterType == 2) // BP
+    {
+        // Use exponential curve for smoother resonance: Q from 0.5 to 6.0 (lower max than LP/HP)
+        // The curve is gentler: res^1.5 gives smoother response at high resonance
+        float qMax = 6.0f; // Lower max Q for smoother BP sound
+        float qMin = 0.5f;
+        float qRange = qMax - qMin;
+        // Exponential curve: res^1.5 makes it gentler at high values
+        float curved = std::pow(res, 1.5f);
+        return qMin + (qRange * curved);
+    }
+    else
+    {
+        // LP and HP use linear mapping for predictable, responsive control
+        // Q ranges from 0.5 (min) to 12.0 (max) for full resonance control
+        return 0.5f + (res * 11.5f); // Linear: 0.5 at res=0, 12.0 at res=1.0
+    }
+}
+
+float FxFilter::mapResToCombFeedback(float res)
+{
+    // Clamp res to 0-1.0 and map to feedback for comb filters (0-0.9)
+    // Use quadratic curve to make resonance audible at lower values
+    // res^2 means: at 25% resonance, we get ~6% feedback; at 50%, ~25% feedback
+    res = juce::jlimit(0.0f, 1.0f, res);
+    float feedbackMax = 0.9f;
+    // Quadratic curve: res^2 makes lower values more audible
+    float curved = res * res;
+    return curved * feedbackMax;
 }
 
 float FxFilter::applyDrive(float sample, float driveDb)
@@ -112,29 +139,35 @@ float FxFilter::applyDrive(float sample, float driveDb)
     if (driveDb <= 0.01f)
         return sample;
     
-    // Convert dB to linear gain
+    // Convert dB to linear gain - make drive more aggressive
     float gain = juce::Decibels::decibelsToGain(driveDb);
     
     // Apply gain
     float driven = sample * gain;
     
-    // Apply soft saturation (tanh) to make drive audible
-    float driveAmount = driveDb / 36.0f; // 0-1
-    if (driveAmount > 0.1f)
-    {
-        // Soft saturation: blend between linear and tanh
-        driven = driven * (1.0f - 0.4f * driveAmount) + 0.4f * driveAmount * std::tanh(driven * 1.5f);
-    }
+    // Apply aggressive saturation to make drive very apparent
+    float driveAmount = driveDb / 36.0f; // 0-1 normalized
+    
+    // Use tanh saturation with variable strength based on drive amount
+    // At low drive: subtle saturation, at high drive: heavy saturation
+    float saturationStrength = 0.3f + (driveAmount * 0.7f); // 0.3 to 1.0
+    float saturationAmount = 1.5f + (driveAmount * 3.0f); // 1.5 to 4.5
+    
+    // Apply saturation: blend between linear and tanh based on drive
+    driven = driven * (1.0f - saturationStrength) + saturationStrength * std::tanh(driven * saturationAmount);
     
     return driven;
 }
 
 void FxFilter::switchFilterType(int newType)
 {
-    if (currentType != newType)
+    if (currentType != newType && !switcher.isActive())
     {
-        switcher.start(20.0f);  // 20ms crossfade
-        currentType = newType;
+        // Start crossfade with longer duration for smoother transitions
+        // Don't reset filters - let the crossfade handle the transition smoothly
+        switcher.start(50.0f);  // 50ms crossfade for better smoothing and click prevention
+        // Don't set currentType yet - wait until crossfade completes
+        // This preserves the old filter state for the crossfade
     }
 }
 
@@ -179,21 +212,16 @@ void FxFilter::setTargets(const FilterTargets& targets)
 
 void FxFilter::processSVFMode(juce::AudioBuffer<float>& buffer, int type, float cutoff, float q, int slopeSel, float driveDb, float spreadCents)
 {
-    // Apply stereo spread by detuning cutoff per channel
-    // Scale spread by 4x to make it more apparent
-    const float spreadScale = 4.0f;
-    const float effectiveSpread = spreadCents * spreadScale;
-    const float ratioL = std::pow(2.0f, +effectiveSpread / 1200.0f);
-    const float ratioR = std::pow(2.0f, -effectiveSpread / 1200.0f);
+    // Spread removed - no stereo detuning
+    // Use same cutoff for both channels
+    const float cutoffL = cutoff;
+    const float cutoffR = cutoff;
     
     const int numChannels = buffer.getNumChannels();
     const int numSamples = buffer.getNumSamples();
     
-    // Calculate channel-specific cutoffs
-    const float cutoffL = juce::jlimit(20.0f, 20000.0f, cutoff * ratioL);
-    const float cutoffR = juce::jlimit(20.0f, 20000.0f, cutoff * ratioR);
-    
-    // Apply drive pre-filter (before filtering)
+    // Apply drive pre-filter (before filtering) - modify buffer in place
+    // This is safe because during crossfade, we work on copies (tmpA/tmpB)
     if (driveDb > 0.01f)
     {
         for (int c = 0; c < numChannels; ++c)
@@ -322,8 +350,8 @@ void FxFilter::process(juce::AudioBuffer<float>& buffer, int numSamples)
     resSm.setCurrentAndTargetValue(r);
     driveSm.setCurrentAndTargetValue(drv);
     
-    // Map res to Q for SVF (musical mapping) - use linear mapping for predictable response
-    float qMapped = mapResToQ(r);
+    // Map res to Q for SVF (musical mapping) - BP uses gentler curve for smoother resonance
+    float qMapped = mapResToQ(r, currentType);
     
     // Process based on filter type
     if (switcher.isActive())
@@ -333,45 +361,64 @@ void FxFilter::process(juce::AudioBuffer<float>& buffer, int numSamples)
         tmpB.setSize(numChannels, numSamples, false, false, true);
         
         // Copy input to temp buffers (before processing)
+        // This ensures both old and new filters process from the same input signal
         for (int c = 0; c < numChannels; ++c)
         {
             tmpA.copyFrom(c, 0, buffer, c, 0, numSamples);
             tmpB.copyFrom(c, 0, buffer, c, 0, numSamples);
         }
         
-        // Process old filter type (use currentType before it changes)
-        int oldType = currentType;
-        if (oldType <= 2)
+        // Process old filter type (use currentType - it hasn't changed yet)
+        int oldType = currentType; // This is the old type (before switchFilterType was called)
+        float qOld = mapResToQ(r, oldType);
+        
+        // Apply drive to tmpA before processing old filter (if needed)
+        if (oldType <= 2 && drv > 0.01f)
         {
-            // SVF mode using JUCE filters
-            processSVFMode(tmpA, oldType, cut, qMapped, slope, drv, spreadCents);
+            // Drive will be applied inside processSVFMode
+            processSVFMode(tmpA, oldType, cut, qOld, slope, drv, spreadCents);
+        }
+        else if (oldType <= 2)
+        {
+            processSVFMode(tmpA, oldType, cut, qOld, slope, 0.0f, spreadCents);
         }
         else if (oldType == 3)
         {
             // Comb-
-            combMinus.processBlock(tmpA, cut, r, (slope == 1) ? 1.0f : 0.0f, spreadCents, drv);
+            float combFeedbackOld = mapResToCombFeedback(r);
+            combMinus.processBlock(tmpA, cut, combFeedbackOld, (slope == 1) ? 1.0f : 0.0f, spreadCents, drv);
         }
         else
         {
             // Comb+
-            combPlus.processBlock(tmpA, cut, r, (slope == 1) ? 1.0f : 0.0f, spreadCents, drv);
+            float combFeedbackOld = mapResToCombFeedback(r);
+            combPlus.processBlock(tmpA, cut, combFeedbackOld, (slope == 1) ? 1.0f : 0.0f, spreadCents, drv);
         }
         
         // Process new filter type
-        if (targetType <= 2)
+        float qNew = mapResToQ(r, targetType);
+        
+        // Apply drive to tmpB before processing new filter (if needed)
+        if (targetType <= 2 && drv > 0.01f)
         {
-            // SVF mode using JUCE filters
-            processSVFMode(tmpB, targetType, cut, qMapped, slope, drv, spreadCents);
+            // Drive will be applied inside processSVFMode
+            processSVFMode(tmpB, targetType, cut, qNew, slope, drv, spreadCents);
+        }
+        else if (targetType <= 2)
+        {
+            processSVFMode(tmpB, targetType, cut, qNew, slope, 0.0f, spreadCents);
         }
         else if (targetType == 3)
         {
             // Comb-
-            combMinus.processBlock(tmpB, cut, r, (slope == 1) ? 1.0f : 0.0f, spreadCents, drv);
+            float combFeedbackNew = mapResToCombFeedback(r);
+            combMinus.processBlock(tmpB, cut, combFeedbackNew, (slope == 1) ? 1.0f : 0.0f, spreadCents, drv);
         }
         else
         {
             // Comb+
-            combPlus.processBlock(tmpB, cut, r, (slope == 1) ? 1.0f : 0.0f, spreadCents, drv);
+            float combFeedbackNew = mapResToCombFeedback(r);
+            combPlus.processBlock(tmpB, cut, combFeedbackNew, (slope == 1) ? 1.0f : 0.0f, spreadCents, drv);
         }
         
         // Crossfade
@@ -397,12 +444,14 @@ void FxFilter::process(juce::AudioBuffer<float>& buffer, int numSamples)
         else if (typeToUse == 3)
         {
             // Comb-
-            combMinus.processBlock(buffer, cut, r, (slope == 1) ? 1.0f : 0.0f, spreadCents, drv);
+            float combFeedback = mapResToCombFeedback(r);
+            combMinus.processBlock(buffer, cut, combFeedback, (slope == 1) ? 1.0f : 0.0f, spreadCents, drv);
         }
         else if (typeToUse == 4)
         {
             // Comb+
-            combPlus.processBlock(buffer, cut, r, (slope == 1) ? 1.0f : 0.0f, spreadCents, drv);
+            float combFeedback = mapResToCombFeedback(r);
+            combPlus.processBlock(buffer, cut, combFeedback, (slope == 1) ? 1.0f : 0.0f, spreadCents, drv);
         }
     }
     

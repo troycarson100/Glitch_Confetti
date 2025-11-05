@@ -52,6 +52,8 @@ PluginProcessor::PluginProcessor()
                        ),
     valueTreeState(*this, nullptr, "Parameters", createParameterLayout())
 {
+    // Wrap constructor body in try-catch to prevent crashes during initialization
+    try {
     // Initialize delay sequencer state
     seq.enabled.store(false);
     seq.stepsUsed.store(16);
@@ -162,6 +164,50 @@ PluginProcessor::PluginProcessor()
     saturateSeq.divisionIndex.store(5); // 1/8 default (index 5 = item ID 6)
     saturateSeq.playingStep.store(0);
     saturateUiSelectedStep.store(0); // Initialize UI selected step
+    
+    // Initialize Filter sequencer
+    // SeqState has default member initializers, but we override with our desired defaults
+    // Wrap in try-catch to prevent crashes during construction
+    try {
+        filterSeq.enabled.store(true); // Start enabled (use relaxed ordering in constructor)
+        filterSeq.stepsUsed.store(16);
+        filterSeq.divisionIndex.store(5); // 1/8 default (index 5 = item ID 6)
+        filterSeq.currentStep.store(0); // Explicitly initialize currentStep
+        filterSeq.playingStep.store(0);
+        filterSeq.active.store(false); // Start inactive until play starts
+        filterSeq.originPPQ.store(0.0);
+        filterSeq.haveOrigin.store(false);
+        filterSeq.sr = 44100.0; // Initialize sample rate (non-atomic, safe in constructor)
+        filterSeq.samplesIntoStep = 0.0;
+        filterSeq.samplesPerStep = 0.0;
+        filterUiSelectedStep.store(0); // Initialize UI selected step
+        
+        // Initialize Filter step snapshots with defaults
+        // StepSnapshot has default member initializers, but we override with our desired defaults
+        static_assert(std::is_default_constructible_v<StepSnapshot>, "StepSnapshot must be default constructible");
+        constexpr int numSteps = 16;
+        if (filterStepSnapshots.size() == numSteps) {
+            for (int i = 0; i < numSteps; ++i) {
+                filterStepSnapshots[i].filter.type = 0.0f; // LP
+                filterStepSnapshots[i].filter.cutoff = 1200.0f; // 1200 Hz
+                filterStepSnapshots[i].filter.resonance = 0.35f;
+                filterStepSnapshots[i].filter.slope = 1.0f; // 24dB
+                filterStepSnapshots[i].filter.drive = 6.0f;
+                filterStepSnapshots[i].filter.spread = 0.0f; // Spread removed
+                filterStepSnapshots[i].filter.keytrack = 0.0f;
+                filterStepSnapshots[i].filter.mix = 1.0f;
+            }
+            DBG("[Stepper] Initialized Filter step snapshots with default values");
+        } else {
+            DBG("[Stepper] ERROR: filterStepSnapshots size mismatch: " << filterStepSnapshots.size() << " expected " << numSteps);
+        }
+    } catch (const std::exception& e) {
+        DBG("[Stepper] CRITICAL ERROR initializing Filter: " << e.what());
+        // Try to continue with defaults - don't rethrow
+    } catch (...) {
+        DBG("[Stepper] CRITICAL ERROR initializing Filter: unknown exception");
+        // Try to continue with defaults - don't rethrow
+    }
     
     // Initialize Shimmer sequencer - TODO: shimmerSeq needs to be declared
     // shimmerSeq.enabled.store(true); // Start enabled
@@ -302,6 +348,13 @@ PluginProcessor::PluginProcessor()
     
     // Verification log
     DBG("[Stepper] Built formats: VST3/AU/Standalone. BundleID=com.glitchcorp.stepper, Code=Stp1");
+    } catch (const std::exception& e) {
+        DBG("[Stepper] CRITICAL ERROR in constructor: " << e.what());
+        // Don't rethrow - try to continue with partial initialization
+    } catch (...) {
+        DBG("[Stepper] CRITICAL ERROR in constructor: unknown exception");
+        // Don't rethrow - try to continue with partial initialization
+    }
 }
 
 
@@ -550,7 +603,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout PluginProcessor::createParam
     params.push_back(std::make_unique<juce::AudioParameterFloat>("slope", "Slope", 
         juce::NormalisableRange<float>(0.0f, 1.0f, 0.01f), 1.0f)); // 0=12dB, 1=24dB
     params.push_back(std::make_unique<juce::AudioParameterFloat>("drive", "Drive", 
-        juce::NormalisableRange<float>(0.0f, 36.0f, 0.1f), 6.0f)); // dB
+        juce::NormalisableRange<float>(0.0f, 36.0f, 0.5f), 6.0f)); // dB, 0.5dB increments
     params.push_back(std::make_unique<juce::AudioParameterFloat>("spread", "Spread", 
         juce::NormalisableRange<float>(-50.0f, 50.0f, 0.1f), 0.0f)); // cents
     params.push_back(std::make_unique<juce::AudioParameterFloat>("keytrack", "Key Track", 
@@ -878,6 +931,8 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                 spacedelaySeq.resetPhase();  // Space Delay sequencer phase reset
                 phaseBloomSeq.resetPhase();  // PhaseBloom sequencer phase reset
                 reduxSeq.resetPhase();      // Redux sequencer phase reset
+                saturateSeq.resetPhase();    // Saturate sequencer phase reset
+                filterSeq.resetPhase();      // Filter sequencer phase reset
                 
                 // Auto-enable delay sequencer on DAW play (only if user hasn't explicitly disabled it)
                 if (followHost.load() && !userDisabledSequencer.load()) {
@@ -967,6 +1022,12 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                 if (reduxSeq.enabled.load()) {
                     reduxSeq.active.store(true);  // Activate Redux sequencer
                     DBG("[REDUX SEQ] ✓ Activated on play edge");
+                }
+                
+                // Filter sequencer activates if enabled (independent of followHost)
+                if (filterSeq.enabled.load(std::memory_order_acquire)) {
+                    filterSeq.active.store(true, std::memory_order_release);  // Activate Filter sequencer
+                    DBG("[FILTER SEQ] ✓ Activated on play edge");
                 }
                 
                 DBG("[SEQ] Play edge detected");
@@ -1063,6 +1124,26 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                     form2Seq.currentStep.store(form2Step);
                     form2Seq.playingStep.store(form2Step);
                     DBG("[FORM2 SEQ] Lock-in at PPQ=" << ppq << " -> step " << form2Step);
+                }
+                
+                if (saturateSeq.enabled.load() && saturateSeq.active.load()) {
+                    const int saturateStep = saturateSeq.computeStepFromPPQ(ppq);
+                    saturateSeq.currentStep.store(saturateStep);
+                    saturateSeq.playingStep.store(saturateStep);
+                    DBG("[SATURATE SEQ] Lock-in at PPQ=" << ppq << " -> step " << saturateStep);
+                }
+                
+                if (filterSeq.enabled.load(std::memory_order_acquire) && filterSeq.active.load(std::memory_order_acquire) && std::isfinite(ppq) && ppq >= 0.0) {
+                    try {
+                        const int filterStep = filterSeq.computeStepFromPPQ(ppq);
+                        if (filterStep >= 0 && filterStep < 16) {
+                            filterSeq.currentStep.store(filterStep, std::memory_order_release);
+                            filterSeq.playingStep.store(filterStep, std::memory_order_release);
+                            DBG("[FILTER SEQ] Lock-in at PPQ=" << ppq << " -> step " << filterStep);
+                        }
+                    } catch (...) {
+                        DBG("[FILTER SEQ] Error computing step from PPQ");
+                    }
                 }
                 
                 armPending.store(false);
@@ -1210,6 +1291,21 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                 }
             }
             
+            // Filter sequencer stepping (shares same PPQ/transport, independent timing)
+            if (isPlaying && ppqValid && filterSeq.active.load(std::memory_order_acquire) && std::isfinite(ppq) && ppq >= 0.0) {
+                try {
+                    const int filterStep = filterSeq.computeStepFromPPQ(ppq);
+                    const int currentStep = filterSeq.currentStep.load(std::memory_order_acquire);
+                    if (filterStep >= 0 && filterStep < 16 && filterStep != currentStep) {
+                        filterSeq.currentStep.store(filterStep, std::memory_order_release);
+                        filterSeq.playingStep.store(filterStep, std::memory_order_release);
+                        DBG("[FILTER SEQ] ★ Step changed to: " << filterStep << " PPQ: " << ppq);
+                    }
+                } catch (...) {
+                    DBG("[FILTER SEQ] Error computing step from PPQ during playback");
+                }
+            }
+            
             // Form 2 sequencer stepping (shares same PPQ/transport, independent timing)
             if (isPlaying && ppqValid && form2Seq.active.load()) {
                 const int form2Step = form2Seq.computeStepFromPPQ(ppq);
@@ -1265,6 +1361,11 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
             if (!isPlaying && wasPlaying.load()) {
                 // Transport stopped: don't advance; keep last lit step
                 // Optionally: seq.resetPhase();
+                
+                // Reset Filter sequencer on stop
+                filterSeq.resetPhase();
+                filterSeq.active.store(false, std::memory_order_release); // Deactivate on stop
+                DBG("[FILTER SEQ] Reset on stop edge");
             }
 
             // Persist transport snapshot
@@ -1949,35 +2050,36 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                     // Check if sequencer is enabled and active
                     if (formantSeq.enabled.load() && formantSeq.active.load())
                     {
-                        // Get current step snapshot
-                        int currentStep = formantSeq.currentStep.load();
-                        if (currentStep >= 0 && currentStep < 16)
+                        // Get playing step snapshot (not currentStep, which is for UI selection)
+                        int playingStep = formantSeq.playingStep.load();
+                        if (playingStep >= 0 && playingStep < 16)
                         {
-                        StepSnapshot snapshot = getFormantSafeSnapshot(currentStep);
-                        
-                        // Safety check for parameter values
-                        snapshot.formant.vowel = juce::jlimit(0.0f, 4.0f, snapshot.formant.vowel);
-                        snapshot.formant.resonance = juce::jlimit(0.4f, 18.0f, snapshot.formant.resonance);
-                        snapshot.formant.intensity = juce::jlimit(-6.0f, 18.0f, snapshot.formant.intensity);
-                        snapshot.formant.mix = juce::jlimit(0.0f, 1.0f, snapshot.formant.mix);
-                        
-                        // Set snapshot values into APVTS for processing
-                        auto* vowelParam = valueTreeState.getRawParameterValue("vowel");
-                        auto* resonanceParam = valueTreeState.getRawParameterValue("resonance");
-                        auto* intensityParam = valueTreeState.getRawParameterValue("intensity");
-                        auto* mixParam = valueTreeState.getRawParameterValue("mix");
-                        
-                        if (vowelParam) *vowelParam = snapshot.formant.vowel;
-                        if (resonanceParam) *resonanceParam = snapshot.formant.resonance;
-                        if (intensityParam) *intensityParam = snapshot.formant.intensity;
-                        if (mixParam) *mixParam = snapshot.formant.mix;
-                        
-                        // Only process if mix > 0
-                        if (snapshot.formant.mix > 0.0f)
+                            StepSnapshot snapshot = getFormantSafeSnapshot(playingStep);
+                            
+                            // Safety check for parameter values
+                            snapshot.formant.vowel = juce::jlimit(0.0f, 4.0f, snapshot.formant.vowel);
+                            snapshot.formant.resonance = juce::jlimit(0.4f, 18.0f, snapshot.formant.resonance);
+                            snapshot.formant.intensity = juce::jlimit(-6.0f, 18.0f, snapshot.formant.intensity);
+                            snapshot.formant.mix = juce::jlimit(0.0f, 1.0f, snapshot.formant.mix);
+                            
+                            // Only process if mix > 0
+                            if (snapshot.formant.mix > 0.0f)
                             {
+                                // Set snapshot values into APVTS for processing
+                                auto* vowelParam = valueTreeState.getRawParameterValue("vowel");
+                                auto* resonanceParam = valueTreeState.getRawParameterValue("resonance");
+                                auto* intensityParam = valueTreeState.getRawParameterValue("intensity");
+                                auto* mixParam = valueTreeState.getRawParameterValue("mix");
+                                
+                                if (vowelParam) *vowelParam = snapshot.formant.vowel;
+                                if (resonanceParam) *resonanceParam = snapshot.formant.resonance;
+                                if (intensityParam) *intensityParam = snapshot.formant.intensity;
+                                if (mixParam) *mixParam = snapshot.formant.mix;
+                                
                                 // Process Formant effect
                                 formantProcessor.process(buffer, buffer.getNumSamples(), valueTreeState);
                             }
+                            // If mix is 0, skip processing entirely (dry signal passes through)
                         }
                     }
                     else
@@ -2239,30 +2341,35 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                 // Note: filterEnabled parameter may not exist, so we process regardless
                 {
                     // Get Filter sequencer state
-                    auto& seqState = filterSeq;
-                    
-                    // Read filter parameters (from sequencer snapshot if active, else APVTS)
-                    FilterTargets targets;
-                    
-                    if (seqState.enabled.load() && seqState.active.load())
-                    {
-                        // Get current step snapshot
-                        int currentStep = seqState.currentStep.load();
-                        if (currentStep >= 0 && currentStep < 16)
+                    // Defensive: ensure we don't crash if filterSeq isn't fully initialized
+                    try {
+                        auto& seqState = filterSeq;
+                        
+                        // Read filter parameters (from sequencer snapshot if active, else APVTS)
+                        FilterTargets targets;
+                        
+                        // Safety check: ensure sequencer state is valid before accessing
+                        // Use acquire semantics to ensure we see initialized state
+                        if (seqState.enabled.load(std::memory_order_acquire) && seqState.active.load(std::memory_order_acquire))
                         {
-                            StepSnapshot snapshot = getFilterSafeSnapshot(currentStep);
+                            // Get playing step snapshot (the step that's actually playing during sequencer playback)
+                            int playingStep = seqState.playingStep.load(std::memory_order_acquire);
+                            if (playingStep >= 0 && playingStep < 16)
+                            {
+                                StepSnapshot snapshot = getFilterSafeSnapshot(playingStep);
                             
-                            targets.type = static_cast<int>(snapshot.filter.type);
-                            targets.cutoff = snapshot.filter.cutoff;
-                            targets.res = snapshot.filter.resonance;
-                            targets.slope = (snapshot.filter.slope > 0.5f) ? 1 : 0;
-                            targets.drive = snapshot.filter.drive;
-                            targets.spread = snapshot.filter.spread;
-                            targets.keytrack = snapshot.filter.keytrack;
-                            // Mix is always from APVTS (global, not per-step)
-                            auto* mixParam = valueTreeState.getRawParameterValue("filterMix");
-                            targets.mix = mixParam ? mixParam->load() : 1.0f;
-                        }
+                                // Clamp and validate snapshot values
+                                targets.type = static_cast<int>(juce::jlimit(0, 4, static_cast<int>(std::round(snapshot.filter.type))));
+                                targets.cutoff = juce::jlimit(20.0f, 20000.0f, snapshot.filter.cutoff);
+                                targets.res = juce::jlimit(0.0f, 1.0f, snapshot.filter.resonance);
+                                targets.slope = (snapshot.filter.slope > 0.5f) ? 1 : 0;
+                                targets.drive = juce::jlimit(0.0f, 36.0f, snapshot.filter.drive);
+                                targets.spread = 0.0f; // Spread removed - always 0
+                                targets.keytrack = juce::jlimit(0.0f, 1.0f, snapshot.filter.keytrack);
+                                // Mix is always from APVTS (global, not per-step)
+                                auto* mixParam = valueTreeState.getRawParameterValue("filterMix");
+                                targets.mix = mixParam ? juce::jlimit(0.0f, 1.0f, mixParam->load()) : 1.0f;
+                            }
                         else
                         {
                             // Fallback to APVTS if step invalid
@@ -2285,7 +2392,7 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                             targets.res = juce::jlimit(0.0f, 1.0f, resParam->load());
                                 targets.slope = (slopeParam->load() > 0.5f) ? 1 : 0;
                                 targets.drive = juce::jlimit(0.0f, 36.0f, driveParam->load());
-                                targets.spread = juce::jlimit(-50.0f, 50.0f, spreadParam->load());
+                                targets.spread = 0.0f; // Spread removed - always 0
                                 targets.keytrack = juce::jlimit(0.0f, 1.0f, keytrackParam->load());
                                 targets.mix = juce::jlimit(0.0f, 1.0f, mixParam->load());
                             }
@@ -2297,7 +2404,7 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                                 targets.res = 0.35f;
                                 targets.slope = 1;
                                 targets.drive = 6.0f;
-                                targets.spread = 0.0f;
+                                targets.spread = 0.0f; // Spread removed
                                 targets.keytrack = 0.0f;
                                 targets.mix = 1.0f;
                             }
@@ -2362,6 +2469,13 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                     
                     // Process filter
                     filterProcessor.process(buffer, buffer.getNumSamples());
+                    } catch (const std::exception& e) {
+                        DBG("[FILTER] Error processing filter: " << e.what());
+                        // Skip filter processing on error - don't crash
+                    } catch (...) {
+                        DBG("[FILTER] Unknown error processing filter");
+                        // Skip filter processing on error - don't crash
+                    }
                 }
                 break;
             }
@@ -3967,29 +4081,56 @@ void PluginProcessor::updateSaturateCurrentStepSnapshot(int knobIndex, float val
 // Filter snapshot accessors
 StepSnapshot PluginProcessor::getFilterSafeSnapshot(int step) const
 {
-    if (step >= 0 && step < 16) {
+    // Defensive checks: validate step index
+    // filterStepSnapshots is a std::array with default-constructed StepSnapshot elements
+    // so it's always safe to access, even before constructor body runs
+    const int arraySize = static_cast<int>(filterStepSnapshots.size());
+    if (step >= 0 && step < 16 && step < arraySize && arraySize == 16) {
         return filterStepSnapshots[step];
     }
-    return filterStepSnapshots[0];
+    
+    // Return default snapshot if step is invalid
+    // StepSnapshot has default member initializers, so this is safe
+    StepSnapshot defaultSnapshot;
+    defaultSnapshot.filter.type = 0.0f;
+    defaultSnapshot.filter.cutoff = 1200.0f;
+    defaultSnapshot.filter.resonance = 0.35f;
+    defaultSnapshot.filter.slope = 1.0f;
+    defaultSnapshot.filter.drive = 6.0f;
+    defaultSnapshot.filter.spread = 0.0f;
+    defaultSnapshot.filter.keytrack = 0.0f;
+    defaultSnapshot.filter.mix = 1.0f;
+    return defaultSnapshot;
 }
 
 void PluginProcessor::setFilterStepSnapshot(int step, const StepSnapshot& snapshot) noexcept
 {
-    if (step >= 0 && step < 16) {
+    // Defensive checks: validate step index
+    // filterStepSnapshots is always safe to access due to default construction
+    const int arraySize = static_cast<int>(filterStepSnapshots.size());
+    if (step >= 0 && step < 16 && step < arraySize && arraySize == 16) {
         filterStepSnapshots[step] = snapshot;
     }
 }
 
 void PluginProcessor::updateFilterCurrentStepSnapshot(int knobIndex, float value)
 {
-    int currentStep = filterUiSelectedStep.load();
+    // Defensive checks: validate step index
+    // filterStepSnapshots is always safe to access due to default construction
+    int currentStep = filterUiSelectedStep.load(std::memory_order_acquire);
     if (currentStep < 0 || currentStep >= 16) return;
     
-    // Mix knob (filterKnobs[5]) is global, not saved to snapshots
-    if (knobIndex == 5) return;
+    // Validate array bounds
+    const int arraySize = static_cast<int>(filterStepSnapshots.size());
+    if (currentStep >= arraySize || arraySize != 16) {
+        return;  // Invalid array state
+    }
+    
+    // Mix knob (filterKnobs[4]) is global, not saved to snapshots
+    if (knobIndex == 4) return;
     
     // Update the specific Filter parameter in the snapshot
-    // knobIndex: -1 = Type, -2 = Slope, 0-4 = filterKnobs[0-4] (Cutoff, Res, Drive, Spread, Key Track)
+    // knobIndex: -1 = Type, -2 = Slope, 0-3 = filterKnobs[0-3] (Cutoff, Res, Drive, Key Track), 4 = Mix (global, not saved)
     if (knobIndex == -1) {
         // Type - round to nearest integer to prevent snapping
         filterStepSnapshots[currentStep].filter.type = static_cast<float>(juce::jlimit(0, 4, static_cast<int>(std::round(value))));
@@ -4007,13 +4148,10 @@ void PluginProcessor::updateFilterCurrentStepSnapshot(int knobIndex, float value
             case 2: // Drive
                 filterStepSnapshots[currentStep].filter.drive = value;
                 break;
-            case 3: // Spread
-                filterStepSnapshots[currentStep].filter.spread = value;
-                break;
-            case 4: // Key Track
+            case 3: // Key Track
                 filterStepSnapshots[currentStep].filter.keytrack = value;
                 break;
-            // Mix (case 5) is global, not saved per step
+            // Mix (case 4) is global, not saved per step
         }
     }
 }
