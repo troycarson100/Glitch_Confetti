@@ -59,7 +59,7 @@ FilterPage::FilterPage(juce::AudioProcessorValueTreeState& apvts, UiAssets& asse
     cutoffAtt = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(apvts, "cutoff", kCutoff.knob);
     resAtt = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(apvts, "res", kRes.knob);
     slopeAtt = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>(apvts, "slope", slopeCombo);
-    driveAtt = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(apvts, "drive", kDrive.knob);
+    driveAtt = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(apvts, "filterDrive", kDrive.knob);
     spreadAtt = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(apvts, "spread", kSpread.knob);
     keytrackAtt = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(apvts, "keytrack", kKeyTrack.knob);
     mixAtt = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(apvts, "filterMix", kMix.knob);

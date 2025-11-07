@@ -609,6 +609,7 @@ public:
         return filterSeq.currentStep.load(std::memory_order_acquire); 
     }
     void setFilterSelectedStep(int step) noexcept { filterUiSelectedStep.store(step); }
+    int getFilterSelectedStep() const noexcept { return filterUiSelectedStep.load(); }
     void setFilterSequencerEnabled(bool enabled) noexcept {
         filterSeq.enabled.store(enabled, std::memory_order_release);
         if (enabled) {

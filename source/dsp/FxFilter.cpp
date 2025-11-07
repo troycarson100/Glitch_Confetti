@@ -6,12 +6,12 @@
 
 FxFilter::FxFilter() : combMinus(-1), combPlus(+1)
 {
-    // Use very fast smoothing for cutoff (1ms) since frequency changes need to be responsive
-    cutoffSm.reset(48000.0, 0.001);  // 1ms smoothing for fast response
+    // Use smooth control signal smoothing (10-20ms) to prevent zipper noise
+    cutoffSm.reset(48000.0, 0.015);  // 15ms smoothing for smooth frequency changes
     cutoffSm.setCurrentAndTargetValue(1200.0f);
-    resSm.reset(48000.0, 0.005);  // 5ms for resonance
+    resSm.reset(48000.0, 0.020);  // 20ms for resonance (smooth transitions)
     resSm.setCurrentAndTargetValue(0.35f);
-    driveSm.reset(48000.0, 0.005);  // 5ms for drive
+    driveSm.reset(48000.0, 0.010);  // 10ms for drive
     driveSm.setCurrentAndTargetValue(6.0f);
     
     // Initialize filter type to LP (0)
@@ -33,13 +33,17 @@ void FxFilter::prepare(double sampleRate, int maxBlockSize)
     block = maxBlockSize;
     channels = 2;
     
-    // Reset smoothing - use fast smoothing for cutoff for responsive knob control
-    cutoffSm.reset(sampleRate, 0.001);  // 1ms smoothing for fast response
+    // Reset smoothing - use smooth control signal smoothing (10-20ms) to prevent zipper noise
+    cutoffSm.reset(sampleRate, 0.015);  // 15ms smoothing for smooth frequency changes
     cutoffSm.setCurrentAndTargetValue(1200.0f);
-    resSm.reset(sampleRate, 0.005);  // 5ms for resonance
+    resSm.reset(sampleRate, 0.020);  // 20ms for resonance (smooth transitions)
     resSm.setCurrentAndTargetValue(0.35f);
-    driveSm.reset(sampleRate, 0.005);  // 5ms for drive
+    driveSm.reset(sampleRate, 0.010);  // 10ms for drive
     driveSm.setCurrentAndTargetValue(6.0f);
+    
+    // Reset BP HF damping state
+    bpHFPrev[0] = 0.0f;
+    bpHFPrev[1] = 0.0f;
     
     // Prepare JUCE filters
     processSpec.sampleRate = sampleRate;
@@ -98,27 +102,31 @@ float FxFilter::applyKeyTracking(float baseCutoff, float keytrackVal, int midiNo
 
 float FxFilter::mapResToQ(float res, int filterType)
 {
-    // Clamp res to 0-1.0 and map to Q (allows up to 100% resonance)
+    // Clamp res to 0-1.0
     res = juce::jlimit(0.0f, 1.0f, res);
     
-    // BP mode (type == 2) uses a gentler, smoother Q curve to prevent harsh resonance
-    if (filterType == 2) // BP
+    // Much gentler curve for sweeter, less harsh resonance
+    // Uses a softer exponential curve with lower max Q values to prevent harshness
+    
+    const float qMin = 0.5f;
+    float qMax;
+    float k;
+    
+    if (filterType == 2) // BP mode - gentlest curve for smooth sound
     {
-        // Use exponential curve for smoother resonance: Q from 0.5 to 6.0 (lower max than LP/HP)
-        // The curve is gentler: res^1.5 gives smoother response at high resonance
-        float qMax = 6.0f; // Lower max Q for smoother BP sound
-        float qMin = 0.5f;
-        float qRange = qMax - qMin;
-        // Exponential curve: res^1.5 makes it gentler at high values
-        float curved = std::pow(res, 1.5f);
-        return qMin + (qRange * curved);
+        qMax = 4.0f;  // Lower max Q for BP to prevent brittleness and harshness
+        k = 2.8f;     // Gentler exponential curve (lower k = softer curve)
     }
-    else
+    else // LP/HP modes
     {
-        // LP and HP use linear mapping for predictable, responsive control
-        // Q ranges from 0.5 (min) to 12.0 (max) for full resonance control
-        return 0.5f + (res * 11.5f); // Linear: 0.5 at res=0, 12.0 at res=1.0
+        qMax = 4.5f;  // Lower max Q from 6.0 to 4.5 for sweeter, less airy sound
+        k = 2.8f;     // Gentler exponential curve
     }
+    
+    // Softer exponential curve: starts very slow, accelerates gradually
+    const float q = qMin + (qMax - qMin) * (1.0f - std::exp(-k * res));
+    
+    return juce::jlimit(qMin, qMax, q);
 }
 
 float FxFilter::mapResToCombFeedback(float res)
@@ -210,7 +218,7 @@ void FxFilter::setTargets(const FilterTargets& targets)
     }
 }
 
-void FxFilter::processSVFMode(juce::AudioBuffer<float>& buffer, int type, float cutoff, float q, int slopeSel, float driveDb, float spreadCents)
+void FxFilter::processSVFMode(juce::AudioBuffer<float>& buffer, int type, float cutoff, float q, int slopeSel, float driveDb, float spreadCents, float res01)
 {
     // Spread removed - no stereo detuning
     // Use same cutoff for both channels
@@ -219,6 +227,9 @@ void FxFilter::processSVFMode(juce::AudioBuffer<float>& buffer, int type, float 
     
     const int numChannels = buffer.getNumChannels();
     const int numSamples = buffer.getNumSamples();
+    
+    // Clamp resonance value for sweetening
+    res01 = juce::jlimit(0.0f, 1.0f, res01);
     
     // Apply drive pre-filter (before filtering) - modify buffer in place
     // This is safe because during crossfade, we work on copies (tmpA/tmpB)
@@ -318,6 +329,97 @@ void FxFilter::processSVFMode(juce::AudioBuffer<float>& buffer, int type, float 
             filterR->process(contextR);
         }
     }
+    
+    // Apply sweeteners after filter processing (per-sample)
+    // Order: BP HF damping -> Resonance trim (mode-specific) -> BP gain compensation -> 
+    //        Adaptive soft limiting -> Resonance waveshaping
+    
+    // Reduced resonance trim for less aggressive reduction (less airy, more present)
+    // Different trim amounts for different modes
+    float baseResTrim;
+    if (type == 2) // BP mode - minimal trim to keep it very audible
+    {
+        baseResTrim = 1.0f - 0.15f * res01; // up to ~-1.35 dB at max resonance (much less trim)
+    }
+    else // LP/HP modes - moderate trim
+    {
+        baseResTrim = 1.0f - 0.30f * res01; // up to ~-3.0 dB at max resonance (reduced from -4.05 dB)
+    }
+    
+    // Remove frequency-dependent compensation - it was making things sound airy
+    // Instead, use mode-specific compensation
+    
+    // Enhanced BP damping (resonance-dependent for smoother sound at high resonance)
+    float currentBpHFAmount = bpHFAmount;
+    if (type == 2) // BP mode only
+    {
+        // More damping at high resonance: 0.04 base + up to 0.02 additional (reduced from 0.05+0.03)
+        currentBpHFAmount = 0.04f + 0.02f * res01;
+    }
+    
+    // BP gain compensation to make it louder (counteract the quietness)
+    float bpGainComp = 1.0f;
+    if (type == 2) // BP mode only
+    {
+        // Much more aggressive boost for BP - it's naturally very quiet
+        // Boost by 4-8 dB at all resonance levels (more boost at high resonance)
+        // Base boost of 4 dB (1.585x) + up to 4 dB more (1.78x) at max resonance
+        bpGainComp = 1.585f + 0.195f * res01; // 1.585 to 1.78 (4.0 to 5.0 dB boost)
+    }
+    
+    for (int c = 0; c < numChannels; ++c)
+    {
+        auto* p = buffer.getWritePointer(c);
+        
+        for (int i = 0; i < numSamples; ++i)
+        {
+            float y = p[i];
+            
+            // 1. BP-only HF damping (resonance-dependent, tames brittle hiss)
+            if (type == 2) // BP mode only
+            {
+                y = y + (bpHFPrev[c] - y) * currentBpHFAmount;
+                bpHFPrev[c] = y;
+            }
+            
+            // 2. Resonance-dependent trim (mode-specific)
+            y *= baseResTrim;
+            
+            // 3. BP gain compensation (boost BP to make it louder)
+            y *= bpGainComp;
+            
+            // 4. Adaptive soft limiting (only when needed, no pre-scaling)
+            // Only apply limiting when signal exceeds threshold to preserve normal levels
+            // Skip soft limiting at very low frequencies to prevent distortion/pops
+            bool shouldLimit = true;
+            if (cutoff < 2000.0f) // Below 2kHz, be more careful with limiting
+            {
+                // Only apply limiting if signal is really excessive at low frequencies
+                const float lowFreqThreshold = 0.95f; // Higher threshold for low frequencies
+                shouldLimit = (std::abs(y) > lowFreqThreshold);
+            }
+            
+            if (shouldLimit && std::abs(y) > 0.85f)
+            {
+                // Apply soft limiting only to excess above threshold
+                float excess = std::abs(y) - 0.85f;
+                float sign = (y > 0.0f) ? 1.0f : -1.0f;
+                float limited = 0.85f + excess / (1.0f + 0.5f * excess); // Gentler limiting
+                y = sign * limited;
+            }
+            
+            // 5. Resonance-specific waveshaping (adds harmonics that round peaks)
+            // Only apply at higher resonance values and higher frequencies to avoid distortion at low frequencies
+            if (res01 > 0.7f && cutoff > 1500.0f) // Start later (0.7 instead of 0.6) and only above 1.5kHz
+            {
+                // Gentler tanh saturation: adds warmth without harshness
+                float saturationAmount = 1.0f + 0.15f * (res01 - 0.7f) * 3.33f; // 1.0 to 1.15 (reduced further)
+                y = std::tanh(y * saturationAmount);
+            }
+            
+            p[i] = y;
+        }
+    }
 }
 
 void FxFilter::process(juce::AudioBuffer<float>& buffer, int numSamples)
@@ -334,21 +436,20 @@ void FxFilter::process(juce::AudioBuffer<float>& buffer, int numSamples)
         dryBuffer.copyFrom(c, 0, buffer, c, 0, numSamples);
     }
     
-    // Use target values directly for instant response (no smoothing delay)
-    // UI already smooths via SliderAttachment
-    float cut = cutoffSm.getTargetValue();
-    float r = resSm.getTargetValue();
-    float drv = driveSm.getTargetValue();
+    // Use smoothed values for smooth control signals (no zipper noise)
+    // Pull one value per block and let smoothing handle the transitions
+    cutoffSm.skip(numSamples);
+    resSm.skip(numSamples);
+    driveSm.skip(numSamples);
+    
+    float cut = cutoffSm.getCurrentValue();
+    float r = resSm.getCurrentValue();
+    float drv = driveSm.getCurrentValue();
     
     // Ensure we have valid values
     cut = juce::jlimit(20.0f, 20000.0f, cut);
     r = juce::jlimit(0.0f, 1.0f, r);
     drv = juce::jlimit(0.0f, 36.0f, drv);
-    
-    // Update smoothing to match targets (for consistency)
-    cutoffSm.setCurrentAndTargetValue(cut);
-    resSm.setCurrentAndTargetValue(r);
-    driveSm.setCurrentAndTargetValue(drv);
     
     // Map res to Q for SVF (musical mapping) - BP uses gentler curve for smoother resonance
     float qMapped = mapResToQ(r, currentType);
@@ -376,11 +477,11 @@ void FxFilter::process(juce::AudioBuffer<float>& buffer, int numSamples)
         if (oldType <= 2 && drv > 0.01f)
         {
             // Drive will be applied inside processSVFMode
-            processSVFMode(tmpA, oldType, cut, qOld, slope, drv, spreadCents);
+            processSVFMode(tmpA, oldType, cut, qOld, slope, drv, spreadCents, r);
         }
         else if (oldType <= 2)
         {
-            processSVFMode(tmpA, oldType, cut, qOld, slope, 0.0f, spreadCents);
+            processSVFMode(tmpA, oldType, cut, qOld, slope, 0.0f, spreadCents, r);
         }
         else if (oldType == 3)
         {
@@ -402,11 +503,11 @@ void FxFilter::process(juce::AudioBuffer<float>& buffer, int numSamples)
         if (targetType <= 2 && drv > 0.01f)
         {
             // Drive will be applied inside processSVFMode
-            processSVFMode(tmpB, targetType, cut, qNew, slope, drv, spreadCents);
+            processSVFMode(tmpB, targetType, cut, qNew, slope, drv, spreadCents, r);
         }
         else if (targetType <= 2)
         {
-            processSVFMode(tmpB, targetType, cut, qNew, slope, 0.0f, spreadCents);
+            processSVFMode(tmpB, targetType, cut, qNew, slope, 0.0f, spreadCents, r);
         }
         else if (targetType == 3)
         {
@@ -439,7 +540,7 @@ void FxFilter::process(juce::AudioBuffer<float>& buffer, int numSamples)
         if (typeToUse <= 2)
         {
             // SVF mode (LP/HP/BP) using JUCE filters
-            processSVFMode(buffer, typeToUse, cut, qMapped, slope, drv, spreadCents);
+            processSVFMode(buffer, typeToUse, cut, qMapped, slope, drv, spreadCents, r);
         }
         else if (typeToUse == 3)
         {

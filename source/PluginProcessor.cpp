@@ -602,7 +602,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout PluginProcessor::createParam
         juce::NormalisableRange<float>(0.0f, 1.0f, 0.01f), 0.35f));
     params.push_back(std::make_unique<juce::AudioParameterFloat>("slope", "Slope", 
         juce::NormalisableRange<float>(0.0f, 1.0f, 0.01f), 1.0f)); // 0=12dB, 1=24dB
-    params.push_back(std::make_unique<juce::AudioParameterFloat>("drive", "Drive", 
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("filterDrive", "Drive", 
         juce::NormalisableRange<float>(0.0f, 36.0f, 0.5f), 6.0f)); // dB, 0.5dB increments
     params.push_back(std::make_unique<juce::AudioParameterFloat>("spread", "Spread", 
         juce::NormalisableRange<float>(-50.0f, 50.0f, 0.1f), 0.0f)); // cents
@@ -2377,7 +2377,7 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                             auto* cutoffParam = valueTreeState.getRawParameterValue("cutoff");
                             auto* resParam = valueTreeState.getRawParameterValue("res");
                             auto* slopeParam = valueTreeState.getRawParameterValue("slope");
-                            auto* driveParam = valueTreeState.getRawParameterValue("drive");
+                            auto* driveParam = valueTreeState.getRawParameterValue("filterDrive");
                             auto* spreadParam = valueTreeState.getRawParameterValue("spread");
                             auto* keytrackParam = valueTreeState.getRawParameterValue("keytrack");
                             auto* mixParam = valueTreeState.getRawParameterValue("filterMix");
@@ -2417,7 +2417,7 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                         auto* cutoffParam = valueTreeState.getRawParameterValue("cutoff");
                         auto* resParam = valueTreeState.getRawParameterValue("res");
                         auto* slopeParam = valueTreeState.getRawParameterValue("slope");
-                        auto* driveParam = valueTreeState.getRawParameterValue("drive");
+                        auto* driveParam = valueTreeState.getRawParameterValue("filterDrive");
                         auto* spreadParam = valueTreeState.getRawParameterValue("spread");
                         auto* keytrackParam = valueTreeState.getRawParameterValue("keytrack");
                         auto* mixParam = valueTreeState.getRawParameterValue("filterMix");

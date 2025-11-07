@@ -78,8 +78,11 @@ private:
     // Helper for key tracking
     float applyKeyTracking(float baseCutoff, float keytrackVal, int midiNote);
     
-    // Helper to map resonance (0-1) to Q (0.5-12.0 for LP/HP, 0.5-6.0 for BP)
+    // Helper to map resonance (0-1) to Q (0.5-8.0 for LP/HP/BP with gentle musical curve)
     static float mapResToQ(float res, int filterType);
+    
+    // Helper to apply soft limiting (transparent at normal levels, protective at peaks)
+    static inline float softLimit(float x) noexcept { return x / (1.0f + 0.5f * std::abs(x)); }
     
     // Helper to map resonance (0-1) to feedback (0-0.9) for comb filters
     // Uses quadratic curve to make resonance audible at lower values
@@ -89,7 +92,7 @@ private:
     float applyDrive(float sample, float driveDb);
     
     // Helper to process single filter mode with JUCE filter
-    void processSVFMode(juce::AudioBuffer<float>& buffer, int type, float cutoff, float q, int slopeSel, float driveDb, float spreadCents);
+    void processSVFMode(juce::AudioBuffer<float>& buffer, int type, float cutoff, float q, int slopeSel, float driveDb, float spreadCents, float res01);
     
     // Current parameters
     float currentCutoff = 1200.0f;
@@ -99,4 +102,8 @@ private:
     
     // Process spec for JUCE filters
     juce::dsp::ProcessSpec processSpec;
+    
+    // BP-only HF damping state (per channel) for taming brittle hiss
+    float bpHFPrev[2]{0.0f, 0.0f}; // per channel
+    float bpHFAmount = 0.05f;      // Base amount (0.05-0.08 range, resonance-dependent)
 };

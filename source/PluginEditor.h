@@ -71,10 +71,14 @@ private:
     public:
         LockButton();
         ~LockButton() override = default;
+    
+    static constexpr int defaultSize = 10;
+    static constexpr int defaultIconInset = 0;
         
         void paintButton(juce::Graphics& g, bool over, bool down) override;
         void setImages(std::unique_ptr<juce::Drawable> unlocked, std::unique_ptr<juce::Drawable> locked);
         void setAlpha(float alpha);
+    void setIconInset(int inset) { iconInset = inset; repaint(); }
         
     private:
         std::unique_ptr<juce::Drawable> unlockedImage;
@@ -82,6 +86,7 @@ private:
         std::unique_ptr<juce::Drawable> originalUnlockedImage;
         std::unique_ptr<juce::Drawable> originalLockedImage;
         float buttonAlpha = 1.0f;
+    int iconInset = defaultIconInset;
         
         JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (LockButton)
     };

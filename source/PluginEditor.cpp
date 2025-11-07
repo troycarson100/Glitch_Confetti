@@ -1,4 +1,37 @@
 #include "PluginEditor.h"
+
+namespace
+{
+    constexpr int kLockOffsetY = 10;
+    constexpr int kLockLabelSpacing = 5;
+
+    inline void positionLockButton(LockButton* button,
+                                   const juce::Component* labelComponent,
+                                   int knobTop)
+    {
+        if (button == nullptr || labelComponent == nullptr)
+            return;
+
+        auto labelBounds = labelComponent->getBounds();
+        float labelRight = static_cast<float>(labelBounds.getRight());
+
+        if (auto label = dynamic_cast<const juce::Label*>(labelComponent))
+        {
+            auto font = label->getFont();
+            auto text = label->getText(false);
+            float textWidth = font.getStringWidthFloat(text);
+            labelRight = labelBounds.getCentreX() + textWidth * 0.5f;
+        }
+
+        int lockX = static_cast<int>(labelRight + 0.5f) + kLockLabelSpacing;
+        int lockY = knobTop - kLockOffsetY;
+
+        button->setBounds(lockX,
+                          lockY,
+                          LockButton::defaultSize,
+                          LockButton::defaultSize);
+    }
+}
 #include "PluginProcessor.h"
 #include "BinaryData.h"
 #include "ui/PanIndicator.h"
@@ -783,6 +816,24 @@ void PluginEditor::paint (juce::Graphics& g)
                 {
                     auto b = formantLockButtons[i]->getBounds().toFloat();
                     if (formantKnobLocked[i]) {
+                        if (assets.lockedIcon != nullptr)
+                            assets.lockedIcon->drawWithin(g, b, juce::RectanglePlacement::centred, 1.0f);
+                    } else {
+                        if (assets.unlockedIcon != nullptr)
+                            assets.unlockedIcon->drawWithin(g, b, juce::RectanglePlacement::centred, 1.0f);
+                    }
+                }
+            }
+            break;
+            
+        case EffectID::Filter:
+            // Draw lock buttons for filter knobs (8 knobs: Type, Cutoff, Res, Slope, Drive, Key Track, Mix, and empty)
+            for (int i = 0; i < 8; ++i)
+            {
+                if (filterLockButtons[i] != nullptr)
+                {
+                    auto b = filterLockButtons[i]->getBounds().toFloat();
+                    if (filterKnobLocked[i]) {
                         if (assets.lockedIcon != nullptr)
                             assets.lockedIcon->drawWithin(g, b, juce::RectanglePlacement::centred, 1.0f);
                     } else {
@@ -1618,8 +1669,15 @@ void LockButton::paintButton(juce::Graphics& g, bool over, bool down)
     
     if (imageToDraw != nullptr)
     {
-        // Draw the image (alpha is already applied to the image itself)
-        imageToDraw->drawWithin(g, bounds, juce::RectanglePlacement::centred, 1.0f);
+        auto drawBounds = bounds.reduced(static_cast<float>(juce::jmax(0, iconInset)));
+        if (drawBounds.getWidth() <= 0.0f || drawBounds.getHeight() <= 0.0f)
+            drawBounds = bounds;
+        
+        // Draw the image centred and scaled down if needed (never stretched larger than original)
+        imageToDraw->drawWithin(g,
+                                drawBounds,
+                                juce::RectanglePlacement::centred | juce::RectanglePlacement::onlyReduceInSize,
+                                buttonAlpha);
     }
     else
     {
@@ -2298,29 +2356,10 @@ void PluginEditor::setupKnobs()
             // Explicitly keep hidden
             knobDiceButtons[i]->setVisible(false);
             
-            // Calculate text width and position dice button accordingly
-            const int diceSize = 10; // 20% bigger: 8 * 1.2 = 9.6, rounded to 10
-            const int diceSpacing = 5; // Fixed distance from end of title text
-            
-            // Get the font used for knob labels
-            juce::Font labelFont(12.0f, juce::Font::bold);
-            
-            // Calculate the width of the knob title text
-            int textWidth = labelFont.getStringWidth(knobNames[i]);
-            
-            // Position dice button at the end of the title text + fixed spacing
-            int diceX = x + (knobSize / 2) + (textWidth / 2) + diceSpacing;
-            int diceY = y - 10; // Moved up 3px from -7 to -10
-            
-            // Remember dice button bounds to reuse for lock button sizing/placement
-            const int lockX = diceX;
-            const int lockY = diceY;
-            
-            // Set the dice image
-            // Set up lock button replacing dice
-            knobLockButtons[i] = std::make_unique<LockButton>();
-            addAndMakeVisible(knobLockButtons[i].get());
-            knobLockButtons[i]->setBounds(lockX, lockY, diceSize, diceSize);
+        // Position lock button to match Space Delay baseline layout
+        knobLockButtons[i] = std::make_unique<LockButton>();
+        addAndMakeVisible(knobLockButtons[i].get());
+        positionLockButton(knobLockButtons[i].get(), knobLabels[i].get(), y);
             
             // Configure images for on/off states
             std::unique_ptr<juce::Drawable> imgUnlocked, imgLocked;
@@ -3834,8 +3873,124 @@ void PluginEditor::setupSequencerArea()
     int stepDiceSize = static_cast<int>(35 * 0.7); // 30% smaller than 35px = ~24px
     stepDiceButton->setBounds(stepArea.getX() + 75, stepArea.getY() + 5, stepDiceSize, stepDiceSize); // Moved down another 10px and left another 10px
     
-    // Set up step dice button callback to randomize all Space Delay step snapshots
+    // Set up step dice button callback to randomize current step based on active effect
     stepDiceButton->onClick = [this]() {
+        // Check which effect is on the current page
+        auto& router = processorRef.getEffectRouter();
+        
+        // Determine which slot corresponds to currentPage
+        int slotIndex = 0; // Default to slot 0
+        if (currentPage == FxPageID::Panner) slotIndex = 1;
+        else if (currentPage == FxPageID::Dirt) slotIndex = 2;
+        else if (currentPage == FxPageID::Chorus) slotIndex = 3;
+        
+        EffectID assignedEffect = router.getEffectInSlot(static_cast<SlotID>(slotIndex));
+        
+        // If Filter is the current effect, randomize the current filter step
+        if (assignedEffect == EffectID::Filter) {
+            DBG("[UI] Filter step dice button clicked - randomizing current step");
+            
+            // Get current filter selected step
+            int currentStep = processorRef.getFilterSelectedStep();
+            if (currentStep < 0 || currentStep >= 16) {
+                currentStep = 0; // Fallback to step 0
+            }
+            
+            // Get current snapshot
+            auto snapshot = processorRef.getFilterSafeSnapshot(currentStep);
+            
+            // Randomize each parameter (respecting lock states from filterKnobLocked array)
+            // Note: filterKnobLocked indices: 0=Type, 1=Cutoff, 2=Res, 3=Slope, 4=Drive, 5=Spread (removed), 6=Key Track, 7=Mix
+            if (!filterKnobLocked[0]) { // Type
+                snapshot.filter.type = static_cast<float>(juce::Random::getSystemRandom().nextInt(5)); // 0-4
+            }
+            if (!filterKnobLocked[1]) { // Cutoff - randomize normalized value (0-1)
+                snapshot.filter.cutoff = juce::Random::getSystemRandom().nextFloat() * (20000.0f - 20.0f) + 20.0f; // 20-20000Hz
+            }
+            if (!filterKnobLocked[2]) { // Resonance
+                snapshot.filter.resonance = juce::Random::getSystemRandom().nextFloat(); // 0-1
+            }
+            if (!filterKnobLocked[3]) { // Slope
+                snapshot.filter.slope = static_cast<float>(juce::Random::getSystemRandom().nextInt(2)); // 0 or 1
+            }
+            if (!filterKnobLocked[4]) { // Drive
+                snapshot.filter.drive = juce::Random::getSystemRandom().nextFloat() * 36.0f; // 0-36 dB
+            }
+            if (!filterKnobLocked[6]) { // Key Track
+                snapshot.filter.keytrack = juce::Random::getSystemRandom().nextFloat(); // 0-1
+            }
+            // Mix (filterKnobLocked[7]) is global, not randomized per step
+            
+            // Save the randomized snapshot
+            processorRef.setFilterStepSnapshot(currentStep, snapshot);
+            
+            // Update UI to reflect changes - load the randomized values into filter knobs
+            if (filterTypeKnob) {
+                filterTypeKnob->setValue(snapshot.filter.type, juce::sendNotification);
+            }
+            if (filterKnobs[0]) { // Cutoff
+                auto* param = processorRef.getAPVTS().getParameter("cutoff");
+                if (param) {
+                    // Convert frequency to normalized value using reverse of the conversion logic
+                    float normalized = snapshot.filter.cutoff <= 5000.0f
+                        ? (snapshot.filter.cutoff - 20.0f) / (5000.0f - 20.0f) * 0.75f
+                        : 0.75f + 0.25f * (std::log(snapshot.filter.cutoff / 5000.0f) / std::log(4.0f));
+                    normalized = juce::jlimit(0.0f, 1.0f, normalized);
+                    filterKnobs[0]->setValue(normalized, juce::sendNotification);
+                }
+            }
+            if (filterKnobs[1]) { // Resonance
+                filterKnobs[1]->setValue(snapshot.filter.resonance, juce::sendNotification);
+            }
+            if (filterSlopeKnob) {
+                filterSlopeKnob->setValue(snapshot.filter.slope, juce::sendNotification);
+            }
+            if (filterKnobs[2]) { // Drive
+                filterKnobs[2]->setValue(snapshot.filter.drive, juce::sendNotification);
+            }
+            if (filterKnobs[3]) { // Key Track
+                filterKnobs[3]->setValue(snapshot.filter.keytrack, juce::sendNotification);
+            }
+            
+            // Update value labels manually
+            if (filterValueLabels[0]) {
+                juce::String types[] = {"LP", "HP", "BP", "Comb-", "Comb+"};
+                int idx = static_cast<int>(snapshot.filter.type);
+                if (idx >= 0 && idx < 5) {
+                    filterValueLabels[0]->setText(types[idx], juce::dontSendNotification);
+                }
+            }
+            if (filterValueLabels[1] && filterKnobs[0]) { // Cutoff
+                float value = filterKnobs[0]->getValue();
+                float freq = value <= 0.75f 
+                    ? 20.0f + (5000.0f - 20.0f) * (value / 0.75f)
+                    : 5000.0f * std::pow(4.0f, (value - 0.75f) / 0.25f);
+                filterValueLabels[1]->setText(juce::String(static_cast<int>(freq)) + " Hz", juce::dontSendNotification);
+            }
+            if (filterValueLabels[2] && filterKnobs[1]) { // Resonance
+                filterValueLabels[2]->setText(juce::String(static_cast<int>(filterKnobs[1]->getValue() * 100)) + "%", juce::dontSendNotification);
+            }
+            if (filterValueLabels[3] && filterSlopeKnob) { // Slope
+                filterValueLabels[3]->setText(filterSlopeKnob->getValue() > 0.5f ? "24dB" : "12dB", juce::dontSendNotification);
+            }
+            if (filterValueLabels[4] && filterKnobs[2]) { // Drive
+                auto* driveParam = processorRef.getAPVTS().getParameter("filterDrive");
+                if (driveParam) {
+                    float normalized = driveParam->getValue();
+                    float driveDb = driveParam->convertFrom0to1(normalized);
+                    float drivePercent = (driveDb / 36.0f) * 100.0f;
+                    filterValueLabels[4]->setText(juce::String(static_cast<int>(drivePercent)) + "%", juce::dontSendNotification);
+                }
+            }
+            if (filterValueLabels[5] && filterKnobs[3]) { // Key Track
+                filterValueLabels[5]->setText(juce::String(static_cast<int>(filterKnobs[3]->getValue() * 100)) + "%", juce::dontSendNotification);
+            }
+            
+            DBG("[UI] Filter step " << currentStep << " randomized");
+            return;
+        }
+        
+        // Otherwise, handle Space Delay (original behavior)
         DBG("[UI] Space Delay step dice button clicked - randomizing all step snapshots");
         
         for (int step = 0; step < 16; ++step) {
@@ -5482,21 +5637,7 @@ void PluginEditor::setupAutoPanKnobs()
         addAndMakeVisible(autopanLockButtons[i].get());
         autopanLockButtons[i]->setVisible(false); // Initially hidden until AutoPan page is selected
         
-        // Calculate text width and position lock button accordingly (EXACT same logic as delay page)
-        const int diceSize = 10; // 20% bigger: 8 * 1.2 = 9.6, rounded to 10
-        const int diceSpacing = 5; // Fixed distance from end of title text
-        
-        // Get the font used for knob labels
-        juce::Font labelFont(12.0f, juce::Font::bold);
-        
-        // Calculate the width of the knob title text
-        int textWidth = labelFont.getStringWidth(autopanKnobNames[i]);
-        
-        // Position lock button at the end of the title text + fixed spacing
-        int lockX = x + (knobSize / 2) + (textWidth / 2) + diceSpacing;
-        int lockY = y - 10; // Moved up 3px from -7 to -10
-        
-        autopanLockButtons[i]->setBounds(lockX, lockY, diceSize, diceSize);
+        positionLockButton(autopanLockButtons[i].get(), autopanKnobLabels[i].get(), y);
         
         // Configure images for on/off states (EXACT same as delay page)
         std::unique_ptr<juce::Drawable> imgUnlocked, imgLocked;
@@ -6170,15 +6311,7 @@ void PluginEditor::setupDirtKnobs()
         addAndMakeVisible(dirtLockButtons[i].get());
         dirtLockButtons[i]->setVisible(false);
         
-        const int diceSize = 10;
-        const int diceSpacing = 5;
-        
-        juce::Font labelFont(12.0f, juce::Font::bold);
-        int textWidth = labelFont.getStringWidth(dirtKnobNames[i]);
-        int lockX = x + (knobSize / 2) + (textWidth / 2) + diceSpacing;
-        int lockY = y - 10;
-        
-        dirtLockButtons[i]->setBounds(lockX, lockY, diceSize, diceSize);
+        positionLockButton(dirtLockButtons[i].get(), dirtKnobLabels[i].get(), y);
         
         if (assets.unlockedIcon && assets.lockedIcon) {
             auto imgUnlocked = assets.unlockedIcon->createCopy();
@@ -6985,16 +7118,7 @@ void PluginEditor::setupChorusKnobs()
         addAndMakeVisible(chorusLockButtons[i].get());
         chorusLockButtons[i]->setVisible(false);
         
-        const int diceSize = 10;
-        const int diceSpacing = 5;
-        
-        juce::Font labelFont(12.0f, juce::Font::bold);
-        int textWidth = labelFont.getStringWidth(chorusKnobNames[i]);
-        
-        int lockX = x + (knobSize / 2) + (textWidth / 2) + diceSpacing;
-        int lockY = y - 10;
-        
-        chorusLockButtons[i]->setBounds(lockX, lockY, diceSize, diceSize);
+        positionLockButton(chorusLockButtons[i].get(), chorusKnobLabels[i].get(), y);
         
         if (assets.unlockedIcon && assets.lockedIcon) {
             auto imgUnlocked = assets.unlockedIcon->createCopy();
@@ -7641,16 +7765,7 @@ void PluginEditor::setupReverbKnobs()
         addAndMakeVisible(reverbLockButtons[i].get());
         reverbLockButtons[i]->setVisible(false);
         
-        const int diceSize = 10;
-        const int diceSpacing = 5;
-        
-        juce::Font labelFont(12.0f, juce::Font::bold);
-        int textWidth = labelFont.getStringWidth(reverbKnobNames[i]);
-        
-        int lockX = x + (knobSize / 2) + (textWidth / 2) + diceSpacing;
-        int lockY = y - 10;
-        
-        reverbLockButtons[i]->setBounds(lockX, lockY, diceSize, diceSize);
+        positionLockButton(reverbLockButtons[i].get(), reverbKnobLabels[i].get(), y);
         
         if (assets.unlockedIcon && assets.lockedIcon) {
             auto imgUnlocked = assets.unlockedIcon->createCopy();
@@ -8897,16 +9012,7 @@ void PluginEditor::setupGranularKnobs()
         addAndMakeVisible(granularLockButtons[i].get());
         granularLockButtons[i]->setVisible(false);
         
-        const int diceSize = 10;
-        const int diceSpacing = 5;
-        
-        juce::Font labelFont(12.0f, juce::Font::bold);
-        int textWidth = labelFont.getStringWidth(granularKnobNames[i]);
-        
-        int lockX = x + (knobSize / 2) + (textWidth / 2) + diceSpacing;
-        int lockY = y - 10;
-        
-        granularLockButtons[i]->setBounds(lockX, lockY, diceSize, diceSize);
+        positionLockButton(granularLockButtons[i].get(), granularKnobLabels[i].get(), y);
         
         if (assets.unlockedIcon && assets.lockedIcon) {
             auto imgUnlocked = assets.unlockedIcon->createCopy();
@@ -9338,22 +9444,55 @@ void PluginEditor::setupGranularSequencerArea()
     
     granularStepDiceButton->onClick = [this]() {
         DBG("[UI] Granular step dice clicked - randomizing all steps");
+        
+        auto& rng = juce::Random::getSystemRandom();
+        
         for (int step = 0; step < 16; ++step) {
             auto snapshot = processorRef.getGranularSafeSnapshot(step);
-            juce::Random& rng = juce::Random::getSystemRandom();
             
-            snapshot.granular.sizeMs = 5.0f + rng.nextFloat() * 195.0f;
-            snapshot.granular.densityHz = 1.0f + rng.nextFloat() * 39.0f;
-            snapshot.granular.position = rng.nextFloat();
-            snapshot.granular.sprayMs = rng.nextFloat() * 200.0f;
-            snapshot.granular.pitchSemi = -24.0f + rng.nextFloat() * 48.0f;
-            snapshot.granular.random = rng.nextFloat();
-            snapshot.granular.texture = rng.nextFloat();
-            snapshot.granular.mix = rng.nextFloat();
+            // Randomize all parameters (respecting lock states)
+            if (!granularKnobLocked[0]) {
+                snapshot.granular.sizeMs = 5.0f + rng.nextFloat() * 195.0f;
+            }
+            if (!granularKnobLocked[1]) {
+                snapshot.granular.densityHz = 1.0f + rng.nextFloat() * 39.0f;
+            }
+            if (!granularKnobLocked[2]) {
+                snapshot.granular.position = rng.nextFloat();
+            }
+            if (!granularKnobLocked[3]) {
+                snapshot.granular.sprayMs = rng.nextFloat() * 200.0f;
+            }
+            if (!granularKnobLocked[4]) {
+                snapshot.granular.pitchSemi = -24.0f + rng.nextFloat() * 48.0f;
+            }
+            if (!granularKnobLocked[5]) {
+                snapshot.granular.random = rng.nextFloat();
+            }
+            if (!granularKnobLocked[6]) {
+                snapshot.granular.texture = rng.nextFloat();
+            }
+            if (!granularKnobLocked[7]) {
+                snapshot.granular.mix = rng.nextFloat();
+            }
             
             processorRef.setGranularStepSnapshot(step, snapshot);
         }
+        
+        // Update sequencer UI
         updateGranularSequencerUI();
+        
+        // Load the current step's randomized values into the knobs
+        loadSelectedStepIntoKnobs(FxPageID::Granular);
+        
+        // Trigger value change callbacks to update labels for all knobs
+        isLoadingFromSnapshot.store(true);
+        for (int i = 0; i < 8; ++i) {
+            if (granularKnobs[i] && granularKnobs[i]->onValueChange) {
+                granularKnobs[i]->onValueChange();
+            }
+        }
+        isLoadingFromSnapshot.store(false);
     };
     
     // Step power button (EXACT same positioning as Reverb)
@@ -9709,11 +9848,7 @@ void PluginEditor::setupSlicerKnobs()
         // Position lock button at end of title text (same as other effects)
         juce::Font labelFont(12.0f, juce::Font::bold);
         int textWidth = labelFont.getStringWidth(slicerKnobNames[i]);
-        const int lockSize = 10; // Same size as other effects
-        const int lockSpacing = 5; // Fixed distance from end of title text
-        int lockX = x + (knobSize / 2) + (textWidth / 2) + lockSpacing;
-        int lockY = y - 10; // Same position as other effects
-        slicerLockButtons[i]->setBounds(lockX, lockY, lockSize, lockSize);
+        positionLockButton(slicerLockButtons[i].get(), slicerKnobLabels[i].get(), y);
         
         // Set lock button images
         if (assets.unlockedIcon && assets.lockedIcon) {
@@ -10554,15 +10689,7 @@ void PluginEditor::setupDubDelayKnobs()
         juce::Font labelFont(12.0f, juce::Font::bold);
         int textWidth = labelFont.getStringWidth(dubdelayKnobNames[i]);
         
-        // Use same sizing as space delay
-        const int lockSize = 10; // Same as space delay
-        const int lockSpacing = 5; // Fixed distance from end of title text
-        
-        // Position lock button at the end of the title text + fixed spacing
-        int lockX = x + (knobSize / 2) + (textWidth / 2) + lockSpacing;
-        int lockY = y - 10;
-        
-        dubdelayLockButtons[i]->setBounds(lockX, lockY, lockSize, lockSize);
+        positionLockButton(dubdelayLockButtons[i].get(), dubdelayKnobLabels[i].get(), y);
         
         // Set lock button images
         if (assets.unlockedIcon && assets.lockedIcon) {
@@ -11295,11 +11422,7 @@ void PluginEditor::setupFormantKnobs()
         formantLockButtons[i]->setVisible(false);
         formantLockButtons[i]->setClickingTogglesState(true);
         
-        // Position lock button (same as other effects - top right of knob)
-        const int lockSize = 24;
-        int lockX = x + knobSize - lockSize - 5;
-        int lockY = y + 5;
-        formantLockButtons[i]->setBounds(lockX, lockY, lockSize, lockSize);
+        positionLockButton(formantLockButtons[i].get(), formantKnobLabels[i].get(), y);
         
         if (assets.unlockedIcon && assets.lockedIcon) {
             auto imgUnlocked = assets.unlockedIcon->createCopy();
@@ -11933,15 +12056,7 @@ void PluginEditor::setupSaturateKnobs()
             juce::Font labelFont(12.0f, juce::Font::bold);
             int textWidth = labelFont.getStringWidth(saturateKnobNames[i]);
             
-            // Use same sizing as dub delay
-            const int lockSize = 10;
-            const int lockSpacing = 5; // Fixed distance from end of title text
-            
-            // Position lock button at the end of the title text + fixed spacing
-            int lockX = x + (knobSize / 2) + (textWidth / 2) + lockSpacing;
-            int lockY = y - 10;
-            
-            saturateLockButtons[i]->setBounds(lockX, lockY, lockSize, lockSize);
+            positionLockButton(saturateLockButtons[i].get(), saturateKnobLabels[i].get(), y);
             
             // Set lock button images
             if (assets.unlockedIcon && assets.lockedIcon) {
@@ -12345,7 +12460,7 @@ void PluginEditor::setupFilterKnobs()
     
     // Parameter IDs for 7 knobs (Type, Cutoff, Res, Slope, Drive, Key Track, Mix) - Spread removed
     std::vector<juce::String> filterParamIds = {
-        "fType", "cutoff", "res", "slope", "drive", "keytrack", "filterMix"
+        "fType", "cutoff", "res", "slope", "filterDrive", "keytrack", "filterMix"
     };
     
     // Knob names for 7 knobs (Spread removed)
@@ -12500,24 +12615,27 @@ void PluginEditor::setupFilterKnobs()
             filterIndicatorBars[labelIdx]->setBounds(x + 10, y + knobSize + 8, knobSize - 20, 13);
             filterIndicatorBars[labelIdx]->setValue(0.5f);
             
-            // Create lock button for all knobs
-            filterLockButtons[labelIdx] = std::make_unique<LockButton>();
-            addAndMakeVisible(filterLockButtons[labelIdx].get());
-            filterLockButtons[labelIdx]->setVisible(false);
-            
-            juce::Font labelFont(12.0f, juce::Font::bold);
-            int textWidth = labelFont.getStringWidth(filterKnobNames[namesIdx]);
-            int lockX = x + (knobSize / 2) + (textWidth / 2) + 5;
-            int lockY = y - 10;
-            filterLockButtons[labelIdx]->setBounds(lockX, lockY, 10, 10);
-            
-            if (assets.unlockedIcon && assets.lockedIcon) {
-                auto imgUnlocked = assets.unlockedIcon->createCopy();
-                auto imgLocked = assets.lockedIcon->createCopy();
-                filterLockButtons[labelIdx]->setImages(std::move(imgUnlocked), std::move(imgLocked));
+            // Create lock button for all knobs (except Type and Slope which are created separately)
+            if (knobIdx != 0 && knobIdx != 3) {
+                filterLockButtons[labelIdx] = std::make_unique<LockButton>();
+                addAndMakeVisible(filterLockButtons[labelIdx].get());
+                filterLockButtons[labelIdx]->setVisible(false);
+                
+                positionLockButton(filterLockButtons[labelIdx].get(), filterKnobLabels[labelIdx].get(), y);
+                
+                if (assets.unlockedIcon && assets.lockedIcon) {
+                    auto imgUnlocked = assets.unlockedIcon->createCopy();
+                    auto imgLocked = assets.lockedIcon->createCopy();
+                    filterLockButtons[labelIdx]->setImages(std::move(imgUnlocked), std::move(imgLocked));
+                }
+                
+                filterLockButtons[labelIdx]->setToggleState(filterKnobLocked[labelIdx], juce::dontSendNotification);
+                filterLockButtons[labelIdx]->setClickingTogglesState(true);
+                filterLockButtons[labelIdx]->onClick = [this, labelIdx]() {
+                    filterKnobLocked[labelIdx] = filterLockButtons[labelIdx]->getToggleState();
+                    repaint();
+                };
             }
-            
-            filterLockButtons[labelIdx]->setToggleState(filterKnobLocked[labelIdx], juce::dontSendNotification);
         }
     }
     
@@ -12530,8 +12648,72 @@ void PluginEditor::setupFilterKnobs()
     addAndMakeVisible(filterTypeLabel.get());
     filterTypeLabel->setVisible(false);
     int typeX = startX;
-    int typeY = startY - 23 - 15;
+    int typeY = startY - 23 - 15; // Label Y position (knob Y is startY - 23)
     filterTypeLabel->setBounds(typeX, typeY, knobSize, 20);
+    
+    // Create lock button for Type knob (index 0 in filterKnobLocked array)
+    // Position it relative to the label, same as regular knobs
+    filterLockButtons[0] = std::make_unique<LockButton>();
+    addAndMakeVisible(filterLockButtons[0].get());
+    filterLockButtons[0]->setVisible(false);
+    filterLockButtons[0]->setClickingTogglesState(true);
+    
+    juce::Font typeLabelFont(12.0f, juce::Font::bold);
+    int typeTextWidth = typeLabelFont.getStringWidth("Type");
+    int typeKnobY = startY - 23;
+    positionLockButton(filterLockButtons[0].get(), filterTypeLabel.get(), typeKnobY);
+    
+    if (assets.unlockedIcon && assets.lockedIcon) {
+        auto imgUnlocked = assets.unlockedIcon->createCopy();
+        auto imgLocked = assets.lockedIcon->createCopy();
+        filterLockButtons[0]->setImages(std::move(imgUnlocked), std::move(imgLocked));
+    }
+    
+    filterLockButtons[0]->setToggleState(filterKnobLocked[0], juce::dontSendNotification);
+    filterLockButtons[0]->onClick = [this]() {
+        filterKnobLocked[0] = filterLockButtons[0]->getToggleState();
+        repaint();
+    };
+    
+    // Create Slope label
+    filterSlopeLabel = std::make_unique<juce::Label>();
+    filterSlopeLabel->setText("Slope", juce::dontSendNotification);
+    filterSlopeLabel->setFont(juce::Font(12.0f, juce::Font::bold));
+    filterSlopeLabel->setColour(juce::Label::textColourId, juce::Colours::white);
+    filterSlopeLabel->setJustificationType(juce::Justification::centred);
+    addAndMakeVisible(filterSlopeLabel.get());
+    filterSlopeLabel->setVisible(false);
+    int slopeX = startX + 3 * (knobSize + knobSpacing);
+    int slopeY = startY - 23 - 15;
+    filterSlopeLabel->setBounds(slopeX, slopeY, knobSize, 20);
+    
+    // Create lock button for Slope knob (index 3 in filterKnobLocked array)
+    // Use exact same calculation as in the loop for knobIdx=3
+    filterLockButtons[3] = std::make_unique<LockButton>();
+    addAndMakeVisible(filterLockButtons[3].get());
+    filterLockButtons[3]->setVisible(false);
+    filterLockButtons[3]->setClickingTogglesState(true);
+    
+    // Calculate slope lock position - match regular knobs exactly
+    // Regular knobs: label at y - 15, lock at y - 10 (5px below label top)
+    // Slope: label at slopeY = startY - 23 - 15 = startY - 38
+    // So lock should be at slopeY + 5 = startY - 33, which equals (startY - 23) - 10
+    auto slopeLabelBounds = filterSlopeLabel->getBounds();
+    int slopeKnobY = startY - 23;
+    int slopeKnobX = slopeLabelBounds.getX();
+    positionLockButton(filterLockButtons[3].get(), filterSlopeLabel.get(), slopeKnobY);
+    
+    if (assets.unlockedIcon && assets.lockedIcon) {
+        auto imgUnlocked = assets.unlockedIcon->createCopy();
+        auto imgLocked = assets.lockedIcon->createCopy();
+        filterLockButtons[3]->setImages(std::move(imgUnlocked), std::move(imgLocked));
+    }
+    
+    filterLockButtons[3]->setToggleState(filterKnobLocked[3], juce::dontSendNotification);
+    filterLockButtons[3]->onClick = [this]() {
+        filterKnobLocked[3] = filterLockButtons[3]->getToggleState();
+        repaint();
+    };
     
     // Create attachments for Type and Slope
     filterTypeAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
@@ -12544,6 +12726,17 @@ void PluginEditor::setupFilterKnobs()
         // Skip if loading from snapshot (prevents circular updates)
         if (isLoadingFromSnapshot.load())
             return;
+        
+        // Respect lock state - if locked, restore previous value
+        if (filterKnobLocked[0]) {
+            // Restore to previous value
+            auto* typeParam = processorRef.getAPVTS().getParameter("fType");
+            if (typeParam) {
+                float prevValue = typeParam->getValue() * 4.0f; // Convert from normalized to 0-4
+                filterTypeKnob->setValue(prevValue, juce::dontSendNotification);
+            }
+            return;
+        }
             
         float value = filterTypeKnob->getValue();
         juce::String types[] = {"LP", "HP", "BP", "Comb-", "Comb+"};
@@ -12573,6 +12766,17 @@ void PluginEditor::setupFilterKnobs()
         // Skip if loading from snapshot (prevents circular updates)
         if (isLoadingFromSnapshot.load())
             return;
+        
+        // Respect lock state - if locked, restore previous value
+        if (filterKnobLocked[3]) {
+            // Restore to previous value
+            auto* slopeParam = processorRef.getAPVTS().getParameter("slope");
+            if (slopeParam) {
+                float prevValue = slopeParam->getValue(); // 0-1 normalized
+                filterSlopeKnob->setValue(prevValue, juce::dontSendNotification);
+            }
+            return;
+        }
             
         float value = filterSlopeKnob->getValue();
         filterValueLabels[3]->setText(value > 0.5f ? "24dB" : "12dB", juce::dontSendNotification);
@@ -12620,20 +12824,20 @@ void PluginEditor::setupFilterKnobs()
                     case 1: text = juce::String(static_cast<int>(value * 100)) + "%"; break;
                     case 2: {
                         // Drive: convert 0-36 dB to 0-100% for display
-                        // SliderAttachment normalizes the value, so we must read from parameter
-                        // and convert from normalized (0-1) to actual dB (0-36)
-                        auto* driveParam = processorRef.getAPVTS().getParameter("drive");
+                        // Read the actual parameter value instead of knob value (SliderAttachment may normalize it)
+                        auto* driveParam = processorRef.getAPVTS().getParameter("filterDrive");
                         float driveDb = 0.0f;
                         
                         if (driveParam) {
-                            // Get normalized value (0-1) and convert to actual dB (0-36)
-                            float normalized = driveParam->getValue(); // 0-1
-                            driveDb = driveParam->convertFrom0to1(normalized); // Convert to 0-36 dB
+                            // Get normalized value (0-1) and convert to actual dB value (0-36)
+                            float normalized = driveParam->getValue(); // Returns 0-1
+                            driveDb = driveParam->convertFrom0to1(normalized); // Converts to 0-36 dB
                         } else {
-                            // Fallback: use knob value directly (should be 0-36 if no attachment)
-                            driveDb = value;
+                            // Fallback: use knob value directly if parameter not available
+                            driveDb = juce::jlimit(0.0f, 36.0f, value);
                         }
                         
+                        // Ensure we have a valid range
                         driveDb = juce::jlimit(0.0f, 36.0f, driveDb);
                         float drivePercent = (driveDb / 36.0f) * 100.0f;
                         text = juce::String(static_cast<int>(drivePercent)) + "%";
@@ -12791,17 +12995,33 @@ void PluginEditor::setupFilterSequencerArea()
         for (int step = 0; step < 16; ++step) {
             auto snapshot = processorRef.getFilterSafeSnapshot(step);
             
-            // Randomize all Filter parameters for this step
-            snapshot.filter.type = static_cast<float>(rng.nextInt(5)); // 0-4 (LP, HP, BP, Comb-, Comb+)
-            snapshot.filter.cutoff = 20.0f + rng.nextFloat() * 19800.0f; // 20-20000 Hz
-            snapshot.filter.resonance = rng.nextFloat(); // 0-1
-            snapshot.filter.slope = rng.nextFloat(); // 0-1 (12dB or 24dB)
-            snapshot.filter.drive = rng.nextFloat() * 36.0f; // 0-36 dB
-            snapshot.filter.keytrack = rng.nextFloat(); // 0-1
+            // Randomize all Filter parameters for this step (respecting lock states)
+            // Lock indices: 0=Type, 1=Cutoff, 2=Res, 3=Slope, 4=Drive, 5=Key Track, 6=Mix
+            if (!filterKnobLocked[0]) {
+                snapshot.filter.type = static_cast<float>(rng.nextInt(5)); // 0-4 (LP, HP, BP, Comb-, Comb+)
+            }
+            if (!filterKnobLocked[1]) {
+                snapshot.filter.cutoff = 20.0f + rng.nextFloat() * 19800.0f; // 20-20000 Hz
+            }
+            if (!filterKnobLocked[2]) {
+                snapshot.filter.resonance = rng.nextFloat(); // 0-1
+            }
+            if (!filterKnobLocked[3]) {
+                snapshot.filter.slope = rng.nextFloat(); // 0-1 (12dB or 24dB)
+            }
+            if (!filterKnobLocked[4]) {
+                snapshot.filter.drive = rng.nextFloat() * 36.0f; // 0-36 dB
+            }
+            if (!filterKnobLocked[5]) {
+                snapshot.filter.keytrack = rng.nextFloat(); // 0-1
+            }
             // Mix is global, not randomized per step
             
             processorRef.setFilterStepSnapshot(step, snapshot);
         }
+        
+        // Update sequencer UI
+        updateFilterSequencerUI();
         
         // Reload current step to UI (don't send notification to avoid triggering save)
         isLoadingFromSnapshot.store(true);
@@ -13617,17 +13837,9 @@ void PluginEditor::setupForm2Knobs()
         addAndMakeVisible(form2LockButtons[i].get());
         form2LockButtons[i]->setVisible(false);
         
-        // Position lock button at end of title text
-        juce::Font labelFont(12.0f, juce::Font::bold);
-        int textWidth = labelFont.getStringWidth(form2KnobTitles[i]);
-        const int lockSize = 10;
-        const int lockSpacing = 5;
-        int lockX = x + (knobSize / 2) + (textWidth / 2) + lockSpacing;
-        int lockY = y - 10;
+        positionLockButton(form2LockButtons[i].get(), form2KnobLabels[i].get(), y);
         
-        form2LockButtons[i]->setBounds(lockX, lockY, lockSize, lockSize);
-        
-        // Set lock button images
+        // Set lock button images (same as filter and other effects - no scaling needed)
         if (assets.unlockedIcon && assets.lockedIcon) {
             auto imgUnlocked = assets.unlockedIcon->createCopy();
             auto imgLocked = assets.lockedIcon->createCopy();
@@ -14362,12 +14574,7 @@ void PluginEditor::setupReduxKnobs()
         // Position lock button at end of title text (same as other effects)
         juce::Font labelFont(12.0f, juce::Font::bold);
         int textWidth = labelFont.getStringWidth(reduxKnobTitles[i]);
-        const int lockSize = 10; // Same size as other effects
-        const int lockSpacing = 5; // Fixed distance from end of title text
-        int lockX = x + (knobSize / 2) + (textWidth / 2) + lockSpacing;
-        int lockY = y - 10; // Same position as other effects
-        
-        reduxLockButtons[i]->setBounds(lockX, lockY, lockSize, lockSize);
+        positionLockButton(reduxLockButtons[i].get(), reduxKnobLabels[i].get(), y);
         
         // Set lock button images
         if (assets.unlockedIcon && assets.lockedIcon) {
@@ -15356,17 +15563,9 @@ void PluginEditor::setupPhaseBloomKnobs()
         addAndMakeVisible(phaseBloomLockButtons[i].get());
         phaseBloomLockButtons[i]->setVisible(false);
         
-        // Position lock button at end of title text (same as other effects)
-        juce::Font labelFont(12.0f, juce::Font::bold);
-        int textWidth = labelFont.getStringWidth(phaseBloomKnobTitles[i]);
-        const int lockSize = 10; // Same size as other effects
-        const int lockSpacing = 5; // Fixed distance from end of title text
-        int lockX = x + (knobSize / 2) + (textWidth / 2) + lockSpacing;
-        int lockY = y - 10; // Same position as other effects
+        positionLockButton(phaseBloomLockButtons[i].get(), phaseBloomKnobLabels[i].get(), y);
         
-        phaseBloomLockButtons[i]->setBounds(lockX, lockY, lockSize, lockSize);
-        
-        // Set lock button images
+        // Set lock button images (same as filter and other effects - no scaling needed)
         if (assets.unlockedIcon && assets.lockedIcon) {
             auto imgUnlocked = assets.unlockedIcon->createCopy();
             auto imgLocked = assets.lockedIcon->createCopy();
