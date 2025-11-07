@@ -593,63 +593,56 @@ void PluginEditor::paint (juce::Graphics& g)
         return nullptr;
     };
     
-    // Draw backgrounds and icons in the specified order
-    for (int slot : drawOrder)
+    auto drawTabSlot = [&](int slot)
     {
-        juce::Drawable* bg = getBackgroundForSlot(slot);
-        if (bg != nullptr)
+        if (slot < 0 || slot > 3)
+            return;
+
+        if (auto* bg = getBackgroundForSlot(slot))
         {
             bg->drawWithin(g, bounds, juce::RectanglePlacement::centred, 1.0f);
             hasBackground = true;
         }
-        
-        // Draw the effect icon on top of its background
-        juce::Drawable* icon = getEffectIconForSlot(slot);
-        if (icon != nullptr)
+
+        if (auto* icon = getEffectIconForSlot(slot))
         {
-            // Position icon to align with carrot SVGs horizontally
-            float tabIconX, tabIconY, tabW, tabH;
+            float tabIconX = 0.0f, tabIconY = 5.0f, tabW = 120.0f, tabH = 44.0f;
             switch (slot)
             {
-                case 0: // Tab 1 (SpaceDelay)
-                    tabIconX = 12.0f;
-                    tabIconY = 5.0f;
-                    tabW = 120.0f;
-                    tabH = 44.0f;
-                    break;
-                case 1: // Tab 2 (Panner)
-                    tabIconX = 148.0f;
-                    tabIconY = 5.0f;
-                    tabW = 120.0f;
-                    tabH = 44.0f;
-                    break;
-                case 2: // Tab 3 (Dirt)
-                    tabIconX = 268.0f;
-                    tabIconY = 5.0f;
-                    tabW = 120.0f;
-                    tabH = 44.0f;
-                    break;
-                case 3: // Tab 4 (Chorus)
-                    tabIconX = 396.0f;
-                    tabIconY = 5.0f;
-                    tabW = 120.0f;
-                    tabH = 44.0f;
-                    break;
-                default:
-                    continue; // Skip invalid slots
+                case 0: tabIconX = 12.0f;  break;          // Tab 1 (SpaceDelay)
+                case 1: tabIconX = 148.0f; break;          // Tab 2 (Panner)
+                case 2: tabIconX = 268.0f; break;          // Tab 3 (Dirt)
+                case 3: tabIconX = 396.0f; break;          // Tab 4 (Chorus)
+                default: return;
             }
-            
-            // Use natural icon size (250x70 from SVG viewBox) reduced by 60%, then 22% smaller, then 10% smaller
-            float iconWidth = 250.0f * 0.4f * 0.78f * 0.9f;  // 60% reduction, then 22% smaller, then 10% smaller = 70.2px
-            float iconHeight = 70.0f * 0.4f * 0.78f * 0.9f;  // 60% reduction, then 22% smaller, then 10% smaller = 19.66px
-            float iconX = tabIconX + (tabW - iconWidth) / 2.0f - 16.0f; // Center horizontally, then move left 16px
-            float iconY = 12.0f - 32.0f - 10.0f + 20.0f - 5.0f + 25.0f - 4.0f + 3.0f; // Move up 32px + 10px more, then down 20px, then up 5px, then down 25px, then up 4px, then down 3px
-            
-            // Create bounds at reduced size
+
+            float iconWidth = 250.0f * 0.4f * 0.78f * 0.9f;
+            float iconHeight = 70.0f  * 0.4f * 0.78f * 0.9f;
+            float iconX = tabIconX + (tabW - iconWidth) / 2.0f - 16.0f;
+            float iconY = 12.0f - 32.0f - 10.0f + 20.0f - 5.0f + 25.0f - 4.0f + 3.0f;
+
             auto iconBounds = juce::Rectangle<float>(iconX, iconY, iconWidth, iconHeight);
             icon->drawWithin(g, iconBounds, juce::RectanglePlacement::centred, 1.0f);
         }
+    };
+
+    // Draw backgrounds and icons in the specified order
+    for (int slot : drawOrder)
+    {
+        drawTabSlot(slot);
     }
+
+    // Grey out all tabs, then redraw the active one at full intensity
+    {
+        const float overlayHeight = juce::jmin(bounds.getHeight(), 90.0f);
+        auto overlayRect = juce::Rectangle<float>(bounds.getX(), bounds.getY(), bounds.getWidth(), overlayHeight);
+        juce::Graphics::ScopedSaveState saver(g);
+        g.reduceClipRegion(overlayRect.toNearestInt());
+        g.setColour(juce::Colours::black.withAlpha(0.1f));
+        g.fillRect(overlayRect);
+    }
+
+    drawTabSlot(currentSlotIndex);
     
     // Fallback background if no backgrounds loaded
     if (!hasBackground)
