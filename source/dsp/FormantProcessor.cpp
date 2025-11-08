@@ -125,7 +125,7 @@ void FormantProcessor::process(juce::AudioBuffer<float>& buffer, int numSamples,
     
     // Get smoothed parameters
     float vowel = vowelSm.getCurrentValue();
-    float q = qSm.getCurrentValue();  // Sharpness multiplier
+    float q = qSm.getCurrentValue();  // Sharpness multiplier (raw parameter units)
     float emphasis = emphasisSm.getCurrentValue();
     float shift = shiftSm.getCurrentValue();
     float brightness = brightnessSm.getCurrentValue();
@@ -168,11 +168,31 @@ void FormantProcessor::process(juce::AudioBuffer<float>& buffer, int numSamples,
     float f3 = lerp(formantsA_shifted.F3, formantsB_shifted.F3, morphBalance);
     float f4 = lerp(f4A, f4B, morphBalance);
     
-    // Apply Q sharpness multiplier (q is 0.4-18, where 1.0 = standard sharpness)
-    // q < 1 = wider (flatter), q > 1 = narrower (sharper)
-    float bandwidths[4] = {kBandwidths[0], kBandwidths[1], kBandwidths[2], kBandwidths[3]};
-    for (int i = 0; i < 4; ++i) {
-        bandwidths[i] /= juce::jmax(0.1f, q); // Narrower bandwidth = higher Q = sharper
+    // Convert resonance control to a perceptual normalised range (0..1)
+    constexpr float kResonanceMin = 0.4f;
+    constexpr float kResonanceMax = 18.0f;
+    float resonanceNorm = (q - kResonanceMin) / (kResonanceMax - kResonanceMin);
+    resonanceNorm = juce::jlimit(0.0f, 1.0f, resonanceNorm);
+
+    // Shape the Q response: faster rise near the top, but clamp the extremes
+    float qShape = juce::jmap(std::pow(resonanceNorm, 0.45f), 0.85f, 3.6f);
+
+    // Warmth / presence compensation to stop "boxy" emphasis when resonance climbs
+    const float lowFormantComp = juce::jmap(resonanceNorm, 0.0f, 1.0f, 1.0f, 0.72f);
+    const float midFormantComp = juce::jmap(resonanceNorm, 0.0f, 1.0f, 1.0f, 0.82f);
+    const float brightnessTamer = juce::jmap(resonanceNorm, 0.0f, 1.0f, 1.0f, 0.88f);
+
+    float centreFrequencies[4] = { f1, f2, f3, f4 };
+    float bandwidths[4];
+    for (int i = 0; i < 4; ++i)
+    {
+        const float freq = centreFrequencies[i];
+        // Make low formants naturally broader, high formants slightly tighter
+        float freqScale = juce::jlimit(0.65f, 1.25f, std::pow(juce::jlimit(0.1f, 20.0f, freq / 900.0f), 0.3f));
+        float dynamicBandwidth = kBandwidths[i] / (qShape * freqScale);
+        const float minBandwidth = kBandwidths[i] * 0.35f;
+        const float maxBandwidth = kBandwidths[i] * 4.0f;
+        bandwidths[i] = juce::jlimit(minBandwidth, maxBandwidth, dynamicBandwidth);
     }
     
     // Update filter coefficients ONCE PER BLOCK
@@ -208,6 +228,7 @@ void FormantProcessor::process(juce::AudioBuffer<float>& buffer, int numSamples,
     // Process audio sample-by-sample
     auto* leftChannel = buffer.getWritePointer(0);
     auto* rightChannel = buffer.getWritePointer(1);
+    const float airEnhance = juce::jlimit(0.0f, 1.0f, air);
     
     for (int i = 0; i < numSamples; ++i) {
         float dryL = leftChannel[i];
@@ -222,14 +243,20 @@ void FormantProcessor::process(juce::AudioBuffer<float>& buffer, int numSamples,
             float filteredR = filtersR[j].processSample(dryR);
             
             // Apply gains
-            if (j < 3) {
-                // F1, F2, F3 get emphasis gain
+            if (j == 0) {
+                filteredL *= emphasisGain * lowFormantComp;
+                filteredR *= emphasisGain * lowFormantComp;
+            } else if (j == 1) {
+                const float compensated = emphasisGain * midFormantComp;
+                filteredL *= compensated;
+                filteredR *= compensated;
+            } else if (j == 2) {
                 filteredL *= emphasisGain;
                 filteredR *= emphasisGain;
             } else {
-                // F4 gets brightness gain
-                filteredL *= brightnessGain;
-                filteredR *= brightnessGain * 0.98f; // Slight stereo width
+                const float brightComp = brightnessGain * brightnessTamer;
+                filteredL *= brightComp;
+                filteredR *= brightComp * 0.98f; // Slight stereo width
             }
             
             wetL += filteredL;
@@ -240,7 +267,8 @@ void FormantProcessor::process(juce::AudioBuffer<float>& buffer, int numSamples,
         // Formant filters in parallel can reduce signal, so boost output
         // Base gain: +3dB to compensate for parallel filter summing
         // Additional gain based on emphasis to make formants more pronounced
-        float outputGain = juce::Decibels::decibelsToGain(3.0f + (emphasis * 0.3f));
+        float outputGainDb = 3.0f + (emphasis * 0.25f) - (resonanceNorm * 2.0f);
+        float outputGain = juce::Decibels::decibelsToGain(outputGainDb);
         wetL *= outputGain;
         wetR *= outputGain;
         
@@ -253,17 +281,18 @@ void FormantProcessor::process(juce::AudioBuffer<float>& buffer, int numSamples,
         
         // Soft limiting to prevent harsh clipping
         auto softLimit = [](float x) {
-            const float threshold = 0.9f;
-            if (std::abs(x) > threshold) {
-                float sign = (x > 0.0f) ? 1.0f : -1.0f;
-                float excess = std::abs(x) - threshold;
-                return sign * (threshold + excess * 0.3f); // Soft knee
-            }
-            return x;
+            const float limited = juce::jlimit(-4.0f, 4.0f, x);
+            return std::tanh(limited);
         };
         wetL = softLimit(wetL);
         wetR = softLimit(wetR);
         
+        if (airEnhance > 0.0f) {
+            const float airyAmount = airEnhance * 0.15f;
+            wetL += airyAmount * (dryL - wetL);
+            wetR += airyAmount * (dryR - wetR);
+        }
+
         // Final dry/wet mix
         leftChannel[i] = dryL * (1.0f - mix) + wetL * mix;
         rightChannel[i] = dryR * (1.0f - mix) + wetR * mix;

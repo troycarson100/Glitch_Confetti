@@ -11440,27 +11440,48 @@ void PluginEditor::setupFormantKnobs()
                 return;
             
             if (formantKnobs[i] && formantValueLabels[i] && formantIndicatorBars[i]) {
-                float value = formantKnobs[i]->getValue();
+                const float value = formantKnobs[i]->getValue();
+                const double minValue = formantKnobs[i]->getMinimum();
+                const double maxValue = formantKnobs[i]->getMaximum();
+                const double range = maxValue - minValue;
+                float normalized = range > 0.0 ? static_cast<float>((value - minValue) / range) : 0.0f;
+                normalized = juce::jlimit(0.0f, 1.0f, normalized);
+
                 juce::String valueText;
-                
                 switch (i) {
-                    case 0: // Vowel
-                        {
-                            static const char* vowelNames[] = {"A", "E", "I", "O", "U"};
-                            int vowelIndex = static_cast<int>(value);
-                            vowelIndex = juce::jlimit(0, 4, vowelIndex);
-                            valueText = vowelNames[vowelIndex];
-                        }
+                    case 0: { // Vowel
+                        static const char* vowelNames[] = {"A", "E", "I", "O", "U"};
+                        int vowelIndex = static_cast<int>(value);
+                        vowelIndex = juce::jlimit(0, 4, vowelIndex);
+                        valueText = vowelNames[vowelIndex];
                         break;
-                    case 1: valueText = juce::String(value, 1); break; // Resonance (Q)
-                    case 2: valueText = juce::String(value, 1) + " dB"; break; // Intensity
-                    case 3: valueText = juce::String(value, 2); break; // Mix
+                    }
+                    case 1: // Resonance (Q)
+                        valueText = juce::String(value, 1);
+                        break;
+                    case 2: // Intensity
+                        valueText = juce::String(value, 1) + " dB";
+                        break;
+                    case 3: // Shift
+                        valueText = juce::String(value, 2) + "x";
+                        break;
+                    case 4: // Brightness
+                        valueText = juce::String(value, 1) + " dB";
+                        break;
+                    case 5: // Motion
+                    case 6: // Air
+                    case 7: // Mix
+                        valueText = juce::String(value * 100.0f, 0) + "%";
+                        break;
+                    default:
+                        valueText = juce::String(value, 2);
+                        break;
                 }
-                
+
                 formantValueLabels[i]->setText(valueText, juce::dontSendNotification);
-                
-                // Update indicator bar
-                formantIndicatorBars[i]->setValue(value);
+
+                // Update indicator bar using normalised value (0-1)
+                formantIndicatorBars[i]->setValue(normalized);
                 
                 // Update current step snapshot with new value
                 processorRef.updateFormantCurrentStepSnapshot(i, value);
@@ -11476,7 +11497,12 @@ void PluginEditor::setupFormantKnobs()
                             case 0: snapshot.formant.vowel = value; break;
                             case 1: snapshot.formant.resonance = value; break;
                             case 2: snapshot.formant.intensity = value; break;
-                            case 3: snapshot.formant.mix = value; break;
+                            case 3: snapshot.formant.shift = value; break;
+                            case 4: snapshot.formant.brightness = value; break;
+                            case 5: snapshot.formant.motion = value; break;
+                            case 6: snapshot.formant.air = value; break;
+                            case 7: snapshot.formant.mix = value; break;
+                            default: break;
                         }
                         processorRef.setFormantStepSnapshot(step, snapshot);
                     }
@@ -11596,7 +11622,7 @@ void PluginEditor::setupFormantSequencerArea()
             // Get current snapshot
             auto snapshot = processorRef.getFormantSafeSnapshot(step);
             
-            // Randomize the 4 snapshot parameters (respecting lock states)
+            // Randomize snapshot parameters (respecting lock states)
             if (!formantKnobLocked[0]) {
                 snapshot.formant.vowel = static_cast<float>(rng.nextInt(5)); // 0-4
             }
@@ -11607,41 +11633,22 @@ void PluginEditor::setupFormantSequencerArea()
                 snapshot.formant.intensity = -6.0f + rng.nextFloat() * 24.0f; // -6 to +18 dB
             }
             if (!formantKnobLocked[3]) {
-                snapshot.formant.mix = rng.nextFloat(); // 0-1
+                snapshot.formant.shift = 0.5f + rng.nextFloat() * 1.5f; // 0.5-2.0
             }
-            
-            processorRef.setFormantStepSnapshot(step, snapshot);
-            
-            // Also randomize the bottom 4 APVTS parameters (shift, brightness, motion, air)
-            // These aren't stored in snapshots, so we randomize them directly (respecting lock states)
             if (!formantKnobLocked[4]) {
-                auto* shiftParam = processorRef.getAPVTS().getParameter("formantShift");
-                if (shiftParam) {
-                    float randomShift = 0.5f + rng.nextFloat() * 1.5f; // 0.5-2.0
-                    shiftParam->setValueNotifyingHost(shiftParam->convertTo0to1(randomShift));
-                }
+                snapshot.formant.brightness = -12.0f + rng.nextFloat() * 24.0f; // -12 to +12 dB
             }
             if (!formantKnobLocked[5]) {
-                auto* brightnessParam = processorRef.getAPVTS().getParameter("formantBrightness");
-                if (brightnessParam) {
-                    float randomBrightness = -12.0f + rng.nextFloat() * 24.0f; // -12 to +12 dB
-                    brightnessParam->setValueNotifyingHost(brightnessParam->convertTo0to1(randomBrightness));
-                }
+                snapshot.formant.motion = rng.nextFloat(); // 0-1
             }
             if (!formantKnobLocked[6]) {
-                auto* motionParam = processorRef.getAPVTS().getParameter("formantMotion");
-                if (motionParam) {
-                    float randomMotion = rng.nextFloat(); // 0-1
-                    motionParam->setValueNotifyingHost(randomMotion);
-                }
+                snapshot.formant.air = rng.nextFloat(); // 0-1
             }
             if (!formantKnobLocked[7]) {
-                auto* airParam = processorRef.getAPVTS().getParameter("formantAir");
-                if (airParam) {
-                    float randomAir = rng.nextFloat(); // 0-1
-                    airParam->setValueNotifyingHost(randomAir);
-                }
+                snapshot.formant.mix = rng.nextFloat(); // 0-1
             }
+
+            processorRef.setFormantStepSnapshot(step, snapshot);
         }
         
         // Update UI to show the changes
@@ -16296,11 +16303,15 @@ void PluginEditor::randomizeEffectStepSnapshot(FxPageID effect, int step)
         case FxPageID::Formant: {
             auto snapshot = processorRef.getFormantSafeSnapshot(step);
             
-            // Randomize Formant parameters (now only 4)
+            // Randomize Formant parameters (8 knobs)
             if (!knobLocked[0]) snapshot.formant.vowel = juce::Random::getSystemRandom().nextInt(5); // 0-4
-            if (!knobLocked[1]) snapshot.formant.resonance = 0.5f + juce::Random::getSystemRandom().nextFloat() * (20.0f - 0.5f); // 0.5-20
-            if (!knobLocked[2]) snapshot.formant.intensity = juce::Random::getSystemRandom().nextFloat() * 12.0f; // 0-12
-            if (!knobLocked[3]) snapshot.formant.mix = juce::Random::getSystemRandom().nextFloat(); // 0-1
+            if (!knobLocked[1]) snapshot.formant.resonance = 0.4f + juce::Random::getSystemRandom().nextFloat() * (18.0f - 0.4f); // 0.4-18
+            if (!knobLocked[2]) snapshot.formant.intensity = -6.0f + juce::Random::getSystemRandom().nextFloat() * 24.0f; // -6 to +18
+            if (!knobLocked[3]) snapshot.formant.shift = 0.5f + juce::Random::getSystemRandom().nextFloat() * (2.0f - 0.5f); // 0.5-2.0
+            if (!knobLocked[4]) snapshot.formant.brightness = -12.0f + juce::Random::getSystemRandom().nextFloat() * 24.0f; // -12 to +12
+            if (!knobLocked[5]) snapshot.formant.motion = juce::Random::getSystemRandom().nextFloat(); // 0-1
+            if (!knobLocked[6]) snapshot.formant.air = juce::Random::getSystemRandom().nextFloat(); // 0-1
+            if (!knobLocked[7]) snapshot.formant.mix = juce::Random::getSystemRandom().nextFloat(); // 0-1
             
             processorRef.setFormantStepSnapshot(step, snapshot);
             break;
@@ -16621,11 +16632,15 @@ void PluginEditor::loadSelectedStepIntoKnobs(FxPageID effect)
             selectedStep = juce::jlimit(0, 15, selectedStep);
             const auto snapshot = processorRef.getFormantSafeSnapshot(selectedStep);
             
-            // Load snapshot values into knobs (now only 4)
-            if (formantKnobs[0]) formantKnobs[0]->setValue((float)snapshot.formant.vowel, juce::dontSendNotification);
+            // Load snapshot values into knobs (all 8 parameters)
+            if (formantKnobs[0]) formantKnobs[0]->setValue(static_cast<float>(snapshot.formant.vowel), juce::dontSendNotification);
             if (formantKnobs[1]) formantKnobs[1]->setValue(snapshot.formant.resonance, juce::dontSendNotification);
             if (formantKnobs[2]) formantKnobs[2]->setValue(snapshot.formant.intensity, juce::dontSendNotification);
-            if (formantKnobs[3]) formantKnobs[3]->setValue(snapshot.formant.mix, juce::dontSendNotification);
+            if (formantKnobs[3]) formantKnobs[3]->setValue(snapshot.formant.shift, juce::dontSendNotification);
+            if (formantKnobs[4]) formantKnobs[4]->setValue(snapshot.formant.brightness, juce::dontSendNotification);
+            if (formantKnobs[5]) formantKnobs[5]->setValue(snapshot.formant.motion, juce::dontSendNotification);
+            if (formantKnobs[6]) formantKnobs[6]->setValue(snapshot.formant.air, juce::dontSendNotification);
+            if (formantKnobs[7]) formantKnobs[7]->setValue(snapshot.formant.mix, juce::dontSendNotification);
                 break;
         }
         

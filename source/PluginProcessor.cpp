@@ -265,6 +265,10 @@ PluginProcessor::PluginProcessor()
         formantStepSnapshots[i].formant.vowel = 0.0f; // A
         formantStepSnapshots[i].formant.resonance = 12.0f;
         formantStepSnapshots[i].formant.intensity = 6.0f;
+        formantStepSnapshots[i].formant.shift = 1.0f;
+        formantStepSnapshots[i].formant.brightness = 3.0f;
+        formantStepSnapshots[i].formant.motion = 0.25f;
+        formantStepSnapshots[i].formant.air = 0.2f;
         formantStepSnapshots[i].formant.mix = 0.8f;
     }
     DBG("[Stepper] Initialized Formant step snapshots with default values");
@@ -2060,6 +2064,10 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                             snapshot.formant.vowel = juce::jlimit(0.0f, 4.0f, snapshot.formant.vowel);
                             snapshot.formant.resonance = juce::jlimit(0.4f, 18.0f, snapshot.formant.resonance);
                             snapshot.formant.intensity = juce::jlimit(-6.0f, 18.0f, snapshot.formant.intensity);
+                            snapshot.formant.shift = juce::jlimit(0.5f, 2.0f, snapshot.formant.shift);
+                            snapshot.formant.brightness = juce::jlimit(-12.0f, 12.0f, snapshot.formant.brightness);
+                            snapshot.formant.motion = juce::jlimit(0.0f, 1.0f, snapshot.formant.motion);
+                            snapshot.formant.air = juce::jlimit(0.0f, 1.0f, snapshot.formant.air);
                             snapshot.formant.mix = juce::jlimit(0.0f, 1.0f, snapshot.formant.mix);
                             
                             // Only process if mix > 0
@@ -2069,11 +2077,19 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                                 auto* vowelParam = valueTreeState.getRawParameterValue("vowel");
                                 auto* resonanceParam = valueTreeState.getRawParameterValue("resonance");
                                 auto* intensityParam = valueTreeState.getRawParameterValue("intensity");
+                                auto* shiftParam = valueTreeState.getRawParameterValue("formantShift");
+                                auto* brightnessParam = valueTreeState.getRawParameterValue("formantBrightness");
+                                auto* motionParam = valueTreeState.getRawParameterValue("formantMotion");
+                                auto* airParam = valueTreeState.getRawParameterValue("formantAir");
                                 auto* mixParam = valueTreeState.getRawParameterValue("mix");
                                 
                                 if (vowelParam) *vowelParam = snapshot.formant.vowel;
                                 if (resonanceParam) *resonanceParam = snapshot.formant.resonance;
                                 if (intensityParam) *intensityParam = snapshot.formant.intensity;
+                                if (shiftParam) *shiftParam = snapshot.formant.shift;
+                                if (brightnessParam) *brightnessParam = snapshot.formant.brightness;
+                                if (motionParam) *motionParam = snapshot.formant.motion;
+                                if (airParam) *airParam = snapshot.formant.air;
                                 if (mixParam) *mixParam = snapshot.formant.mix;
                                 
                                 // Process Formant effect
@@ -3021,6 +3037,10 @@ void PluginProcessor::getStateInformation (juce::MemoryBlock& destData)
         stepTree.setProperty("vowel", formantStepSnapshots[i].formant.vowel, nullptr);
         stepTree.setProperty("resonance", formantStepSnapshots[i].formant.resonance, nullptr);
         stepTree.setProperty("intensity", formantStepSnapshots[i].formant.intensity, nullptr);
+        stepTree.setProperty("shift", formantStepSnapshots[i].formant.shift, nullptr);
+        stepTree.setProperty("brightness", formantStepSnapshots[i].formant.brightness, nullptr);
+        stepTree.setProperty("motion", formantStepSnapshots[i].formant.motion, nullptr);
+        stepTree.setProperty("air", formantStepSnapshots[i].formant.air, nullptr);
         stepTree.setProperty("mix", formantStepSnapshots[i].formant.mix, nullptr);
         stepsnapshots.addChild(stepTree, -1, nullptr);
     }
@@ -3312,6 +3332,10 @@ void PluginProcessor::setStateInformation (const void* data, int sizeInBytes)
                     formantStepSnapshots[i].formant.vowel = stepTree.getProperty("vowel", 0.0f);
                     formantStepSnapshots[i].formant.resonance = stepTree.getProperty("resonance", 12.0f);
                     formantStepSnapshots[i].formant.intensity = stepTree.getProperty("intensity", 6.0f);
+                    formantStepSnapshots[i].formant.shift = stepTree.getProperty("shift", 1.0f);
+                    formantStepSnapshots[i].formant.brightness = stepTree.getProperty("brightness", 3.0f);
+                    formantStepSnapshots[i].formant.motion = stepTree.getProperty("motion", 0.25f);
+                    formantStepSnapshots[i].formant.air = stepTree.getProperty("air", 0.2f);
                     formantStepSnapshots[i].formant.mix = stepTree.getProperty("mix", 0.8f);
                 }
             }
@@ -3694,7 +3718,7 @@ void PluginProcessor::updateFormantCurrentStepSnapshot(int knobIndex, float valu
     if (currentStep < 0 || currentStep >= 16) return;
     
     // Update the specific Formant parameter in the snapshot
-    // Note: knob order matches UI: Vowel, Resonance, Intensity, Mix
+    // Knob order matches UI: Vowel, Resonance, Intensity, Shift, Brightness, Motion, Air, Mix
     switch (knobIndex) {
         case 0: // Vowel
             formantStepSnapshots[currentStep].formant.vowel = value;
@@ -3705,7 +3729,19 @@ void PluginProcessor::updateFormantCurrentStepSnapshot(int knobIndex, float valu
         case 2: // Intensity
             formantStepSnapshots[currentStep].formant.intensity = value;
             break;
-        case 3: // Mix
+        case 3: // Shift
+            formantStepSnapshots[currentStep].formant.shift = value;
+            break;
+        case 4: // Brightness
+            formantStepSnapshots[currentStep].formant.brightness = value;
+            break;
+        case 5: // Motion
+            formantStepSnapshots[currentStep].formant.motion = value;
+            break;
+        case 6: // Air
+            formantStepSnapshots[currentStep].formant.air = value;
+            break;
+        case 7: // Mix
             formantStepSnapshots[currentStep].formant.mix = value;
             break;
     }

@@ -110,9 +110,13 @@ struct StepSnapshot {
        
        struct {
            float vowel = 0.0f;                  // 0-4 (A=0, E=1, I=2, O=3, U=4)
-           float resonance = 12.0f;             // 0.5-20 (Q factor for bandwidth)
-           float intensity = 6.0f;               // 0-12 dB (emphasis gain)
-           float mix = 0.8f;                     // 0-1 (dry/wet mix)
+           float resonance = 12.0f;             // 0.4-18.0 (Q factor multiplier)
+           float intensity = 6.0f;              // -6..+18 dB (emphasis gain)
+           float shift = 1.0f;                  // 0.5-2.0 (formant shift multiplier)
+           float brightness = 3.0f;             // -12..+12 dB (upper band gain)
+           float motion = 0.25f;                // 0-1 (morph depth)
+           float air = 0.2f;                    // 0-1 (high-air blend)
+           float mix = 0.8f;                    // 0-1 (dry/wet mix)
        } formant;
        
        struct {
