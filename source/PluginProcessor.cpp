@@ -1991,7 +1991,7 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                             if (snapshot.phasebloom.mix > 0.0f)
                             {
                                 // Process PhaseBloom effect
-                                phaseBloomEngine.process(buffer, transportCache.bpm.load());
+                                phaseBloomEngine.process(buffer);
                             }
                         }
                     }
@@ -2027,7 +2027,7 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                             if (mixValue > 0.0f)
                             {
                                 // Process PhaseBloom effect
-                                phaseBloomEngine.process(buffer, transportCache.bpm.load());
+                                phaseBloomEngine.process(buffer);
                             }
                         }
                     }

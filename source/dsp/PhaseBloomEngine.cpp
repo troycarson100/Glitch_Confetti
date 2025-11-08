@@ -1,298 +1,603 @@
 #include "PhaseBloomEngine.h"
+
+#include <algorithm>
 #include <cmath>
 
-PhaseBloomEngine::PhaseBloomEngine()
+namespace
 {
-    // Initialize smoothed values with 30ms smoothing time
-    depth.reset(44100.0, 0.03);
-    rate.reset(44100.0, 0.03);
-    feedback.reset(44100.0, 0.03);
-    center.reset(44100.0, 0.03);
-    bloom.reset(44100.0, 0.03);
-    spread.reset(44100.0, 0.03);
-    resonance.reset(44100.0, 0.03);
-    mix.reset(44100.0, 0.03);
-    
-    // Set default values
-    depth.setCurrentAndTargetValue(0.5f);
-    rate.setCurrentAndTargetValue(0.5f);        // 1/4 note default
-    feedback.setCurrentAndTargetValue(0.3f);
-    center.setCurrentAndTargetValue(1000.0f);   // 1kHz default
-    bloom.setCurrentAndTargetValue(0.2f);
-    spread.setCurrentAndTargetValue(0.8f);      // Wide stereo default
-    resonance.setCurrentAndTargetValue(0.5f);
-    mix.setCurrentAndTargetValue(0.5f);
+constexpr float kMinCenterParam = 200.0f;
+constexpr float kMaxCenterParam = 8000.0f;
+constexpr float kCenterMinHz = 100.0f;
+constexpr float kCenterMaxHz = 6000.0f;
+constexpr float kToneMinHz = 10000.0f;
+constexpr float kToneMaxHz = 22000.0f;
+constexpr float kMinFeedback = -0.9f;
+constexpr float kMaxFeedback = 0.9f;
+constexpr double smoothingTimeSeconds = 0.035;
+constexpr float stageSpread = 1.35f;
+
+inline float softClip(float x, float amount)
+{
+    return x / (1.0f + amount * std::abs(x));
 }
 
-void PhaseBloomEngine::prepare(double newSampleRate, int samplesPerBlock, int numChannels)
+inline float clampFrequency(float freq, double sampleRate)
 {
-    sampleRate = newSampleRate;
-    
-    // Reset smoothing sample rates - faster smoothing for more responsive feel
-    depth.reset(sampleRate, 0.01);
-    rate.reset(sampleRate, 0.005);  // Very fast smoothing for rate
-    feedback.reset(sampleRate, 0.01);
-    center.reset(sampleRate, 0.01);
-    bloom.reset(sampleRate, 0.01);
-    spread.reset(sampleRate, 0.01);
-    resonance.reset(sampleRate, 0.01);
-    mix.reset(sampleRate, 0.01);
-    
-    // Reset state
-    lfoPhase = 0.0f;
-    
-    // Prepare JUCE DSP phasers for all slots
-    juce::dsp::ProcessSpec spec;
-    spec.sampleRate = sampleRate;
-    spec.maximumBlockSize = static_cast<juce::uint32>(samplesPerBlock);
-    spec.numChannels = 1; // Each phaser processes one channel
-    
-    for (int i = 0; i < NUM_SLOTS; ++i)
+    const float nyquist = static_cast<float>(sampleRate) * 0.45f;
+    return juce::jlimit(10.0f, nyquist, freq);
+}
+
+inline float wrapPhase(float phase)
+{
+    const float twoPi = juce::MathConstants<float>::twoPi;
+    if (phase >= twoPi)
+        phase -= twoPi;
+    else if (phase < 0.0f)
+        phase += twoPi;
+    return phase;
+}
+} // namespace
+
+//==============================================================================
+void PhaseBloomEngine::AllpassLadder::prepare(int numStages, float spread)
+{
+    numStages = juce::jlimit(1, 8, numStages);
+    stages.assign(static_cast<size_t>(numStages), {});
+
+    if (numStages == 0)
+        return;
+
+    const float centerIndex = (static_cast<float>(numStages) - 1.0f) * 0.5f;
+    for (int i = 0; i < numStages; ++i)
     {
-        phaserL[i].reset();
-        phaserR[i].reset();
-        phaserL[i].prepare(spec);
-        phaserR[i].prepare(spec);
-        
-        // TEMPORARILY DISABLE DELAY LINES TO PREVENT CRASHES
-        // TODO: Re-implement bloom with safer approach
+        stages[static_cast<size_t>(i)].multiplier = std::pow(spread, static_cast<float>(i) - centerIndex);
+        stages[static_cast<size_t>(i)].z = 0.0f;
     }
+}
+
+void PhaseBloomEngine::AllpassLadder::reset()
+{
+    for (auto& stage : stages)
+        stage.z = 0.0f;
+}
+
+void PhaseBloomEngine::AllpassLadder::copyFrom(const AllpassLadder& other)
+{
+    const size_t minStages = std::min(stages.size(), other.stages.size());
+    for (size_t i = 0; i < minStages; ++i)
+        stages[i].z = other.stages[i].z;
+}
+
+float PhaseBloomEngine::AllpassLadder::process(float input,
+                                               float baseFrequencyHz,
+                                               float sampleRate)
+{
+    float x = input;
+    if (stages.empty())
+        return x;
+
+    for (auto& stage : stages)
+    {
+        const float freq = clampFrequency(baseFrequencyHz * stage.multiplier, sampleRate);
+        float g = std::tan(juce::MathConstants<float>::pi * freq / sampleRate);
+        float denom = 1.0f + g;
+        if (std::abs(denom) < 1.0e-6f)
+            denom = denom >= 0.0f ? 1.0e-6f : -1.0e-6f;
+
+        const float a = (1.0f - g) / denom;
+        const float y = (-a * x) + stage.z;
+        stage.z = x + a * y;
+        x = y;
+    }
+
+    return x;
+}
+
+//==============================================================================
+PhaseBloomEngine::PhaseBloomEngine()
+{
+    characters[0] = CharacterProfile { 6, 6, 0.75f, 0.85f, 0.7f, 0.0f, 1.0f, 0.8f }; // Type A
+    characters[1] = CharacterProfile { 8, 8, 0.65f, 1.0f, 1.0f, 1.0f, 1.2f, 0.8f }; // Type B
+    characters[2] = CharacterProfile { 4, 4, 0.85f, 1.1f, 0.5f, 0.0f, 1.0f, 0.9f }; // Type C
+
+    currentStages = targetStages = characters[currentCharacter].preferredStages;
+
+    depthTarget = 0.5f;
+    rateTargetHz = mapRateToHz(0.5f);
+    feedbackTarget = 0.0f;
+    centerTargetHz = mapCenterToHz(2000.0f);
+    stereoTarget = 0.5f;
+    toneTargetHz = mapToneToHz(0.5f);
+    mixTarget = 0.5f;
+    bloomParameterCached = (static_cast<float>(targetStages) - 2.0f) / 6.0f;
+
+    updateSmoothers();
+}
+
+void PhaseBloomEngine::prepare(double newSampleRate, int samplesPerBlock, int inNumChannels)
+{
+    sampleRate = juce::jmax(10.0, newSampleRate);
+    maxBlockSize = juce::jmax(1, samplesPerBlock);
+    numChannels = juce::jmax(1, inNumChannels);
+
+    filterSpec.sampleRate = sampleRate;
+    filterSpec.maximumBlockSize = static_cast<juce::uint32>(maxBlockSize);
+    filterSpec.numChannels = 1;
+
+    updateSmoothers();
+
+    dryBuffer.setSize(numChannels, maxBlockSize, false, false, true);
+
+    ensureChannelCount(numChannels);
+
+    for (auto& channel : channels)
+    {
+        channel.current.prepare(currentStages, stageSpread);
+        channel.pending.prepare(currentStages, stageSpread);
+        channel.current.reset();
+        channel.pending.reset();
+        channel.feedbackStateCurrent = 0.0f;
+        channel.feedbackStatePending = 0.0f;
+        channel.lfoPhase = 0.0f;
+
+        channel.tone.prepare(filterSpec);
+        channel.tone.reset();
+        channel.tone.setType(juce::dsp::StateVariableTPTFilterType::lowpass);
+        channel.tone.setResonance(0.707f);
+
+        channel.pendingTone.prepare(filterSpec);
+        channel.pendingTone.reset();
+        channel.pendingTone.setType(juce::dsp::StateVariableTPTFilterType::lowpass);
+        channel.pendingTone.setResonance(0.707f);
+
+        channel.crossfadeActive = false;
+        channel.crossfadeSamplesRemaining = 0;
+        channel.crossfadeSamplesTotal = 0;
+    }
+
+    prepared = true;
 }
 
 void PhaseBloomEngine::reset()
 {
-    lfoPhase = 0.0f;
-    
-    // Reset all phasers
-    for (int i = 0; i < NUM_SLOTS; ++i)
+    if (!prepared)
+        return;
+
+    for (auto& channel : channels)
     {
-        phaserL[i].reset();
-        phaserR[i].reset();
-        // TEMPORARILY DISABLE DELAY LINES TO PREVENT CRASHES
+        channel.current.reset();
+        channel.pending.reset();
+        channel.tone.reset();
+        channel.pendingTone.reset();
+        channel.feedbackStateCurrent = 0.0f;
+        channel.feedbackStatePending = 0.0f;
+        channel.crossfadeActive = false;
+        channel.crossfadeSamplesRemaining = 0;
+        channel.crossfadeSamplesTotal = 0;
+        channel.lfoPhase = 0.0f;
     }
-    
-    // Reset all smoothed parameters to prevent clicks
-    depth.reset(sampleRate, 0.03);
-    rate.reset(sampleRate, 0.03);
-    feedback.reset(sampleRate, 0.03);
-    center.reset(sampleRate, 0.03);
-    bloom.reset(sampleRate, 0.03);
-    spread.reset(sampleRate, 0.03);
-    resonance.reset(sampleRate, 0.03);
-    mix.reset(sampleRate, 0.03);
+
+    depthSmoothed.setCurrentAndTargetValue(depthTarget);
+    rateSmoothed.setCurrentAndTargetValue(rateTargetHz);
+    feedbackSmoothed.setCurrentAndTargetValue(feedbackTarget);
+    centerSmoothed.setCurrentAndTargetValue(centerTargetHz);
+    stereoSmoothed.setCurrentAndTargetValue(stereoTarget);
+    toneSmoothed.setCurrentAndTargetValue(toneTargetHz);
+    mixSmoothed.setCurrentAndTargetValue(mixTarget);
 }
 
-void PhaseBloomEngine::process(juce::AudioBuffer<float>& buffer, double hostBPM)
+void PhaseBloomEngine::process(juce::AudioBuffer<float>& buffer)
 {
-    if (!isEnabled || buffer.getNumChannels() < 2 || buffer.getNumSamples() <= 0)
+    juce::ScopedNoDenormals noDenormals;
+
+    if (!prepared || !enabled)
         return;
-    
+
+    const int channelsToProcess = juce::jmin(numChannels, buffer.getNumChannels());
     const int numSamples = buffer.getNumSamples();
-    
-    // Safety check to prevent crashes
-    if (numSamples > 4096) {
-        DBG("[PHASEBLOOM] Warning: Block size too large: " << numSamples);
+    if (channelsToProcess <= 0 || numSamples <= 0)
         return;
-    }
-    
-    // Get host BPM for tempo sync (default 120 if unavailable)
-    double bpm = 120.0;
-    if (hostBPM > 0.0)
-        bpm = hostBPM;
-    
-    // Tempo-synced division factors (quarter notes) - corrected for proper musical timing
-    static const double divisionFactors[9] = { 4.0, 2.0, 1.0, 0.5, 0.25, 0.125, 0.0625, 0.03125, 0.015625 };
-    
-    // Copy original (dry) buffer for later dry/wet mixing
-    juce::AudioBuffer<float> dryBuffer(buffer);
-    
-    // Process slot 0 (main slot) - for now we only use one slot
-    int slot = 0;
-    
-    // Get parameter values - only smooth non-critical parameters
-    float currentDepth = depth.getNextValue();
-    float currentRate = rate.getNextValue();
-    float currentFeedback = feedback.getNextValue(); // No smoothing for feedback to prevent lag
-    float currentCenter = center.getNextValue();
-    float currentBloom = bloom.getNextValue();
-    float currentSpread = spread.getNextValue();
-    float currentResonance = resonance.getNextValue();
-    float currentMix = mix.getNextValue();
-    
-    // If mix is at 0 (fully dry), bypass processing entirely
-    if (currentMix <= 0.0f)
-        return;
-    
-    // Convert rate value (0-1) to rate index (0-8)
-    int rateIdx = juce::jlimit(0, 8, static_cast<int>(currentRate * 8.0f));
-    
-    // Map resonance [0,1] to enhanced feedback with stability limiting
-    float resonanceFeedback = juce::jmap(currentResonance, 0.0f, 1.0f, currentFeedback, currentFeedback * 1.2f);
-    
-    // Limit feedback to prevent instability and loudness issues
-    resonanceFeedback = juce::jlimit(-0.7f, 0.7f, resonanceFeedback);
-    
-    // Calculate tempo-synced LFO rate in Hz with limiting for smoothness
-    double quarterSec = 60.0 / juce::jmax(1.0, bpm); // Prevent division by zero
-    double period = quarterSec * divisionFactors[rateIdx];
-    
-    // Prevent division by zero and invalid values
-    if (period <= 0.0 || !std::isfinite(period)) {
-        period = 1.0; // Fallback to 1 second
-    }
-    
-    double rateHz = 1.0 / period;
-    
-    // Check for NaN/infinity and limit rate to prevent harsh artifacts and instability
-    if (!std::isfinite(rateHz)) {
-        rateHz = 1.0; // Fallback to 1 Hz
-    }
-    rateHz = juce::jlimit(0.1, 20.0, rateHz);
-    
-    // Debug output every 1000 blocks to verify rate calculation
-    static int debugCounter = 0;
-    if ((debugCounter++ % 1000) == 0) {
-        DBG("[PHASEBLOOM] BPM=" << bpm << " rateIdx=" << rateIdx 
-            << " division=" << divisionFactors[rateIdx] 
-            << " period=" << period << " rateHz=" << rateHz);
-    }
-    
-    // Update phaser parameters (per-slot, per-channel)
-    phaserL[slot].setRate(static_cast<float>(rateHz));
-    phaserL[slot].setDepth(currentDepth);
-    phaserL[slot].setCentreFrequency(currentCenter);
-    phaserL[slot].setFeedback(resonanceFeedback);
-    phaserL[slot].setMix(1.0f); // full wet inside phaser
-    
-    phaserR[slot].setRate(static_cast<float>(rateHz));
-    phaserR[slot].setDepth(currentDepth);
-    phaserR[slot].setCentreFrequency(currentCenter);
-    phaserR[slot].setFeedback(resonanceFeedback);
-    phaserR[slot].setMix(1.0f);
-    
-    // Create separate buffers for left and right channels
-    juce::AudioBuffer<float> leftBuffer(1, numSamples);
-    juce::AudioBuffer<float> rightBuffer(1, numSamples);
-    
-    // Copy input data to separate buffers
-    leftBuffer.copyFrom(0, 0, buffer, 0, 0, numSamples);
-    rightBuffer.copyFrom(0, 0, buffer, 1, 0, numSamples);
-    
-    // Create AudioBlocks for processing
-    juce::dsp::AudioBlock<float> blockL(leftBuffer);
-    juce::dsp::AudioBlock<float> blockR(rightBuffer);
-    
-    // Process the phaser effect
-    phaserL[slot].process(juce::dsp::ProcessContextReplacing<float>(blockL));
-    phaserR[slot].process(juce::dsp::ProcessContextReplacing<float>(blockR));
-    
-    // Copy processed data back to main buffer
-    buffer.copyFrom(0, 0, leftBuffer, 0, 0, numSamples);
-    buffer.copyFrom(1, 0, rightBuffer, 0, 0, numSamples);
-    
-        // Apply Bloom (tanh) and mixing sample-by-sample
-        float invSpread = 1.0f - 2.0f * currentSpread; // for 0→1 spread (0..180° phase)
-        
-        // TEMPORARILY DISABLE DELAY-BASED BLOOM TO PREVENT CRASHES
-        // TODO: Re-implement bloom with safer approach
-        
-        for (int n = 0; n < numSamples; ++n)
+
+    jassert(numSamples <= dryBuffer.getNumSamples());
+
+    for (int ch = 0; ch < channelsToProcess; ++ch)
+        dryBuffer.copyFrom(ch, 0, buffer, ch, 0, numSamples);
+
+    const CharacterProfile& activeProfile = characters[currentCharacter];
+    const CharacterProfile& pendingProfile = characters[targetCharacter];
+
+    for (int sample = 0; sample < numSamples; ++sample)
+    {
+        const float rateHz = rateSmoothed.getNextValue();
+        const float depthBase = depthSmoothed.getNextValue();
+        const float feedbackBase = feedbackSmoothed.getNextValue();
+        const float centerBaseHz = centerSmoothed.getNextValue();
+        const float stereoParam = stereoSmoothed.getNextValue();
+        const float toneBaseHz = toneSmoothed.getNextValue();
+        const float mix = mixSmoothed.getNextValue();
+        const float dryGain = 1.0f - mix;
+        const float wetGain = mix;
+        const float rateIncrement = juce::MathConstants<float>::twoPi * rateHz / static_cast<float>(sampleRate);
+
+        const float stereoCurrent = juce::jmax(stereoParam, activeProfile.stereoFloor);
+        const float stereoPending = juce::jmax(stereoParam, pendingProfile.stereoFloor);
+        const auto centrePairCurrent = computeStereoCentres(centerBaseHz, stereoCurrent, activeProfile);
+        const auto centrePairPending = computeStereoCentres(centerBaseHz, stereoPending, pendingProfile);
+        const float phaseOffsetCurrent = computeStereoPhaseOffset(stereoCurrent, activeProfile);
+        const float phaseOffsetPending = computeStereoPhaseOffset(stereoPending, pendingProfile);
+
+        for (int ch = 0; ch < channelsToProcess; ++ch)
         {
-            // Original dry samples
-            float dryL = dryBuffer.getSample(0, n);
-            float dryR = dryBuffer.getSample(1, n);
-            // Wet output from phaser
-            float wetL = buffer.getSample(0, n);
-            float wetR = buffer.getSample(1, n);
-            
-            // Simple bloom effect with saturation only (no delay lines)
-            if (currentBloom > 0.001f)
+            auto& state = channels[ch];
+            const float dry = dryBuffer.getSample(ch, sample);
+            const float basePhase = state.lfoPhase;
+
+            const float lfoCurrent = std::sinf(basePhase + (ch == 0 ? 0.0f : phaseOffsetCurrent));
+            const float lfoPending = std::sinf(basePhase + (ch == 0 ? 0.0f : phaseOffsetPending));
+
+            const float centreCurrent = (ch == 0 ? centrePairCurrent.first : centrePairCurrent.second);
+            const float centrePending = (ch == 0 ? centrePairPending.first : centrePairPending.second);
+
+            const float depthCurrent = juce::jlimit(0.0f, 1.0f, depthBase * activeProfile.depthScale);
+            const float depthPending = juce::jlimit(0.0f, 1.0f, depthBase * pendingProfile.depthScale);
+
+            float feedbackCurrent = juce::jlimit(kMinFeedback, kMaxFeedback, feedbackBase);
+            float feedbackPending = feedbackCurrent;
+
+            if (centreCurrent > 0.0f)
             {
-                // Apply gentle saturation for bloom effect
-                float bloomAmount = currentBloom * 0.8f;
-                wetL = juce::jmap(bloomAmount, wetL, std::tanh(wetL * 0.9f));
-                wetR = juce::jmap(bloomAmount, wetR, std::tanh(wetR * 0.9f));
+                const float compensation = std::pow(juce::jmax(0.001f, centreCurrent * 0.001f), 0.2f);
+                feedbackCurrent /= compensation;
             }
-            
-            // Soft limiting to prevent loudness issues
-            wetL = juce::jlimit(-0.8f, 0.8f, wetL);
-            wetR = juce::jlimit(-0.8f, 0.8f, wetR);
-            
-            // Stereo spread: invert right channel at full spread (≈180° LFO shift)
-            wetR *= invSpread;
-            
-            // Final dry/wet mix
-            float outL = juce::jmap(currentMix, dryL, wetL);
-            float outR = juce::jmap(currentMix, dryR, wetR);
-            buffer.setSample(0, n, outL);
-            buffer.setSample(1, n, outR);
+            if (centrePending > 0.0f)
+            {
+                const float compensation = std::pow(juce::jmax(0.001f, centrePending * 0.001f), 0.2f);
+                feedbackPending /= compensation;
+            }
+
+            feedbackCurrent = juce::jlimit(-activeProfile.feedbackCap, activeProfile.feedbackCap, feedbackCurrent);
+            feedbackPending = juce::jlimit(-pendingProfile.feedbackCap, pendingProfile.feedbackCap, feedbackPending);
+
+            const float toneHzCurrent = juce::jlimit(kToneMinHz,
+                                                     kToneMaxHz,
+                                                     toneBaseHz * activeProfile.toneMultiplier);
+            const float toneHzPending = juce::jlimit(kToneMinHz,
+                                                     kToneMaxHz,
+                                                     toneBaseHz * pendingProfile.toneMultiplier);
+
+            updateFilter(state.tone, toneHzCurrent);
+
+            const float modFreqCurrent = clampFrequency(centreCurrent * std::pow(2.0f, lfoCurrent * depthCurrent * sweepOctaves),
+                                                        sampleRate);
+            float ladderInputCurrent = dry + feedbackCurrent * softClip(state.feedbackStateCurrent,
+                                                                        activeProfile.softClipAmount);
+            float wetCurrent = state.current.process(ladderInputCurrent, modFreqCurrent, static_cast<float>(sampleRate));
+            state.feedbackStateCurrent = wetCurrent;
+            wetCurrent = state.tone.processSample(0, wetCurrent);
+
+            float wetOutput = wetCurrent;
+
+            if (state.crossfadeActive)
+            {
+                updateFilter(state.pendingTone, toneHzPending);
+
+                const float modFreqPending = clampFrequency(centrePending * std::pow(2.0f, lfoPending * depthPending * sweepOctaves),
+                                                            sampleRate);
+                float ladderInputPending = dry + feedbackPending * softClip(state.feedbackStatePending,
+                                                                            pendingProfile.softClipAmount);
+                float wetPending = state.pending.process(ladderInputPending, modFreqPending, static_cast<float>(sampleRate));
+                state.feedbackStatePending = wetPending;
+                wetPending = state.pendingTone.processSample(0, wetPending);
+
+                const float progress = juce::jlimit(0.0f, 1.0f,
+                                                    1.0f - static_cast<float>(state.crossfadeSamplesRemaining)
+                                                                / static_cast<float>(state.crossfadeSamplesTotal));
+                const float fadeIn = progress;
+                const float fadeOut = 1.0f - progress;
+                wetOutput = wetCurrent * fadeOut + wetPending * fadeIn;
+
+                if (--state.crossfadeSamplesRemaining <= 0)
+                {
+                    state.crossfadeActive = false;
+                    state.current = state.pending;
+                    state.feedbackStateCurrent = state.feedbackStatePending;
+                    state.tone = state.pendingTone;
+                }
+            }
+            else
+            {
+                state.feedbackStatePending = state.feedbackStateCurrent;
+            }
+
+            const float output = dryGain * dry + wetGain * wetOutput;
+            buffer.setSample(ch, sample, output);
+
+            state.lfoPhase = wrapPhase(basePhase + rateIncrement);
         }
+
+        if (!anyChannelCrossfading())
+        {
+            currentStages = targetStages;
+            currentCharacter = targetCharacter;
+        }
+    }
 }
 
-void PhaseBloomEngine::setDepth(float depthValue)
+//==============================================================================
+void PhaseBloomEngine::setDepth(float value)
 {
-    depth.setTargetValue(juce::jlimit(0.0f, 1.0f, depthValue));
+    depthTarget = juce::jlimit(0.0f, 1.0f, value);
+    depthSmoothed.setTargetValue(depthTarget);
 }
 
-void PhaseBloomEngine::setRate(float rateValue)
+void PhaseBloomEngine::setRate(float value)
 {
-    rate.setTargetValue(juce::jlimit(0.0f, 1.0f, rateValue));
+    rateTargetHz = mapRateToHz(value);
+    rateSmoothed.setTargetValue(rateTargetHz);
 }
 
-void PhaseBloomEngine::setFeedback(float feedbackValue)
+void PhaseBloomEngine::setFeedback(float value)
 {
-    // Limit feedback to prevent instability - max at 0.8 instead of 1.0
-    feedback.setTargetValue(juce::jlimit(-0.8f, 0.8f, feedbackValue));
+    feedbackTarget = mapFeedback(value);
+    feedbackSmoothed.setTargetValue(feedbackTarget);
 }
 
-void PhaseBloomEngine::setCenter(float centerValue)
+void PhaseBloomEngine::setCenter(float value)
 {
-    center.setTargetValue(juce::jlimit(100.0f, 4000.0f, centerValue));
+    centerTargetHz = mapCenterToHz(value);
+    centerSmoothed.setTargetValue(centerTargetHz);
 }
 
-void PhaseBloomEngine::setBloom(float bloomValue)
+void PhaseBloomEngine::setBloom(float value)
 {
-    bloom.setTargetValue(juce::jlimit(0.0f, 1.0f, bloomValue));
+    bloomParameterCached = value;
+    int newStages = mapStages(value);
+    newStages = juce::jlimit(2, characters[targetCharacter].stageLimit, newStages);
+
+    if (!prepared)
+    {
+        currentStages = targetStages = newStages;
+        return;
+    }
+
+    if (newStages != targetStages || (!anyChannelCrossfading() && newStages != currentStages))
+    {
+        targetStages = newStages;
+        beginStageCrossfade(targetStages);
+    }
 }
 
-void PhaseBloomEngine::setSpread(float spreadValue)
+void PhaseBloomEngine::setSpread(float value)
 {
-    spread.setTargetValue(juce::jlimit(0.0f, 1.0f, spreadValue));
+    stereoTarget = mapStereoAmount(value);
+    stereoSmoothed.setTargetValue(stereoTarget);
 }
 
-void PhaseBloomEngine::setResonance(float resonanceValue)
+void PhaseBloomEngine::setResonance(float value)
 {
-    resonance.setTargetValue(juce::jlimit(0.0f, 1.0f, resonanceValue));
+    toneTargetHz = mapToneToHz(value);
+    toneSmoothed.setTargetValue(toneTargetHz);
 }
 
-void PhaseBloomEngine::setMix(float mixValue)
+void PhaseBloomEngine::setMix(float value)
 {
-    mix.setTargetValue(juce::jlimit(0.0f, 1.0f, mixValue));
+    mixTarget = mapMix(value);
+    mixSmoothed.setTargetValue(mixTarget);
 }
 
-void PhaseBloomEngine::setEnabled(bool enabled)
+void PhaseBloomEngine::setType(int typeIndex)
 {
-    isEnabled = enabled;
+    const int clamped = juce::jlimit(0, static_cast<int>(characters.size()) - 1, typeIndex);
+
+    if (!prepared)
+    {
+        currentCharacter = targetCharacter = clamped;
+        currentStages = targetStages = characters[clamped].preferredStages;
+        bloomParameterCached = (static_cast<float>(targetStages) - 2.0f) / 6.0f;
+        return;
+    }
+
+    if (clamped != targetCharacter)
+    {
+        targetCharacter = clamped;
+        beginCharacterCrossfade(targetCharacter);
+    }
+    else if (!anyChannelCrossfading() && targetCharacter != currentCharacter)
+    {
+        beginCharacterCrossfade(targetCharacter);
+    }
+
+    const int desiredStages = characters[targetCharacter].preferredStages;
+    if (desiredStages != targetStages || (!anyChannelCrossfading() && desiredStages != currentStages))
+    {
+        targetStages = desiredStages;
+        bloomParameterCached = (static_cast<float>(desiredStages) - 2.0f) / 6.0f;
+        beginStageCrossfade(targetStages);
+    }
 }
 
-float PhaseBloomEngine::rateToHz(float rateValue, double hostBPM)
+void PhaseBloomEngine::setEnabled(bool shouldBeEnabled)
 {
-    // Convert rate value (0-1) to rate index (0-8)
-    // 0 = slowest (4 bars), 1 = fastest (1/256 note)
-    int rateIndex = juce::jlimit(0, 8, static_cast<int>(rateValue * 8.0f));
-    
-    // Get beat division from lookup table (don't reverse - faster on the right)
-    float beats = RATE_DIVISIONS[rateIndex];
-    
-    // Convert to frequency in Hz
-    float freqHz = 60.0f / (static_cast<float>(hostBPM) * beats);
-    
-    // Clamp to reasonable range
-    return juce::jlimit(0.01f, 100.0f, freqHz);
+    enabled = shouldBeEnabled;
 }
 
-juce::String PhaseBloomEngine::getRateLabel(float rateValue)
+juce::String PhaseBloomEngine::getRateLabel(float normalisedValue)
 {
-    int rateIndex = juce::jlimit(0, 8, static_cast<int>(rateValue * 8.0f));
-    return juce::String(RATE_LABELS[rateIndex]); // Don't reverse - faster on the right
+    const float minHz = 0.01f;
+    const float maxHz = 6.0f;
+    const float norm = juce::jlimit(0.0f, 1.0f, normalisedValue);
+    const float hz = std::exp(std::log(minHz) + norm * (std::log(maxHz) - std::log(minHz)));
+    return hz >= 1.0f ? juce::String(hz, 2) + " Hz"
+                      : juce::String(hz, 3) + " Hz";
+}
+
+//==============================================================================
+void PhaseBloomEngine::ensureChannelCount(int requiredChannels)
+{
+    if (static_cast<int>(channels.size()) >= requiredChannels)
+        return;
+
+    const int previousSize = static_cast<int>(channels.size());
+    channels.resize(requiredChannels);
+
+    for (int ch = previousSize; ch < requiredChannels; ++ch)
+    {
+        channels[ch].current.prepare(currentStages, stageSpread);
+        channels[ch].pending.prepare(currentStages, stageSpread);
+        channels[ch].current.reset();
+        channels[ch].pending.reset();
+        channels[ch].feedbackStateCurrent = 0.0f;
+        channels[ch].feedbackStatePending = 0.0f;
+        channels[ch].lfoPhase = 0.0f;
+
+        channels[ch].tone.prepare(filterSpec);
+        channels[ch].tone.reset();
+        channels[ch].tone.setType(juce::dsp::StateVariableTPTFilterType::lowpass);
+        channels[ch].tone.setResonance(0.707f);
+
+        channels[ch].pendingTone.prepare(filterSpec);
+        channels[ch].pendingTone.reset();
+        channels[ch].pendingTone.setType(juce::dsp::StateVariableTPTFilterType::lowpass);
+        channels[ch].pendingTone.setResonance(0.707f);
+
+        channels[ch].crossfadeActive = false;
+        channels[ch].crossfadeSamplesRemaining = 0;
+        channels[ch].crossfadeSamplesTotal = 0;
+    }
+}
+
+void PhaseBloomEngine::updateSmoothers()
+{
+    depthSmoothed.reset(sampleRate, smoothingTimeSeconds);
+    rateSmoothed.reset(sampleRate, smoothingTimeSeconds);
+    feedbackSmoothed.reset(sampleRate, smoothingTimeSeconds);
+    centerSmoothed.reset(sampleRate, smoothingTimeSeconds);
+    stereoSmoothed.reset(sampleRate, smoothingTimeSeconds);
+    toneSmoothed.reset(sampleRate, smoothingTimeSeconds);
+    mixSmoothed.reset(sampleRate, smoothingTimeSeconds);
+
+    depthSmoothed.setCurrentAndTargetValue(depthTarget);
+    rateSmoothed.setCurrentAndTargetValue(rateTargetHz);
+    feedbackSmoothed.setCurrentAndTargetValue(feedbackTarget);
+    centerSmoothed.setCurrentAndTargetValue(centerTargetHz);
+    stereoSmoothed.setCurrentAndTargetValue(stereoTarget);
+    toneSmoothed.setCurrentAndTargetValue(toneTargetHz);
+    mixSmoothed.setCurrentAndTargetValue(mixTarget);
+}
+
+void PhaseBloomEngine::updateFilter(juce::dsp::StateVariableTPTFilter<float>& filter, float cutoffHz)
+{
+    filter.setCutoffFrequency(cutoffHz);
+    filter.setResonance(0.707f);
+}
+
+void PhaseBloomEngine::beginStageCrossfade(int newStageCount)
+{
+    if (!prepared)
+        return;
+
+    newStageCount = juce::jlimit(2, 8, newStageCount);
+
+    const int crossfadeSamples = juce::jmax(1, static_cast<int>(std::round(sampleRate * crossfadeSeconds)));
+
+    for (auto& channel : channels)
+    {
+        channel.pending.prepare(newStageCount, stageSpread);
+        channel.pending.copyFrom(channel.current);
+        channel.feedbackStatePending = channel.feedbackStateCurrent;
+        channel.pendingTone = channel.tone;
+        channel.crossfadeActive = true;
+        channel.crossfadeSamplesTotal = crossfadeSamples;
+        channel.crossfadeSamplesRemaining = crossfadeSamples;
+    }
+}
+
+void PhaseBloomEngine::beginCharacterCrossfade(int /*newCharacter*/)
+{
+    if (!prepared)
+        return;
+
+    const int crossfadeSamples = juce::jmax(1, static_cast<int>(std::round(sampleRate * crossfadeSeconds)));
+
+    for (auto& channel : channels)
+    {
+        channel.pending.prepare(channel.current.getStageCount(), stageSpread);
+        channel.pending.copyFrom(channel.current);
+        channel.feedbackStatePending = channel.feedbackStateCurrent;
+        channel.pendingTone = channel.tone;
+        channel.crossfadeActive = true;
+        channel.crossfadeSamplesTotal = crossfadeSamples;
+        channel.crossfadeSamplesRemaining = crossfadeSamples;
+    }
+}
+
+bool PhaseBloomEngine::anyChannelCrossfading() const
+{
+    for (const auto& channel : channels)
+        if (channel.crossfadeActive)
+            return true;
+    return false;
+}
+
+//==============================================================================
+float PhaseBloomEngine::mapRateToHz(float parameterValue) const
+{
+    const float norm = juce::jlimit(0.0f, 1.0f, parameterValue);
+    const float minHz = 0.01f;
+    const float maxHz = 6.0f;
+    return std::exp(std::log(minHz) + norm * (std::log(maxHz) - std::log(minHz)));
+}
+
+float PhaseBloomEngine::mapFeedback(float parameterValue) const
+{
+    return juce::jlimit(kMinFeedback, kMaxFeedback, parameterValue);
+}
+
+float PhaseBloomEngine::mapCenterToHz(float parameterValue) const
+{
+    const float clamped = juce::jlimit(kMinCenterParam, kMaxCenterParam, parameterValue);
+    const float logMinParam = std::log(kMinCenterParam);
+    const float logMaxParam = std::log(kMaxCenterParam);
+    const float norm = (std::log(clamped) - logMinParam) / (logMaxParam - logMinParam);
+    return std::exp(std::log(kCenterMinHz) + norm * (std::log(kCenterMaxHz) - std::log(kCenterMinHz)));
+}
+
+int PhaseBloomEngine::mapStages(float parameterValue) const
+{
+    const float norm = juce::jlimit(0.0f, 1.0f, parameterValue);
+    const int stages = static_cast<int>(std::round(norm * 6.0f)) + 2;
+    return juce::jlimit(2, 8, stages);
+}
+
+float PhaseBloomEngine::mapStereoAmount(float parameterValue) const
+{
+    return juce::jlimit(0.0f, 1.0f, parameterValue);
+}
+
+float PhaseBloomEngine::computeStereoPhaseOffset(float stereoAmount,
+                                                 const CharacterProfile& profile) const
+{
+    const float amount = juce::jlimit(0.0f, 1.0f, stereoAmount);
+    return juce::degreesToRadians(amount * 120.0f);
+}
+
+std::pair<float, float> PhaseBloomEngine::computeStereoCentres(float baseHz,
+                                                               float stereoAmount,
+                                                               const CharacterProfile& profile) const
+{
+    const float spread = stereoCentreOffsetPercent * profile.centreSpreadScale * juce::jlimit(0.0f, 1.0f, stereoAmount);
+    const float left = juce::jlimit(kCenterMinHz, kCenterMaxHz, baseHz * (1.0f - spread));
+    const float right = juce::jlimit(kCenterMinHz, kCenterMaxHz, baseHz * (1.0f + spread));
+    return { left, right };
+}
+
+float PhaseBloomEngine::mapToneToHz(float parameterValue) const
+{
+    const float norm = juce::jlimit(0.0f, 1.0f, parameterValue);
+    return juce::jmap(norm, kToneMinHz, kToneMaxHz);
+}
+
+float PhaseBloomEngine::mapMix(float parameterValue) const
+{
+    return juce::jlimit(0.0f, 1.0f, parameterValue);
 }
