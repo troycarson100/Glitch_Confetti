@@ -3604,7 +3604,7 @@ void PluginEditor::setupSpaceDelayUI()
     effectTypeDropdown->addItem("Chorus", 4);
     effectTypeDropdown->addItem("Hall", 5);
     effectTypeDropdown->addItem("Grain", 6);
-    effectTypeDropdown->addItem("Slicer", 7);
+    effectTypeDropdown->addItem("Slice", 7);
     effectTypeDropdown->addItem("Dub Echo", 8);
     effectTypeDropdown->addItem("Redux", 9);
     effectTypeDropdown->addItem("PhaseBloom", 10);
@@ -4708,7 +4708,7 @@ void PluginEditor::setupTabSystem()
         selector->addItem("Chorus", 4);
         selector->addItem("Hall", 5);
         selector->addItem("Grain", 6);
-        selector->addItem("Slicer", 7);
+        selector->addItem("Slice", 7);
         selector->addItem("Dub Echo", 8);
         selector->addItem("Redux", 9);
         selector->addItem("PhaseBloom", 10);
@@ -9741,7 +9741,7 @@ void PluginEditor::setupSlicerKnobs()
                     switch (i) {
                         case 0: { // Pattern
                             std::vector<juce::String> patternNames = {
-                                "Straight8", "Offbeat", "HalfTime", "Syncop", "Triplet", "BuildUp", "Choke16", "Gallop"
+                                "Straight", "Offbeat", "HalfTime", "Syncop", "Triplet", "BuildUp", "Choke16", "Gallop"
                             };
                             int patIdx = juce::jlimit(0, 7, (int)value);
                             valueText = patternNames[patIdx];

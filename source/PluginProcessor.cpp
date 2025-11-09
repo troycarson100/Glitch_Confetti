@@ -425,7 +425,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout PluginProcessor::createParam
     
     // Page and effect enable parameters
     params.push_back(std::make_unique<juce::AudioParameterChoice>("currentPage", "Current Page", 
-        juce::StringArray {"SpaceDelay", "AutoPan", "Dirt", "Chorus", "Reverb", "Granular", "Slicer", "DubDelay", "Redux", "PhaseBloom"}, 0)); // Effect page selection
+        juce::StringArray {"SpaceDelay", "AutoPan", "Dirt", "Chorus", "Reverb", "Granular", "Slice", "DubDelay", "Redux", "PhaseBloom"}, 0)); // Effect page selection
     params.push_back(std::make_unique<juce::AudioParameterBool>("delayEnabled", "Delay Enabled", true)); // Space Delay effect enabled - ON by default
     params.push_back(std::make_unique<juce::AudioParameterBool>("autopanEnabled", "AutoPan Enabled", true)); // AutoPan effect enabled - ON by default
     params.push_back(std::make_unique<juce::AudioParameterBool>("autopanTimeSync", "AutoPan Time Sync", true)); // AutoPan sync mode enabled - ON by default

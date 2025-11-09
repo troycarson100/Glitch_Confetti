@@ -122,7 +122,13 @@ void RhythmGateEngine::process(juce::AudioBuffer<float>& buffer)
     
     // Convert BARs → BEATs using time signature
     const double barsPerCycle = kDivBars[divIdx];
-    const double beatsPerCycle = barsPerCycle * tsNumSafe;
+    const double beatsPerCycleBase = barsPerCycle * tsNumSafe;
+    
+    const int safePatternIdx = std::clamp(patternIndex, 0, numPatterns - 1);
+    const double patternRateScale = static_cast<double>(patternRateMultipliers[safePatternIdx]);
+    
+    const double beatsPerCycle = beatsPerCycleBase * patternRateScale;
+    
     const double periodSec = (beatsPerCycle * gridMult) * (60.0 / bpmSafe);
     
     const double phaseIncPerSample = (periodSec > 0.0) ? (1.0 / (periodSec * sampleRate)) : 0.0;
