@@ -237,6 +237,25 @@ void PageTargetRegistry::buildRegistry()
         registry[EffectID::Form2] = targets;
     }
     
+    // Filter Page
+    {
+        PageTargets targets;
+        targets.pageId = "Filter";
+        targets.knobParamIds = {
+            "fType",        // Knob -1: Type (special knob)
+            "cutoff",       // Knob 0: Cutoff
+            "res",          // Knob 1: Resonance
+            "slope",        // Knob -2: Slope (special knob)
+            "filterDrive",  // Knob 2: Drive
+            "spread",       // Knob 3: Spread (removed but parameter exists)
+            "keytrack",     // Knob 4: Key Track
+            "filterMix"     // Knob 5: Mix
+        };
+        targets.sequencerStepsUsedKey = "filterStepsUsed";
+        targets.maxSteps = 16;
+        registry[EffectID::Filter] = targets;
+    }
+    
     // Saturate Page
     {
         PageTargets targets;

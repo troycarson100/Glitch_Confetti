@@ -70,6 +70,8 @@ set(SourceFiles
     ${CMAKE_CURRENT_SOURCE_DIR}/source/dsp/Form2Processor.h
     ${CMAKE_CURRENT_SOURCE_DIR}/source/dsp/SaturateProcessor.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/source/dsp/SaturateProcessor.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/source/dsp/FilterProcessor.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/source/dsp/FilterProcessor.h
     ${CMAKE_CURRENT_SOURCE_DIR}/source/GumroadLicenseManager.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/source/GumroadLicenseManager.h
     ${CMAKE_CURRENT_SOURCE_DIR}/source/ui/UiFlags.h

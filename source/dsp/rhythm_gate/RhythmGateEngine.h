@@ -96,14 +96,14 @@ private:
     
     // Patterns (16 steps, 0..1 per step) - convert to envelope nodes
     static constexpr float P_STRAIGHT[16]       = {1,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0}; // 1 chop per bar
-    static constexpr float P_STRAIGHT_8TH[16]   = {1,0,1,0, 1,0,1,0, 1,0,1,0, 1,0,1,0}; // 8 chops per bar
-    static constexpr float P_OFFBEAT[16]        = {0,1,0,0, 0,1,0,0, 0,1,0,0, 0,1,0,0}; // 4 chops per bar (slower)
-    static constexpr float P_HALF_TIME[16]      = {1,0,0,0, 1,0,0,0, 1,0,0,0, 1,0,0,0}; // 4 chops per bar (slower)
-    static constexpr float P_SYNCOP[16]         = {1,0,0,1, 0,1,0,0, 1,0,0,1, 0,1,0,0}; // 6 chops per bar (slower)
-    static constexpr float P_TRIPLET_12[16]     = {1,0,0,0, 0,0,1,0, 0,1,0,0, 1,0,0,0}; // 4 chops per bar (slower)
-    static constexpr float P_BUILD[16]          = {0,0,0,0, 0,0,0,0, 0,0,1,0, 1,1,1,0}; // 4 chops per bar (slower)
-    static constexpr float P_CHOKE_16[16]       = {1,0,0,0, 0,0,0,0, 1,0,0,0, 0,0,0,0}; // 2 chops per bar (slower)
-    static constexpr float P_GALLOP[16]         = {1,0,0,0, 0,1,0,0, 1,0,0,0, 0,1,0,0}; // 4 chops per bar (slower)
+    static constexpr float P_STRAIGHT_8TH[16]   = {1,0,1,0, 1,0,1,0, 1,0,1,0, 1,0,1,0}; // 8 chops per bar (unused)
+    static constexpr float P_OFFBEAT[16]        = {0,1,0,0, 0,1,0,0, 0,1,0,0, 0,1,0,0}; // 4 chops per bar
+    static constexpr float P_HALF_TIME[16]      = {1,0,0,0, 1,0,0,0, 1,0,0,0, 1,0,0,0}; // 4 chops per bar
+    static constexpr float P_SYNCOP[16]         = {1,0,0,1, 0,1,0,0, 1,0,0,1, 0,1,0,0}; // 6 chops per bar
+    static constexpr float P_TRIPLET_12[16]     = {1,0,0,0, 0,0,1,0, 0,1,0,0, 1,0,0,0}; // 4 chops per bar
+    static constexpr float P_BUILD[16]          = {0,0,0,0, 0,0,0,0, 0,0,1,0, 1,1,1,0}; // 4 chops per bar
+    static constexpr float P_CHOKE_16[16]       = {1,0,0,0, 0,0,0,0, 1,0,0,0, 0,0,0,0}; // 2 chops per bar
+    static constexpr float P_GALLOP[16]         = {1,0,0,0, 0,1,0,0, 1,0,0,0, 0,1,0,0}; // 4 chops per bar
 
     struct Pattern {
         const char* name;
@@ -112,16 +112,26 @@ private:
     
     static constexpr Pattern patterns[] = {
         {"Straight", P_STRAIGHT},
-        {"Straight 8th", P_STRAIGHT_8TH},
         {"Offbeat", P_OFFBEAT},
         {"Half Time", P_HALF_TIME},
         {"Syncopated", P_SYNCOP},
-        {"Triplet 12", P_TRIPLET_12},
+        {"Triplet", P_TRIPLET_12},
         {"Build Up", P_BUILD},
         {"Choke 16", P_CHOKE_16},
         {"Gallop", P_GALLOP}
     };
     
-    static constexpr int numPatterns = 9;
+    static constexpr float patternRateMultipliers[] = {
+        1.0f, // Straight
+        4.0f, // Offbeat
+        4.0f, // Half Time
+        4.0f, // Syncopated
+        4.0f, // Triplet
+        4.0f, // Build Up
+        4.0f, // Choke 16
+        4.0f  // Gallop
+    };
+    
+    static constexpr int numPatterns = sizeof(patterns) / sizeof(patterns[0]);
 };
 
