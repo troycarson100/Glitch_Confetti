@@ -15,7 +15,6 @@
 #include "dsp/FormantProcessor.h"
 #include "dsp/SaturateProcessor.h"
 #include "dsp/Form2Processor.h"
-#include "dsp/FxFilter.h"
 #include "Effects/Redux/ReduxBank.h"
 #include "dsp/DspFlags.h"
 #include "StepSnapshot.h"
@@ -23,7 +22,6 @@
 #include "ui/AudioRingBuffer.h"
 #include "EffectRouter.h"
 #include "dsp/SpectrumAnalyzer.h"
-#include "GumroadLicenseManager.h"
 
 // Real-time safe level tracking for meters
 struct MeterState {
@@ -149,13 +147,6 @@ public:
     
     // Effect router access
     EffectRouter& getEffectRouter() { return effectRouter; }
-    
-    // License management access
-    GumroadLicenseManager* getLicenseManager() { return gumroadLicenseManager.get(); }
-    bool isLicenseValid() const { return gumroadLicenseManager && gumroadLicenseManager->isLicenseValid(); }
-    
-    // Set your Gumroad product ID (call this in constructor or setup)
-    void setGumroadProductId(const juce::String& productId);
     
     // Sequencer state access for editor (Delay)
     int getPlayingStep() const noexcept { return seq.playingStep.load(); }
@@ -423,9 +414,6 @@ public:
     const MeterState& getInputMeter() const noexcept { return inputMeter; }
     const MeterState& getOutputMeter() const noexcept { return outputMeter; }
 
-    void setSaturateUserEditing(bool isEditing) noexcept { saturateUserEditing.store(isEditing); }
-    bool isSaturateUserEditing() const noexcept { return saturateUserEditing.load(); }
-
 private:
     // Parameters
     juce::AudioProcessorValueTreeState valueTreeState;
@@ -501,12 +489,6 @@ private:
     // Saturate Sequencer State (independent from all other sequencers)
     SeqState saturateSeq;
     std::atomic<int> saturateUiSelectedStep { 0 };  // Saturate editor's selected step
-    std::atomic<bool> saturateUserEditing { false };
-    
-    // Filter Sequencer State (independent from all other sequencers)
-    // SeqState has default member initializers, so it's safe to access immediately
-    SeqState filterSeq {};
-    std::atomic<int> filterUiSelectedStep { 0 };  // Filter editor's selected step
     
     // Space Delay Sequencer State (independent from all other sequencers)
     SeqState spacedelaySeq;
@@ -526,7 +508,6 @@ private:
     std::array<StepSnapshot, 16> slicerStepSnapshots;
     std::array<StepSnapshot, 16> dubdelayStepSnapshots;
     std::array<StepSnapshot, 16> saturateStepSnapshots;
-    std::array<StepSnapshot, 16> filterStepSnapshots;  // Default-constructed StepSnapshot elements (safe due to default member initializers)
     std::array<StepSnapshot, 16> spacedelayStepSnapshots;
     
     // Level tracking for meters
@@ -609,47 +590,10 @@ public:
     void setSaturateStepSnapshot(int step, const StepSnapshot& snapshot) noexcept;
     void updateSaturateCurrentStepSnapshot(int knobIndex, float value);
     
-    // Filter sequencer state access
-    // Safe accessors - SeqState has default member initializers so always safe to access
-    const SeqState& getFilterSeqState() const noexcept { 
-        return filterSeq; 
-    }
-    int getFilterPlayingStep() const noexcept { 
-        return filterSeq.playingStep.load(std::memory_order_acquire); 
-    }
-    int getFilterCurrentStep() const noexcept { 
-        return filterSeq.currentStep.load(std::memory_order_acquire); 
-    }
-    void setFilterSelectedStep(int step) noexcept { filterUiSelectedStep.store(step); }
-    int getFilterSelectedStep() const noexcept { return filterUiSelectedStep.load(); }
-    void setFilterSequencerEnabled(bool enabled) noexcept {
-        filterSeq.enabled.store(enabled, std::memory_order_release);
-        if (enabled) {
-            filterSeq.active.store(true, std::memory_order_release);
-        }
-    }
-    void setFilterStepAmount(int steps) noexcept { 
-        filterSeq.stepsUsed.store(juce::jlimit(1, 16, steps), std::memory_order_release); 
-    }
-    void setFilterDivisionIndex(int idx) noexcept { 
-        filterSeq.divisionIndex.store(juce::jlimit(0, 7, idx), std::memory_order_release); 
-    }
-    void setFilterStdMode(int mode) noexcept { 
-        filterSeq.stdMode.store(juce::jlimit(0, 2, mode), std::memory_order_release); 
-    }
-    
-    // Filter snapshot accessors
-    StepSnapshot getFilterSafeSnapshot(int step) const;
-    void setFilterStepSnapshot(int step, const StepSnapshot& snapshot) noexcept;
-    void updateFilterCurrentStepSnapshot(int knobIndex, float value);
-    
     // Form 2 DSP Implementation
     Form2Processor form2Processor;
     
     Form2Processor& getForm2Processor() { return form2Processor; }
-    
-    // Filter processor
-    FxFilter filterProcessor;
     
     // Redux DSP Implementation
     ReduxBank reduxBank;
@@ -712,9 +656,6 @@ public:
            
            // FX routing
            FxType currentFx = FxType::Delay;
-           
-           // Gumroad License Manager
-           std::unique_ptr<GumroadLicenseManager> gumroadLicenseManager;
     
     // Helper functions - simplified
     

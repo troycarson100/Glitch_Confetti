@@ -1,37 +1,4 @@
 #include "PluginEditor.h"
-
-namespace
-{
-    constexpr int kLockOffsetY = 10;
-    constexpr int kLockLabelSpacing = 5;
-
-    inline void positionLockButton(LockButton* button,
-                                   const juce::Component* labelComponent,
-                                   int knobTop)
-    {
-        if (button == nullptr || labelComponent == nullptr)
-            return;
-
-        auto labelBounds = labelComponent->getBounds();
-        float labelRight = static_cast<float>(labelBounds.getRight());
-
-        if (auto label = dynamic_cast<const juce::Label*>(labelComponent))
-        {
-            auto font = label->getFont();
-            auto text = label->getText(false);
-            float textWidth = font.getStringWidthFloat(text);
-            labelRight = labelBounds.getCentreX() + textWidth * 0.5f;
-        }
-
-        int lockX = static_cast<int>(labelRight + 0.5f) + kLockLabelSpacing;
-        int lockY = knobTop - kLockOffsetY;
-
-        button->setBounds(lockX,
-                          lockY,
-                          LockButton::defaultSize,
-                          LockButton::defaultSize);
-    }
-}
 #include "PluginProcessor.h"
 #include "BinaryData.h"
 #include "ui/PanIndicator.h"
@@ -39,7 +6,8 @@ namespace
 #include "RandomizationManager.h"
 #include "PresetManager.h"
 #include "PresetBrowserComponent.h"
-#include "FontManager.h"
+#include "GumroadLicenseManager.h"
+#include "ui/GumroadLicenseDialog.h"
 
 //==============================================================================
 // CustomEffectDropdown Implementation
@@ -62,6 +30,15 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     // Initialize preset management system
     presetManager = std::make_unique<PresetManager>(processorRef, processorRef.getAPVTS());
     
+    // Initialize license manager with Gumroad product ID
+    licenseManager = std::make_unique<GumroadLicenseManager>("YJv8qP_umZv8fuNaDD5dQg==");
+    licenseManager->loadLicenseState();
+    
+    // Check license on startup (after a short delay to allow UI to initialize)
+    juce::Timer::callAfterDelay(1000, [this]() {
+        checkLicenseOnStartup();
+    });
+    
     // Set the size to match our desired dimensions
     setSize (974, 532);
     
@@ -70,12 +47,6 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     
     // Allow children to receive mouse clicks and keyboard focus
     setInterceptsMouseClicks(true, true); // (for this component, for children)
-    
-    // Check license on startup (after a short delay to allow UI to initialize)
-    // TEMPORARILY DISABLED
-    // juce::Timer::callAfterDelay(1000, [this]() {
-    //     checkLicenseOnStartup();
-    // });
     
     // Load all UI assets
     if (!assets.loadAll()) {
@@ -242,16 +213,6 @@ PluginEditor::PluginEditor (PluginProcessor& p)
         setupSaturateEffectsArea();
         setupSaturateSequencerArea();
         setupSaturateAllStepsToggle();
-        // Setup Filter page
-        DBG("[UI] Setting up Filter page...");
-        setupFilterKnobs();
-        setupFilterEffectsArea();
-        setupFilterSequencerArea();
-        setupFilterAllStepsToggle();
-        populateFilterGroup();
-        
-        DBG("[UI] Setting up Filter page...");
-        populateFilterGroup();
         
         // Setup Form 2 page
         DBG("[UI] Setting up Form 2 page...");
@@ -375,28 +336,6 @@ PluginEditor::~PluginEditor()
 
 void PluginEditor::paint (juce::Graphics& g)
 {
-    // License enforcement: Show overlay if no valid license
-    // TEMPORARILY DISABLED
-    // if (!processorRef.isLicenseValid())
-    // {
-    //     // Draw semi-transparent overlay
-    //     g.fillAll(juce::Colour(0xCC000000)); // Dark overlay with alpha
-    //     
-    //     // Draw license required message
-    //     g.setColour(juce::Colours::white);
-    //     g.setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 24.0f, juce::Font::bold));
-    //     juce::String message = "License Required";
-    //     auto bounds = getLocalBounds();
-    //     auto textBounds = bounds.reduced(50, 50);
-    //     g.drawFittedText(message, textBounds.removeFromTop(40), juce::Justification::centred, 1);
-    //     
-    //     g.setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 16.0f, juce::Font::plain));
-    //     juce::String subtitle = "Please enter a valid Gumroad license key to use the plugin.\nPress Cmd+L (Mac) or Ctrl+L (Windows) to enter your license key.";
-    //     g.drawFittedText(subtitle, textBounds, juce::Justification::centred, 5);
-    //     
-    //     return; // Don't draw the rest of the UI
-    // }
-    
     // === LAYERED TAB BACKGROUNDS ===
     // Draw ALL tab backgrounds in order (Tab1, Tab2, Tab3, Tab4)
     // This creates a layered effect where inactive tabs peek out behind the active one
@@ -538,20 +477,6 @@ void PluginEditor::paint (juce::Graphics& g)
                 }
                 break;
                 
-            case EffectID::Filter:
-                if (tabNumber == 1 && assets.filterBackgroundTab1) {
-                    return assets.filterBackgroundTab1.get();
-                }
-                else if (tabNumber == 2 && assets.filterBackgroundTab2) {
-                    return assets.filterBackgroundTab2.get();
-                }
-                else if (tabNumber == 3 && assets.filterBackgroundTab3) {
-                    return assets.filterBackgroundTab3.get();
-                }
-                else if (tabNumber == 4 && assets.filterBackgroundTab4) {
-                    return assets.filterBackgroundTab4.get();
-                }
-                break;
             case EffectID::Form2:
                 if (tabNumber == 1 && assets.form2BackgroundTab1) {
                     return assets.form2BackgroundTab1.get();
@@ -602,7 +527,6 @@ void PluginEditor::paint (juce::Graphics& g)
         EffectID effect = router.getEffectInSlot(static_cast<SlotID>(slotIndex));
         switch (effect)
         {
-            case EffectID::Filter:      return assets.tabFilterIcon.get();
             case EffectID::SpaceDelay: return assets.tabSpaceIcon.get();      // Space_Icon
             case EffectID::AutoPan:    return assets.tabAutoPanIcon.get();    // AutoPan_Icon
             case EffectID::Dirt:       return assets.tabDirtIconNew.get();    // Dirt_Icon
@@ -622,56 +546,63 @@ void PluginEditor::paint (juce::Graphics& g)
         return nullptr;
     };
     
-    auto drawTabSlot = [&](int slot)
+    // Draw backgrounds and icons in the specified order
+    for (int slot : drawOrder)
     {
-        if (slot < 0 || slot > 3)
-            return;
-
-        if (auto* bg = getBackgroundForSlot(slot))
+        juce::Drawable* bg = getBackgroundForSlot(slot);
+        if (bg != nullptr)
         {
             bg->drawWithin(g, bounds, juce::RectanglePlacement::centred, 1.0f);
             hasBackground = true;
         }
 
-        if (auto* icon = getEffectIconForSlot(slot))
+        // Draw the effect icon on top of its background
+        juce::Drawable* icon = getEffectIconForSlot(slot);
+        if (icon != nullptr)
         {
-            float tabIconX = 0.0f, tabIconY = 5.0f, tabW = 120.0f, tabH = 44.0f;
+            // Position icon to align with carrot SVGs horizontally
+            float tabIconX, tabIconY, tabW, tabH;
             switch (slot)
             {
-                case 0: tabIconX = 12.0f;  break;          // Tab 1 (SpaceDelay)
-                case 1: tabIconX = 148.0f; break;          // Tab 2 (Panner)
-                case 2: tabIconX = 268.0f; break;          // Tab 3 (Dirt)
-                case 3: tabIconX = 396.0f; break;          // Tab 4 (Chorus)
-                default: return;
+                case 0: // Tab 1 (SpaceDelay)
+                    tabIconX = 12.0f;
+                    tabIconY = 5.0f;
+                    tabW = 120.0f;
+                    tabH = 44.0f;
+                    break;
+                case 1: // Tab 2 (Panner)
+                    tabIconX = 148.0f;
+                    tabIconY = 5.0f;
+                    tabW = 120.0f;
+                    tabH = 44.0f;
+                    break;
+                case 2: // Tab 3 (Dirt)
+                    tabIconX = 268.0f;
+                    tabIconY = 5.0f;
+                    tabW = 120.0f;
+                    tabH = 44.0f;
+                    break;
+                case 3: // Tab 4 (Chorus)
+                    tabIconX = 396.0f;
+                    tabIconY = 5.0f;
+                    tabW = 120.0f;
+                    tabH = 44.0f;
+                    break;
+                default:
+                    continue; // Skip invalid slots
             }
-
-            float iconWidth = 250.0f * 0.4f * 0.78f * 0.9f;
-            float iconHeight = 70.0f  * 0.4f * 0.78f * 0.9f;
-            float iconX = tabIconX + (tabW - iconWidth) / 2.0f - 16.0f;
-            float iconY = 12.0f - 32.0f - 10.0f + 20.0f - 5.0f + 25.0f - 4.0f + 3.0f;
-
+            
+            // Use natural icon size (250x70 from SVG viewBox) reduced by 60%, then 22% smaller, then 10% smaller
+            float iconWidth = 250.0f * 0.4f * 0.78f * 0.9f;  // 60% reduction, then 22% smaller, then 10% smaller = 70.2px
+            float iconHeight = 70.0f * 0.4f * 0.78f * 0.9f;  // 60% reduction, then 22% smaller, then 10% smaller = 19.66px
+            float iconX = tabIconX + (tabW - iconWidth) / 2.0f - 16.0f; // Center horizontally, then move left 16px
+            float iconY = 12.0f - 32.0f - 10.0f + 20.0f - 5.0f + 25.0f - 4.0f + 3.0f; // Move up 32px + 10px more, then down 20px, then up 5px, then down 25px, then up 4px, then down 3px
+            
+            // Create bounds at reduced size
             auto iconBounds = juce::Rectangle<float>(iconX, iconY, iconWidth, iconHeight);
             icon->drawWithin(g, iconBounds, juce::RectanglePlacement::centred, 1.0f);
         }
-    };
-
-    // Draw backgrounds and icons in the specified order
-    for (int slot : drawOrder)
-    {
-        drawTabSlot(slot);
     }
-
-    // Grey out all tabs, then redraw the active one at full intensity
-    {
-        const float overlayHeight = juce::jmin(bounds.getHeight(), 90.0f);
-        auto overlayRect = juce::Rectangle<float>(bounds.getX(), bounds.getY(), bounds.getWidth(), overlayHeight);
-        juce::Graphics::ScopedSaveState saver(g);
-        g.reduceClipRegion(overlayRect.toNearestInt());
-        g.setColour(juce::Colours::black.withAlpha(0.1f));
-        g.fillRect(overlayRect);
-    }
-
-    drawTabSlot(currentSlotIndex);
     
     // Fallback background if no backgrounds loaded
     if (!hasBackground)
@@ -829,42 +760,6 @@ void PluginEditor::paint (juce::Graphics& g)
                 }
             }
             break;
-            
-        case EffectID::Formant:
-            // Draw lock buttons for formant knobs (8 knobs)
-            for (int i = 0; i < 8; ++i)
-            {
-                if (formantLockButtons[i] != nullptr)
-                {
-                    auto b = formantLockButtons[i]->getBounds().toFloat();
-                    if (formantKnobLocked[i]) {
-                        if (assets.lockedIcon != nullptr)
-                            assets.lockedIcon->drawWithin(g, b, juce::RectanglePlacement::centred, 1.0f);
-                    } else {
-                        if (assets.unlockedIcon != nullptr)
-                            assets.unlockedIcon->drawWithin(g, b, juce::RectanglePlacement::centred, 1.0f);
-                    }
-                }
-            }
-            break;
-            
-        case EffectID::Filter:
-            // Draw lock buttons for filter knobs (8 knobs: Type, Cutoff, Res, Slope, Drive, Key Track, Mix, and empty)
-            for (int i = 0; i < 8; ++i)
-            {
-                if (filterLockButtons[i] != nullptr)
-                {
-                    auto b = filterLockButtons[i]->getBounds().toFloat();
-                    if (filterKnobLocked[i]) {
-                        if (assets.lockedIcon != nullptr)
-                            assets.lockedIcon->drawWithin(g, b, juce::RectanglePlacement::centred, 1.0f);
-                    } else {
-                        if (assets.unlockedIcon != nullptr)
-                            assets.unlockedIcon->drawWithin(g, b, juce::RectanglePlacement::centred, 1.0f);
-                    }
-                }
-            }
-            break;
     }
     
     // Draw carrot icons on dropdowns (FX_Type_Carrot_Inactive.svg)
@@ -879,6 +774,15 @@ void PluginEditor::paint (juce::Graphics& g)
                 assets.fxTypeCarrotInactive->drawWithin(g, bounds, juce::RectanglePlacement::centred, 1.0f);
             }
         }
+    }
+    
+    // Draw license overlay if license is invalid
+    if (licenseManager && !licenseManager->isLicenseValid())
+    {
+        // Draw semi-transparent overlay (no text, just blocking overlay)
+        g.fillAll(juce::Colour(0xCC000000)); // Dark overlay with alpha
+        
+        return; // Don't draw the rest of the UI
     }
 }
 
@@ -898,7 +802,7 @@ void PluginEditor::drawGridOverlay(juce::Graphics& g)
     const int fontSize = 10;
     
     g.setColour(juce::Colours::white.withAlpha(0.7f));
-    g.setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", fontSize, juce::Font::plain));
+    g.setFont(fontSize);
     
     // Draw vertical grid lines
     for (int x = 0; x <= bounds.getWidth(); x += gridSize)
@@ -926,7 +830,7 @@ void PluginEditor::drawGridOverlay(juce::Graphics& g)
     
     // Add section letters (A, B, C, D, etc.)
     g.setColour(juce::Colours::yellow.withAlpha(0.8f));
-    g.setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", fontSize + 2, juce::Font::plain));
+    g.setFont(fontSize + 2);
     
     int sectionIndex = 0;
     for (int y = gridSize; y < bounds.getHeight(); y += gridSize * 2)
@@ -973,77 +877,19 @@ void PluginEditor::drawMainAreas(juce::Graphics& g)
     g.drawRoundedRectangle(masterArea.toFloat(), 10.0f, 3.0f);
     g.setColour(juce::Colours::white);
     g.drawText("MASTER AREA", masterArea, juce::Justification::centred);
+    
+    // Draw license overlay if license is invalid
+    if (licenseManager && !licenseManager->isLicenseValid())
+    {
+        // Draw semi-transparent overlay (no text, just blocking overlay)
+        g.fillAll(juce::Colour(0xCC000000)); // Dark overlay with alpha
+        
+        return; // Don't draw the rest of the UI
+    }
 }
 
 void PluginEditor::timerCallback()
 {
-    // License enforcement: Periodically check license status
-    // TEMPORARILY DISABLED
-    // if (!processorRef.isLicenseValid())
-    // {
-    //     // Repaint to show overlay
-    //     repaint();
-    //     
-    //     // Check if we need to show/keep showing the license dialog
-    //     auto* licenseMgr = processorRef.getLicenseManager();
-    //     if (licenseMgr != nullptr)
-    //     {
-    //         auto licenseInfo = licenseMgr->getCurrentLicense();
-    //         // Re-open dialog if no license or invalid (check every 3 seconds)
-    //         // Only show if dialog isn't already visible
-    //         static int checkCounter = 30; // Start at 30 to avoid immediate check
-    //         static juce::Time lastDialogShowTime;
-    //         checkCounter++;
-    //         
-    //         if ((checkCounter % 30) == 0) // 30 * 100ms = 3 seconds
-    //         {
-    //             // Check if we should show dialog (no license or invalid)
-    //             if (licenseInfo.licenseKey.isEmpty() || 
-    //                 licenseInfo.status == GumroadLicenseStatus::Invalid ||
-    //                 licenseInfo.status == GumroadLicenseStatus::Refunded ||
-    //                 licenseInfo.status == GumroadLicenseStatus::Disputed)
-    //             {
-    //                 // Only show if we haven't shown one recently (avoid spam)
-    //                 auto timeSinceLastShow = juce::Time::getCurrentTime() - lastDialogShowTime;
-    //                 if (timeSinceLastShow.inMilliseconds() > 2000) // 2 second minimum between shows
-    //                 {
-    //                     // Check if dialog is already visible by checking for focused DialogWindow
-    //                     bool dialogVisible = false;
-    //                     if (auto* focused = juce::Component::getCurrentlyFocusedComponent())
-    //                     {
-    //                         if (focused->findParentComponentOfClass<juce::DialogWindow>() != nullptr)
-    //                             dialogVisible = true;
-    //                     }
-    //                     // Also check all top-level windows
-    //                     for (int i = 0; i < juce::TopLevelWindow::getNumTopLevelWindows(); ++i)
-    //                     {
-    //                         if (auto* window = juce::TopLevelWindow::getTopLevelWindow(i))
-    //                         {
-    //                             if (auto* dw = dynamic_cast<juce::DialogWindow*>(window))
-    //                             {
-    //                                 if (dw->isVisible())
-    //                                 {
-    //                                     dialogVisible = true;
-    //                                     break;
-    //                                 }
-    //                             }
-    //                         }
-    //                     }
-    //                     
-    //                     if (!dialogVisible)
-    //                     {
-    //                         lastDialogShowTime = juce::Time::getCurrentTime();
-    //                         showLicenseDialog();
-    //                     }
-    //                 }
-    //             }
-    //         }
-    //     }
-    //     
-    //     // Don't update UI if license is invalid
-    //     return;
-    // }
-    
     // Update knob values and UI based on parameter values
     for (int i = 0; i < 8; ++i)
     {
@@ -1632,9 +1478,6 @@ void PluginEditor::timerCallback()
     // Update Saturate (Heat) sequencer UI
     updateSaturateSequencerUI();
     
-    // Update Filter sequencer UI
-    updateFilterSequencerUI();
-    
     // Update Dub Delay time label (handles sync mode display)
     updateDubDelayTimeLabel();
     
@@ -1655,17 +1498,77 @@ void PluginEditor::timerCallback()
             DBG("[SmallGainMeter] Updating with gain reduction: " << gainReduction << " dB");
         }
     }
+    
+    // Check license periodically
+    if (licenseManager && !licenseManager->isLicenseValid())
+    {
+        // Repaint to show overlay
+        repaint();
+        
+        // Check if we need to show/keep showing the license dialog
+        auto licenseInfo = licenseManager->getCurrentLicense();
+        // Re-open dialog if no license or invalid (check every 30 seconds)
+        // Only show if dialog isn't already visible and wasn't recently dismissed
+        static int checkCounter = 0;
+        checkCounter++;
+        
+        if ((checkCounter % 1875) == 0) // 1875 * 16ms = ~30 seconds, check every 30 seconds
+        {
+            // Check if we should show dialog (no license or invalid)
+            if (licenseInfo.licenseKey.isEmpty() || 
+                licenseInfo.status == GumroadLicenseStatus::Invalid ||
+                licenseInfo.status == GumroadLicenseStatus::Refunded ||
+                licenseInfo.status == GumroadLicenseStatus::Disputed)
+            {
+                // Only show if we haven't shown one recently and user hasn't dismissed it
+                auto timeSinceLastShow = juce::Time::getCurrentTime() - lastLicenseDialogShowTime;
+                if (timeSinceLastShow.inMilliseconds() > 30000 && !licenseDialogDismissed) // 30 second minimum between shows
+                {
+                    // Check if dialog is already visible by checking for focused DialogWindow
+                    bool dialogVisible = false;
+                    if (auto* focused = juce::Component::getCurrentlyFocusedComponent())
+                    {
+                        if (focused->findParentComponentOfClass<juce::DialogWindow>() != nullptr)
+                            dialogVisible = true;
+                    }
+                    // Also check all top-level windows
+                    for (int i = 0; i < juce::TopLevelWindow::getNumTopLevelWindows(); ++i)
+                    {
+                        if (auto* window = juce::TopLevelWindow::getTopLevelWindow(i))
+                        {
+                            if (auto* dw = dynamic_cast<juce::DialogWindow*>(window))
+                            {
+                                if (dw->isVisible())
+                                {
+                                    dialogVisible = true;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    
+                    if (!dialogVisible)
+                    {
+                        lastLicenseDialogShowTime = juce::Time::getCurrentTime();
+                        licenseDialogDismissed = false; // Reset flag when showing again
+                        showLicenseDialog();
+                    }
+                }
+            }
+            else
+            {
+                // License is valid, reset dismissed flag
+                licenseDialogDismissed = false;
+            }
+        }
+        
+        // Don't update UI if license is invalid
+        return;
+    }
 }
 
 bool PluginEditor::keyPressed(const juce::KeyPress& key)
 {
-    // License dialog shortcut: Cmd+L (Mac) or Ctrl+L (Windows/Linux)
-    if (key.getModifiers().isCommandDown() && key.getKeyCode() == juce::KeyPress::createFromDescription("l").getKeyCode())
-    {
-        showLicenseDialog();
-        return true;
-    }
-    
     // If any step amount TextEditor has focus, let it handle the keypress
     if (autopanStepAmountLabel && autopanStepAmountLabel->hasKeyboardFocus(true)) {
         return false; // Let the TextEditor handle it
@@ -1689,54 +1592,18 @@ bool PluginEditor::keyPressed(const juce::KeyPress& key)
         return false; // Let the TextEditor handle it (if we convert Delay page too)
     }
     
-    // Otherwise, let the parent class handle it
-    return false; // Don't consume the key, pass it up the chain
-}
-
-//==============================================================================
-// Gumroad License Management Implementation
-//==============================================================================
-
-void PluginEditor::checkLicenseOnStartup()
-{
-    auto* licenseMgr = processorRef.getLicenseManager();
-    if (licenseMgr == nullptr)
-        return;
-    
-    // Check if license is valid
-    if (!licenseMgr->isLicenseValid())
+    // License dialog shortcut: Cmd+L (Mac) or Ctrl+L (Windows)
+    if (key.getKeyCode() == 'L' || key.getKeyCode() == 'l')
     {
-        auto licenseInfo = licenseMgr->getCurrentLicense();
-        
-        // Show dialog if no license or invalid
-        if (licenseInfo.licenseKey.isEmpty() || 
-            licenseInfo.status == GumroadLicenseStatus::Invalid ||
-            licenseInfo.status == GumroadLicenseStatus::Refunded ||
-            licenseInfo.status == GumroadLicenseStatus::Disputed)
+        if (key.getModifiers().isCommandDown() || key.getModifiers().isCtrlDown())
         {
-            // Delay showing dialog slightly to allow UI to fully initialize
-            juce::Timer::callAfterDelay(500, [this]() {
                 showLicenseDialog();
-            });
+            return true; // Consume the key
         }
     }
-    else
-    {
-        auto licenseInfo = licenseMgr->getCurrentLicense();
-        DBG("[Gumroad] Valid license found on startup: " << licenseInfo.email);
-    }
-}
-
-void PluginEditor::showLicenseDialog()
-{
-    auto* licenseMgr = processorRef.getLicenseManager();
-    if (licenseMgr == nullptr)
-    {
-        DBG("[Gumroad] License manager not available - product ID may not be set");
-        return;
-    }
     
-    GumroadLicenseDialog::showDialog(this, licenseMgr);
+    // Otherwise, let the parent class handle it
+    return false; // Don't consume the key, pass it up the chain
 }
 
 //==============================================================================
@@ -1811,15 +1678,8 @@ void LockButton::paintButton(juce::Graphics& g, bool over, bool down)
     
     if (imageToDraw != nullptr)
     {
-        auto drawBounds = bounds.reduced(static_cast<float>(juce::jmax(0, iconInset)));
-        if (drawBounds.getWidth() <= 0.0f || drawBounds.getHeight() <= 0.0f)
-            drawBounds = bounds;
-        
-        // Draw the image centred and scaled down if needed (never stretched larger than original)
-        imageToDraw->drawWithin(g,
-                                drawBounds,
-                                juce::RectanglePlacement::centred | juce::RectanglePlacement::onlyReduceInSize,
-                                buttonAlpha);
+        // Draw the image (alpha is already applied to the image itself)
+        imageToDraw->drawWithin(g, bounds, juce::RectanglePlacement::centred, 1.0f);
     }
     else
     {
@@ -1960,7 +1820,7 @@ void LockButton::setAlpha(float alpha)
         
         // Draw "R" label in the center
         g.setColour(juce::Colours::white);
-        g.setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", radius * 1.0f, juce::Font::bold));
+        g.setFont(juce::Font(radius * 1.0f, juce::Font::bold));
         g.drawText("R", bounds, juce::Justification::centred);
     }
 
@@ -2090,7 +1950,7 @@ void CircularToggleButton::paintButton(juce::Graphics& g, bool over, bool down)
     
     // Draw text (black)
     g.setColour(juce::Colours::black);
-    g.setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 14.0f, juce::Font::bold));
+    g.setFont(juce::Font(14.0f, juce::Font::bold));
     g.drawText(getButtonText(), bounds, juce::Justification::centred);
 }
 
@@ -2157,7 +2017,7 @@ void PresetSelectorButton::paintButton(juce::Graphics& g, bool over, bool down)
     
     // Draw preset name after the save icon, moved right 30px
     g.setColour(juce::Colours::white);
-    g.setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 13.0f, juce::Font::plain));
+    g.setFont(juce::Font(13.0f, juce::Font::plain));
     auto textArea = juce::Rectangle<float>(bounds.getX() + 15 + 16 + 8 + 30, bounds.getY(), bounds.getWidth() - 80, bounds.getHeight());
     auto textBounds = g.getCurrentFont().getStringWidth(presetName);
     g.drawText(presetName, textArea, juce::Justification::centredLeft);
@@ -2269,7 +2129,7 @@ void StepButton::paintButton(juce::Graphics& g, bool over, bool down)
         
         // Draw step number
         g.setColour(juce::Colours::black.withAlpha(stepOpacity));
-        g.setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 12.0f, juce::Font::plain));
+        g.setFont(12.0f);
         g.drawText(juce::String(stepIndex + 1), bounds, juce::Justification::centred);
     }
     
@@ -2472,7 +2332,7 @@ void PluginEditor::setupKnobs()
         // Create label
         knobLabels[i] = std::make_unique<juce::Label>();
         knobLabels[i]->setText(knobNames[i], juce::dontSendNotification);
-        knobLabels[i]->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 12.0f, juce::Font::bold));
+        knobLabels[i]->setFont(juce::Font(12.0f, juce::Font::bold));
         knobLabels[i]->setColour(juce::Label::textColourId, juce::Colours::white);
         knobLabels[i]->setJustificationType(juce::Justification::centred);
         addAndMakeVisible(knobLabels[i].get());
@@ -2481,7 +2341,7 @@ void PluginEditor::setupKnobs()
         // Create value label
         valueLabels[i] = std::make_unique<juce::Label>();
         valueLabels[i]->setText("0", juce::dontSendNotification);
-        valueLabels[i]->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 10.0f, juce::Font::plain));
+        valueLabels[i]->setFont(juce::Font(10.0f, juce::Font::plain));
         valueLabels[i]->setColour(juce::Label::textColourId, juce::Colours::white);
         valueLabels[i]->setJustificationType(juce::Justification::centred);
         addAndMakeVisible(valueLabels[i].get());
@@ -2498,10 +2358,29 @@ void PluginEditor::setupKnobs()
             // Explicitly keep hidden
             knobDiceButtons[i]->setVisible(false);
             
-        // Position lock button to match Space Delay baseline layout
+            // Calculate text width and position dice button accordingly
+            const int diceSize = 10; // 20% bigger: 8 * 1.2 = 9.6, rounded to 10
+            const int diceSpacing = 5; // Fixed distance from end of title text
+            
+            // Get the font used for knob labels
+            juce::Font labelFont(12.0f, juce::Font::bold);
+            
+            // Calculate the width of the knob title text
+            int textWidth = labelFont.getStringWidth(knobNames[i]);
+            
+            // Position dice button at the end of the title text + fixed spacing
+            int diceX = x + (knobSize / 2) + (textWidth / 2) + diceSpacing;
+            int diceY = y - 10; // Moved up 3px from -7 to -10
+            
+            // Remember dice button bounds to reuse for lock button sizing/placement
+            const int lockX = diceX;
+            const int lockY = diceY;
+            
+            // Set the dice image
+            // Set up lock button replacing dice
         knobLockButtons[i] = std::make_unique<LockButton>();
         addAndMakeVisible(knobLockButtons[i].get());
-        positionLockButton(knobLockButtons[i].get(), knobLabels[i].get(), y);
+            knobLockButtons[i]->setBounds(lockX, lockY, diceSize, diceSize);
             
             // Configure images for on/off states
             std::unique_ptr<juce::Drawable> imgUnlocked, imgLocked;
@@ -2548,7 +2427,7 @@ void PluginEditor::setupMasterKnobs()
     // Create "MASTER" title in master area (top-left corner, 10px right)
     masterTitle = std::make_unique<juce::Label>();
     masterTitle->setText("MASTER", juce::dontSendNotification);
-    masterTitle->setFont(FontManager::getInstance().getFont("Akira Expanded", 18.5796875f, juce::Font::bold).withExtraKerningFactor(0.09f)); // 10% bigger: 16.890625 * 1.1 = 18.5796875, with 10% less letter spacing: 0.1 * 0.9 = 0.09
+    masterTitle->setFont(juce::Font(23.5f, juce::Font::bold)); // 15% smaller: 27.648 * 0.85 = 23.5
     masterTitle->setColour(juce::Label::textColourId, juce::Colours::white);
     masterTitle->setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(masterTitle.get());
@@ -3352,7 +3231,7 @@ void PluginEditor::setupMasterKnobs()
             // Create master label (title above knob)
             masterLabels[i] = std::make_unique<juce::Label>();
             masterLabels[i]->setText(masterKnobNames[i], juce::dontSendNotification);
-            masterLabels[i]->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 15.6f, juce::Font::bold)); // 30% larger: 12.0f * 1.3 = 15.6f
+            masterLabels[i]->setFont(juce::Font(12.0f, juce::Font::bold));
             masterLabels[i]->setColour(juce::Label::textColourId, juce::Colours::white);
             masterLabels[i]->setJustificationType(juce::Justification::centred);
             addAndMakeVisible(masterLabels[i].get());
@@ -3366,7 +3245,7 @@ void PluginEditor::setupMasterKnobs()
             } else { // Input and Output knobs
                 masterValueLabels[i]->setText("0.0 dB", juce::dontSendNotification);
             }
-            masterValueLabels[i]->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 10.0f, juce::Font::plain));
+            masterValueLabels[i]->setFont(juce::Font(10.0f, juce::Font::plain));
             masterValueLabels[i]->setColour(juce::Label::textColourId, juce::Colours::white);
             masterValueLabels[i]->setJustificationType(juce::Justification::centred);
             addAndMakeVisible(masterValueLabels[i].get());
@@ -3577,7 +3456,7 @@ void PluginEditor::setupMasterKnobs()
             // Create macro label (title above knob)
             macroLabels[i] = std::make_unique<juce::Label>();
             macroLabels[i]->setText(macroKnobNames[i], juce::dontSendNotification);
-            macroLabels[i]->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 12.0f, juce::Font::bold));
+            macroLabels[i]->setFont(juce::Font(12.0f, juce::Font::bold));
             macroLabels[i]->setColour(juce::Label::textColourId, juce::Colours::white);
             macroLabels[i]->setJustificationType(juce::Justification::centred);
             addAndMakeVisible(macroLabels[i].get());
@@ -3620,7 +3499,7 @@ void PluginEditor::setupMasterKnobs()
         // Create "EFFECT" title
         effectsTitle = std::make_unique<juce::Label>();
         effectsTitle->setText("EFFECT", juce::dontSendNotification);
-        effectsTitle->setFont(FontManager::getInstance().getFont("Akira Expanded", 18.6624f, juce::Font::bold).withExtraKerningFactor(0.09f)); // 10% smaller: 20.736f * 0.9 = 18.6624f, with 10% less letter spacing: 0.1 * 0.9 = 0.09
+        effectsTitle->setFont(juce::Font(27.648f, juce::Font::bold)); // 20% bigger: 23.04f * 1.2 = 27.648f
         effectsTitle->setColour(juce::Label::textColourId, juce::Colours::white);
         effectsTitle->setJustificationType(juce::Justification::centredLeft);
         addAndMakeVisible(effectsTitle.get());
@@ -3660,7 +3539,7 @@ void PluginEditor::setupMasterKnobs()
             } else {
                 g.drawEllipse(centre.x - radius, centre.y - radius, radius*2, radius*2, 2.0f);
             }
-            g.setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 10.0f, juce::Font::bold));
+            g.setFont(juce::Font(10.0f, juce::Font::bold));
             g.drawText("S", r, juce::Justification::centred);
         }
     };
@@ -3753,7 +3632,7 @@ void PluginEditor::setupSpaceDelayUI()
     effectTypeDropdown->addItem("Chorus", 4);
     effectTypeDropdown->addItem("Hall", 5);
     effectTypeDropdown->addItem("Grain", 6);
-    effectTypeDropdown->addItem("Slice", 7);
+    effectTypeDropdown->addItem("Slicer", 7);
     effectTypeDropdown->addItem("Dub Echo", 8);
     effectTypeDropdown->addItem("Redux", 9);
     effectTypeDropdown->addItem("PhaseBloom", 10);
@@ -3977,7 +3856,7 @@ void PluginEditor::setupAllStepsToggle()
     // Create "All Steps" label
     allStepsLabel = std::make_unique<juce::Label>();
     allStepsLabel->setText("All Steps", juce::dontSendNotification);
-    allStepsLabel->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 14.4f, juce::Font::bold)); // 12.0f * 1.2 = 14.4f (20% bigger)
+    allStepsLabel->setFont(juce::Font(14.4f, juce::Font::bold)); // 12.0f * 1.2 = 14.4f (20% bigger)
     allStepsLabel->setColour(juce::Label::textColourId, juce::Colours::white);
     allStepsLabel->setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(allStepsLabel.get());
@@ -4002,7 +3881,7 @@ void PluginEditor::setupSequencerArea()
     // Create STEP title (top left, moved down 10px total and 20% smaller)
     stepTitle = std::make_unique<juce::Label>();
     stepTitle->setText("STEP", juce::dontSendNotification);
-    stepTitle->setFont(FontManager::getInstance().getFont("Akira Expanded", 13.436685f, juce::Font::bold).withExtraKerningFactor(0.09f)); // Adjusted size with 10% less letter spacing: 0.1 * 0.9 = 0.09
+    stepTitle->setFont(juce::Font(22.118f, juce::Font::bold)); // 20% smaller: 27.648f * 0.8 = 22.118f
     stepTitle->setColour(juce::Label::textColourId, juce::Colours::white);
     stepTitle->setColour(juce::Label::backgroundColourId, juce::Colours::transparentBlack);
     stepTitle->setJustificationType(juce::Justification::centredLeft);
@@ -4015,124 +3894,8 @@ void PluginEditor::setupSequencerArea()
     int stepDiceSize = static_cast<int>(35 * 0.7); // 30% smaller than 35px = ~24px
     stepDiceButton->setBounds(stepArea.getX() + 75, stepArea.getY() + 5, stepDiceSize, stepDiceSize); // Moved down another 10px and left another 10px
     
-    // Set up step dice button callback to randomize current step based on active effect
+    // Set up step dice button callback to randomize all Space Delay step snapshots
     stepDiceButton->onClick = [this]() {
-        // Check which effect is on the current page
-        auto& router = processorRef.getEffectRouter();
-        
-        // Determine which slot corresponds to currentPage
-        int slotIndex = 0; // Default to slot 0
-        if (currentPage == FxPageID::Panner) slotIndex = 1;
-        else if (currentPage == FxPageID::Dirt) slotIndex = 2;
-        else if (currentPage == FxPageID::Chorus) slotIndex = 3;
-        
-        EffectID assignedEffect = router.getEffectInSlot(static_cast<SlotID>(slotIndex));
-        
-        // If Filter is the current effect, randomize the current filter step
-        if (assignedEffect == EffectID::Filter) {
-            DBG("[UI] Filter step dice button clicked - randomizing current step");
-            
-            // Get current filter selected step
-            int currentStep = processorRef.getFilterSelectedStep();
-            if (currentStep < 0 || currentStep >= 16) {
-                currentStep = 0; // Fallback to step 0
-            }
-            
-            // Get current snapshot
-            auto snapshot = processorRef.getFilterSafeSnapshot(currentStep);
-            
-            // Randomize each parameter (respecting lock states from filterKnobLocked array)
-            // Note: filterKnobLocked indices: 0=Type, 1=Cutoff, 2=Res, 3=Slope, 4=Drive, 5=Spread (removed), 6=Key Track, 7=Mix
-            if (!filterKnobLocked[0]) { // Type
-                snapshot.filter.type = static_cast<float>(juce::Random::getSystemRandom().nextInt(5)); // 0-4
-            }
-            if (!filterKnobLocked[1]) { // Cutoff - randomize normalized value (0-1)
-                snapshot.filter.cutoff = juce::Random::getSystemRandom().nextFloat() * (20000.0f - 20.0f) + 20.0f; // 20-20000Hz
-            }
-            if (!filterKnobLocked[2]) { // Resonance
-                snapshot.filter.resonance = juce::Random::getSystemRandom().nextFloat(); // 0-1
-            }
-            if (!filterKnobLocked[3]) { // Slope
-                snapshot.filter.slope = static_cast<float>(juce::Random::getSystemRandom().nextInt(2)); // 0 or 1
-            }
-            if (!filterKnobLocked[4]) { // Drive
-                snapshot.filter.drive = juce::Random::getSystemRandom().nextFloat() * 36.0f; // 0-36 dB
-            }
-            if (!filterKnobLocked[6]) { // Key Track
-                snapshot.filter.keytrack = juce::Random::getSystemRandom().nextFloat(); // 0-1
-            }
-            // Mix (filterKnobLocked[7]) is global, not randomized per step
-            
-            // Save the randomized snapshot
-            processorRef.setFilterStepSnapshot(currentStep, snapshot);
-            
-            // Update UI to reflect changes - load the randomized values into filter knobs
-            if (filterTypeKnob) {
-                filterTypeKnob->setValue(snapshot.filter.type, juce::sendNotification);
-            }
-            if (filterKnobs[0]) { // Cutoff
-                auto* param = processorRef.getAPVTS().getParameter("cutoff");
-                if (param) {
-                    // Convert frequency to normalized value using reverse of the conversion logic
-                    float normalized = snapshot.filter.cutoff <= 5000.0f
-                        ? (snapshot.filter.cutoff - 20.0f) / (5000.0f - 20.0f) * 0.75f
-                        : 0.75f + 0.25f * (std::log(snapshot.filter.cutoff / 5000.0f) / std::log(4.0f));
-                    normalized = juce::jlimit(0.0f, 1.0f, normalized);
-                    filterKnobs[0]->setValue(normalized, juce::sendNotification);
-                }
-            }
-            if (filterKnobs[1]) { // Resonance
-                filterKnobs[1]->setValue(snapshot.filter.resonance, juce::sendNotification);
-            }
-            if (filterSlopeKnob) {
-                filterSlopeKnob->setValue(snapshot.filter.slope, juce::sendNotification);
-            }
-            if (filterKnobs[2]) { // Drive
-                filterKnobs[2]->setValue(snapshot.filter.drive, juce::sendNotification);
-            }
-            if (filterKnobs[3]) { // Key Track
-                filterKnobs[3]->setValue(snapshot.filter.keytrack, juce::sendNotification);
-            }
-            
-            // Update value labels manually
-            if (filterValueLabels[0]) {
-                juce::String types[] = {"LP", "HP", "BP", "Comb-", "Comb+"};
-                int idx = static_cast<int>(snapshot.filter.type);
-                if (idx >= 0 && idx < 5) {
-                    filterValueLabels[0]->setText(types[idx], juce::dontSendNotification);
-                }
-            }
-            if (filterValueLabels[1] && filterKnobs[0]) { // Cutoff
-                float value = filterKnobs[0]->getValue();
-                float freq = value <= 0.75f 
-                    ? 20.0f + (5000.0f - 20.0f) * (value / 0.75f)
-                    : 5000.0f * std::pow(4.0f, (value - 0.75f) / 0.25f);
-                filterValueLabels[1]->setText(juce::String(static_cast<int>(freq)) + " Hz", juce::dontSendNotification);
-            }
-            if (filterValueLabels[2] && filterKnobs[1]) { // Resonance
-                filterValueLabels[2]->setText(juce::String(static_cast<int>(filterKnobs[1]->getValue() * 100)) + "%", juce::dontSendNotification);
-            }
-            if (filterValueLabels[3] && filterSlopeKnob) { // Slope
-                filterValueLabels[3]->setText(filterSlopeKnob->getValue() > 0.5f ? "24dB" : "12dB", juce::dontSendNotification);
-            }
-            if (filterValueLabels[4] && filterKnobs[2]) { // Drive
-                auto* driveParam = processorRef.getAPVTS().getParameter("filterDrive");
-                if (driveParam) {
-                    float normalized = driveParam->getValue();
-                    float driveDb = driveParam->convertFrom0to1(normalized);
-                    float drivePercent = (driveDb / 36.0f) * 100.0f;
-                    filterValueLabels[4]->setText(juce::String(static_cast<int>(drivePercent)) + "%", juce::dontSendNotification);
-                }
-            }
-            if (filterValueLabels[5] && filterKnobs[3]) { // Key Track
-                filterValueLabels[5]->setText(juce::String(static_cast<int>(filterKnobs[3]->getValue() * 100)) + "%", juce::dontSendNotification);
-            }
-            
-            DBG("[UI] Filter step " << currentStep << " randomized");
-            return;
-        }
-        
-        // Otherwise, handle Space Delay (original behavior)
         DBG("[UI] Space Delay step dice button clicked - randomizing all step snapshots");
         
         for (int step = 0; step < 16; ++step) {
@@ -4262,7 +4025,7 @@ void PluginEditor::setupSequencerArea()
     // Create step amount label with white border (top right)
     stepAmountLabel = std::make_unique<juce::Label>();
     stepAmountLabel->setText("16", juce::dontSendNotification);
-    stepAmountLabel->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 16.0f, juce::Font::bold));
+    stepAmountLabel->setFont(juce::Font(16.0f, juce::Font::bold));
     stepAmountLabel->setColour(juce::Label::textColourId, juce::Colours::white);
     stepAmountLabel->setColour(juce::Label::backgroundColourId, juce::Colours::transparentBlack);
     stepAmountLabel->setColour(juce::Label::outlineColourId, juce::Colours::white);
@@ -4857,13 +4620,12 @@ void PluginEditor::setupTabSystem()
         selector->addItem("Chorus", 4);
         selector->addItem("Hall", 5);
         selector->addItem("Grain", 6);
-        selector->addItem("Slice", 7);
+        selector->addItem("Slicer", 7);
         selector->addItem("Dub Echo", 8);
         selector->addItem("Redux", 9);
         selector->addItem("PhaseBloom", 10);
-        selector->addItem("Form", 11);
+        selector->addItem("Formant", 11);
         selector->addItem("Heat", 12); // Sequential ID for EffectID::Saturate (12)
-        selector->addItem("Filter", 14); // ID 14 for EffectID::Filter (13)
         
         int numItems = selector->getNumItems();
         DBG("[UI] Added dropdown items - total: " << numItems);
@@ -5233,7 +4995,6 @@ void PluginEditor::showPage(FxPageID id)
     setVisibleVec(formantGroup, false);
     setVisibleVec(saturateGroup, false);
     setVisibleVec(form2Group, false);
-    setVisibleVec(filterGroup, false);
     
     // Show only the group for the effect assigned to this slot
     switch (assignedEffect)
@@ -5474,56 +5235,12 @@ void PluginEditor::showPage(FxPageID id)
             break;
         case EffectID::Saturate:
             DBG("[ROUTER] Showing Saturate UI for slot " << slotIndex);
-            
-            // Ensure type is set to Clean (0) before showing to prevent pop
-            {
-                auto* typeParam = processorRef.getAPVTS().getParameter("satType");
-                if (typeParam) {
-                    typeParam->setValueNotifyingHost(0.0f); // 0/7 = Clean
-                }
-                if (saturateKnobs[0]) {
-                    saturateKnobs[0]->setValue(0.0f, juce::dontSendNotification);
-                }
-            }
-            
             setVisibleVec(saturateGroup, true);
-            
-            // Explicitly hide Type knob and its components (they shouldn't be in group, but hide just in case)
-            if (saturateKnobs[0]) {
-                saturateKnobs[0]->setVisible(false);
-                saturateKnobs[0]->setEnabled(false);
-                saturateKnobs[0]->setAlpha(0.0f); // Make completely invisible
-            }
-            if (saturateKnobLabels[0]) {
-                saturateKnobLabels[0]->setVisible(false);
-                saturateKnobLabels[0]->setAlpha(0.0f);
-            }
-            if (saturateValueLabels[0]) {
-                saturateValueLabels[0]->setVisible(false);
-                saturateValueLabels[0]->setAlpha(0.0f);
-            }
-            if (saturateIndicatorBars[0]) {
-                saturateIndicatorBars[0]->setVisible(false);
-                saturateIndicatorBars[0]->setAlpha(0.0f);
-            }
-            if (saturateLockButtons[0]) {
-                saturateLockButtons[0]->setVisible(false);
-                saturateLockButtons[0]->setAlpha(0.0f);
-            }
             
             // Restore UI state from APVTS parameters
             {
                 auto* fxEnabledParam = processorRef.getAPVTS().getRawParameterValue("saturateEnabled");
-                // If parameter doesn't exist or is false, set it to true (default ON)
-                if (!fxEnabledParam || fxEnabledParam->load() <= 0.5f) {
-                    auto* param = processorRef.getAPVTS().getParameter("saturateEnabled");
-                    if (param) {
-                        param->setValueNotifyingHost(1.0f); // Set to true
-                    }
-                    saturateFxAreaEnabled = true;
-                } else {
-                    saturateFxAreaEnabled = fxEnabledParam->load() > 0.5f;
-                }
+                saturateFxAreaEnabled = fxEnabledParam ? (fxEnabledParam->load() > 0.5f) : true; // Default ON
                 
                 if (saturateFxPowerButton) {
                     saturateFxPowerButton->setToggleState(saturateFxAreaEnabled, juce::dontSendNotification);
@@ -5539,11 +5256,8 @@ void PluginEditor::showPage(FxPageID id)
                 updateSaturateStepAreaVisibility();
             }
             
-            // Ensure type is Clean (0) and update labels/layout immediately
-            updateSaturateKnobLabels(0); // This will hide Level knob and reposition Mix
-            
-            // Trigger initial value label updates (skip Type knob index 0)
-            for (int i = 1; i < 7; ++i) {
+            // Trigger initial value label updates (8 knobs)
+            for (int i = 0; i < 8; ++i) {
                 if (saturateKnobs[i]) {
                     saturateKnobs[i]->onValueChange();
                 }
@@ -5555,44 +5269,6 @@ void PluginEditor::showPage(FxPageID id)
             updateSaturateSequencerUI();
             
             DBG("[ROUTER] ✓ Saturate group shown");
-            break;
-        case EffectID::Filter:
-            DBG("[ROUTER] Showing Filter UI for slot " << slotIndex);
-            setVisibleVec(filterGroup, true);
-            
-            // Restore UI state from APVTS parameters
-            {
-                auto* fxEnabledParam = processorRef.getAPVTS().getRawParameterValue("filterEnabled");
-                filterFxAreaEnabled = fxEnabledParam ? (fxEnabledParam->load() > 0.5f) : true; // Default ON
-                
-                if (filterFxPowerButton) {
-                    filterFxPowerButton->setToggleState(filterFxAreaEnabled, juce::dontSendNotification);
-                }
-                
-                // Restore sequencer enabled state
-                // filterStepAreaEnabled = processorRef.getFilterSeqState().enabled.load(); // TODO: Implement getFilterSeqState
-                filterStepAreaEnabled = true; // Temporary default
-                if (filterStepPowerButton) {
-                    filterStepPowerButton->setToggleState(filterStepAreaEnabled, juce::dontSendNotification);
-                }
-                
-                //                 updateFilterFxAreaVisibility();
-                //                 updateFilterStepAreaVisibility();
-            }
-            
-            // Trigger initial value label updates
-            if (filterTypeKnob) filterTypeKnob->onValueChange();
-            if (filterSlopeKnob) filterSlopeKnob->onValueChange();
-            for (int i = 0; i < 5; ++i) { // 5 knobs (Spread removed)
-                if (filterKnobs[i]) {
-                    filterKnobs[i]->onValueChange();
-                }
-            }
-            
-            filterUiSelectedStep = 0;
-            processorRef.setFilterSelectedStep(0);
-            updateFilterSequencerUI();
-            DBG("[ROUTER] ✓ Filter group shown");
             break;
         case EffectID::Form2:
             DBG("[ROUTER] Form 2 case triggered - form2Group size: " << form2Group.size());
@@ -5792,7 +5468,7 @@ void PluginEditor::setupAutoPanKnobs()
         // Create knob label (EXACT same positioning as delay page)
         autopanKnobLabels[i] = std::make_unique<juce::Label>();
         autopanKnobLabels[i]->setText(autopanKnobNames[i], juce::dontSendNotification);
-        autopanKnobLabels[i]->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 12.0f, juce::Font::bold));
+        autopanKnobLabels[i]->setFont(juce::Font(12.0f, juce::Font::bold));
         autopanKnobLabels[i]->setColour(juce::Label::textColourId, juce::Colours::white);
         autopanKnobLabels[i]->setJustificationType(juce::Justification::centred);
         addAndMakeVisible(autopanKnobLabels[i].get());
@@ -5802,7 +5478,7 @@ void PluginEditor::setupAutoPanKnobs()
         // Create value label (EXACT same positioning as delay page)
         autopanValueLabels[i] = std::make_unique<juce::Label>();
         autopanValueLabels[i]->setText("0", juce::dontSendNotification);
-        autopanValueLabels[i]->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 10.0f, juce::Font::plain));
+        autopanValueLabels[i]->setFont(juce::Font(10.0f, juce::Font::plain));
         autopanValueLabels[i]->setColour(juce::Label::textColourId, juce::Colours::white);
         autopanValueLabels[i]->setJustificationType(juce::Justification::centred);
         addAndMakeVisible(autopanValueLabels[i].get());
@@ -5826,7 +5502,21 @@ void PluginEditor::setupAutoPanKnobs()
         addAndMakeVisible(autopanLockButtons[i].get());
         autopanLockButtons[i]->setVisible(false); // Initially hidden until AutoPan page is selected
         
-        positionLockButton(autopanLockButtons[i].get(), autopanKnobLabels[i].get(), y);
+        // Calculate text width and position lock button accordingly (EXACT same logic as delay page)
+        const int diceSize = 10; // 20% bigger: 8 * 1.2 = 9.6, rounded to 10
+        const int diceSpacing = 5; // Fixed distance from end of title text
+        
+        // Get the font used for knob labels
+        juce::Font labelFont(12.0f, juce::Font::bold);
+        
+        // Calculate the width of the knob title text
+        int textWidth = labelFont.getStringWidth(autopanKnobNames[i]);
+        
+        // Position lock button at the end of the title text + fixed spacing
+        int lockX = x + (knobSize / 2) + (textWidth / 2) + diceSpacing;
+        int lockY = y - 10; // Moved up 3px from -7 to -10
+        
+        autopanLockButtons[i]->setBounds(lockX, lockY, diceSize, diceSize);
         
         // Configure images for on/off states (EXACT same as delay page)
         std::unique_ptr<juce::Drawable> imgUnlocked, imgLocked;
@@ -5854,7 +5544,7 @@ void PluginEditor::setupAutoPanEffectsArea()
     // Create "EFFECT" title (EXACT same as delay page)
     autopanEffectsTitle = std::make_unique<juce::Label>();
     autopanEffectsTitle->setText("EFFECT", juce::dontSendNotification);
-    autopanEffectsTitle->setFont(FontManager::getInstance().getFont("Akira Expanded", 18.6624f, juce::Font::bold).withExtraKerningFactor(0.1f)); // 10% smaller: 20.736f * 0.9 = 18.6624f, with letter spacing
+    autopanEffectsTitle->setFont(juce::Font(27.648f, juce::Font::bold)); // EXACT same as delay page
     autopanEffectsTitle->setColour(juce::Label::textColourId, juce::Colours::white);
     autopanEffectsTitle->setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(autopanEffectsTitle.get());
@@ -5895,7 +5585,7 @@ void PluginEditor::setupAutoPanEffectsArea()
             } else {
                 g.drawEllipse(centre.x - radius, centre.y - radius, radius*2, radius*2, 2.0f);
             }
-            g.setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 10.0f, juce::Font::bold));
+            g.setFont(juce::Font(10.0f, juce::Font::bold));
             g.drawText("S", r, juce::Justification::centred);
         }
     };
@@ -5996,7 +5686,7 @@ void PluginEditor::setupAutoPanSequencerArea()
     // Create step title
     autopanStepTitle = std::make_unique<juce::Label>();
     autopanStepTitle->setText("STEP", juce::dontSendNotification);
-    autopanStepTitle->setFont(FontManager::getInstance().getFont("Akira Expanded", 13.436685f, juce::Font::bold).withExtraKerningFactor(0.09f)); // Adjusted size with 10% less letter spacing: 0.1 * 0.9 = 0.09
+    autopanStepTitle->setFont(juce::Font(22.118f, juce::Font::bold)); // 20% smaller: 27.648f * 0.8 = 22.118f
     autopanStepTitle->setColour(juce::Label::textColourId, juce::Colours::white);
     autopanStepTitle->setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(autopanStepTitle.get());
@@ -6045,7 +5735,7 @@ void PluginEditor::setupAutoPanSequencerArea()
     };
     autopanStepAmountLabel = std::make_unique<DebugTextEditor>();
     autopanStepAmountLabel->setText("16");
-    autopanStepAmountLabel->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 16.0f, juce::Font::bold));
+    autopanStepAmountLabel->setFont(juce::Font(16.0f, juce::Font::bold));
     autopanStepAmountLabel->setColour(juce::TextEditor::textColourId, juce::Colours::white);
     autopanStepAmountLabel->setColour(juce::TextEditor::backgroundColourId, juce::Colours::transparentBlack);
     autopanStepAmountLabel->setColour(juce::TextEditor::outlineColourId, juce::Colours::white);
@@ -6281,7 +5971,7 @@ void PluginEditor::setupAutoPanAllStepsToggle()
     // Create "All Steps" label
     autopanAllStepsLabel = std::make_unique<juce::Label>();
     autopanAllStepsLabel->setText("All Steps", juce::dontSendNotification);
-    autopanAllStepsLabel->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 14.4f, juce::Font::bold)); // 12.0f * 1.2 = 14.4f (20% bigger)
+    autopanAllStepsLabel->setFont(juce::Font(14.4f, juce::Font::bold)); // 12.0f * 1.2 = 14.4f (20% bigger)
     autopanAllStepsLabel->setColour(juce::Label::textColourId, juce::Colours::white);
     autopanAllStepsLabel->setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(autopanAllStepsLabel.get());
@@ -6328,7 +6018,7 @@ void PluginEditor::setupSpaceDelayAllStepsToggle()
     // Create "All Steps" label
     spaceDelayAllStepsLabel = std::make_unique<juce::Label>();
     spaceDelayAllStepsLabel->setText("All Steps", juce::dontSendNotification);
-    spaceDelayAllStepsLabel->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 14.4f, juce::Font::bold)); // 12.0f * 1.2 = 14.4f (20% bigger)
+    spaceDelayAllStepsLabel->setFont(juce::Font(14.4f, juce::Font::bold)); // 12.0f * 1.2 = 14.4f (20% bigger)
     spaceDelayAllStepsLabel->setColour(juce::Label::textColourId, juce::Colours::white);
     spaceDelayAllStepsLabel->setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(spaceDelayAllStepsLabel.get());
@@ -6467,7 +6157,7 @@ void PluginEditor::setupDirtKnobs()
         // Create knob label (EXACT same positioning as AutoPan page)
         dirtKnobLabels[i] = std::make_unique<juce::Label>();
         dirtKnobLabels[i]->setText(dirtKnobNames[i], juce::dontSendNotification);
-        dirtKnobLabels[i]->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 12.0f, juce::Font::bold));
+        dirtKnobLabels[i]->setFont(juce::Font(12.0f, juce::Font::bold));
         dirtKnobLabels[i]->setColour(juce::Label::textColourId, juce::Colours::white);
         dirtKnobLabels[i]->setJustificationType(juce::Justification::centred);
         addAndMakeVisible(dirtKnobLabels[i].get());
@@ -6477,7 +6167,7 @@ void PluginEditor::setupDirtKnobs()
         // Create value label (EXACT same positioning as AutoPan page)
         dirtValueLabels[i] = std::make_unique<juce::Label>();
         dirtValueLabels[i]->setText("0", juce::dontSendNotification);
-        dirtValueLabels[i]->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 10.0f, juce::Font::plain));
+        dirtValueLabels[i]->setFont(juce::Font(10.0f, juce::Font::plain));
         dirtValueLabels[i]->setColour(juce::Label::textColourId, juce::Colours::white);
         dirtValueLabels[i]->setJustificationType(juce::Justification::centred);
         addAndMakeVisible(dirtValueLabels[i].get());
@@ -6500,7 +6190,15 @@ void PluginEditor::setupDirtKnobs()
         addAndMakeVisible(dirtLockButtons[i].get());
         dirtLockButtons[i]->setVisible(false);
         
-        positionLockButton(dirtLockButtons[i].get(), dirtKnobLabels[i].get(), y);
+        const int diceSize = 10;
+        const int diceSpacing = 5;
+        
+        juce::Font labelFont(12.0f, juce::Font::bold);
+        int textWidth = labelFont.getStringWidth(dirtKnobNames[i]);
+        int lockX = x + (knobSize / 2) + (textWidth / 2) + diceSpacing;
+        int lockY = y - 10;
+        
+        dirtLockButtons[i]->setBounds(lockX, lockY, diceSize, diceSize);
         
         if (assets.unlockedIcon && assets.lockedIcon) {
             auto imgUnlocked = assets.unlockedIcon->createCopy();
@@ -6526,7 +6224,7 @@ void PluginEditor::setupDirtEffectsArea()
     // Create "EFFECT" title
     dirtEffectsTitle = std::make_unique<juce::Label>();
     dirtEffectsTitle->setText("EFFECT", juce::dontSendNotification);
-    dirtEffectsTitle->setFont(FontManager::getInstance().getFont("Akira Expanded", 18.6624f, juce::Font::bold).withExtraKerningFactor(0.1f)); // 10% smaller: 20.736f * 0.9 = 18.6624f, with letter spacing
+    dirtEffectsTitle->setFont(juce::Font(27.648f, juce::Font::bold));
     dirtEffectsTitle->setColour(juce::Label::textColourId, juce::Colours::white);
     dirtEffectsTitle->setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(dirtEffectsTitle.get());
@@ -6593,7 +6291,7 @@ void PluginEditor::setupDirtSequencerArea()
     // Create step title (EXACT same as AutoPan)
     dirtStepTitle = std::make_unique<juce::Label>();
     dirtStepTitle->setText("STEP", juce::dontSendNotification);
-    dirtStepTitle->setFont(FontManager::getInstance().getFont("Akira Expanded", 13.436685f, juce::Font::bold).withExtraKerningFactor(0.09f)); // Adjusted size with 10% less letter spacing: 0.1 * 0.9 = 0.09
+    dirtStepTitle->setFont(juce::Font(22.118f, juce::Font::bold)); // 20% smaller: 27.648f * 0.8 = 22.118f
     dirtStepTitle->setColour(juce::Label::textColourId, juce::Colours::white);
     dirtStepTitle->setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(dirtStepTitle.get());
@@ -6641,7 +6339,7 @@ void PluginEditor::setupDirtSequencerArea()
     };
     dirtStepAmountLabel = std::make_unique<DirtDebugTextEditor>();
     dirtStepAmountLabel->setText("16");
-    dirtStepAmountLabel->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 16.0f, juce::Font::bold));
+    dirtStepAmountLabel->setFont(juce::Font(16.0f, juce::Font::bold));
     dirtStepAmountLabel->setColour(juce::TextEditor::textColourId, juce::Colours::white);
     dirtStepAmountLabel->setColour(juce::TextEditor::backgroundColourId, juce::Colours::transparentBlack);
     dirtStepAmountLabel->setColour(juce::TextEditor::outlineColourId, juce::Colours::white);
@@ -6845,7 +6543,7 @@ void PluginEditor::setupDirtAllStepsToggle()
     
     dirtAllStepsLabel = std::make_unique<juce::Label>();
     dirtAllStepsLabel->setText("All Steps", juce::dontSendNotification);
-    dirtAllStepsLabel->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 14.4f, juce::Font::bold));
+    dirtAllStepsLabel->setFont(juce::Font(14.4f, juce::Font::bold));
     dirtAllStepsLabel->setColour(juce::Label::textColourId, juce::Colours::white);
     dirtAllStepsLabel->setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(dirtAllStepsLabel.get());
@@ -7274,7 +6972,7 @@ void PluginEditor::setupChorusKnobs()
         // Create label
         chorusKnobLabels[i] = std::make_unique<juce::Label>();
         chorusKnobLabels[i]->setText(chorusKnobNames[i], juce::dontSendNotification);
-        chorusKnobLabels[i]->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 12.0f, juce::Font::bold));
+        chorusKnobLabels[i]->setFont(juce::Font(12.0f, juce::Font::bold));
         chorusKnobLabels[i]->setColour(juce::Label::textColourId, juce::Colours::white);
         chorusKnobLabels[i]->setJustificationType(juce::Justification::centred);
         addAndMakeVisible(chorusKnobLabels[i].get());
@@ -7284,7 +6982,7 @@ void PluginEditor::setupChorusKnobs()
         // Create value label
         chorusValueLabels[i] = std::make_unique<juce::Label>();
         chorusValueLabels[i]->setText("0", juce::dontSendNotification);
-        chorusValueLabels[i]->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 10.0f, juce::Font::plain));
+        chorusValueLabels[i]->setFont(juce::Font(10.0f, juce::Font::plain));
         chorusValueLabels[i]->setColour(juce::Label::textColourId, juce::Colours::white);
         chorusValueLabels[i]->setJustificationType(juce::Justification::centred);
         addAndMakeVisible(chorusValueLabels[i].get());
@@ -7307,7 +7005,16 @@ void PluginEditor::setupChorusKnobs()
         addAndMakeVisible(chorusLockButtons[i].get());
         chorusLockButtons[i]->setVisible(false);
         
-        positionLockButton(chorusLockButtons[i].get(), chorusKnobLabels[i].get(), y);
+        const int diceSize = 10;
+        const int diceSpacing = 5;
+        
+        juce::Font labelFont(12.0f, juce::Font::bold);
+        int textWidth = labelFont.getStringWidth(chorusKnobNames[i]);
+        
+        int lockX = x + (knobSize / 2) + (textWidth / 2) + diceSpacing;
+        int lockY = y - 10;
+        
+        chorusLockButtons[i]->setBounds(lockX, lockY, diceSize, diceSize);
         
         if (assets.unlockedIcon && assets.lockedIcon) {
             auto imgUnlocked = assets.unlockedIcon->createCopy();
@@ -7345,7 +7052,7 @@ void PluginEditor::setupChorusEffectsArea()
     // Create "EFFECT" title
     chorusEffectsTitle = std::make_unique<juce::Label>();
     chorusEffectsTitle->setText("EFFECT", juce::dontSendNotification);
-    chorusEffectsTitle->setFont(FontManager::getInstance().getFont("Akira Expanded", 18.6624f, juce::Font::bold).withExtraKerningFactor(0.1f)); // 10% smaller: 20.736f * 0.9 = 18.6624f, with letter spacing
+    chorusEffectsTitle->setFont(juce::Font(27.648f, juce::Font::bold));
     chorusEffectsTitle->setColour(juce::Label::textColourId, juce::Colours::white);
     chorusEffectsTitle->setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(chorusEffectsTitle.get());
@@ -7411,7 +7118,7 @@ void PluginEditor::setupChorusSequencerArea()
     // Create step title
     chorusStepTitle = std::make_unique<juce::Label>();
     chorusStepTitle->setText("STEP", juce::dontSendNotification);
-    chorusStepTitle->setFont(FontManager::getInstance().getFont("Akira Expanded", 13.436685f, juce::Font::bold).withExtraKerningFactor(0.09f)); // Adjusted size with 10% less letter spacing: 0.1 * 0.9 = 0.09
+    chorusStepTitle->setFont(juce::Font(22.118f, juce::Font::bold));
     chorusStepTitle->setColour(juce::Label::textColourId, juce::Colours::white);
     chorusStepTitle->setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(chorusStepTitle.get());
@@ -7457,7 +7164,7 @@ void PluginEditor::setupChorusSequencerArea()
     };
     chorusStepAmountLabel = std::make_unique<ChorusDebugTextEditor>();
     chorusStepAmountLabel->setText("16");
-    chorusStepAmountLabel->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 16.0f, juce::Font::bold));
+    chorusStepAmountLabel->setFont(juce::Font(16.0f, juce::Font::bold));
     chorusStepAmountLabel->setColour(juce::TextEditor::textColourId, juce::Colours::white);
     chorusStepAmountLabel->setColour(juce::TextEditor::backgroundColourId, juce::Colours::transparentBlack);
     chorusStepAmountLabel->setColour(juce::TextEditor::outlineColourId, juce::Colours::white);
@@ -7658,7 +7365,7 @@ void PluginEditor::setupChorusAllStepsToggle()
     
     chorusAllStepsLabel = std::make_unique<juce::Label>();
     chorusAllStepsLabel->setText("All Steps", juce::dontSendNotification);
-    chorusAllStepsLabel->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 14.4f, juce::Font::bold));
+    chorusAllStepsLabel->setFont(juce::Font(14.4f, juce::Font::bold));
     chorusAllStepsLabel->setColour(juce::Label::textColourId, juce::Colours::white);
     chorusAllStepsLabel->setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(chorusAllStepsLabel.get());
@@ -7921,7 +7628,7 @@ void PluginEditor::setupReverbKnobs()
         // Create label
         reverbKnobLabels[i] = std::make_unique<juce::Label>();
         reverbKnobLabels[i]->setText(reverbKnobNames[i], juce::dontSendNotification);
-        reverbKnobLabels[i]->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 12.0f, juce::Font::bold));
+        reverbKnobLabels[i]->setFont(juce::Font(12.0f, juce::Font::bold));
         reverbKnobLabels[i]->setColour(juce::Label::textColourId, juce::Colours::white);
         reverbKnobLabels[i]->setJustificationType(juce::Justification::centred);
         addAndMakeVisible(reverbKnobLabels[i].get());
@@ -7931,7 +7638,7 @@ void PluginEditor::setupReverbKnobs()
         // Create value label
         reverbValueLabels[i] = std::make_unique<juce::Label>();
         reverbValueLabels[i]->setText("0", juce::dontSendNotification);
-        reverbValueLabels[i]->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 10.0f, juce::Font::plain));
+        reverbValueLabels[i]->setFont(juce::Font(10.0f, juce::Font::plain));
         reverbValueLabels[i]->setColour(juce::Label::textColourId, juce::Colours::white);
         reverbValueLabels[i]->setJustificationType(juce::Justification::centred);
         addAndMakeVisible(reverbValueLabels[i].get());
@@ -7954,7 +7661,16 @@ void PluginEditor::setupReverbKnobs()
         addAndMakeVisible(reverbLockButtons[i].get());
         reverbLockButtons[i]->setVisible(false);
         
-        positionLockButton(reverbLockButtons[i].get(), reverbKnobLabels[i].get(), y);
+        const int diceSize = 10;
+        const int diceSpacing = 5;
+        
+        juce::Font labelFont(12.0f, juce::Font::bold);
+        int textWidth = labelFont.getStringWidth(reverbKnobNames[i]);
+        
+        int lockX = x + (knobSize / 2) + (textWidth / 2) + diceSpacing;
+        int lockY = y - 10;
+        
+        reverbLockButtons[i]->setBounds(lockX, lockY, diceSize, diceSize);
         
         if (assets.unlockedIcon && assets.lockedIcon) {
             auto imgUnlocked = assets.unlockedIcon->createCopy();
@@ -7992,7 +7708,7 @@ void PluginEditor::setupReverbEffectsArea()
     // Create "EFFECT" title
     reverbEffectsTitle = std::make_unique<juce::Label>();
     reverbEffectsTitle->setText("EFFECT", juce::dontSendNotification);
-    reverbEffectsTitle->setFont(FontManager::getInstance().getFont("Akira Expanded", 18.6624f, juce::Font::bold).withExtraKerningFactor(0.1f)); // 10% smaller: 20.736f * 0.9 = 18.6624f, with letter spacing
+    reverbEffectsTitle->setFont(juce::Font(27.648f, juce::Font::bold));
     reverbEffectsTitle->setColour(juce::Label::textColourId, juce::Colours::white);
     reverbEffectsTitle->setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(reverbEffectsTitle.get());
@@ -8066,7 +7782,7 @@ void PluginEditor::setupReverbSequencerArea()
     // Create step title
     reverbStepTitle = std::make_unique<juce::Label>();
     reverbStepTitle->setText("STEP", juce::dontSendNotification);
-    reverbStepTitle->setFont(FontManager::getInstance().getFont("Akira Expanded", 13.436685f, juce::Font::bold).withExtraKerningFactor(0.09f)); // Adjusted size with 10% less letter spacing: 0.1 * 0.9 = 0.09
+    reverbStepTitle->setFont(juce::Font(22.118f, juce::Font::bold));
     reverbStepTitle->setColour(juce::Label::textColourId, juce::Colours::white);
     reverbStepTitle->setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(reverbStepTitle.get());
@@ -8104,7 +7820,7 @@ void PluginEditor::setupReverbSequencerArea()
     // Step amount label (TextEditor)
     reverbStepAmountLabel = std::make_unique<juce::TextEditor>();
     reverbStepAmountLabel->setText("16");
-    reverbStepAmountLabel->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 16.0f, juce::Font::bold));
+    reverbStepAmountLabel->setFont(juce::Font(16.0f, juce::Font::bold));
     reverbStepAmountLabel->setColour(juce::TextEditor::textColourId, juce::Colours::white);
     reverbStepAmountLabel->setColour(juce::TextEditor::backgroundColourId, juce::Colours::transparentBlack);
     reverbStepAmountLabel->setColour(juce::TextEditor::outlineColourId, juce::Colours::white);
@@ -8316,7 +8032,7 @@ void PluginEditor::setupReverbAllStepsToggle()
     // Label - match Dirt's exact positioning
     reverbAllStepsLabel = std::make_unique<juce::Label>();
     reverbAllStepsLabel->setText("All Steps", juce::dontSendNotification);
-    reverbAllStepsLabel->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 14.4f, juce::Font::bold));
+    reverbAllStepsLabel->setFont(juce::Font(14.4f, juce::Font::bold));
     reverbAllStepsLabel->setColour(juce::Label::textColourId, juce::Colours::white);
     reverbAllStepsLabel->setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(reverbAllStepsLabel.get());
@@ -8516,8 +8232,6 @@ void PluginEditor::onEffectSelectorChanged(int slotIndex)
     int selectedEffectID;
     if (selectedId == 12) {
         selectedEffectID = 12; // Saturate (EffectID::Saturate)
-    } else if (selectedId == 14) {
-        selectedEffectID = 13; // Filter (EffectID::Filter)
     } else if (selectedId >= 1 && selectedId <= 11) {
         selectedEffectID = selectedId - 1; // SpaceDelay(0) through Formant(10)
     } else {
@@ -8600,17 +8314,6 @@ void PluginEditor::onEffectSelectorChanged(int slotIndex)
     router.assignEffectToSlot(targetEffect, targetSlot);
     DBG("[ROUTER] ✓ Router assignment complete");
     
-    // Enable Form effect by default when selected
-    if (targetEffect == EffectID::Formant)
-    {
-        auto* formantEnabledParam = processorRef.getAPVTS().getParameter("formantEnabled");
-        if (formantEnabledParam)
-        {
-            formantEnabledParam->setValueNotifyingHost(1.0f); // Enable (true = 1.0)
-            DBG("[ROUTER] ✓ Form effect enabled by default");
-        }
-    }
-    
     // Update all dropdowns to reflect the swap (skip the one that was just changed)
     updateAllEffectSelectors(slotIndex);
     DBG("[ROUTER] ✓ Dropdowns updated");
@@ -8641,7 +8344,6 @@ void PluginEditor::onEffectSelectorChanged(int slotIndex)
     setVisibleVec(formantGroup, false);
     setVisibleVec(saturateGroup, false);
     setVisibleVec(form2Group, false);
-    setVisibleVec(filterGroup, false);
     DBG("[ROUTER] ✓ All groups hidden");
     
     // Show the correct effect for the current page based on new assignment
@@ -8865,54 +8567,12 @@ void PluginEditor::onEffectSelectorChanged(int slotIndex)
         case EffectID::Saturate:
         {
             DBG("[ROUTER] Showing Saturate group (" << saturateGroup.size() << " components)");
-            
-            // Ensure type is set to Clean (0) before showing to prevent pop
-            auto* typeParam = processorRef.getAPVTS().getParameter("satType");
-            if (typeParam) {
-                typeParam->setValueNotifyingHost(0.0f); // 0/7 = Clean
-            }
-            if (saturateKnobs[0]) {
-                saturateKnobs[0]->setValue(0.0f, juce::dontSendNotification);
-            }
-            
             setVisibleVec(saturateGroup, true);
-            
-            // Explicitly hide Type knob and its components (they shouldn't be in group, but hide just in case)
-            if (saturateKnobs[0]) {
-                saturateKnobs[0]->setVisible(false);
-                saturateKnobs[0]->setEnabled(false);
-                saturateKnobs[0]->setAlpha(0.0f); // Make completely invisible
-            }
-            if (saturateKnobLabels[0]) {
-                saturateKnobLabels[0]->setVisible(false);
-                saturateKnobLabels[0]->setAlpha(0.0f);
-            }
-            if (saturateValueLabels[0]) {
-                saturateValueLabels[0]->setVisible(false);
-                saturateValueLabels[0]->setAlpha(0.0f);
-            }
-            if (saturateIndicatorBars[0]) {
-                saturateIndicatorBars[0]->setVisible(false);
-                saturateIndicatorBars[0]->setAlpha(0.0f);
-            }
-            if (saturateLockButtons[0]) {
-                saturateLockButtons[0]->setVisible(false);
-                saturateLockButtons[0]->setAlpha(0.0f);
-            }
             
             // Restore UI state from APVTS parameters
             {
                 auto* fxEnabledParam = processorRef.getAPVTS().getRawParameterValue("saturateEnabled");
-                // If parameter doesn't exist or is false, set it to true (default ON)
-                if (!fxEnabledParam || fxEnabledParam->load() <= 0.5f) {
-                    auto* param = processorRef.getAPVTS().getParameter("saturateEnabled");
-                    if (param) {
-                        param->setValueNotifyingHost(1.0f); // Set to true
-                    }
-                    saturateFxAreaEnabled = true;
-                } else {
-                    saturateFxAreaEnabled = fxEnabledParam->load() > 0.5f;
-                }
+                saturateFxAreaEnabled = fxEnabledParam ? (fxEnabledParam->load() > 0.5f) : true; // Default ON
                 
                 if (saturateFxPowerButton) {
                     saturateFxPowerButton->setToggleState(saturateFxAreaEnabled, juce::dontSendNotification);
@@ -8928,11 +8588,8 @@ void PluginEditor::onEffectSelectorChanged(int slotIndex)
                 updateSaturateStepAreaVisibility();
             }
             
-            // Ensure type is Clean (0) and update labels/layout immediately
-            updateSaturateKnobLabels(0); // This will hide Level knob and reposition Mix
-            
-            // Trigger initial value label updates (skip Type knob index 0)
-            for (int i = 1; i < 7; ++i) {
+            // Trigger initial value label updates (8 knobs)
+            for (int i = 0; i < 8; ++i) {
                 if (saturateKnobs[i]) {
                     saturateKnobs[i]->onValueChange();
                 }
@@ -8946,46 +8603,6 @@ void PluginEditor::onEffectSelectorChanged(int slotIndex)
             DBG("[ROUTER] ✓ Saturate group shown");
             break;
         }
-        case EffectID::Filter:
-        {
-            DBG("[ROUTER] Showing Filter group (" << filterGroup.size() << " components)");
-            setVisibleVec(filterGroup, true);
-            
-            // Restore UI state from APVTS parameters
-            {
-                auto* fxEnabledParam = processorRef.getAPVTS().getRawParameterValue("filterEnabled");
-                filterFxAreaEnabled = fxEnabledParam ? (fxEnabledParam->load() > 0.5f) : true; // Default ON
-                
-                if (filterFxPowerButton) {
-                    filterFxPowerButton->setToggleState(filterFxAreaEnabled, juce::dontSendNotification);
-                }
-                
-                // Restore sequencer enabled state - check if method exists
-                // filterStepAreaEnabled = processorRef.getFilterSeqState().enabled.load();
-                filterStepAreaEnabled = true; // Default for now
-                if (filterStepPowerButton) {
-                    filterStepPowerButton->setToggleState(filterStepAreaEnabled, juce::dontSendNotification);
-                }
-                
-                //                 // updateFilterFxAreaVisibility();
-                //                 // updateFilterStepAreaVisibility();
-            }
-            
-            // Trigger initial value label updates
-            if (filterTypeKnob) filterTypeKnob->onValueChange();
-            if (filterSlopeKnob) filterSlopeKnob->onValueChange();
-            for (int i = 0; i < 5; ++i) { // 5 knobs (Spread removed)
-                if (filterKnobs[i]) {
-                    filterKnobs[i]->onValueChange();
-                }
-            }
-            
-            filterUiSelectedStep = 0;
-            processorRef.setFilterSelectedStep(0);
-            updateFilterSequencerUI();
-            DBG("[ROUTER] ✓ Filter group shown");
-            break;
-        }
         case EffectID::Form2:
         {
             DBG("[ROUTER] Showing Form 2 group (" << form2Group.size() << " components)");
@@ -8993,8 +8610,8 @@ void PluginEditor::onEffectSelectorChanged(int slotIndex)
             
             // Restore UI state from APVTS parameters
             {
-                auto* form2FxEnabledParam = processorRef.getAPVTS().getRawParameterValue("form2Enabled");
-                form2FxAreaEnabled = form2FxEnabledParam ? (form2FxEnabledParam->load() > 0.5f) : true;
+                auto* fxEnabledParam = processorRef.getAPVTS().getRawParameterValue("form2Enabled");
+                form2FxAreaEnabled = fxEnabledParam ? (fxEnabledParam->load() > 0.5f) : true;
                 if (form2FxPowerButton) {
                     form2FxPowerButton->setToggleState(form2FxAreaEnabled, juce::dontSendNotification);
                 }
@@ -9213,7 +8830,7 @@ void PluginEditor::setupGranularKnobs()
         // Create label
         granularKnobLabels[i] = std::make_unique<juce::Label>();
         granularKnobLabels[i]->setText(granularKnobNames[i], juce::dontSendNotification);
-        granularKnobLabels[i]->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 12.0f, juce::Font::bold));
+        granularKnobLabels[i]->setFont(juce::Font(12.0f, juce::Font::bold));
         granularKnobLabels[i]->setColour(juce::Label::textColourId, juce::Colours::white);
         granularKnobLabels[i]->setJustificationType(juce::Justification::centred);
         addAndMakeVisible(granularKnobLabels[i].get());
@@ -9223,7 +8840,7 @@ void PluginEditor::setupGranularKnobs()
         // Create value label
         granularValueLabels[i] = std::make_unique<juce::Label>();
         granularValueLabels[i]->setText("0", juce::dontSendNotification);
-        granularValueLabels[i]->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 10.0f, juce::Font::plain));
+        granularValueLabels[i]->setFont(juce::Font(10.0f, juce::Font::plain));
         granularValueLabels[i]->setColour(juce::Label::textColourId, juce::Colours::white);
         granularValueLabels[i]->setJustificationType(juce::Justification::centred);
         addAndMakeVisible(granularValueLabels[i].get());
@@ -9246,7 +8863,16 @@ void PluginEditor::setupGranularKnobs()
         addAndMakeVisible(granularLockButtons[i].get());
         granularLockButtons[i]->setVisible(false);
         
-        positionLockButton(granularLockButtons[i].get(), granularKnobLabels[i].get(), y);
+        const int diceSize = 10;
+        const int diceSpacing = 5;
+        
+        juce::Font labelFont(12.0f, juce::Font::bold);
+        int textWidth = labelFont.getStringWidth(granularKnobNames[i]);
+        
+        int lockX = x + (knobSize / 2) + (textWidth / 2) + diceSpacing;
+        int lockY = y - 10;
+        
+        granularLockButtons[i]->setBounds(lockX, lockY, diceSize, diceSize);
         
         if (assets.unlockedIcon && assets.lockedIcon) {
             auto imgUnlocked = assets.unlockedIcon->createCopy();
@@ -9277,7 +8903,7 @@ void PluginEditor::setupGranularKnobs()
             } else {
                 g.drawEllipse(centre.x - radius, centre.y - radius, radius*2, radius*2, 2.0f);
             }
-            g.setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 10.0f, juce::Font::bold));
+            g.setFont(juce::Font(10.0f, juce::Font::bold));
             g.drawText("S", r, juce::Justification::centred);
         }
     };
@@ -9401,7 +9027,7 @@ void PluginEditor::setupGranularEffectsArea()
     // Create "EFFECT" title
     granularEffectsTitle = std::make_unique<juce::Label>();
     granularEffectsTitle->setText("EFFECT", juce::dontSendNotification);
-    granularEffectsTitle->setFont(FontManager::getInstance().getFont("Akira Expanded", 18.6624f, juce::Font::bold).withExtraKerningFactor(0.1f)); // 10% smaller: 20.736f * 0.9 = 18.6624f, with letter spacing
+    granularEffectsTitle->setFont(juce::Font(27.648f, juce::Font::bold));
     granularEffectsTitle->setColour(juce::Label::textColourId, juce::Colours::white);
     granularEffectsTitle->setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(granularEffectsTitle.get());
@@ -9533,7 +9159,7 @@ void PluginEditor::setupGranularSequencerArea()
     // Create step title (EXACT same as Reverb)
     granularStepTitle = std::make_unique<juce::Label>();
     granularStepTitle->setText("STEP", juce::dontSendNotification);
-    granularStepTitle->setFont(FontManager::getInstance().getFont("Akira Expanded", 13.436685f, juce::Font::bold).withExtraKerningFactor(0.09f)); // Adjusted size with 10% less letter spacing: 0.1 * 0.9 = 0.09
+    granularStepTitle->setFont(juce::Font(22.118f, juce::Font::bold));
     granularStepTitle->setColour(juce::Label::textColourId, juce::Colours::white);
     granularStepTitle->setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(granularStepTitle.get());
@@ -9571,7 +9197,7 @@ void PluginEditor::setupGranularSequencerArea()
     // Step amount label (TextEditor)
     granularStepAmountLabel = std::make_unique<juce::TextEditor>();
     granularStepAmountLabel->setText("16");
-    granularStepAmountLabel->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 16.0f, juce::Font::bold));
+    granularStepAmountLabel->setFont(juce::Font(16.0f, juce::Font::bold));
     granularStepAmountLabel->setColour(juce::TextEditor::textColourId, juce::Colours::white);
     granularStepAmountLabel->setColour(juce::TextEditor::backgroundColourId, juce::Colours::transparentBlack);
     granularStepAmountLabel->setColour(juce::TextEditor::outlineColourId, juce::Colours::white);
@@ -9678,55 +9304,22 @@ void PluginEditor::setupGranularSequencerArea()
     
     granularStepDiceButton->onClick = [this]() {
         DBG("[UI] Granular step dice clicked - randomizing all steps");
-        
-        auto& rng = juce::Random::getSystemRandom();
-        
         for (int step = 0; step < 16; ++step) {
             auto snapshot = processorRef.getGranularSafeSnapshot(step);
+            juce::Random& rng = juce::Random::getSystemRandom();
             
-            // Randomize all parameters (respecting lock states)
-            if (!granularKnobLocked[0]) {
                 snapshot.granular.sizeMs = 5.0f + rng.nextFloat() * 195.0f;
-            }
-            if (!granularKnobLocked[1]) {
                 snapshot.granular.densityHz = 1.0f + rng.nextFloat() * 39.0f;
-            }
-            if (!granularKnobLocked[2]) {
                 snapshot.granular.position = rng.nextFloat();
-            }
-            if (!granularKnobLocked[3]) {
                 snapshot.granular.sprayMs = rng.nextFloat() * 200.0f;
-            }
-            if (!granularKnobLocked[4]) {
                 snapshot.granular.pitchSemi = -24.0f + rng.nextFloat() * 48.0f;
-            }
-            if (!granularKnobLocked[5]) {
                 snapshot.granular.random = rng.nextFloat();
-            }
-            if (!granularKnobLocked[6]) {
                 snapshot.granular.texture = rng.nextFloat();
-            }
-            if (!granularKnobLocked[7]) {
                 snapshot.granular.mix = rng.nextFloat();
-            }
             
             processorRef.setGranularStepSnapshot(step, snapshot);
         }
-        
-        // Update sequencer UI
         updateGranularSequencerUI();
-        
-        // Load the current step's randomized values into the knobs
-        loadSelectedStepIntoKnobs(FxPageID::Granular);
-        
-        // Trigger value change callbacks to update labels for all knobs
-        isLoadingFromSnapshot.store(true);
-        for (int i = 0; i < 8; ++i) {
-            if (granularKnobs[i] && granularKnobs[i]->onValueChange) {
-                granularKnobs[i]->onValueChange();
-            }
-        }
-        isLoadingFromSnapshot.store(false);
     };
     
     // Step power button (EXACT same positioning as Reverb)
@@ -9825,7 +9418,7 @@ void PluginEditor::setupGranularAllStepsToggle()
     // Label - match Reverb's exact positioning
     granularAllStepsLabel = std::make_unique<juce::Label>();
     granularAllStepsLabel->setText("All Steps", juce::dontSendNotification);
-    granularAllStepsLabel->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 14.4f, juce::Font::bold));
+    granularAllStepsLabel->setFont(juce::Font(14.4f, juce::Font::bold));
     granularAllStepsLabel->setColour(juce::Label::textColourId, juce::Colours::white);
     granularAllStepsLabel->setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(granularAllStepsLabel.get());
@@ -9982,7 +9575,7 @@ void PluginEditor::setupSlicerKnobs()
                     switch (i) {
                         case 0: { // Pattern
                             std::vector<juce::String> patternNames = {
-                                "Straight", "Offbeat", "HalfTime", "Syncop", "Triplet", "BuildUp", "Choke16", "Gallop"
+                                "Straight8", "Offbeat", "HalfTime", "Syncop", "Triplet", "BuildUp", "Choke16", "Gallop"
                             };
                             int patIdx = juce::jlimit(0, 7, (int)value);
                             valueText = patternNames[patIdx];
@@ -10050,7 +9643,7 @@ void PluginEditor::setupSlicerKnobs()
         // Create label
         slicerKnobLabels[i] = std::make_unique<juce::Label>();
         slicerKnobLabels[i]->setText(slicerKnobNames[i], juce::dontSendNotification);
-        slicerKnobLabels[i]->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 12.0f, juce::Font::bold));
+        slicerKnobLabels[i]->setFont(juce::Font(12.0f, juce::Font::bold));
         slicerKnobLabels[i]->setColour(juce::Label::textColourId, juce::Colours::white);
         slicerKnobLabels[i]->setJustificationType(juce::Justification::centred);
         addAndMakeVisible(slicerKnobLabels[i].get());
@@ -10060,7 +9653,7 @@ void PluginEditor::setupSlicerKnobs()
         // Create value label
         slicerValueLabels[i] = std::make_unique<juce::Label>();
         slicerValueLabels[i]->setText("0", juce::dontSendNotification);
-        slicerValueLabels[i]->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 10.0f, juce::Font::plain));
+        slicerValueLabels[i]->setFont(juce::Font(10.0f, juce::Font::plain));
         slicerValueLabels[i]->setColour(juce::Label::textColourId, juce::Colours::white);
         slicerValueLabels[i]->setJustificationType(juce::Justification::centred);
         addAndMakeVisible(slicerValueLabels[i].get());
@@ -10082,7 +9675,11 @@ void PluginEditor::setupSlicerKnobs()
         // Position lock button at end of title text (same as other effects)
         juce::Font labelFont(12.0f, juce::Font::bold);
         int textWidth = labelFont.getStringWidth(slicerKnobNames[i]);
-        positionLockButton(slicerLockButtons[i].get(), slicerKnobLabels[i].get(), y);
+        const int lockSize = 10; // Same size as other effects
+        const int lockSpacing = 5; // Fixed distance from end of title text
+        int lockX = x + (knobSize / 2) + (textWidth / 2) + lockSpacing;
+        int lockY = y - 10; // Same position as other effects
+        slicerLockButtons[i]->setBounds(lockX, lockY, lockSize, lockSize);
         
         // Set lock button images
         if (assets.unlockedIcon && assets.lockedIcon) {
@@ -10136,7 +9733,7 @@ void PluginEditor::setupSlicerEffectsArea()
     // Create "EFFECT" title label (match other pages)
     slicerEffectsTitle = std::make_unique<juce::Label>();
     slicerEffectsTitle->setText("EFFECT", juce::dontSendNotification);
-    slicerEffectsTitle->setFont(FontManager::getInstance().getFont("Akira Expanded", 18.6624f, juce::Font::bold).withExtraKerningFactor(0.1f)); // 10% smaller: 20.736f * 0.9 = 18.6624f, with letter spacing
+    slicerEffectsTitle->setFont(juce::Font(27.648f, juce::Font::bold));
     slicerEffectsTitle->setColour(juce::Label::textColourId, juce::Colours::white);
     slicerEffectsTitle->setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(slicerEffectsTitle.get());
@@ -10428,7 +10025,7 @@ void PluginEditor::setupSlicerSequencerArea()
     // Create step title
     slicerStepTitle = std::make_unique<juce::Label>();
     slicerStepTitle->setText("STEP", juce::dontSendNotification);
-    slicerStepTitle->setFont(FontManager::getInstance().getFont("Akira Expanded", 13.436685f, juce::Font::bold).withExtraKerningFactor(0.09f)); // Adjusted size with 10% less letter spacing: 0.1 * 0.9 = 0.09
+    slicerStepTitle->setFont(juce::Font(22.118f, juce::Font::bold));
     slicerStepTitle->setColour(juce::Label::textColourId, juce::Colours::white);
     slicerStepTitle->setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(slicerStepTitle.get());
@@ -10467,7 +10064,7 @@ void PluginEditor::setupSlicerSequencerArea()
     // Create step amount editor
     slicerStepAmountLabel = std::make_unique<juce::TextEditor>();
     slicerStepAmountLabel->setText("16");
-    slicerStepAmountLabel->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 16.0f, juce::Font::bold));
+    slicerStepAmountLabel->setFont(juce::Font(16.0f, juce::Font::bold));
     slicerStepAmountLabel->setColour(juce::TextEditor::textColourId, juce::Colours::white);
     slicerStepAmountLabel->setColour(juce::TextEditor::backgroundColourId, juce::Colours::transparentBlack);
     slicerStepAmountLabel->setColour(juce::TextEditor::outlineColourId, juce::Colours::white);
@@ -10635,7 +10232,7 @@ void PluginEditor::setupSlicerAllStepsToggle()
     
     slicerAllStepsLabel = std::make_unique<juce::Label>();
     slicerAllStepsLabel->setText("All Steps", juce::dontSendNotification);
-    slicerAllStepsLabel->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 14.4f, juce::Font::bold));
+    slicerAllStepsLabel->setFont(juce::Font(14.4f, juce::Font::bold));
     slicerAllStepsLabel->setColour(juce::Label::textColourId, juce::Colours::white);
     slicerAllStepsLabel->setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(slicerAllStepsLabel.get());
@@ -10885,7 +10482,7 @@ void PluginEditor::setupDubDelayKnobs()
         // Create label
         dubdelayKnobLabels[i] = std::make_unique<juce::Label>();
         dubdelayKnobLabels[i]->setText(dubdelayKnobNames[i], juce::dontSendNotification);
-        dubdelayKnobLabels[i]->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 12.0f, juce::Font::bold));
+        dubdelayKnobLabels[i]->setFont(juce::Font(12.0f, juce::Font::bold));
         dubdelayKnobLabels[i]->setColour(juce::Label::textColourId, juce::Colours::white);
         dubdelayKnobLabels[i]->setJustificationType(juce::Justification::centred);
         addAndMakeVisible(dubdelayKnobLabels[i].get());
@@ -10895,7 +10492,7 @@ void PluginEditor::setupDubDelayKnobs()
         // Create value label
         dubdelayValueLabels[i] = std::make_unique<juce::Label>();
         dubdelayValueLabels[i]->setText("0", juce::dontSendNotification);
-        dubdelayValueLabels[i]->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 10.0f, juce::Font::plain));
+        dubdelayValueLabels[i]->setFont(juce::Font(10.0f, juce::Font::plain));
         dubdelayValueLabels[i]->setColour(juce::Label::textColourId, juce::Colours::white);
         dubdelayValueLabels[i]->setJustificationType(juce::Justification::centred);
         addAndMakeVisible(dubdelayValueLabels[i].get());
@@ -10923,7 +10520,15 @@ void PluginEditor::setupDubDelayKnobs()
         juce::Font labelFont(12.0f, juce::Font::bold);
         int textWidth = labelFont.getStringWidth(dubdelayKnobNames[i]);
         
-        positionLockButton(dubdelayLockButtons[i].get(), dubdelayKnobLabels[i].get(), y);
+        // Use same sizing as space delay
+        const int lockSize = 10; // Same as space delay
+        const int lockSpacing = 5; // Fixed distance from end of title text
+        
+        // Position lock button at the end of the title text + fixed spacing
+        int lockX = x + (knobSize / 2) + (textWidth / 2) + lockSpacing;
+        int lockY = y - 10;
+        
+        dubdelayLockButtons[i]->setBounds(lockX, lockY, lockSize, lockSize);
         
         // Set lock button images
         if (assets.unlockedIcon && assets.lockedIcon) {
@@ -10958,7 +10563,7 @@ void PluginEditor::setupDubDelayEffectsArea()
     // Effect title (ALWAYS "EFFECT", NOT the effect name!)
     dubdelayEffectsTitle = std::make_unique<juce::Label>();
     dubdelayEffectsTitle->setText("EFFECT", juce::dontSendNotification);
-    dubdelayEffectsTitle->setFont(FontManager::getInstance().getFont("Akira Expanded", 18.6624f, juce::Font::bold).withExtraKerningFactor(0.1f)); // 10% smaller: 20.736f * 0.9 = 18.6624f, with letter spacing
+    dubdelayEffectsTitle->setFont(juce::Font(27.648f, juce::Font::bold));
     dubdelayEffectsTitle->setColour(juce::Label::textColourId, juce::Colours::white);
     dubdelayEffectsTitle->setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(dubdelayEffectsTitle.get());
@@ -11022,7 +10627,7 @@ void PluginEditor::setupDubDelayEffectsArea()
             } else {
                 g.drawEllipse(centre.x - radius, centre.y - radius, radius*2, radius*2, 2.0f);
             }
-            g.setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 10.0f, juce::Font::bold));
+            g.setFont(juce::Font(10.0f, juce::Font::bold));
             g.drawText("S", r, juce::Justification::centred);
         }
     };
@@ -11080,7 +10685,7 @@ void PluginEditor::setupDubDelaySequencerArea()
     // "STEP" title
     dubdelayStepTitle = std::make_unique<juce::Label>();
     dubdelayStepTitle->setText("STEP", juce::dontSendNotification);
-    dubdelayStepTitle->setFont(FontManager::getInstance().getFont("Akira Expanded", 13.436685f, juce::Font::bold).withExtraKerningFactor(0.09f)); // Adjusted size with 10% less letter spacing: 0.1 * 0.9 = 0.09
+    dubdelayStepTitle->setFont(juce::Font(22.118f, juce::Font::bold));
     dubdelayStepTitle->setColour(juce::Label::textColourId, juce::Colours::white);
     dubdelayStepTitle->setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(dubdelayStepTitle.get());
@@ -11120,7 +10725,7 @@ void PluginEditor::setupDubDelaySequencerArea()
     // Step amount label (TextEditor - match Slicer with white outline)
     dubdelayStepAmountLabel = std::make_unique<juce::TextEditor>();
     dubdelayStepAmountLabel->setText("16");
-    dubdelayStepAmountLabel->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 16.0f, juce::Font::bold));
+    dubdelayStepAmountLabel->setFont(juce::Font(16.0f, juce::Font::bold));
     dubdelayStepAmountLabel->setColour(juce::TextEditor::textColourId, juce::Colours::white);
     dubdelayStepAmountLabel->setColour(juce::TextEditor::backgroundColourId, juce::Colours::transparentBlack);
     dubdelayStepAmountLabel->setColour(juce::TextEditor::outlineColourId, juce::Colours::white);
@@ -11329,7 +10934,7 @@ void PluginEditor::setupDubDelayAllStepsToggle()
     
     dubdelayAllStepsLabel = std::make_unique<juce::Label>();
     dubdelayAllStepsLabel->setText("All Steps", juce::dontSendNotification);
-    dubdelayAllStepsLabel->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 14.4f, juce::Font::bold));
+    dubdelayAllStepsLabel->setFont(juce::Font(14.4f, juce::Font::bold));
     dubdelayAllStepsLabel->setColour(juce::Label::textColourId, juce::Colours::white);
     dubdelayAllStepsLabel->setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(dubdelayAllStepsLabel.get());
@@ -11625,7 +11230,7 @@ void PluginEditor::setupFormantKnobs()
         formantKnobLabels[i]->setText(formantKnobTitles[i], juce::dontSendNotification);
         formantKnobLabels[i]->setJustificationType(juce::Justification::centred);
         formantKnobLabels[i]->setColour(juce::Label::textColourId, juce::Colours::white);
-        formantKnobLabels[i]->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 12.0f, juce::Font::bold));
+        formantKnobLabels[i]->setFont(juce::Font(12.0f, juce::Font::bold));
         formantKnobLabels[i]->setBounds(x, y - 15, knobSize, 20);
         
         // Create value label
@@ -11635,7 +11240,7 @@ void PluginEditor::setupFormantKnobs()
         formantValueLabels[i]->setText("0", juce::dontSendNotification);
         formantValueLabels[i]->setJustificationType(juce::Justification::centred);
         formantValueLabels[i]->setColour(juce::Label::textColourId, juce::Colours::white);
-        formantValueLabels[i]->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 10.0f, juce::Font::plain));
+        formantValueLabels[i]->setFont(juce::Font(10.0f, juce::Font::plain));
         formantValueLabels[i]->setBounds(x, y + knobSize - 10, knobSize, 15);
         
         // Create indicator bar
@@ -11650,26 +11255,6 @@ void PluginEditor::setupFormantKnobs()
         addAndMakeVisible(formantDiceButtons[i].get());
         formantDiceButtons[i]->setVisible(false);
         
-        // Create lock button
-        formantLockButtons[i] = std::make_unique<LockButton>();
-        addAndMakeVisible(formantLockButtons[i].get());
-        formantLockButtons[i]->setVisible(false);
-        formantLockButtons[i]->setClickingTogglesState(true);
-        
-        positionLockButton(formantLockButtons[i].get(), formantKnobLabels[i].get(), y);
-        
-        if (assets.unlockedIcon && assets.lockedIcon) {
-            auto imgUnlocked = assets.unlockedIcon->createCopy();
-            auto imgLocked = assets.lockedIcon->createCopy();
-            formantLockButtons[i]->setImages(std::move(imgUnlocked), std::move(imgLocked));
-        }
-        
-        formantLockButtons[i]->setToggleState(formantKnobLocked[i], juce::dontSendNotification);
-        formantLockButtons[i]->onClick = [this, i]() {
-            formantKnobLocked[i] = formantLockButtons[i]->getToggleState();
-            repaint();
-        };
-        
         // Create APVTS attachment
         formantAttachments[i] = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
             processorRef.getAPVTS(), formantParamIDs[i], *formantKnobs[i]);
@@ -11681,48 +11266,27 @@ void PluginEditor::setupFormantKnobs()
                 return;
             
             if (formantKnobs[i] && formantValueLabels[i] && formantIndicatorBars[i]) {
-                const float value = formantKnobs[i]->getValue();
-                const double minValue = formantKnobs[i]->getMinimum();
-                const double maxValue = formantKnobs[i]->getMaximum();
-                const double range = maxValue - minValue;
-                float normalized = range > 0.0 ? static_cast<float>((value - minValue) / range) : 0.0f;
-                normalized = juce::jlimit(0.0f, 1.0f, normalized);
-
+                float value = formantKnobs[i]->getValue();
                 juce::String valueText;
+                
                 switch (i) {
-                    case 0: { // Vowel
+                    case 0: // Vowel
+                        {
                         static const char* vowelNames[] = {"A", "E", "I", "O", "U"};
                         int vowelIndex = static_cast<int>(value);
                         vowelIndex = juce::jlimit(0, 4, vowelIndex);
                         valueText = vowelNames[vowelIndex];
-                        break;
                     }
-                    case 1: // Resonance (Q)
-                        valueText = juce::String(value, 1);
                         break;
-                    case 2: // Intensity
-                        valueText = juce::String(value, 1) + " dB";
-                        break;
-                    case 3: // Shift
-                        valueText = juce::String(value, 2) + "x";
-                        break;
-                    case 4: // Brightness
-                        valueText = juce::String(value, 1) + " dB";
-                        break;
-                    case 5: // Motion
-                    case 6: // Air
-                    case 7: // Mix
-                        valueText = juce::String(value * 100.0f, 0) + "%";
-                        break;
-                    default:
-                        valueText = juce::String(value, 2);
-                        break;
+                    case 1: valueText = juce::String(value, 1); break; // Resonance (Q)
+                    case 2: valueText = juce::String(value, 1) + " dB"; break; // Intensity
+                    case 3: valueText = juce::String(value, 2); break; // Mix
                 }
 
                 formantValueLabels[i]->setText(valueText, juce::dontSendNotification);
 
-                // Update indicator bar using normalised value (0-1)
-                formantIndicatorBars[i]->setValue(normalized);
+                // Update indicator bar
+                formantIndicatorBars[i]->setValue(value);
                 
                 // Update current step snapshot with new value
                 processorRef.updateFormantCurrentStepSnapshot(i, value);
@@ -11738,12 +11302,7 @@ void PluginEditor::setupFormantKnobs()
                             case 0: snapshot.formant.vowel = value; break;
                             case 1: snapshot.formant.resonance = value; break;
                             case 2: snapshot.formant.intensity = value; break;
-                            case 3: snapshot.formant.shift = value; break;
-                            case 4: snapshot.formant.brightness = value; break;
-                            case 5: snapshot.formant.motion = value; break;
-                            case 6: snapshot.formant.air = value; break;
-                            case 7: snapshot.formant.mix = value; break;
-                            default: break;
+                            case 3: snapshot.formant.mix = value; break;
                         }
                         processorRef.setFormantStepSnapshot(step, snapshot);
                     }
@@ -11768,7 +11327,7 @@ void PluginEditor::setupFormantEffectsArea()
     // Create "EFFECT" title label (ALWAYS "EFFECT", NOT the effect name!)
     formantEffectsTitle = std::make_unique<juce::Label>();
     formantEffectsTitle->setText("EFFECT", juce::dontSendNotification);
-    formantEffectsTitle->setFont(FontManager::getInstance().getFont("Akira Expanded", 18.6624f, juce::Font::bold).withExtraKerningFactor(0.1f)); // 10% smaller: 20.736f * 0.9 = 18.6624f, with letter spacing
+    formantEffectsTitle->setFont(juce::Font(27.648f, juce::Font::bold));
     formantEffectsTitle->setColour(juce::Label::textColourId, juce::Colours::white);
     formantEffectsTitle->setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(formantEffectsTitle.get());
@@ -11839,7 +11398,7 @@ void PluginEditor::setupFormantSequencerArea()
     // Create STEP title (EXACT same as Space Delay page)
     formantStepTitle = std::make_unique<juce::Label>();
     formantStepTitle->setText("STEP", juce::dontSendNotification);
-    formantStepTitle->setFont(FontManager::getInstance().getFont("Akira Expanded", 13.436685f, juce::Font::bold).withExtraKerningFactor(0.09f)); // Adjusted size with 10% less letter spacing: 0.1 * 0.9 = 0.09
+    formantStepTitle->setFont(juce::Font(22.118f, juce::Font::bold)); // 20% smaller: 27.648f * 0.8 = 22.118f
     formantStepTitle->setColour(juce::Label::textColourId, juce::Colours::white);
     formantStepTitle->setColour(juce::Label::backgroundColourId, juce::Colours::transparentBlack);
     formantStepTitle->setJustificationType(juce::Justification::centredLeft);
@@ -11857,39 +11416,8 @@ void PluginEditor::setupFormantSequencerArea()
     formantStepDiceButton->onClick = [this]() {
         DBG("[UI] Formant step dice button clicked - randomizing all step snapshots");
         
-        auto& rng = juce::Random::getSystemRandom();
-        
         for (int step = 0; step < 16; ++step) {
-            // Get current snapshot
-            auto snapshot = processorRef.getFormantSafeSnapshot(step);
-            
-            // Randomize snapshot parameters (respecting lock states)
-            if (!formantKnobLocked[0]) {
-                snapshot.formant.vowel = static_cast<float>(rng.nextInt(5)); // 0-4
-            }
-            if (!formantKnobLocked[1]) {
-                snapshot.formant.resonance = 0.4f + rng.nextFloat() * 17.6f; // 0.4-18.0
-            }
-            if (!formantKnobLocked[2]) {
-                snapshot.formant.intensity = -6.0f + rng.nextFloat() * 24.0f; // -6 to +18 dB
-            }
-            if (!formantKnobLocked[3]) {
-                snapshot.formant.shift = 0.5f + rng.nextFloat() * 1.5f; // 0.5-2.0
-            }
-            if (!formantKnobLocked[4]) {
-                snapshot.formant.brightness = -12.0f + rng.nextFloat() * 24.0f; // -12 to +12 dB
-            }
-            if (!formantKnobLocked[5]) {
-                snapshot.formant.motion = rng.nextFloat(); // 0-1
-            }
-            if (!formantKnobLocked[6]) {
-                snapshot.formant.air = rng.nextFloat(); // 0-1
-            }
-            if (!formantKnobLocked[7]) {
-                snapshot.formant.mix = rng.nextFloat(); // 0-1
-            }
-
-            processorRef.setFormantStepSnapshot(step, snapshot);
+            randomizeEffectStepSnapshot(FxPageID::Formant, step);
         }
         
         // Update UI to show the changes
@@ -11897,13 +11425,6 @@ void PluginEditor::setupFormantSequencerArea()
         
         // Load the current step's randomized values into the knobs
         loadSelectedStepIntoKnobs(FxPageID::Formant);
-        
-        // Trigger value change callbacks to update labels for all knobs
-        for (int i = 0; i < 8; ++i) {
-            if (formantKnobs[i] && formantKnobs[i]->onValueChange) {
-                formantKnobs[i]->onValueChange();
-            }
-        }
     };
     
     // Set the dice image
@@ -11915,7 +11436,7 @@ void PluginEditor::setupFormantSequencerArea()
     // Create step amount label (EXACT same as Space Delay page)
     formantStepAmountLabel = std::make_unique<juce::Label>();
     formantStepAmountLabel->setText("16", juce::dontSendNotification);
-    formantStepAmountLabel->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 16.0f, juce::Font::bold));
+    formantStepAmountLabel->setFont(juce::Font(16.0f, juce::Font::bold));
     formantStepAmountLabel->setColour(juce::Label::textColourId, juce::Colours::white);
     formantStepAmountLabel->setColour(juce::Label::backgroundColourId, juce::Colours::transparentBlack);
     formantStepAmountLabel->setColour(juce::Label::outlineColourId, juce::Colours::white);
@@ -11939,7 +11460,7 @@ void PluginEditor::setupFormantSequencerArea()
     
     // Create rate dropdown (EXACT same as Space Delay page)
     formantRateDropdown = std::make_unique<juce::ComboBox>();
-    // Slower divisions added: 4 and 2 bars; and rename 1/1 to 1; limit to 1/64
+    // Slower divisions added: 4 and 2 bars; and rename 1/1 to 1
     formantRateDropdown->addItem("4", 1);      // 4 bars (16 beats)
     formantRateDropdown->addItem("2", 2);      // 2 bars (8 beats)
     formantRateDropdown->addItem("1", 3);      // 1 bar  (4 beats)
@@ -11949,6 +11470,17 @@ void PluginEditor::setupFormantSequencerArea()
     formantRateDropdown->addItem("1/16", 7);
     formantRateDropdown->addItem("1/32", 8);
     formantRateDropdown->addItem("1/64", 9);
+    formantRateDropdown->addItem("1/128", 10);
+    formantRateDropdown->addItem("1/256", 11);
+    formantRateDropdown->addItem("1/512", 12);
+    formantRateDropdown->addItem("1/1024", 13);
+    formantRateDropdown->addItem("1/2048", 14);
+    formantRateDropdown->addItem("1/4096", 15);
+    formantRateDropdown->addItem("1/8192", 16);
+    formantRateDropdown->addItem("1/16384", 17);
+    formantRateDropdown->addItem("1/32768", 18);
+    formantRateDropdown->addItem("1/65536", 19);
+    formantRateDropdown->addItem("1/131072", 20);
     formantRateDropdown->setSelectedId(5); // Default to 1/4
     // Make dropdown transparent (no background or border) - EXACT same as Space Delay
     formantRateDropdown->setColour(juce::ComboBox::backgroundColourId, juce::Colours::transparentBlack);
@@ -12110,7 +11642,7 @@ void PluginEditor::setupFormantAllStepsToggle()
     // Create "All Steps" label (EXACT same as Space Delay page)
     formantAllStepsLabel = std::make_unique<juce::Label>();
     formantAllStepsLabel->setText("All Steps", juce::dontSendNotification);
-    formantAllStepsLabel->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 14.4f, juce::Font::bold)); // 12.0f * 1.2 = 14.4f (20% bigger)
+    formantAllStepsLabel->setFont(juce::Font(14.4f, juce::Font::bold)); // 12.0f * 1.2 = 14.4f (20% bigger)
     formantAllStepsLabel->setColour(juce::Label::textColourId, juce::Colours::white);
     formantAllStepsLabel->setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(formantAllStepsLabel.get());
@@ -12131,7 +11663,6 @@ void PluginEditor::setupFormantAllStepsToggle()
         if (formantValueLabels[i]) formantGroup.push_back(formantValueLabels[i].get());
         if (formantIndicatorBars[i]) formantGroup.push_back(formantIndicatorBars[i].get());
         if (formantDiceButtons[i]) formantGroup.push_back(formantDiceButtons[i].get());
-        if (formantLockButtons[i]) formantGroup.push_back(formantLockButtons[i].get());
     }
     
     // Add other Formant components to group
@@ -12180,14 +11711,6 @@ void PluginEditor::setupSaturateKnobs()
     const int knobSpacing = 20;
     const int startX = effectArea.getX() + 15;
     const int startY = effectArea.getY() + effectArea.getHeight() - 210;
-
-    // Set type to 0 (Clean) FIRST - before any audio processing to prevent pop
-    auto* typeParam = processorRef.getAPVTS().getParameter("satType");
-    if (typeParam) {
-        // Set without notification first to avoid triggering audio updates
-        typeParam->setValue(0.0f); // 0/7 = Clean
-        typeParam->setValueNotifyingHost(0.0f); // Then notify host
-    }
     
     // Set oversample to max (3 = 8×) in APVTS and snapshots
     auto* osParam = processorRef.getAPVTS().getParameter("satOsMode");
@@ -12195,31 +11718,19 @@ void PluginEditor::setupSaturateKnobs()
         osParam->setValueNotifyingHost(1.0f); // 3/3 = max (8×)
     }
     
-    // Initialize all snapshots with max oversample and Clean type (0)
+    // Initialize all snapshots with max oversample
     for (int step = 0; step < 16; ++step) {
         auto snapshot = processorRef.getSaturateSafeSnapshot(step);
         snapshot.saturate.oversample = 3.0f; // Max (8×)
-        snapshot.saturate.type = 0.0f; // Clean by default
         processorRef.setSaturateStepSnapshot(step, snapshot);
     }
     
     // Create 7 knobs (oversample removed, always max)
-    // Type knob (index 0) is created but hidden - always set to Clean (0)
     for (int i = 0; i < 7; ++i)
     {
         saturateKnobs[i] = std::make_unique<CustomKnob>();
-        // Type knob (index 0) is hidden - use addChildComponent instead of addAndMakeVisible
-        if (i == 0) {
-            addChildComponent(saturateKnobs[i].get()); // Add but don't make visible
-        } else {
             addAndMakeVisible(saturateKnobs[i].get());
-        }
-        // Hide Type knob (index 0) - it's always Clean (0)
-        saturateKnobs[i]->setVisible(i != 0);
-        saturateKnobs[i]->setEnabled(i != 0); // Disable Type knob so it can't be interacted with
-        if (i == 0) {
-            saturateKnobs[i]->setAlpha(0.0f); // Make Type knob completely invisible
-        }
+        saturateKnobs[i]->setVisible(false);
         
         saturateKnobs[i]->setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
         saturateKnobs[i]->setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
@@ -12262,13 +11773,11 @@ void PluginEditor::setupSaturateKnobs()
         if (assets.knobInside != nullptr)
             saturateKnobs[i]->setInnerImage(assets.knobInside->createCopy());
         
-        // Position knobs - skip Type knob (index 0) for layout, but still create it
-        // For visible knobs (i > 0), adjust position to skip the Type knob slot
-        int visibleIndex = (i == 0) ? 0 : i - 1; // Type knob uses slot 0, others shift left
-        int x = startX + (visibleIndex % 4) * (knobSize + knobSpacing);
-        int y = startY + (visibleIndex / 4) * (knobSize + 20);
+        // Position knobs (same layout as Dub Delay)
+        int x = startX + (i % 4) * (knobSize + knobSpacing);
+        int y = startY + (i / 4) * (knobSize + 20);
         
-        if (visibleIndex < 4)
+        if (i < 4)
             y -= 23;
         else
             y -= 1;
@@ -12280,49 +11789,25 @@ void PluginEditor::setupSaturateKnobs()
         saturateKnobLabels[i]->setText(saturateKnobNames[i], juce::dontSendNotification);
         saturateKnobLabels[i]->setJustificationType(juce::Justification::centred);
         saturateKnobLabels[i]->setColour(juce::Label::textColourId, juce::Colours::white);
-        saturateKnobLabels[i]->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 12.0f, juce::Font::bold));
+        saturateKnobLabels[i]->setFont(juce::Font(12.0f, juce::Font::bold));
         saturateKnobLabels[i]->setBounds(x, y - 15, knobSize, 20);
-        // Type knob label (index 0) is hidden
-        if (i == 0) {
-            addChildComponent(saturateKnobLabels[i].get()); // Add but don't make visible
-        } else {
             addAndMakeVisible(saturateKnobLabels[i].get());
-        }
-        saturateKnobLabels[i]->setVisible(i != 0);
-        if (i == 0) {
-            saturateKnobLabels[i]->setAlpha(0.0f); // Make Type label completely invisible
-        }
+        saturateKnobLabels[i]->setVisible(false);
         
         // Create value label
         saturateValueLabels[i] = std::make_unique<juce::Label>();
         saturateValueLabels[i]->setText("0", juce::dontSendNotification);
-        saturateValueLabels[i]->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 10.0f, juce::Font::plain));
+        saturateValueLabels[i]->setFont(juce::Font(10.0f, juce::Font::plain));
         saturateValueLabels[i]->setColour(juce::Label::textColourId, juce::Colours::white);
         saturateValueLabels[i]->setJustificationType(juce::Justification::centred);
-        // Type knob value label (index 0) is hidden
-        if (i == 0) {
-            addChildComponent(saturateValueLabels[i].get()); // Add but don't make visible
-        } else {
             addAndMakeVisible(saturateValueLabels[i].get());
-        }
-        saturateValueLabels[i]->setVisible(i != 0);
-        if (i == 0) {
-            saturateValueLabels[i]->setAlpha(0.0f); // Make Type value label completely invisible
-        }
+        saturateValueLabels[i]->setVisible(false);
         saturateValueLabels[i]->setBounds(x, y + knobSize - 10, knobSize, 15);
         
         // Create indicator bar
         saturateIndicatorBars[i] = std::make_unique<IndicatorBar>();
-        // Type knob indicator bar (index 0) is hidden
-        if (i == 0) {
-            addChildComponent(saturateIndicatorBars[i].get()); // Add but don't make visible
-        } else {
             addAndMakeVisible(saturateIndicatorBars[i].get());
-        }
-        saturateIndicatorBars[i]->setVisible(i != 0);
-        if (i == 0) {
-            saturateIndicatorBars[i]->setAlpha(0.0f); // Make Type indicator bar completely invisible
-        }
+        saturateIndicatorBars[i]->setVisible(false);
         saturateIndicatorBars[i]->setBounds(x + 10, y + knobSize + 8, knobSize - 20, 13);
         saturateIndicatorBars[i]->setValue(0.5f);
         
@@ -12333,8 +11818,8 @@ void PluginEditor::setupSaturateKnobs()
             randomizeIndividualSaturateKnob(i);
         };
         
-        // Create lock button (skip for Type knob index 0)
-        if (i > 0 && i < 7) { // Skip Type (index 0) and Mix (index 6)
+        // Create lock button
+        if (i < 7) { // Only for first 7 knobs (Mix doesn't have lock)
             saturateLockButtons[i] = std::make_unique<LockButton>();
             addAndMakeVisible(saturateLockButtons[i].get());
             saturateLockButtons[i]->setVisible(false);
@@ -12343,7 +11828,15 @@ void PluginEditor::setupSaturateKnobs()
             juce::Font labelFont(12.0f, juce::Font::bold);
             int textWidth = labelFont.getStringWidth(saturateKnobNames[i]);
             
-            positionLockButton(saturateLockButtons[i].get(), saturateKnobLabels[i].get(), y);
+            // Use same sizing as dub delay
+            const int lockSize = 10;
+            const int lockSpacing = 5; // Fixed distance from end of title text
+            
+            // Position lock button at the end of the title text + fixed spacing
+            int lockX = x + (knobSize / 2) + (textWidth / 2) + lockSpacing;
+            int lockY = y - 10;
+            
+            saturateLockButtons[i]->setBounds(lockX, lockY, lockSize, lockSize);
             
             // Set lock button images
             if (assets.unlockedIcon && assets.lockedIcon) {
@@ -12368,21 +11861,6 @@ void PluginEditor::setupSaturateKnobs()
             // Skip if loading from snapshot (prevents circular updates during randomization)
             if (isLoadingFromSnapshot.load())
                 return;
-
-            // Type knob (index 0) is always Clean (0) - prevent changes
-            if (i == 0) {
-                saturateKnobs[0]->setValue(0.0, juce::dontSendNotification);
-                return;
-            }
-
-            if (juce::ModifierKeys::getCurrentModifiers().isAnyMouseButtonDown())
-            {
-                processorRef.setSaturateUserEditing(true);
-                juce::Timer::callAfterDelay(120, [processor = &processorRef]()
-                {
-                    processor->setSaturateUserEditing(false);
-                });
-            }
             
             if (saturateKnobs[i] != nullptr && saturateValueLabels[i] != nullptr) {
                 float value = saturateKnobs[i]->getValue();
@@ -12390,15 +11868,14 @@ void PluginEditor::setupSaturateKnobs()
                 // Update value label with appropriate formatting
                 juce::String valueText;
                 switch (i) {
-                    case 0: // Type - always Clean (0), should not be visible
+                    case 0: // Type - show model name
                         {
-                            // Ensure type stays at 0 (Clean)
-                            value = 0.0f;
-                            const char* modelNames[] = {"Clean", "Density2", "Drive", "Purest", "Mojo", "Console", "Coils", "Tubey"};
-                            valueText = modelNames[0]; // Always Clean
+                            const char* modelNames[] = {"Spiral2", "Density2", "Drive", "Purest", "Mojo", "Console", "Coils", "Tubey"};
+                            int idx = static_cast<int>(value);
+                            valueText = modelNames[juce::jlimit(0, 7, idx)];
                             
-                            // Update dynamic labels for Clean type
-                            updateSaturateKnobLabels(0);
+                            // Update dynamic labels when Type changes
+                            updateSaturateKnobLabels(idx);
                         }
                         break;
                     case 1: // Drive - show dB
@@ -12439,22 +11916,20 @@ void PluginEditor::setupSaturateKnobs()
                 updateSaturateParameterFromKnob(i);
                 
                 // Handle all steps toggle - update all steps when enabled
-                // Skip Type (index 0, always Clean) and Mix (knob 6, which is global)
-                if (saturateAllStepsEnabled && i != 0 && i != 6) {
+                if (saturateAllStepsEnabled && i != 6) { // Skip Mix (knob 6) which is global
                     // Save current selected step first (done above), then update all others
                     int currentStep = saturateUiSelectedStep;
                     for (int step = 0; step < 16; ++step) {
                         if (step != currentStep) {
                             auto snapshot = processorRef.getSaturateSafeSnapshot(step);
-                            // Ensure type stays at 0 (Clean) for all steps
-                            snapshot.saturate.type = 0.0f;
                             switch (i) {
+                                case 0: snapshot.saturate.type = value; break;
                                 case 1: snapshot.saturate.drive = value; break;
                                 case 2: snapshot.saturate.color = value; break;
                                 case 3: snapshot.saturate.shape = value; break;
                                 case 4: snapshot.saturate.bias = value; break;
                                 case 5: snapshot.saturate.output = value; break;
-                                // Type (case 0) is always Clean, Mix (case 6) is global
+                                // Mix (case 6) is global, not saved per step
                             }
                             processorRef.setSaturateStepSnapshot(step, snapshot);
                         }
@@ -12482,7 +11957,7 @@ void PluginEditor::setupSaturateEffectsArea()
     // Effect title
     saturateEffectsTitle = std::make_unique<juce::Label>();
     saturateEffectsTitle->setText("EFFECT", juce::dontSendNotification);
-    saturateEffectsTitle->setFont(FontManager::getInstance().getFont("Akira Expanded", 18.6624f, juce::Font::bold).withExtraKerningFactor(0.1f)); // 10% smaller: 20.736f * 0.9 = 18.6624f, with letter spacing
+    saturateEffectsTitle->setFont(juce::Font(27.648f, juce::Font::bold));
     saturateEffectsTitle->setColour(juce::Label::textColourId, juce::Colours::white);
     saturateEffectsTitle->setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(saturateEffectsTitle.get());
@@ -12536,11 +12011,8 @@ void PluginEditor::setupSaturateEffectsArea()
     saturateGroup.push_back(saturateDiceButton.get());
     saturateGroup.push_back(saturateFxPowerButton.get());
     
-    // Add knobs and related components (skip Type knob index 0)
+    // Add knobs and related components
     for (int i = 0; i < 7; ++i) { // 7 knobs (oversample removed)
-        // Skip Type knob (index 0) - it's hidden and always Clean
-        if (i == 0) continue;
-        
         if (saturateKnobs[i]) saturateGroup.push_back(saturateKnobs[i].get());
         if (saturateKnobLabels[i]) saturateGroup.push_back(saturateKnobLabels[i].get());
         if (saturateValueLabels[i]) saturateGroup.push_back(saturateValueLabels[i].get());
@@ -12548,6 +12020,11 @@ void PluginEditor::setupSaturateEffectsArea()
         if (saturateDiceButtons[i]) saturateGroup.push_back(saturateDiceButtons[i].get());
         if (saturateLockButtons[i]) saturateGroup.push_back(saturateLockButtons[i].get());
     }
+    // Mix knob (index 7) - no lock button
+    if (saturateKnobs[6]) saturateGroup.push_back(saturateKnobs[6].get());
+    if (saturateKnobLabels[6]) saturateGroup.push_back(saturateKnobLabels[6].get());
+    if (saturateValueLabels[6]) saturateGroup.push_back(saturateValueLabels[6].get());
+    if (saturateIndicatorBars[6]) saturateGroup.push_back(saturateIndicatorBars[6].get());
     
     DBG("[UI] Saturate effects area setup complete");
 }
@@ -12561,7 +12038,7 @@ void PluginEditor::setupSaturateSequencerArea()
     // "STEP" title
     saturateStepTitle = std::make_unique<juce::Label>();
     saturateStepTitle->setText("STEP", juce::dontSendNotification);
-    saturateStepTitle->setFont(FontManager::getInstance().getFont("Akira Expanded", 13.436685f, juce::Font::bold).withExtraKerningFactor(0.09f)); // Adjusted size with 10% less letter spacing: 0.1 * 0.9 = 0.09
+    saturateStepTitle->setFont(juce::Font(22.118f, juce::Font::bold));
     saturateStepTitle->setColour(juce::Label::textColourId, juce::Colours::white);
     saturateStepTitle->setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(saturateStepTitle.get());
@@ -12601,7 +12078,7 @@ void PluginEditor::setupSaturateSequencerArea()
     // Step amount label
     saturateStepAmountLabel = std::make_unique<juce::TextEditor>();
     saturateStepAmountLabel->setText("16");
-    saturateStepAmountLabel->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 16.0f, juce::Font::bold));
+    saturateStepAmountLabel->setFont(juce::Font(16.0f, juce::Font::bold));
     saturateStepAmountLabel->setColour(juce::TextEditor::textColourId, juce::Colours::white);
     saturateStepAmountLabel->setColour(juce::TextEditor::backgroundColourId, juce::Colours::transparentBlack);
     saturateStepAmountLabel->setColour(juce::TextEditor::outlineColourId, juce::Colours::white);
@@ -12672,35 +12149,20 @@ void PluginEditor::setupSaturateSequencerArea()
             auto snapshot = processorRef.getSaturateSafeSnapshot(step);
             
             // Randomize all Saturate parameters for this step
-            // Type is always Clean (0) - not randomized
-            snapshot.saturate.type = 0.0f; // Always Clean
+            snapshot.saturate.type = static_cast<float>(rng.nextInt(8)); // 0-7
             snapshot.saturate.drive = 6.0f + rng.nextFloat() * 24.0f; // 6-30 dB
             snapshot.saturate.color = 0.3f + rng.nextFloat() * 0.5f; // 0.3-0.8
             snapshot.saturate.shape = 0.2f + rng.nextFloat() * 0.6f; // 0.2-0.8
             snapshot.saturate.bias = -0.15f + rng.nextFloat() * 0.3f; // -0.15 to 0.15
             snapshot.saturate.output = -12.0f + rng.nextFloat() * 18.0f; // -12 to +6 dB
-            snapshot.saturate.oversample = 3.0f; // Always max (8×)
+            snapshot.saturate.oversample = static_cast<float>(rng.nextInt(4)); // 0-3
             
             processorRef.setSaturateStepSnapshot(step, snapshot);
         }
         
-        // Randomize Mix knob (index 6) - it's global but should still randomize
-        if (saturateKnobs[6]) {
-            juce::Random mixRng;
-            float randomMix = mixRng.nextFloat(); // 0.0 to 1.0
-            saturateKnobs[6]->setValue(randomMix, juce::dontSendNotification);
-            // Update the global Mix parameter
-            auto* mixParam = processorRef.getAPVTS().getParameter("satMix");
-            if (mixParam) {
-                mixParam->setValueNotifyingHost(randomMix);
-            }
-        }
-        
         // Reload current step to UI (don't send notification to avoid triggering save)
         auto currentSnapshot = processorRef.getSaturateSafeSnapshot(saturateUiSelectedStep);
-        // Ensure type is always Clean (0)
-        currentSnapshot.saturate.type = 0.0f;
-        if (saturateKnobs[0]) saturateKnobs[0]->setValue(0.0f, juce::dontSendNotification);
+        if (saturateKnobs[0]) saturateKnobs[0]->setValue(currentSnapshot.saturate.type, juce::dontSendNotification);
         if (saturateKnobs[1]) saturateKnobs[1]->setValue(currentSnapshot.saturate.drive, juce::dontSendNotification);
         if (saturateKnobs[2]) saturateKnobs[2]->setValue(currentSnapshot.saturate.color, juce::dontSendNotification);
         if (saturateKnobs[3]) saturateKnobs[3]->setValue(currentSnapshot.saturate.shape, juce::dontSendNotification);
@@ -12708,10 +12170,9 @@ void PluginEditor::setupSaturateSequencerArea()
         if (saturateKnobs[5]) saturateKnobs[5]->setValue(currentSnapshot.saturate.output, juce::dontSendNotification);
         // Oversample is always max (3 = 8×), not a knob anymore
         
-        // Update labels for Clean type (0)
-        updateSaturateKnobLabels(0);
-        // Skip Type knob (index 0) - update knobs 1-5 and Mix (6)
-        for (int i = 1; i < 7; ++i) {
+        // Update labels
+        updateSaturateKnobLabels(static_cast<int>(currentSnapshot.saturate.type));
+        for (int i = 0; i < 6; ++i) { // Only first 6 knobs (Mix is global)
             if (saturateKnobs[i] && saturateKnobs[i]->onValueChange) {
                 saturateKnobs[i]->onValueChange();
             }
@@ -12758,868 +12219,6 @@ void PluginEditor::setupSaturateSequencerArea()
     DBG("[UI] Saturate sequencer area setup complete");
 }
 
-//==============================================================================
-// Filter Page Setup Methods
-//==============================================================================
-
-void PluginEditor::setupFilterKnobs()
-{
-    DBG("[UI] Setting up Filter knobs...");
-    
-    // Filter controls: 8 knobs total
-    // Layout: 2 rows of 4 knobs
-    // Row 1: Type knob, Cutoff knob, Res knob, Slope knob
-    // Row 2: Drive knob, Spread knob, Key Track knob, Mix knob
-    
-    auto effectArea = juce::Rectangle<int>(25, 54, 413, 296);
-    const int knobSize = 80;
-    const int knobSpacing = 20;
-    const int startX = effectArea.getX() + 15;
-    const int startY = effectArea.getY() + effectArea.getHeight() - 210;
-    
-    // Parameter IDs for 7 knobs (Type, Cutoff, Res, Slope, Drive, Key Track, Mix) - Spread removed
-    std::vector<juce::String> filterParamIds = {
-        "fType", "cutoff", "res", "slope", "filterDrive", "keytrack", "filterMix"
-    };
-    
-    // Knob names for 7 knobs (Spread removed)
-    std::vector<juce::String> filterKnobNames = {
-        "Type", "Cutoff", "Resonance", "Slope", "Drive", "Key Track", "Mix"
-    };
-    
-    // Create 8 knobs in a 2x4 grid (skip spread position at knobIdx 5)
-    for (int knobIdx = 0; knobIdx < 8; ++knobIdx)
-    {
-        int col = knobIdx % 4;
-        int row = knobIdx / 4;
-        int x = startX + col * (knobSize + knobSpacing);
-        int y = startY + row * (knobSize + 20);
-        if (row == 0) y -= 23; else y -= 1;
-        
-        // Create knob (Type and Slope are special cases)
-        if (knobIdx == 0) {
-            // Type knob
-            filterTypeKnob = std::make_unique<CustomKnob>();
-            filterTypeKnob->setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
-            filterTypeKnob->setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
-            filterTypeKnob->setRange(0.0, 4.0, 1.0); // 0=LP, 1=HP, 2=BP, 3=Comb-, 4=Comb+
-            filterTypeKnob->setValue(0.0, juce::dontSendNotification); // Default LP
-            
-            if (assets.knobRing != nullptr)
-                filterTypeKnob->setRingImage(assets.knobRing->createCopy());
-            if (assets.knobInside != nullptr)
-                filterTypeKnob->setInnerImage(assets.knobInside->createCopy());
-            
-            filterTypeKnob->setBounds(x, y, knobSize, knobSize);
-            addAndMakeVisible(filterTypeKnob.get());
-            filterTypeKnob->setVisible(false);
-        } else if (knobIdx == 3) {
-            // Slope knob
-            filterSlopeKnob = std::make_unique<CustomKnob>();
-            filterSlopeKnob->setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
-            filterSlopeKnob->setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
-            filterSlopeKnob->setRange(0.0, 1.0, 0.01); // 0=12dB, 1=24dB
-            filterSlopeKnob->setValue(1.0, juce::dontSendNotification); // Default 24dB
-            
-            if (assets.knobRing != nullptr)
-                filterSlopeKnob->setRingImage(assets.knobRing->createCopy());
-            if (assets.knobInside != nullptr)
-                filterSlopeKnob->setInnerImage(assets.knobInside->createCopy());
-            
-            filterSlopeKnob->setBounds(x, y, knobSize, knobSize);
-            addAndMakeVisible(filterSlopeKnob.get());
-            filterSlopeKnob->setVisible(false);
-        } else if (knobIdx == 5 || knobIdx == 6) {
-            // Regular knobs (Key Track, Mix) - Now filling positions 5 and 6
-            // Map: knobIdx 5→3 (Key Track), 6→4 (Mix)
-            int regularKnobIdx = (knobIdx == 5) ? 3 : 4;
-            
-            filterKnobs[regularKnobIdx] = std::make_unique<CustomKnob>();
-            filterKnobs[regularKnobIdx]->setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
-            filterKnobs[regularKnobIdx]->setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
-            
-            // Set parameter ranges
-            if (regularKnobIdx == 3) { // Key Track
-                filterKnobs[regularKnobIdx]->setRange(0.0, 1.0, 0.01);
-                filterKnobs[regularKnobIdx]->setValue(0.0, juce::dontSendNotification);
-            } else { // Mix (regularKnobIdx == 4)
-                filterKnobs[regularKnobIdx]->setRange(0.0, 1.0, 0.01);
-                filterKnobs[regularKnobIdx]->setValue(1.0, juce::dontSendNotification);
-            }
-            
-            if (assets.knobRing != nullptr)
-                filterKnobs[regularKnobIdx]->setRingImage(assets.knobRing->createCopy());
-            if (assets.knobInside != nullptr)
-                filterKnobs[regularKnobIdx]->setInnerImage(assets.knobInside->createCopy());
-            
-            filterKnobs[regularKnobIdx]->setBounds(x, y, knobSize, knobSize);
-            addAndMakeVisible(filterKnobs[regularKnobIdx].get());
-            filterKnobs[regularKnobIdx]->setVisible(false);
-            
-            // Create attachment - Map knobIdx to filterParamIds index: 5→5 (Key Track), 6→6 (Mix)
-            int paramIdsIdx = (knobIdx == 5) ? 5 : 6;
-            filterAttachments[regularKnobIdx] = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
-                processorRef.getAPVTS(), filterParamIds[paramIdsIdx], *filterKnobs[regularKnobIdx]);
-        } else if (knobIdx == 1 || knobIdx == 2 || knobIdx == 4) {
-            // Regular knobs (Cutoff, Res, Drive) - Skip Type (0), Slope (3), and empty position 7
-            // Map: knobIdx 1→0 (Cutoff), 2→1 (Res), 4→2 (Drive)
-            int regularKnobIdx = (knobIdx == 1) ? 0 : (knobIdx == 2) ? 1 : 2;
-            
-            filterKnobs[regularKnobIdx] = std::make_unique<CustomKnob>();
-            filterKnobs[regularKnobIdx]->setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
-            filterKnobs[regularKnobIdx]->setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
-            
-            // Set parameter ranges
-            switch (regularKnobIdx) {
-                case 0: // Cutoff - linear rotation (0-1), custom frequency mapping in processor
-                    // Knob rotates linearly 0-1, processor converts to frequency: 0-0.75 → 20-5000Hz, 0.75-1.0 → 5000-20000Hz
-                    filterKnobs[regularKnobIdx]->setRange(0.0, 1.0, 0.001);
-                    filterKnobs[regularKnobIdx]->setValue(0.18, juce::dontSendNotification); // ~0.18 = 1200Hz
-                    break;
-                case 1: // Res
-                    filterKnobs[regularKnobIdx]->setRange(0.0, 1.0, 0.01);
-                    filterKnobs[regularKnobIdx]->setValue(0.35, juce::dontSendNotification);
-                    break;
-                case 2: // Drive - larger increments for more noticeable changes
-                    filterKnobs[regularKnobIdx]->setRange(0.0, 36.0, 0.5);
-                    filterKnobs[regularKnobIdx]->setValue(6.0, juce::dontSendNotification);
-                    break;
-            }
-            
-            if (assets.knobRing != nullptr)
-                filterKnobs[regularKnobIdx]->setRingImage(assets.knobRing->createCopy());
-            if (assets.knobInside != nullptr)
-                filterKnobs[regularKnobIdx]->setInnerImage(assets.knobInside->createCopy());
-            
-            filterKnobs[regularKnobIdx]->setBounds(x, y, knobSize, knobSize);
-            addAndMakeVisible(filterKnobs[regularKnobIdx].get());
-            filterKnobs[regularKnobIdx]->setVisible(false);
-            
-            // Create attachment - Map knobIdx to filterParamIds index: 1→1 (cutoff), 2→2 (res), 4→4 (drive)
-            int paramIdsIdx = knobIdx;
-            filterAttachments[regularKnobIdx] = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
-                processorRef.getAPVTS(), filterParamIds[paramIdsIdx], *filterKnobs[regularKnobIdx]);
-        }
-        // Note: knobIdx 7 is now empty (was Mix, moved to position 6)
-        
-        // Create label for all knobs (skip empty position - knobIdx 7, and skip Type/Slope which have separate labels)
-        if (knobIdx != 7 && knobIdx != 0 && knobIdx != 3) { // Skip empty position 7, Type (0), and Slope (3) - they have separate labels
-            // Map knobIdx to filterKnobNames index: 1→1 (Cutoff), 2→2 (Resonance), 4→4 (Drive), 5→5 (Key Track), 6→6 (Mix)
-            int namesIdx = knobIdx; // Direct mapping for non-special knobs
-            // Label indices match knobIdx directly (0-7), except knobIdx 0 (Type), 3 (Slope), 5 (spread removed), and 7 (empty)
-            int labelIdx = knobIdx; // Use same index as knobIdx (labels array has 8 elements)
-            filterKnobLabels[labelIdx] = std::make_unique<juce::Label>();
-            filterKnobLabels[labelIdx]->setText(filterKnobNames[namesIdx], juce::dontSendNotification);
-            filterKnobLabels[labelIdx]->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 12.0f, juce::Font::bold));
-            filterKnobLabels[labelIdx]->setColour(juce::Label::textColourId, juce::Colours::white);
-            filterKnobLabels[labelIdx]->setJustificationType(juce::Justification::centred);
-            addAndMakeVisible(filterKnobLabels[labelIdx].get());
-            filterKnobLabels[labelIdx]->setVisible(false);
-            filterKnobLabels[labelIdx]->setBounds(x, y - 15, knobSize, 20);
-            
-            // Create value label for all knobs
-            filterValueLabels[labelIdx] = std::make_unique<juce::Label>();
-            filterValueLabels[labelIdx]->setText("0", juce::dontSendNotification);
-            filterValueLabels[labelIdx]->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 10.0f, juce::Font::plain));
-            filterValueLabels[labelIdx]->setColour(juce::Label::textColourId, juce::Colours::white);
-            filterValueLabels[labelIdx]->setJustificationType(juce::Justification::centred);
-            addAndMakeVisible(filterValueLabels[labelIdx].get());
-            filterValueLabels[labelIdx]->setVisible(false);
-            filterValueLabels[labelIdx]->setBounds(x, y + knobSize - 10, knobSize, 15);
-            
-            // Create indicator bar for all knobs - FIX 1: Correct bounds
-            filterIndicatorBars[labelIdx] = std::make_unique<IndicatorBar>();
-            addAndMakeVisible(filterIndicatorBars[labelIdx].get());
-            filterIndicatorBars[labelIdx]->setVisible(false);
-            filterIndicatorBars[labelIdx]->setBounds(x + 10, y + knobSize + 8, knobSize - 20, 13);
-            filterIndicatorBars[labelIdx]->setValue(0.5f);
-            
-            // Create lock button for all knobs (except Type and Slope which are created separately)
-            if (knobIdx != 0 && knobIdx != 3) {
-                filterLockButtons[labelIdx] = std::make_unique<LockButton>();
-                addAndMakeVisible(filterLockButtons[labelIdx].get());
-                filterLockButtons[labelIdx]->setVisible(false);
-                
-                positionLockButton(filterLockButtons[labelIdx].get(), filterKnobLabels[labelIdx].get(), y);
-                
-                if (assets.unlockedIcon && assets.lockedIcon) {
-                    auto imgUnlocked = assets.unlockedIcon->createCopy();
-                    auto imgLocked = assets.lockedIcon->createCopy();
-                    filterLockButtons[labelIdx]->setImages(std::move(imgUnlocked), std::move(imgLocked));
-                }
-                
-                filterLockButtons[labelIdx]->setToggleState(filterKnobLocked[labelIdx], juce::dontSendNotification);
-                filterLockButtons[labelIdx]->setClickingTogglesState(true);
-                filterLockButtons[labelIdx]->onClick = [this, labelIdx]() {
-                    filterKnobLocked[labelIdx] = filterLockButtons[labelIdx]->getToggleState();
-                    repaint();
-                };
-            }
-        }
-    }
-    
-    // Create Type label
-    filterTypeLabel = std::make_unique<juce::Label>();
-    filterTypeLabel->setText("Type", juce::dontSendNotification);
-    filterTypeLabel->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 12.0f, juce::Font::bold));
-    filterTypeLabel->setColour(juce::Label::textColourId, juce::Colours::white);
-    filterTypeLabel->setJustificationType(juce::Justification::centred);
-    addAndMakeVisible(filterTypeLabel.get());
-    filterTypeLabel->setVisible(false);
-    int typeX = startX;
-    int typeY = startY - 23 - 15; // Label Y position (knob Y is startY - 23)
-    filterTypeLabel->setBounds(typeX, typeY, knobSize, 20);
-    
-    // Create lock button for Type knob (index 0 in filterKnobLocked array)
-    // Position it relative to the label, same as regular knobs
-    filterLockButtons[0] = std::make_unique<LockButton>();
-    addAndMakeVisible(filterLockButtons[0].get());
-    filterLockButtons[0]->setVisible(false);
-    filterLockButtons[0]->setClickingTogglesState(true);
-    
-    juce::Font typeLabelFont(12.0f, juce::Font::bold);
-    int typeTextWidth = typeLabelFont.getStringWidth("Type");
-    int typeKnobY = startY - 23;
-    positionLockButton(filterLockButtons[0].get(), filterTypeLabel.get(), typeKnobY);
-    
-    if (assets.unlockedIcon && assets.lockedIcon) {
-        auto imgUnlocked = assets.unlockedIcon->createCopy();
-        auto imgLocked = assets.lockedIcon->createCopy();
-        filterLockButtons[0]->setImages(std::move(imgUnlocked), std::move(imgLocked));
-    }
-    
-    filterLockButtons[0]->setToggleState(filterKnobLocked[0], juce::dontSendNotification);
-    filterLockButtons[0]->onClick = [this]() {
-        filterKnobLocked[0] = filterLockButtons[0]->getToggleState();
-        repaint();
-    };
-    
-    // Create value label and indicator bar for Type knob (position 0)
-    filterValueLabels[0] = std::make_unique<juce::Label>();
-    filterValueLabels[0]->setText("LP", juce::dontSendNotification);
-    filterValueLabels[0]->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 10.0f, juce::Font::plain));
-    filterValueLabels[0]->setColour(juce::Label::textColourId, juce::Colours::white);
-    filterValueLabels[0]->setJustificationType(juce::Justification::centred);
-    addAndMakeVisible(filterValueLabels[0].get());
-    filterValueLabels[0]->setVisible(false);
-    filterValueLabels[0]->setBounds(typeX, typeKnobY + knobSize - 10, knobSize, 15);
-    
-    filterIndicatorBars[0] = std::make_unique<IndicatorBar>();
-    addAndMakeVisible(filterIndicatorBars[0].get());
-    filterIndicatorBars[0]->setVisible(false);
-    filterIndicatorBars[0]->setBounds(typeX + 10, typeKnobY + knobSize + 8, knobSize - 20, 13);
-    filterIndicatorBars[0]->setValue(0.0f);
-    
-    // Create Slope label
-    filterSlopeLabel = std::make_unique<juce::Label>();
-    filterSlopeLabel->setText("Slope", juce::dontSendNotification);
-    filterSlopeLabel->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 12.0f, juce::Font::bold));
-    filterSlopeLabel->setColour(juce::Label::textColourId, juce::Colours::white);
-    filterSlopeLabel->setJustificationType(juce::Justification::centred);
-    addAndMakeVisible(filterSlopeLabel.get());
-    filterSlopeLabel->setVisible(false);
-    int slopeX = startX + 3 * (knobSize + knobSpacing);
-    int slopeY = startY - 23 - 15;
-    filterSlopeLabel->setBounds(slopeX, slopeY, knobSize, 20);
-    
-    // Create lock button for Slope knob (index 3 in filterKnobLocked array)
-    // Use exact same calculation as in the loop for knobIdx=3
-    filterLockButtons[3] = std::make_unique<LockButton>();
-    addAndMakeVisible(filterLockButtons[3].get());
-    filterLockButtons[3]->setVisible(false);
-    filterLockButtons[3]->setClickingTogglesState(true);
-    
-    // Calculate slope lock position - match regular knobs exactly
-    // Regular knobs: label at y - 15, lock at y - 10 (5px below label top)
-    // Slope: label at slopeY = startY - 23 - 15 = startY - 38
-    // So lock should be at slopeY + 5 = startY - 33, which equals (startY - 23) - 10
-    auto slopeLabelBounds = filterSlopeLabel->getBounds();
-    int slopeKnobY = startY - 23;
-    int slopeKnobX = slopeLabelBounds.getX();
-    positionLockButton(filterLockButtons[3].get(), filterSlopeLabel.get(), slopeKnobY);
-    
-    if (assets.unlockedIcon && assets.lockedIcon) {
-        auto imgUnlocked = assets.unlockedIcon->createCopy();
-        auto imgLocked = assets.lockedIcon->createCopy();
-        filterLockButtons[3]->setImages(std::move(imgUnlocked), std::move(imgLocked));
-    }
-    
-    filterLockButtons[3]->setToggleState(filterKnobLocked[3], juce::dontSendNotification);
-    filterLockButtons[3]->onClick = [this]() {
-        filterKnobLocked[3] = filterLockButtons[3]->getToggleState();
-        repaint();
-    };
-    
-    // Create value label and indicator bar for Slope knob (position 3)
-    filterValueLabels[3] = std::make_unique<juce::Label>();
-    filterValueLabels[3]->setText("24dB", juce::dontSendNotification);
-    filterValueLabels[3]->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 10.0f, juce::Font::plain));
-    filterValueLabels[3]->setColour(juce::Label::textColourId, juce::Colours::white);
-    filterValueLabels[3]->setJustificationType(juce::Justification::centred);
-    addAndMakeVisible(filterValueLabels[3].get());
-    filterValueLabels[3]->setVisible(false);
-    filterValueLabels[3]->setBounds(slopeX, slopeKnobY + knobSize - 10, knobSize, 15);
-    
-    filterIndicatorBars[3] = std::make_unique<IndicatorBar>();
-    addAndMakeVisible(filterIndicatorBars[3].get());
-    filterIndicatorBars[3]->setVisible(false);
-    filterIndicatorBars[3]->setBounds(slopeX + 10, slopeKnobY + knobSize + 8, knobSize - 20, 13);
-    filterIndicatorBars[3]->setValue(1.0f);
-    
-    // Create attachments for Type and Slope
-    filterTypeAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
-        processorRef.getAPVTS(), "fType", *filterTypeKnob);
-    filterSlopeAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
-        processorRef.getAPVTS(), "slope", *filterSlopeKnob);
-    
-    // Setup value change callbacks for all knobs
-    filterTypeKnob->onValueChange = [this]() {
-        // Skip if loading from snapshot (prevents circular updates)
-        if (isLoadingFromSnapshot.load())
-            return;
-        
-        // Respect lock state - if locked, restore previous value
-        if (filterKnobLocked[0]) {
-            // Restore to previous value
-            auto* typeParam = processorRef.getAPVTS().getParameter("fType");
-            if (typeParam) {
-                float prevValue = typeParam->getValue() * 4.0f; // Convert from normalized to 0-4
-                filterTypeKnob->setValue(prevValue, juce::dontSendNotification);
-            }
-            return;
-        }
-            
-        float value = filterTypeKnob->getValue();
-        juce::String types[] = {"LP", "HP", "BP", "Comb-", "Comb+"};
-        int idx = static_cast<int>(value);
-        if (idx >= 0 && idx < 5) {
-            filterValueLabels[0]->setText(types[idx], juce::dontSendNotification);
-        }
-        if (filterIndicatorBars[0]) filterIndicatorBars[0]->setValue(value / 4.0f);
-        
-        // Save to snapshot
-        updateFilterParameterFromKnob(-1); // -1 = Type knob
-        
-        // Handle all steps toggle - update all steps when enabled
-        if (filterAllStepsEnabled) {
-            int currentStep = filterUiSelectedStep;
-            for (int step = 0; step < 16; ++step) {
-                if (step != currentStep) {
-                    auto snapshot = processorRef.getFilterSafeSnapshot(step);
-                    snapshot.filter.type = value;
-                    processorRef.setFilterStepSnapshot(step, snapshot);
-                }
-            }
-        }
-    };
-    
-    filterSlopeKnob->onValueChange = [this]() {
-        // Skip if loading from snapshot (prevents circular updates)
-        if (isLoadingFromSnapshot.load())
-            return;
-        
-        // Respect lock state - if locked, restore previous value
-        if (filterKnobLocked[3]) {
-            // Restore to previous value
-            auto* slopeParam = processorRef.getAPVTS().getParameter("slope");
-            if (slopeParam) {
-                float prevValue = slopeParam->getValue(); // 0-1 normalized
-                filterSlopeKnob->setValue(prevValue, juce::dontSendNotification);
-            }
-            return;
-        }
-            
-        float value = filterSlopeKnob->getValue();
-        filterValueLabels[3]->setText(value > 0.5f ? "24dB" : "12dB", juce::dontSendNotification);
-        if (filterIndicatorBars[3]) filterIndicatorBars[3]->setValue(value);
-        
-        // Save to snapshot
-        updateFilterParameterFromKnob(-2); // -2 = Slope knob
-        
-        // Handle all steps toggle - update all steps when enabled
-        if (filterAllStepsEnabled) {
-            int currentStep = filterUiSelectedStep;
-            for (int step = 0; step < 16; ++step) {
-                if (step != currentStep) {
-                    auto snapshot = processorRef.getFilterSafeSnapshot(step);
-                    snapshot.filter.slope = value;
-                    processorRef.setFilterStepSnapshot(step, snapshot);
-                }
-            }
-        }
-    };
-    
-    for (int i = 0; i < 5; ++i) { // 5 knobs: Cutoff, Res, Drive, Key Track, Mix (Spread removed)
-        if (filterKnobs[i]) {
-            filterKnobs[i]->onValueChange = [this, i]() {
-                // Skip if loading from snapshot (prevents circular updates)
-                if (isLoadingFromSnapshot.load())
-                    return;
-                    
-                if (!filterKnobs[i]) return;
-                float value = filterKnobs[i]->getValue();
-                juce::String text;
-                // Map filterKnobs index to knobLabelIdx: 0→1 (Cutoff), 1→2 (Res), 2→4 (Drive), 3→5 (Key Track), 4→6 (Mix)
-                // Skip empty position (knobIdx 7) in labels
-                int knobLabelIdx = (i == 0) ? 1 : (i == 1) ? 2 : (i == 2) ? 4 : (i == 3) ? 5 : 6;
-                
-                switch (i) {
-                    case 0: {
-                        // Convert normalized value (0-1) to frequency for display
-                        float freq = value <= 0.75f 
-                            ? 20.0f + (5000.0f - 20.0f) * (value / 0.75f)
-                            : 5000.0f * std::pow(4.0f, (value - 0.75f) / 0.25f);
-                        text = juce::String(static_cast<int>(freq)) + " Hz";
-                        break;
-                    }
-                    case 1: text = juce::String(static_cast<int>(value * 100)) + "%"; break;
-                    case 2: {
-                        // Drive: convert 0-36 dB to 0-100% for display
-                        // Read the actual parameter value instead of knob value (SliderAttachment may normalize it)
-                        auto* driveParam = processorRef.getAPVTS().getParameter("filterDrive");
-                        float driveDb = 0.0f;
-                        
-                        if (driveParam) {
-                            // Get normalized value (0-1) and convert to actual dB value (0-36)
-                            float normalized = driveParam->getValue(); // Returns 0-1
-                            driveDb = driveParam->convertFrom0to1(normalized); // Converts to 0-36 dB
-                        } else {
-                            // Fallback: use knob value directly if parameter not available
-                            driveDb = juce::jlimit(0.0f, 36.0f, value);
-                        }
-                        
-                        // Ensure we have a valid range
-                        driveDb = juce::jlimit(0.0f, 36.0f, driveDb);
-                        float drivePercent = (driveDb / 36.0f) * 100.0f;
-                        text = juce::String(static_cast<int>(drivePercent)) + "%";
-                        break;
-                    }
-                    case 3: text = juce::String(static_cast<int>(value * 100)) + "%"; break; // Key Track
-                    case 4: text = juce::String(static_cast<int>(value * 100)) + "%"; break; // Mix
-                }
-                if (filterValueLabels[knobLabelIdx]) {
-                    filterValueLabels[knobLabelIdx]->setText(text, juce::dontSendNotification);
-                }
-                
-                if (filterIndicatorBars[knobLabelIdx]) {
-                    float norm = 0.0f;
-                    switch (i) {
-                        case 0: norm = value; break; // Cutoff - already normalized 0-1
-                        case 1: norm = value; break; // Res - already normalized 0-1
-                        case 2: norm = value / 36.0f; break; // Drive - normalize 0-36 to 0-1
-                        case 3: norm = value; break; // Key Track - already normalized 0-1
-                        case 4: norm = value; break; // Mix - already normalized 0-1
-                    }
-                    filterIndicatorBars[knobLabelIdx]->setValue(norm);
-                }
-                
-                // Save to snapshot (Mix knob at index 4 is global, not saved per step)
-                if (i != 4) { // Mix is at index 4 now
-                    updateFilterParameterFromKnob(i);
-                    
-                    // Handle all steps toggle - update all steps when enabled
-                    if (filterAllStepsEnabled) {
-                        // Save current selected step first (done above), then update all others
-                        int currentStep = filterUiSelectedStep;
-                        float value = filterKnobs[i]->getValue();
-                        for (int step = 0; step < 16; ++step) {
-                            if (step != currentStep) {
-                                auto snapshot = processorRef.getFilterSafeSnapshot(step);
-                                switch (i) {
-                                    case 0: { // Cutoff - convert normalized value to frequency
-                                        // Use the same conversion logic as in processor
-                                        float freq = value <= 0.75f 
-                                            ? 20.0f + (5000.0f - 20.0f) * (value / 0.75f)
-                                            : 5000.0f * std::pow(4.0f, (value - 0.75f) / 0.25f);
-                                        snapshot.filter.cutoff = juce::jlimit(20.0f, 20000.0f, freq);
-                                        break;
-                                    }
-                                    case 1: // Resonance
-                                        snapshot.filter.resonance = value;
-                                        break;
-                                    case 2: // Drive
-                                        snapshot.filter.drive = value;
-                                        break;
-                                    case 3: // Key Track
-                                        snapshot.filter.keytrack = value;
-                                        break;
-                                }
-                                processorRef.setFilterStepSnapshot(step, snapshot);
-                            }
-                        }
-                    }
-                }
-            };
-        }
-    }
-    
-    DBG("[UI] Filter knobs setup complete");
-}
-
-void PluginEditor::setupFilterEffectsArea()
-{
-    DBG("[UI] Setting up Filter effects area...");
-    
-    auto effectArea = juce::Rectangle<int>(25, 54, 413, 296);
-    
-    // Create "EFFECT" title
-    filterEffectsTitle = std::make_unique<juce::Label>();
-    filterEffectsTitle->setText("EFFECT", juce::dontSendNotification);
-    filterEffectsTitle->setFont(FontManager::getInstance().getFont("Akira Expanded", 18.6624f, juce::Font::bold).withExtraKerningFactor(0.1f)); // 10% smaller: 20.736f * 0.9 = 18.6624f, with letter spacing
-    filterEffectsTitle->setColour(juce::Label::textColourId, juce::Colours::white);
-    filterEffectsTitle->setJustificationType(juce::Justification::centredLeft);
-    addAndMakeVisible(filterEffectsTitle.get());
-    filterEffectsTitle->setVisible(false);
-    filterEffectsTitle->setBounds(effectArea.getX() + 10, effectArea.getY() + 5, 100, 30);
-    
-    // Create dice button - FIX 2: Correct size (32)
-    filterDiceButton = std::make_unique<CustomDiceButton>();
-    addAndMakeVisible(filterDiceButton.get());
-    filterDiceButton->setVisible(false);
-    const int diceSize = 32;
-    filterDiceButton->setBounds(effectArea.getX() + 130, effectArea.getY() + 5, diceSize, diceSize);
-    if (assets.diceLarge != nullptr) {
-        filterDiceButton->setDiceImage(assets.diceLarge->createCopy());
-    }
-    filterDiceButton->onClick = [this]() {
-        // TODO: randomizeFilterKnobValues();
-    };
-    
-    // Create FX power button
-    filterFxPowerButton = std::make_unique<juce::DrawableButton>("filterFxPower", juce::DrawableButton::ButtonStyle::ImageFitted);
-    addAndMakeVisible(filterFxPowerButton.get());
-    filterFxPowerButton->setVisible(false);
-    filterFxPowerButton->setClickingTogglesState(true);
-    filterFxPowerButton->setColour(juce::DrawableButton::backgroundColourId, juce::Colours::transparentBlack);
-    filterFxPowerButton->setColour(juce::DrawableButton::backgroundOnColourId, juce::Colours::transparentBlack);
-    const int buttonSize = 46;
-    filterFxPowerButton->setBounds(effectArea.getX() + effectArea.getWidth() - buttonSize - 8 + 8 + 3,
-                                   effectArea.getY() + 6 - 20 + 4, buttonSize, buttonSize);
-    if (assets.fxPowerOn != nullptr) {
-        filterFxPowerButton->setImages(assets.fxPowerOn->createCopy().get());
-    }
-    
-    filterFxPowerButton->setToggleState(filterFxAreaEnabled, juce::dontSendNotification);
-    // FIX 3: Working power button with visibility function
-    filterFxPowerButton->onClick = [this]() {
-        filterFxAreaEnabled = filterFxPowerButton->getToggleState();
-        updateFilterFxAreaVisibility();
-        auto* filterEnabledParam = processorRef.getAPVTS().getParameter("filterEnabled");
-        if (filterEnabledParam) {
-            filterEnabledParam->setValueNotifyingHost(filterFxAreaEnabled ? 1.0f : 0.0f);
-        }
-    };
-    
-    DBG("[UI] Filter effects area setup complete");
-}
-
-void PluginEditor::setupFilterSequencerArea()
-{
-    DBG("[UI] Setting up Filter sequencer area...");
-    
-    auto sequencerArea = juce::Rectangle<int>(25, 374, 413, 140);
-    
-    // Create "STEP" title
-    filterStepTitle = std::make_unique<juce::Label>();
-    filterStepTitle->setText("STEP", juce::dontSendNotification);
-    filterStepTitle->setFont(FontManager::getInstance().getFont("Akira Expanded", 13.436685f, juce::Font::bold).withExtraKerningFactor(0.09f)); // Adjusted size with 10% less letter spacing: 0.1 * 0.9 = 0.09
-    filterStepTitle->setColour(juce::Label::textColourId, juce::Colours::white);
-    filterStepTitle->setJustificationType(juce::Justification::centredLeft);
-    addAndMakeVisible(filterStepTitle.get());
-    filterStepTitle->setVisible(false);
-    filterStepTitle->setBounds(sequencerArea.getX() + 10, sequencerArea.getY(), 80, 30);
-    
-    // Create step dice button
-    filterStepDiceButton = std::make_unique<CustomDiceButton>();
-    addAndMakeVisible(filterStepDiceButton.get());
-    filterStepDiceButton->setVisible(false);
-    int stepDiceSize = static_cast<int>(35 * 0.7); // 30% smaller than 35px = ~24px
-    filterStepDiceButton->setBounds(sequencerArea.getX() + 75, sequencerArea.getY() + 5, stepDiceSize, stepDiceSize);
-    if (assets.diceLarge != nullptr) {
-        filterStepDiceButton->setDiceImage(assets.diceLarge->createCopy());
-    }
-    filterStepDiceButton->onClick = [this]() {
-        DBG("[UI] Filter step dice button clicked - randomizing all step snapshots");
-        
-        juce::Random& rng = juce::Random::getSystemRandom();
-        
-        for (int step = 0; step < 16; ++step) {
-            auto snapshot = processorRef.getFilterSafeSnapshot(step);
-            
-            // Randomize all Filter parameters for this step (respecting lock states)
-            // Lock indices: 0=Type, 1=Cutoff, 2=Res, 3=Slope, 4=Drive, 5=Key Track, 6=Mix
-            if (!filterKnobLocked[0]) {
-                snapshot.filter.type = static_cast<float>(rng.nextInt(5)); // 0-4 (LP, HP, BP, Comb-, Comb+)
-            }
-            if (!filterKnobLocked[1]) {
-                snapshot.filter.cutoff = 20.0f + rng.nextFloat() * 19800.0f; // 20-20000 Hz
-            }
-            if (!filterKnobLocked[2]) {
-                snapshot.filter.resonance = rng.nextFloat(); // 0-1
-            }
-            if (!filterKnobLocked[3]) {
-                snapshot.filter.slope = rng.nextFloat(); // 0-1 (12dB or 24dB)
-            }
-            if (!filterKnobLocked[4]) {
-                snapshot.filter.drive = rng.nextFloat() * 36.0f; // 0-36 dB
-            }
-            if (!filterKnobLocked[5]) {
-                snapshot.filter.keytrack = rng.nextFloat(); // 0-1
-            }
-            // Mix is global, not randomized per step
-            
-            processorRef.setFilterStepSnapshot(step, snapshot);
-        }
-        
-        // Update sequencer UI
-        updateFilterSequencerUI();
-        
-        // Reload current step to UI (don't send notification to avoid triggering save)
-        isLoadingFromSnapshot.store(true);
-        auto currentSnapshot = processorRef.getFilterSafeSnapshot(filterUiSelectedStep);
-        if (filterTypeKnob) filterTypeKnob->setValue(currentSnapshot.filter.type, juce::dontSendNotification);
-        if (filterSlopeKnob) filterSlopeKnob->setValue(currentSnapshot.filter.slope, juce::dontSendNotification);
-        // Convert frequency from snapshot to normalized value for cutoff knob
-        if (filterKnobs[0]) {
-            float freq = currentSnapshot.filter.cutoff;
-            float normalized = freq <= 5000.0f 
-                ? 0.75f * (freq - 20.0f) / (5000.0f - 20.0f)
-                : 0.75f + 0.25f * (std::log(freq / 5000.0f) / std::log(20000.0f / 5000.0f));
-            filterKnobs[0]->setValue(juce::jlimit(0.0f, 1.0f, normalized), juce::dontSendNotification);
-        }
-        if (filterKnobs[1]) filterKnobs[1]->setValue(currentSnapshot.filter.resonance, juce::dontSendNotification);
-        if (filterKnobs[2]) filterKnobs[2]->setValue(currentSnapshot.filter.drive, juce::dontSendNotification);
-        if (filterKnobs[3]) filterKnobs[3]->setValue(currentSnapshot.filter.keytrack, juce::dontSendNotification);
-        isLoadingFromSnapshot.store(false);
-        
-        // Trigger value change callbacks to update labels
-        if (filterTypeKnob && filterTypeKnob->onValueChange) filterTypeKnob->onValueChange();
-        if (filterSlopeKnob && filterSlopeKnob->onValueChange) filterSlopeKnob->onValueChange();
-        for (int i = 0; i < 5; ++i) {
-            if (filterKnobs[i] && filterKnobs[i]->onValueChange) {
-                filterKnobs[i]->onValueChange();
-            }
-        }
-        
-        DBG("[UI] All 16 Filter steps randomized");
-    };
-    
-    // Create step buttons (16 steps)
-    const int buttonSize = 40;
-    const int buttonSpacing = 8;
-    const int startX = sequencerArea.getX() + 20;
-    const int startY = sequencerArea.getY() + 35;
-    
-    for (int i = 0; i < 16; ++i) {
-        filterStepButtons[i] = std::make_unique<StepButton>(i);
-        addAndMakeVisible(filterStepButtons[i].get());
-        filterStepButtons[i]->setVisible(false);
-        
-        int col = i % 8;
-        int row = i / 8;
-        int x = startX + col * (buttonSize + buttonSpacing);
-        int y = startY + row * (buttonSize + buttonSpacing);
-        filterStepButtons[i]->setBounds(x, y, buttonSize, buttonSize);
-        
-        if (assets.stepActive != nullptr) {
-            filterStepButtons[i]->setActiveImage(assets.stepActive->createCopy());
-        }
-        if (assets.stepInactive != nullptr) {
-            filterStepButtons[i]->setInactiveImage(assets.stepInactive->createCopy());
-        }
-        
-        filterStepButtons[i]->onClick = [this, i]() {
-            onFilterStepButtonClicked(i);
-        };
-    }
-    
-    // Create step amount label
-    filterStepAmountLabel = std::make_unique<juce::TextEditor>();
-    filterStepAmountLabel->setText("16");
-    filterStepAmountLabel->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 16.0f, juce::Font::bold));
-    filterStepAmountLabel->setColour(juce::TextEditor::textColourId, juce::Colours::white);
-    filterStepAmountLabel->setColour(juce::TextEditor::backgroundColourId, juce::Colours::transparentBlack);
-    filterStepAmountLabel->setColour(juce::TextEditor::outlineColourId, juce::Colours::white);
-    filterStepAmountLabel->setColour(juce::TextEditor::focusedOutlineColourId, juce::Colours::white);
-    filterStepAmountLabel->setJustification(juce::Justification::centred);
-    filterStepAmountLabel->setBorder(juce::BorderSize<int>(2));
-    filterStepAmountLabel->setIndents(0, 0);
-    filterStepAmountLabel->setInputRestrictions(2, "0123456789");
-    addAndMakeVisible(filterStepAmountLabel.get());
-    filterStepAmountLabel->setVisible(false);
-    filterStepAmountLabel->setBounds(sequencerArea.getX() + 180, sequencerArea.getY() - 10, 30, 25);
-    filterStepAmountLabel->onTextChange = [this]() {
-        int newAmount = filterStepAmountLabel->getText().getIntValue();
-        if (newAmount >= 1 && newAmount <= 16) {
-            processorRef.setFilterStepAmount(newAmount);
-            updateFilterSequencerUI();
-        }
-    };
-    filterStepAmountLabel->onReturnKey = [this]() {
-        filterStepAmountLabel->unfocusAllComponents();
-    };
-    
-    // Create rate dropdown
-    filterRateDropdown = std::make_unique<juce::ComboBox>();
-    filterRateDropdown->addItem("4", 1);
-    filterRateDropdown->addItem("2", 2);
-    filterRateDropdown->addItem("1", 3);
-    filterRateDropdown->addItem("1/2", 4);
-    filterRateDropdown->addItem("1/4", 5);
-    filterRateDropdown->addItem("1/8", 6);
-    filterRateDropdown->addItem("1/16", 7);
-    filterRateDropdown->addItem("1/32", 8);
-    filterRateDropdown->setColour(juce::ComboBox::backgroundColourId, juce::Colours::transparentBlack);
-    filterRateDropdown->setColour(juce::ComboBox::outlineColourId, juce::Colours::transparentBlack);
-    filterRateDropdown->setColour(juce::ComboBox::buttonColourId, juce::Colours::transparentBlack);
-    filterRateDropdown->setColour(juce::ComboBox::textColourId, juce::Colours::white);
-    filterRateDropdown->setColour(juce::ComboBox::arrowColourId, juce::Colours::white);
-    // Set selected ID from processor state (like Saturate)
-    int divIdx = processorRef.getFilterSeqState().divisionIndex.load();
-    filterRateDropdown->setSelectedId(divIdx + 1, juce::dontSendNotification);
-    
-    addAndMakeVisible(filterRateDropdown.get());
-    filterRateDropdown->setVisible(false);
-    filterRateDropdown->setBounds(sequencerArea.getX() + 220, sequencerArea.getY() - 10, 74, 25);
-    
-    filterRateDropdown->onChange = [this]() {
-        int selectedId = filterRateDropdown->getSelectedId();
-        if (selectedId > 0) {
-            int divisionIndex = selectedId - 1;
-            processorRef.setFilterDivisionIndex(divisionIndex);
-            DBG("[UI] Filter rate changed to index: " << divisionIndex);
-        }
-    };
-    
-    // Create STD toggle
-    filterStdToggle = std::make_unique<CircularToggleButton>();
-    filterStdToggle->setButtonText("-");
-    addAndMakeVisible(filterStdToggle.get());
-    filterStdToggle->setVisible(false);
-    filterStdToggle->setBounds(sequencerArea.getX() + 288, sequencerArea.getY() - 14, 30, 30);
-    
-    // Set up STD toggle callback
-    filterStdToggle->onClick = [this]() {
-        // Cycle through -/t/. states
-        static int stdState = 0; // 0=-, 1=t, 2=.
-        stdState = (stdState + 1) % 3;
-        const char* labels[] = {"-", "t", "."};
-        filterStdToggle->setButtonText(labels[stdState]);
-        // Inform processor of new STD mode for timing
-        processorRef.setFilterStdMode(stdState);
-        DBG("[UI] Filter STD toggle clicked: state=" << stdState << " label=" << labels[stdState]);
-    };
-    
-    // Create step power button
-    filterStepPowerButton = std::make_unique<juce::DrawableButton>("filterStepPower", juce::DrawableButton::ButtonStyle::ImageFitted);
-    filterStepPowerButton->setColour(juce::DrawableButton::backgroundColourId, juce::Colours::transparentBlack);
-    filterStepPowerButton->setColour(juce::DrawableButton::backgroundOnColourId, juce::Colours::transparentBlack);
-    if (assets.stepPowerOn != nullptr) {
-        filterStepPowerButton->setImages(assets.stepPowerOn->createCopy().get());
-    }
-    addAndMakeVisible(filterStepPowerButton.get());
-    filterStepPowerButton->setVisible(false);
-    filterStepPowerButton->setClickingTogglesState(true);
-    const int stepPowerSize = 40;
-    filterStepPowerButton->setBounds(sequencerArea.getX() + sequencerArea.getWidth() - stepPowerSize - 5 + 15 - 5 - 1, 
-                                      sequencerArea.getY() - 5 - stepPowerSize + 25 + 5, stepPowerSize, stepPowerSize);
-    filterStepPowerButton->setToggleState(filterStepAreaEnabled, juce::dontSendNotification);
-    // FIX 3: Working step power button with visibility function
-    filterStepPowerButton->onClick = [this]() {
-        filterStepAreaEnabled = filterStepPowerButton->getToggleState();
-        processorRef.setFilterSequencerEnabled(filterStepAreaEnabled);
-        updateFilterStepAreaVisibility();
-    };
-    
-    DBG("[UI] Filter sequencer area setup complete");
-}
-
-void PluginEditor::setupFilterAllStepsToggle()
-{
-    DBG("[UI] Setting up Filter all steps toggle...");
-    
-    auto effectArea = juce::Rectangle<int>(25, 54, 413, 296);
-    
-    filterAllStepsToggle = std::make_unique<AllStepsToggleButton>();
-    addAndMakeVisible(filterAllStepsToggle.get());
-    filterAllStepsToggle->setVisible(false);
-    const int buttonSize = 29;
-    filterAllStepsToggle->setBounds(effectArea.getX() + effectArea.getWidth()/2 - buttonSize/2 + 30, 
-                                       effectArea.getY() - 1, buttonSize, buttonSize);
-    if (assets.stepTopInactive && assets.stepTopActive) {
-        static_cast<AllStepsToggleButton*>(filterAllStepsToggle.get())->setImages(
-            assets.stepTopInactive->createCopy(),
-            assets.stepTopActive->createCopy()
-        );
-    }
-    filterAllStepsToggle->setToggleState(false, juce::dontSendNotification);
-    filterAllStepsEnabled = false;
-    filterAllStepsToggle->onClick = [this]() {
-        filterAllStepsEnabled = filterAllStepsToggle->getToggleState();
-        DBG("[UI] Filter All Steps toggle: " << (filterAllStepsEnabled ? "ON" : "OFF"));
-        if (filterAllStepsLabel) {
-            filterAllStepsLabel->setAlpha(filterAllStepsEnabled ? 1.0f : 0.5f);
-        }
-    };
-    
-    filterAllStepsLabel = std::make_unique<juce::Label>();
-    filterAllStepsLabel->setText("All Steps", juce::dontSendNotification);
-    filterAllStepsLabel->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 14.4f, juce::Font::bold));
-    filterAllStepsLabel->setColour(juce::Label::textColourId, juce::Colours::white);
-    filterAllStepsLabel->setJustificationType(juce::Justification::centredLeft);
-    addAndMakeVisible(filterAllStepsLabel.get());
-    filterAllStepsLabel->setVisible(false);
-    filterAllStepsLabel->setAlpha(1.0f);
-    filterAllStepsLabel->setBounds(effectArea.getX() + effectArea.getWidth()/2 + buttonSize/2 + 5 + 30, 
-                                effectArea.getY() + 1, 80, 24);
-    
-    DBG("[UI] Filter all steps toggle setup complete");
-}
-
-void PluginEditor::populateFilterGroup()
-{
-    // Populate Filter group for visibility management (similar to Saturate)
-    filterGroup.clear();
-    
-    if (filterEffectsTitle) filterGroup.push_back(filterEffectsTitle.get());
-    if (filterDiceButton) filterGroup.push_back(filterDiceButton.get());
-    if (filterFxPowerButton) filterGroup.push_back(filterFxPowerButton.get());
-    
-    // Add Type and Slope knobs (separate unique_ptrs)
-    if (filterTypeKnob) filterGroup.push_back(filterTypeKnob.get());
-    if (filterSlopeKnob) filterGroup.push_back(filterSlopeKnob.get());
-    if (filterTypeLabel) filterGroup.push_back(filterTypeLabel.get());
-    
-    // Add regular knobs (5 knobs: Cutoff, Res, Drive, Key Track, Mix - Spread removed)
-    for (int i = 0; i < 5; ++i) {
-        if (filterKnobs[i]) filterGroup.push_back(filterKnobs[i].get());
-    }
-    
-    // Add all labels, value labels, indicator bars, and lock buttons (8 total: one for each knob)
-    for (int i = 0; i < 8; ++i) {
-        if (filterKnobLabels[i]) filterGroup.push_back(filterKnobLabels[i].get());
-        if (filterValueLabels[i]) filterGroup.push_back(filterValueLabels[i].get());
-        if (filterIndicatorBars[i]) filterGroup.push_back(filterIndicatorBars[i].get());
-        if (filterLockButtons[i]) filterGroup.push_back(filterLockButtons[i].get());
-    }
-    
-    // Add sequencer components
-    if (filterStepTitle) filterGroup.push_back(filterStepTitle.get());
-    if (filterStepAmountLabel) filterGroup.push_back(filterStepAmountLabel.get());
-    if (filterRateDropdown) filterGroup.push_back(filterRateDropdown.get());
-    if (filterStdToggle) filterGroup.push_back(filterStdToggle.get());
-    if (filterStepDiceButton) filterGroup.push_back(filterStepDiceButton.get());
-    if (filterStepPowerButton) filterGroup.push_back(filterStepPowerButton.get());
-    if (filterAllStepsToggle) filterGroup.push_back(filterAllStepsToggle.get());
-    if (filterAllStepsLabel) filterGroup.push_back(filterAllStepsLabel.get());
-    
-    for (int i = 0; i < 16; ++i) {
-        if (filterStepButtons[i]) filterGroup.push_back(filterStepButtons[i].get());
-    }
-    
-    DBG("[UI] Filter group populated with " << filterGroup.size() << " components");
-}
-
 void PluginEditor::setupSaturateAllStepsToggle()
 {
     DBG("[UI] Setting up Saturate all steps toggle...");
@@ -13653,7 +12252,7 @@ void PluginEditor::setupSaturateAllStepsToggle()
     // All Steps label (match Dub Delay)
     saturateAllStepsLabel = std::make_unique<juce::Label>();
     saturateAllStepsLabel->setText("All Steps", juce::dontSendNotification);
-    saturateAllStepsLabel->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 14.4f, juce::Font::bold));
+    saturateAllStepsLabel->setFont(juce::Font(14.4f, juce::Font::bold));
     saturateAllStepsLabel->setColour(juce::Label::textColourId, juce::Colours::white);
     saturateAllStepsLabel->setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(saturateAllStepsLabel.get());
@@ -13673,30 +12272,8 @@ void PluginEditor::updateSaturateFxAreaVisibility()
 {
     float alpha = saturateFxAreaEnabled ? 1.0f : 0.3f;
     
-    // Update knobs and labels alpha (skip Type knob index 0)
+    // Update knobs and labels alpha
     for (int i = 0; i < 7; ++i) {
-        // Skip Type knob (index 0) - it's hidden and always Clean
-        if (i == 0) {
-            // Keep Type knob and its components completely invisible
-            if (saturateKnobs[0]) {
-                saturateKnobs[0]->setVisible(false);
-                saturateKnobs[0]->setAlpha(0.0f);
-            }
-            if (saturateKnobLabels[0]) {
-                saturateKnobLabels[0]->setVisible(false);
-                saturateKnobLabels[0]->setAlpha(0.0f);
-            }
-            if (saturateValueLabels[0]) {
-                saturateValueLabels[0]->setVisible(false);
-                saturateValueLabels[0]->setAlpha(0.0f);
-            }
-            if (saturateIndicatorBars[0]) {
-                saturateIndicatorBars[0]->setVisible(false);
-                saturateIndicatorBars[0]->setAlpha(0.0f);
-            }
-            continue;
-        }
-        
         if (saturateKnobs[i]) { 
             saturateKnobs[i]->setAlpha(alpha); 
             saturateKnobs[i]->setEnabled(saturateFxAreaEnabled);
@@ -13752,174 +12329,23 @@ void PluginEditor::updateSaturateStepAreaVisibility()
     repaint();
 }
 
-void PluginEditor::updateFilterFxAreaVisibility()
-{
-    float alpha = filterFxAreaEnabled ? 1.0f : 0.3f;
-    
-    if (filterTypeKnob) {
-        filterTypeKnob->setAlpha(alpha);
-        filterTypeKnob->setEnabled(filterFxAreaEnabled);
-    }
-    if (filterSlopeKnob) {
-        filterSlopeKnob->setAlpha(alpha);
-        filterSlopeKnob->setEnabled(filterFxAreaEnabled);
-    }
-    for (int i = 0; i < 5; ++i) { // 5 knobs (Spread removed)
-        // Map filterKnobs index to label index: 0→1 (Cutoff), 1→2 (Res), 2→4 (Drive), 3→5 (Key Track), 4→6 (Mix)
-        int labelIdx = (i == 0) ? 1 : (i == 1) ? 2 : (i == 2) ? 4 : (i == 3) ? 5 : 6;
-        
-        if (filterKnobs[i]) {
-            filterKnobs[i]->setAlpha(alpha);
-            filterKnobs[i]->setEnabled(filterFxAreaEnabled);
-        }
-        if (filterKnobLabels[labelIdx]) filterKnobLabels[labelIdx]->setAlpha(alpha);
-        if (filterValueLabels[labelIdx]) filterValueLabels[labelIdx]->setAlpha(alpha);
-        if (filterIndicatorBars[labelIdx]) filterIndicatorBars[labelIdx]->setAlpha(alpha);
-        if (filterLockButtons[labelIdx]) filterLockButtons[labelIdx]->setAlpha(alpha);
-    }
-}
-
-void PluginEditor::updateFilterStepAreaVisibility()
-{
-    float alpha = filterStepAreaEnabled ? 1.0f : 0.3f;
-    
-    if (filterStepTitle) filterStepTitle->setAlpha(alpha);
-    if (filterStepAmountLabel) filterStepAmountLabel->setAlpha(alpha);
-    if (filterRateDropdown) filterRateDropdown->setAlpha(alpha);
-    if (filterStdToggle) {
-        filterStdToggle->setAlpha(alpha);
-        filterStdToggle->setEnabled(filterStepAreaEnabled);
-    }
-    if (filterStepDiceButton) filterStepDiceButton->setAlpha(alpha);
-    for (int i = 0; i < 16; ++i) {
-        if (filterStepButtons[i]) filterStepButtons[i]->setAlpha(alpha);
-    }
-}
-
-void PluginEditor::onFilterStepButtonClicked(int stepIndex)
-{
-    if (stepIndex < 0 || stepIndex >= 16) return;
-    
-    filterUiSelectedStep = stepIndex;
-    processorRef.setFilterSelectedStep(stepIndex);
-    
-    auto snapshot = processorRef.getFilterSafeSnapshot(stepIndex);
-    
-    // Set flag to prevent snapshot saving during load
-    isLoadingFromSnapshot.store(true);
-    
-    if (!filterAllStepsEnabled) {
-        // Update knobs with values from the snapshot
-        if (filterTypeKnob) filterTypeKnob->setValue(snapshot.filter.type, juce::dontSendNotification);
-        // Convert frequency from snapshot to normalized value for cutoff knob
-        if (filterKnobs[0]) {
-            float freq = snapshot.filter.cutoff;
-            float normalized = freq <= 5000.0f 
-                ? 0.75f * (freq - 20.0f) / (5000.0f - 20.0f)
-                : 0.75f + 0.25f * (std::log(freq / 5000.0f) / std::log(4.0f));
-            normalized = juce::jlimit(0.0f, 1.0f, normalized);
-            filterKnobs[0]->setValue(normalized, juce::dontSendNotification);
-        }
-        if (filterKnobs[1]) filterKnobs[1]->setValue(snapshot.filter.resonance, juce::dontSendNotification);
-        if (filterSlopeKnob) filterSlopeKnob->setValue(snapshot.filter.slope, juce::dontSendNotification);
-        if (filterKnobs[2]) filterKnobs[2]->setValue(snapshot.filter.drive, juce::dontSendNotification);
-        // Key Track knob (filterKnobs[3])
-        if (filterKnobs[3]) filterKnobs[3]->setValue(snapshot.filter.keytrack, juce::dontSendNotification);
-        // Mix knob (filterKnobs[4]) is global, not per-step
-        
-        // Clear flag before triggering callbacks so labels update
-        isLoadingFromSnapshot.store(false);
-        
-        // Trigger value change callbacks to update labels (but not save snapshots)
-        if (filterTypeKnob && filterTypeKnob->onValueChange) filterTypeKnob->onValueChange();
-        if (filterSlopeKnob && filterSlopeKnob->onValueChange) filterSlopeKnob->onValueChange();
-        for (int i = 0; i < 5; ++i) { // Only first 5 knobs (Mix knob 5 is global)
-            if (filterKnobs[i] && filterKnobs[i]->onValueChange) {
-                // Temporarily set flag to prevent saving during callback
-                isLoadingFromSnapshot.store(true);
-                filterKnobs[i]->onValueChange();
-                isLoadingFromSnapshot.store(false);
-            }
-        }
-    }
-    
-    // Clear flag
-    isLoadingFromSnapshot.store(false);
-    
-    updateFilterSequencerUI();
-    repaint();
-}
-
-void PluginEditor::updateFilterParameterFromKnob(int knobIndex)
-{
-    // knobIndex: -1 = Type, -2 = Slope, 0-3 = filterKnobs[0-3] (Cutoff, Res, Drive, Key Track)
-    // Mix knob (filterKnobs[4]) is global, not saved per step
-    
-    // Get current step
-    int currentStep = filterUiSelectedStep;
-    if (currentStep < 0 || currentStep >= 16) return;
-    
-    // Get value and save to snapshot
-    float value = 0.0f;
-    if (knobIndex == -1) {
-        value = filterTypeKnob->getValue();
-    } else if (knobIndex == -2) {
-        value = filterSlopeKnob->getValue();
-    } else if (knobIndex >= 0 && knobIndex < 5) {
-        value = filterKnobs[knobIndex]->getValue();
-    }
-    processorRef.updateFilterCurrentStepSnapshot(knobIndex, value);
-}
-
-void PluginEditor::updateFilterSequencerUI()
-{
-    int stepsUsed = 16; // Default value
-    try {
-        int selectedStep = filterUiSelectedStep;
-        int playingStep = processorRef.getFilterPlayingStep();
-        const auto& seqState = processorRef.getFilterSeqState();
-        stepsUsed = seqState.stepsUsed.load();
-        
-        for (int i = 0; i < 16; ++i) {
-            if (filterStepButtons[i] != nullptr) {
-                bool isSelected = (i == selectedStep);
-                filterStepButtons[i]->setSelected(isSelected);
-                bool sequencerEnabled = seqState.enabled.load();
-                filterStepButtons[i]->setPlaying(sequencerEnabled && (i == playingStep) && (i != selectedStep));
-                bool shouldBeEnabled = i < stepsUsed;
-                filterStepButtons[i]->setEnabledStep(shouldBeEnabled);
-            }
-        }
-    } catch (...) {
-        DBG("[UI] Error updating Filter sequencer UI");
-    }
-    
-    // Update step amount display
-    if (filterStepAmountLabel != nullptr && !filterStepAmountLabel->hasKeyboardFocus(true)) {
-        filterStepAmountLabel->setText(juce::String(stepsUsed), false);
-    }
-    
-    repaint();
-}
-
 void PluginEditor::updateSaturateKnobLabels(int type)
 {
     struct ModelInfo {
         const char* label2;
         const char* label3;
         const char* label4;
-        const char* label5;
     };
     
     static const ModelInfo models[8] = {
-        {"Tone",       "Blend",  "Bias",   "Level"},   // Clean
-        {"HF Tilt",    "Core",   "Bias",   "Satur"},   // Tape / Transformer
-        {"Tone",       "Diodes", "Bias",   "Comp"},    // Diode Clip (WDF)
-        {"Tone",       "Slew",   "Bias",   "Post"},    // Op-Amp Soft Clip
-        {"Tone",       "Fold",   "Bias",   "Spark"},   // Wavefolder
-        {"Tone",       "Mid",    "Bias",   "Presence"},// Centaur-style
-        {"Tone",       "Leak",   "Bias",   "Comp"},    // Fuzz / BJT
-        {"Tone",       "Rect",   "Bias",   "Warmth"}   // Rectifier / X-Dist
+        {"Density", "Asym", "Bias"}, // Spiral2
+        {"Thick", "Focus", "LoCut"}, // Density2
+        {"Hard", "Asym", "LoCut"}, // Drive
+        {"Heat", "AirGain", "LoCut"}, // PurestDrive
+        {"Warm", "Presence", "HiCut"}, // Mojo
+        {"Trim", "Focus", "HiCut"}, // Console
+        {"Iron", "Asym", "Bump"}, // Coils
+        {"Blend", "Sag", "LoCut"}  // Tubey
     };
     
     if (type < 0 || type >= 8) return;
@@ -13930,66 +12356,10 @@ void PluginEditor::updateSaturateKnobLabels(int type)
     if (saturateKnobLabels[2]) saturateKnobLabels[2]->setText(info.label2, juce::dontSendNotification);
     if (saturateKnobLabels[3]) saturateKnobLabels[3]->setText(info.label3, juce::dontSendNotification);
     if (saturateKnobLabels[4]) saturateKnobLabels[4]->setText(info.label4, juce::dontSendNotification);
-    if (saturateKnobLabels[5]) saturateKnobLabels[5]->setText(info.label5, juce::dontSendNotification);
     
     // Update ranges for knobs 2-4 (Color, Shape, Bias)
     // Note: The knobs themselves remain normalized 0-1; we just update the display
     // The actual DSP mapping happens in SaturateProcessor based on the model
-
-    const bool shouldShowLevelKnob = (type != 0); // Clean type (0) hides the Level/Output control
-    const bool saturatePageVisible = (saturateEffectsTitle != nullptr && saturateEffectsTitle->isVisible());
-    auto updateLevelComponent = [shouldShowLevelKnob, saturatePageVisible](juce::Component* comp)
-    {
-        if (comp == nullptr)
-            return;
-
-        if (!shouldShowLevelKnob)
-            comp->setVisible(false);
-        else if (saturatePageVisible)
-            comp->setVisible(true);
-
-        comp->setEnabled(shouldShowLevelKnob);
-        comp->setAlpha(shouldShowLevelKnob ? 1.0f : 0.0f);
-    };
-
-    if (saturateKnobs[5])
-        updateLevelComponent(saturateKnobs[5].get());
-    updateLevelComponent(saturateKnobLabels[5].get());
-    updateLevelComponent(saturateValueLabels[5].get());
-    updateLevelComponent(saturateIndicatorBars[5].get());
-    updateLevelComponent(saturateLockButtons[5].get());
-    
-    // Reposition Mix knob (index 6) when Output is hidden
-    // When Output (index 5) is hidden, Mix should move to its position
-    if (saturateKnobs[6]) { // Mix knob
-        auto effectArea = juce::Rectangle<int>(25, 54, 413, 296);
-        const int knobSize = 80;
-        const int knobSpacing = 20;
-        const int startX = effectArea.getX() + 15;
-        const int startY = effectArea.getY() + effectArea.getHeight() - 210;
-        
-        // Calculate position: if Output is hidden, Mix goes to Output's position (visibleIndex 4)
-        // Otherwise, Mix goes to its normal position (visibleIndex 5)
-        int mixVisibleIndex = shouldShowLevelKnob ? 5 : 4; // Output's position when hidden
-        int x = startX + (mixVisibleIndex % 4) * (knobSize + knobSpacing);
-        int y = startY + (mixVisibleIndex / 4) * (knobSize + 20);
-        if (mixVisibleIndex < 4)
-            y -= 23;
-        else
-            y -= 1;
-        
-        saturateKnobs[6]->setBounds(x, y, knobSize, knobSize);
-        if (saturateKnobLabels[6]) saturateKnobLabels[6]->setBounds(x, y - 15, knobSize, 20);
-        if (saturateValueLabels[6]) saturateValueLabels[6]->setBounds(x, y + knobSize - 10, knobSize, 15);
-        if (saturateIndicatorBars[6]) saturateIndicatorBars[6]->setBounds(x + 10, y + knobSize + 8, knobSize - 20, 13);
-        if (saturateLockButtons[6]) {
-            juce::Font labelFont(12.0f, juce::Font::bold);
-            int textWidth = labelFont.getStringWidth("Mix");
-            int lockX = x + (knobSize / 2) + (textWidth / 2) + 5;
-            int lockY = y - 10;
-            saturateLockButtons[6]->setBounds(lockX, lockY, 10, 10);
-        }
-    }
 }
 
 void PluginEditor::onSaturateStepButtonClicked(int stepIndex)
@@ -14005,32 +12375,26 @@ void PluginEditor::onSaturateStepButtonClicked(int stepIndex)
     isLoadingFromSnapshot.store(true);
     
     if (!saturateAllStepsEnabled) {
-        // Ensure type is always Clean (0) and set it (Type knob is hidden but still exists)
-        snapshot.saturate.type = 0.0f;
-        if (saturateKnobs[0]) saturateKnobs[0]->setValue(0.0f, juce::dontSendNotification);
+        // Update knobs with values from the snapshot
+        if (saturateKnobs[0]) saturateKnobs[0]->setValue(snapshot.saturate.type, juce::dontSendNotification);
         if (saturateKnobs[1]) saturateKnobs[1]->setValue(snapshot.saturate.drive, juce::dontSendNotification);
         if (saturateKnobs[2]) saturateKnobs[2]->setValue(snapshot.saturate.color, juce::dontSendNotification);
         if (saturateKnobs[3]) saturateKnobs[3]->setValue(snapshot.saturate.shape, juce::dontSendNotification);
         if (saturateKnobs[4]) saturateKnobs[4]->setValue(snapshot.saturate.bias, juce::dontSendNotification);
         if (saturateKnobs[5]) saturateKnobs[5]->setValue(snapshot.saturate.output, juce::dontSendNotification);
         // Oversample is always max (3 = 8×), not a knob anymore
-        // Knob 6 (Mix) is global, not per-step
+        // Knob 7 (Mix) is global, not per-step
         
-        // Update dynamic labels for Clean type (0) - this will hide Level knob and reposition Mix
-        updateSaturateKnobLabels(0);
+        // Update dynamic labels based on type
+        updateSaturateKnobLabels(static_cast<int>(snapshot.saturate.type));
         
         // Trigger value change callbacks to update labels (but not save snapshots)
-        // Skip Type knob (index 0) and Mix knob (index 6)
-        for (int i = 1; i < 6; ++i) {
+        for (int i = 0; i < 6; ++i) { // Only first 6 knobs (Mix knob 6 is global)
             if (saturateKnobs[i] && saturateKnobs[i]->onValueChange) {
                 saturateKnobs[i]->onValueChange();
             }
         }
     }
-    
-    // Always update layout when step is clicked (even if allStepsEnabled)
-    // This ensures Mix knob is repositioned correctly
-    updateSaturateKnobLabels(0);
     
     // Clear flag
     isLoadingFromSnapshot.store(false);
@@ -14068,28 +12432,15 @@ void PluginEditor::updateSaturateParameterFromKnob(int knobIndex)
     if (knobIndex < 0 || knobIndex >= 7 || !saturateKnobs[knobIndex])
         return;
     
-    // Type knob (index 0) is always Clean (0) - ensure it stays that way
-    if (knobIndex == 0) {
-        saturateKnobs[0]->setValue(0.0f, juce::dontSendNotification);
-        // Still update snapshot to ensure type is 0
-        processorRef.updateSaturateCurrentStepSnapshot(0, 0.0f);
-    } else {
         float value = saturateKnobs[knobIndex]->getValue();
         
         // Update current step snapshot (Mix knob 6 is global, not saved)
         processorRef.updateSaturateCurrentStepSnapshot(knobIndex, value);
-    }
     
     // Ensure oversample is always max
     auto* osParam = processorRef.getAPVTS().getParameter("satOsMode");
     if (osParam && osParam->getValue() < 1.0f) {
         osParam->setValueNotifyingHost(1.0f); // 3/3 = max (8×)
-    }
-    
-    // Ensure type is always Clean (0) in APVTS
-    auto* typeParam = processorRef.getAPVTS().getParameter("satType");
-    if (typeParam && typeParam->getValue() != 0.0f) {
-        typeParam->setValueNotifyingHost(0.0f); // 0/7 = Clean
     }
 }
 
@@ -14097,9 +12448,6 @@ void PluginEditor::randomizeSaturateKnobValues()
 {
     DBG("[UI] Randomizing Saturate knob values...");
     for (int i = 0; i < 7; ++i) {
-        // Skip Type knob (index 0) - it's always Clean (0)
-        if (i == 0) continue;
-        
         if (saturateKnobs[i]) {
             // Check if knob is locked - skip if locked
             if (i < 7 && saturateKnobLocked[i]) continue;
@@ -14113,9 +12461,6 @@ void PluginEditor::randomizeIndividualSaturateKnob(int knobIndex)
     if (knobIndex < 0 || knobIndex >= 7) return;
     if (!saturateKnobs[knobIndex]) return;
     
-    // Skip Type knob (index 0) - it's always Clean (0)
-    if (knobIndex == 0) return;
-    
     // Check if knob is locked - don't randomize if locked
     if (knobIndex < 7 && saturateKnobLocked[knobIndex]) {
         DBG("[UI] Skipping locked Saturate knob " << knobIndex);
@@ -14126,8 +12471,8 @@ void PluginEditor::randomizeIndividualSaturateKnob(int knobIndex)
     float newValue = 0.0f;
     
     switch (knobIndex) {
-        case 0: // Type (0-7) - should never reach here, always Clean (0)
-            newValue = 0.0f; // Always Clean
+        case 0: // Type (0-7)
+            newValue = static_cast<float>(rand.nextInt(8));
             break;
         case 1: // Drive (0-36 dB)
             newValue = 6.0f + rand.nextFloat() * 24.0f; // 6-30 dB (musical range)
@@ -14267,7 +12612,7 @@ void PluginEditor::setupForm2Knobs()
         form2KnobLabels[i]->setText(form2KnobTitles[i], juce::dontSendNotification);
         form2KnobLabels[i]->setJustificationType(juce::Justification::centred);
         form2KnobLabels[i]->setColour(juce::Label::textColourId, juce::Colours::white);
-        form2KnobLabels[i]->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 12.0f, juce::Font::bold));
+        form2KnobLabels[i]->setFont(juce::Font(12.0f, juce::Font::bold));
         form2KnobLabels[i]->setBounds(x, y - 15, knobSize, 20);
         
         // Create value label
@@ -14277,7 +12622,7 @@ void PluginEditor::setupForm2Knobs()
         form2ValueLabels[i]->setText("0", juce::dontSendNotification);
         form2ValueLabels[i]->setJustificationType(juce::Justification::centred);
         form2ValueLabels[i]->setColour(juce::Label::textColourId, juce::Colours::white);
-        form2ValueLabels[i]->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 10.0f, juce::Font::plain));
+        form2ValueLabels[i]->setFont(juce::Font(10.0f, juce::Font::plain));
         form2ValueLabels[i]->setBounds(x, y + knobSize - 10, knobSize, 15);
         
         // Create indicator bar
@@ -14292,9 +12637,17 @@ void PluginEditor::setupForm2Knobs()
         addAndMakeVisible(form2LockButtons[i].get());
         form2LockButtons[i]->setVisible(false);
         
-        positionLockButton(form2LockButtons[i].get(), form2KnobLabels[i].get(), y);
+        // Position lock button at end of title text
+        juce::Font labelFont(12.0f, juce::Font::bold);
+        int textWidth = labelFont.getStringWidth(form2KnobTitles[i]);
+        const int lockSize = 10;
+        const int lockSpacing = 5;
+        int lockX = x + (knobSize / 2) + (textWidth / 2) + lockSpacing;
+        int lockY = y - 10;
         
-        // Set lock button images (same as filter and other effects - no scaling needed)
+        form2LockButtons[i]->setBounds(lockX, lockY, lockSize, lockSize);
+        
+        // Set lock button images
         if (assets.unlockedIcon && assets.lockedIcon) {
             auto imgUnlocked = assets.unlockedIcon->createCopy();
             auto imgLocked = assets.lockedIcon->createCopy();
@@ -14437,7 +12790,7 @@ void PluginEditor::setupForm2EffectsArea()
     // Create "EFFECT" title label (ALWAYS "EFFECT", NOT the effect name!)
     form2EffectsTitle = std::make_unique<juce::Label>();
     form2EffectsTitle->setText("EFFECT", juce::dontSendNotification);
-    form2EffectsTitle->setFont(FontManager::getInstance().getFont("Akira Expanded", 18.6624f, juce::Font::bold).withExtraKerningFactor(0.1f)); // 10% smaller: 20.736f * 0.9 = 18.6624f, with letter spacing
+    form2EffectsTitle->setFont(juce::Font(27.648f, juce::Font::bold));
     form2EffectsTitle->setColour(juce::Label::textColourId, juce::Colours::white);
     form2EffectsTitle->setJustificationType(juce::Justification::centredLeft);
     form2EffectsTitle->setBounds(effectArea.getX() + 10, effectArea.getY() + 5, 100, 30);
@@ -14498,7 +12851,7 @@ void PluginEditor::setupForm2SequencerArea()
     // Create step title
     form2StepTitle = std::make_unique<juce::Label>();
     form2StepTitle->setText("STEP", juce::dontSendNotification);
-    form2StepTitle->setFont(FontManager::getInstance().getFont("Akira Expanded", 13.436685f, juce::Font::bold).withExtraKerningFactor(0.09f)); // Adjusted size with 10% less letter spacing: 0.1 * 0.9 = 0.09
+    form2StepTitle->setFont(juce::Font(22.118f, juce::Font::bold));
     form2StepTitle->setColour(juce::Label::textColourId, juce::Colours::white);
     form2StepTitle->setJustificationType(juce::Justification::centredLeft);
     form2StepTitle->setBounds(sequencerArea.getX() + 10, sequencerArea.getY(), 80, 30);
@@ -14532,7 +12885,7 @@ void PluginEditor::setupForm2SequencerArea()
     // Create step amount label (TextEditor)
     form2StepAmountLabel = std::make_unique<juce::TextEditor>();
     form2StepAmountLabel->setText("16");
-    form2StepAmountLabel->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 16.0f, juce::Font::bold));
+    form2StepAmountLabel->setFont(juce::Font(16.0f, juce::Font::bold));
     form2StepAmountLabel->setColour(juce::TextEditor::textColourId, juce::Colours::white);
     form2StepAmountLabel->setColour(juce::TextEditor::backgroundColourId, juce::Colours::transparentBlack);
     form2StepAmountLabel->setColour(juce::TextEditor::outlineColourId, juce::Colours::white);
@@ -14717,7 +13070,7 @@ void PluginEditor::setupForm2AllStepsToggle()
     
     form2AllStepsLabel = std::make_unique<juce::Label>();
     form2AllStepsLabel->setText("All Steps", juce::dontSendNotification);
-    form2AllStepsLabel->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 14.4f, juce::Font::bold));
+    form2AllStepsLabel->setFont(juce::Font(14.4f, juce::Font::bold));
     form2AllStepsLabel->setColour(juce::Label::textColourId, juce::Colours::white);
     form2AllStepsLabel->setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(form2AllStepsLabel.get());
@@ -14996,7 +13349,7 @@ void PluginEditor::setupReduxKnobs()
         reduxKnobLabels[i]->setText(reduxKnobTitles[i], juce::dontSendNotification);
         reduxKnobLabels[i]->setJustificationType(juce::Justification::centred);
         reduxKnobLabels[i]->setColour(juce::Label::textColourId, juce::Colours::white);
-        reduxKnobLabels[i]->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 12.0f, juce::Font::bold));
+        reduxKnobLabels[i]->setFont(juce::Font(12.0f, juce::Font::bold));
         reduxKnobLabels[i]->setBounds(x, y - 15, knobSize, 20); // Moved down 5px from -20 to -15 (same as other effects)
         
         // Create value label
@@ -15006,7 +13359,7 @@ void PluginEditor::setupReduxKnobs()
         reduxValueLabels[i]->setText("0", juce::dontSendNotification);
         reduxValueLabels[i]->setJustificationType(juce::Justification::centred);
         reduxValueLabels[i]->setColour(juce::Label::textColourId, juce::Colours::white);
-        reduxValueLabels[i]->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 10.0f, juce::Font::plain));
+        reduxValueLabels[i]->setFont(juce::Font(10.0f, juce::Font::plain));
         reduxValueLabels[i]->setBounds(x, y + knobSize - 10, knobSize, 15); // Same as other effects
         
         // Create indicator bar
@@ -15029,7 +13382,12 @@ void PluginEditor::setupReduxKnobs()
         // Position lock button at end of title text (same as other effects)
         juce::Font labelFont(12.0f, juce::Font::bold);
         int textWidth = labelFont.getStringWidth(reduxKnobTitles[i]);
-        positionLockButton(reduxLockButtons[i].get(), reduxKnobLabels[i].get(), y);
+        const int lockSize = 10; // Same size as other effects
+        const int lockSpacing = 5; // Fixed distance from end of title text
+        int lockX = x + (knobSize / 2) + (textWidth / 2) + lockSpacing;
+        int lockY = y - 10; // Same position as other effects
+        
+        reduxLockButtons[i]->setBounds(lockX, lockY, lockSize, lockSize);
         
         // Set lock button images
         if (assets.unlockedIcon && assets.lockedIcon) {
@@ -15147,7 +13505,7 @@ void PluginEditor::setupReduxEffectsArea()
     // Create "EFFECT" title label (ALWAYS "EFFECT", NOT the effect name!)
     reduxEffectsTitle = std::make_unique<juce::Label>();
     reduxEffectsTitle->setText("EFFECT", juce::dontSendNotification);
-    reduxEffectsTitle->setFont(FontManager::getInstance().getFont("Akira Expanded", 18.6624f, juce::Font::bold).withExtraKerningFactor(0.1f)); // 10% smaller: 20.736f * 0.9 = 18.6624f, with letter spacing
+    reduxEffectsTitle->setFont(juce::Font(27.648f, juce::Font::bold));
     reduxEffectsTitle->setColour(juce::Label::textColourId, juce::Colours::white);
     reduxEffectsTitle->setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(reduxEffectsTitle.get());
@@ -15215,14 +13573,14 @@ void PluginEditor::setupCompressSliders()
     
     // COMPRESS+ slider titles (Top row: Compressor controls, Bottom row: Drive/Lofi/Makeup Gain/Wet)
     const juce::StringArray compressSliderTitles = {
-        "Threshold",
-        "Attack", 
-        "Release",
-        "Ratio",
-        "Drive",
-        "Lofi",
-        "Makeup", 
-        "Wet"
+        "THRESHOLD",
+        "ATTACK", 
+        "RELEASE",
+        "RATIO",
+        "DRIVE",
+        "LOFI",
+        "MAKEUP", 
+        "WET"
     };
     
     // COMPRESS+ parameter IDs
@@ -15328,7 +13686,7 @@ void PluginEditor::setupCompressSliders()
         // Create title label
         auto label = std::make_unique<juce::Label>();
         label->setText(compressSliderTitles[i], juce::dontSendNotification);
-        label->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 12.0f, juce::Font::bold));
+        label->setFont(juce::Font(12.0f, juce::Font::bold));
         label->setColour(juce::Label::textColourId, juce::Colours::white);
         label->setColour(juce::Label::backgroundColourId, juce::Colours::transparentBlack); // Remove black background
         label->setJustificationType(juce::Justification::centredLeft);
@@ -15340,7 +13698,7 @@ void PluginEditor::setupCompressSliders()
         // Create value label
         auto valueLabel = std::make_unique<juce::Label>();
         valueLabel->setText("0.0", juce::dontSendNotification);
-        valueLabel->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 10.0f, juce::Font::bold));
+        valueLabel->setFont(juce::Font(10.0f, juce::Font::bold));
         valueLabel->setColour(juce::Label::textColourId, juce::Colours::white);
         valueLabel->setColour(juce::Label::backgroundColourId, juce::Colours::transparentBlack); // Remove black background
         valueLabel->setJustificationType(juce::Justification::centred);
@@ -15460,7 +13818,7 @@ void PluginEditor::setupReduxSequencerArea()
     // Create step title
     reduxStepTitle = std::make_unique<juce::Label>();
     reduxStepTitle->setText("STEP", juce::dontSendNotification);
-    reduxStepTitle->setFont(FontManager::getInstance().getFont("Akira Expanded", 13.436685f, juce::Font::bold).withExtraKerningFactor(0.09f)); // Adjusted size with 10% less letter spacing: 0.1 * 0.9 = 0.09
+    reduxStepTitle->setFont(juce::Font(22.118f, juce::Font::bold));
     reduxStepTitle->setColour(juce::Label::textColourId, juce::Colours::white);
     reduxStepTitle->setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(reduxStepTitle.get());
@@ -15499,7 +13857,7 @@ void PluginEditor::setupReduxSequencerArea()
     // Create step amount editor
     reduxStepAmountLabel = std::make_unique<juce::TextEditor>();
     reduxStepAmountLabel->setText("16");
-    reduxStepAmountLabel->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 16.0f, juce::Font::bold));
+    reduxStepAmountLabel->setFont(juce::Font(16.0f, juce::Font::bold));
     reduxStepAmountLabel->setColour(juce::TextEditor::textColourId, juce::Colours::white);
     reduxStepAmountLabel->setColour(juce::TextEditor::backgroundColourId, juce::Colours::transparentBlack);
     reduxStepAmountLabel->setColour(juce::TextEditor::outlineColourId, juce::Colours::white);
@@ -15678,7 +14036,7 @@ void PluginEditor::setupReduxAllStepsToggle()
     // Create all steps label (EXACT same positioning as other effects)
     reduxAllStepsLabel = std::make_unique<juce::Label>();
     reduxAllStepsLabel->setText("All Steps", juce::dontSendNotification);
-    reduxAllStepsLabel->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 14.4f, juce::Font::bold));
+    reduxAllStepsLabel->setFont(juce::Font(14.4f, juce::Font::bold));
     reduxAllStepsLabel->setColour(juce::Label::textColourId, juce::Colours::white);
     reduxAllStepsLabel->setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(reduxAllStepsLabel.get());
@@ -15988,7 +14346,7 @@ void PluginEditor::setupPhaseBloomKnobs()
         phaseBloomKnobLabels[i]->setText(phaseBloomKnobTitles[i], juce::dontSendNotification);
         phaseBloomKnobLabels[i]->setJustificationType(juce::Justification::centred);
         phaseBloomKnobLabels[i]->setColour(juce::Label::textColourId, juce::Colours::white);
-        phaseBloomKnobLabels[i]->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 12.0f, juce::Font::bold));
+        phaseBloomKnobLabels[i]->setFont(juce::Font(12.0f, juce::Font::bold));
         phaseBloomKnobLabels[i]->setBounds(x, y - 15, knobSize, 20); // Moved down 5px from -20 to -15 (same as other effects)
         
         // Create value label
@@ -15998,7 +14356,7 @@ void PluginEditor::setupPhaseBloomKnobs()
         phaseBloomValueLabels[i]->setText("0", juce::dontSendNotification);
         phaseBloomValueLabels[i]->setJustificationType(juce::Justification::centred);
         phaseBloomValueLabels[i]->setColour(juce::Label::textColourId, juce::Colours::white);
-        phaseBloomValueLabels[i]->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 10.0f, juce::Font::plain));
+        phaseBloomValueLabels[i]->setFont(juce::Font(10.0f, juce::Font::plain));
         phaseBloomValueLabels[i]->setBounds(x, y + knobSize - 10, knobSize, 15); // Same as other effects
         
         // Create indicator bar
@@ -16018,9 +14376,17 @@ void PluginEditor::setupPhaseBloomKnobs()
         addAndMakeVisible(phaseBloomLockButtons[i].get());
         phaseBloomLockButtons[i]->setVisible(false);
         
-        positionLockButton(phaseBloomLockButtons[i].get(), phaseBloomKnobLabels[i].get(), y);
+        // Position lock button at end of title text (same as other effects)
+        juce::Font labelFont(12.0f, juce::Font::bold);
+        int textWidth = labelFont.getStringWidth(phaseBloomKnobTitles[i]);
+        const int lockSize = 10; // Same size as other effects
+        const int lockSpacing = 5; // Fixed distance from end of title text
+        int lockX = x + (knobSize / 2) + (textWidth / 2) + lockSpacing;
+        int lockY = y - 10; // Same position as other effects
         
-        // Set lock button images (same as filter and other effects - no scaling needed)
+        phaseBloomLockButtons[i]->setBounds(lockX, lockY, lockSize, lockSize);
+        
+        // Set lock button images
         if (assets.unlockedIcon && assets.lockedIcon) {
             auto imgUnlocked = assets.unlockedIcon->createCopy();
             auto imgLocked = assets.lockedIcon->createCopy();
@@ -16147,7 +14513,7 @@ void PluginEditor::setupPhaseBloomEffectsArea()
     // Create "EFFECT" title label (ALWAYS "EFFECT", NOT the effect name!)
     phaseBloomEffectsTitle = std::make_unique<juce::Label>();
     phaseBloomEffectsTitle->setText("EFFECT", juce::dontSendNotification);
-    phaseBloomEffectsTitle->setFont(FontManager::getInstance().getFont("Akira Expanded", 18.6624f, juce::Font::bold).withExtraKerningFactor(0.1f)); // 10% smaller: 20.736f * 0.9 = 18.6624f, with letter spacing
+    phaseBloomEffectsTitle->setFont(juce::Font(27.648f, juce::Font::bold));
     phaseBloomEffectsTitle->setColour(juce::Label::textColourId, juce::Colours::white);
     phaseBloomEffectsTitle->setJustificationType(juce::Justification::centredLeft);
     phaseBloomEffectsTitle->setBounds(effectArea.getX() + 10, effectArea.getY() + 5, 100, 30);
@@ -16208,7 +14574,7 @@ void PluginEditor::setupPhaseBloomSequencerArea()
     // Create step title
     phaseBloomStepTitle = std::make_unique<juce::Label>();
     phaseBloomStepTitle->setText("STEP", juce::dontSendNotification);
-    phaseBloomStepTitle->setFont(FontManager::getInstance().getFont("Akira Expanded", 13.436685f, juce::Font::bold).withExtraKerningFactor(0.09f)); // Adjusted size with 10% less letter spacing: 0.1 * 0.9 = 0.09
+    phaseBloomStepTitle->setFont(juce::Font(22.118f, juce::Font::bold));
     phaseBloomStepTitle->setColour(juce::Label::textColourId, juce::Colours::white);
     phaseBloomStepTitle->setJustificationType(juce::Justification::centredLeft);
     phaseBloomStepTitle->setBounds(sequencerArea.getX() + 10, sequencerArea.getY(), 80, 30);
@@ -16242,7 +14608,7 @@ void PluginEditor::setupPhaseBloomSequencerArea()
     // Create step amount label (TextEditor)
     phaseBloomStepAmountLabel = std::make_unique<juce::TextEditor>();
     phaseBloomStepAmountLabel->setText("16");
-    phaseBloomStepAmountLabel->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 16.0f, juce::Font::bold));
+    phaseBloomStepAmountLabel->setFont(juce::Font(16.0f, juce::Font::bold));
     phaseBloomStepAmountLabel->setColour(juce::TextEditor::textColourId, juce::Colours::white);
     phaseBloomStepAmountLabel->setColour(juce::TextEditor::backgroundColourId, juce::Colours::transparentBlack);
     phaseBloomStepAmountLabel->setColour(juce::TextEditor::outlineColourId, juce::Colours::white);
@@ -16415,7 +14781,7 @@ void PluginEditor::setupPhaseBloomAllStepsToggle()
     // Create all steps label
     phaseBloomAllStepsLabel = std::make_unique<juce::Label>();
     phaseBloomAllStepsLabel->setText("All Steps", juce::dontSendNotification);
-    phaseBloomAllStepsLabel->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 14.4f, juce::Font::bold));
+    phaseBloomAllStepsLabel->setFont(juce::Font(14.4f, juce::Font::bold));
     phaseBloomAllStepsLabel->setColour(juce::Label::textColourId, juce::Colours::white);
     phaseBloomAllStepsLabel->setJustificationType(juce::Justification::centredLeft);
     phaseBloomAllStepsLabel->setBounds(effectArea.getX() + effectArea.getWidth()/2 + buttonSize/2 + 5 + 30, 
@@ -16501,10 +14867,6 @@ void PluginEditor::randomizeFormantKnobValues()
     DBG("[UI] Randomizing Formant knob values");
     
     for (int i = 0; i < 8; ++i) {
-        if (formantKnobLocked[i]) {
-            continue; // Skip locked knobs
-        }
-        
         if (formantKnobs[i] != nullptr) {
             float min = formantKnobs[i]->getMinimum();
             float max = formantKnobs[i]->getMaximum();
@@ -16758,15 +15120,11 @@ void PluginEditor::randomizeEffectStepSnapshot(FxPageID effect, int step)
         case FxPageID::Formant: {
             auto snapshot = processorRef.getFormantSafeSnapshot(step);
             
-            // Randomize Formant parameters (8 knobs)
+            // Randomize Formant parameters (now only 4)
             if (!knobLocked[0]) snapshot.formant.vowel = juce::Random::getSystemRandom().nextInt(5); // 0-4
-            if (!knobLocked[1]) snapshot.formant.resonance = 0.4f + juce::Random::getSystemRandom().nextFloat() * (18.0f - 0.4f); // 0.4-18
-            if (!knobLocked[2]) snapshot.formant.intensity = -6.0f + juce::Random::getSystemRandom().nextFloat() * 24.0f; // -6 to +18
-            if (!knobLocked[3]) snapshot.formant.shift = 0.5f + juce::Random::getSystemRandom().nextFloat() * (2.0f - 0.5f); // 0.5-2.0
-            if (!knobLocked[4]) snapshot.formant.brightness = -12.0f + juce::Random::getSystemRandom().nextFloat() * 24.0f; // -12 to +12
-            if (!knobLocked[5]) snapshot.formant.motion = juce::Random::getSystemRandom().nextFloat(); // 0-1
-            if (!knobLocked[6]) snapshot.formant.air = juce::Random::getSystemRandom().nextFloat(); // 0-1
-            if (!knobLocked[7]) snapshot.formant.mix = juce::Random::getSystemRandom().nextFloat(); // 0-1
+            if (!knobLocked[1]) snapshot.formant.resonance = 0.5f + juce::Random::getSystemRandom().nextFloat() * (20.0f - 0.5f); // 0.5-20
+            if (!knobLocked[2]) snapshot.formant.intensity = juce::Random::getSystemRandom().nextFloat() * 12.0f; // 0-12
+            if (!knobLocked[3]) snapshot.formant.mix = juce::Random::getSystemRandom().nextFloat(); // 0-1
             
             processorRef.setFormantStepSnapshot(step, snapshot);
             break;
@@ -17087,15 +15445,11 @@ void PluginEditor::loadSelectedStepIntoKnobs(FxPageID effect)
             selectedStep = juce::jlimit(0, 15, selectedStep);
             const auto snapshot = processorRef.getFormantSafeSnapshot(selectedStep);
             
-            // Load snapshot values into knobs (all 8 parameters)
-            if (formantKnobs[0]) formantKnobs[0]->setValue(static_cast<float>(snapshot.formant.vowel), juce::dontSendNotification);
+            // Load snapshot values into knobs (now only 4)
+            if (formantKnobs[0]) formantKnobs[0]->setValue((float)snapshot.formant.vowel, juce::dontSendNotification);
             if (formantKnobs[1]) formantKnobs[1]->setValue(snapshot.formant.resonance, juce::dontSendNotification);
             if (formantKnobs[2]) formantKnobs[2]->setValue(snapshot.formant.intensity, juce::dontSendNotification);
-            if (formantKnobs[3]) formantKnobs[3]->setValue(snapshot.formant.shift, juce::dontSendNotification);
-            if (formantKnobs[4]) formantKnobs[4]->setValue(snapshot.formant.brightness, juce::dontSendNotification);
-            if (formantKnobs[5]) formantKnobs[5]->setValue(snapshot.formant.motion, juce::dontSendNotification);
-            if (formantKnobs[6]) formantKnobs[6]->setValue(snapshot.formant.air, juce::dontSendNotification);
-            if (formantKnobs[7]) formantKnobs[7]->setValue(snapshot.formant.mix, juce::dontSendNotification);
+            if (formantKnobs[3]) formantKnobs[3]->setValue(snapshot.formant.mix, juce::dontSendNotification);
                 break;
         }
         
@@ -17319,4 +15673,68 @@ juce::String PluginEditor::getParameterIdForKnob(int knobIndex)
             break;
     }
     return "";
+}
+
+//==============================================================================
+// License Management Methods
+//==============================================================================
+
+void PluginEditor::checkLicenseOnStartup()
+{
+    if (!licenseManager)
+        return;
+    
+    // Load saved license state
+    licenseManager->loadLicenseState();
+    
+    // Check if we already have a valid license saved
+    if (licenseManager->isLicenseValid())
+    {
+        DBG("[LICENSE] Valid license found in saved state - no dialog needed");
+        repaint(); // Update UI
+        return;
+    }
+    
+    auto licenseInfo = licenseManager->getCurrentLicense();
+    
+    // If we have a saved license key, verify it
+    if (!licenseInfo.licenseKey.isEmpty())
+    {
+        DBG("[LICENSE] Verifying saved license key on startup...");
+        licenseManager->verifyLicenseAsync(licenseInfo.licenseKey, false, [this](const GumroadLicenseInfo& info) {
+            if (info.isValid())
+            {
+                DBG("[LICENSE] License verified successfully on startup");
+                repaint(); // Update UI
+            }
+            else
+            {
+                DBG("[LICENSE] Saved license key is invalid");
+                // Show dialog if invalid
+                juce::MessageManager::callAsync([this]() {
+                    showLicenseDialog();
+                });
+            }
+        });
+    }
+    else
+    {
+        // No license key saved - show dialog
+        DBG("[LICENSE] No license key found - showing dialog");
+        showLicenseDialog();
+    }
+}
+
+void PluginEditor::showLicenseDialog()
+{
+    if (!licenseManager)
+        return;
+    
+    DBG("[LICENSE] Showing license dialog");
+    GumroadLicenseDialog::showDialog(this, licenseManager.get(), [this]() {
+        // User dismissed the dialog - set flag to prevent immediate reopening
+        licenseDialogDismissed = true;
+        lastLicenseDialogShowTime = juce::Time::getCurrentTime();
+        DBG("[LICENSE] Dialog dismissed by user");
+    });
 }

@@ -38,12 +38,12 @@ private:
         { 300.f,  870.f, 2240.f }  // U (4)
     };
     
-    // Formant bandwidths in Hz (narrower for more pronounced formants)
+    // Formant bandwidths in Hz
     static constexpr float kBandwidths[4] = {
-        80.0f,  // F1 (narrower for more pronounced)
-        70.0f,  // F2 (narrower for more pronounced)
-        120.0f, // F3 (narrower for more pronounced)
-        150.0f  // F4 (narrower for more pronounced)
+        110.0f, // F1
+        90.0f,  // F2
+        150.0f, // F3
+        200.0f  // F4
     };
     
     // Get formants for continuous vowel (0-4)

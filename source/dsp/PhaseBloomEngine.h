@@ -1,143 +1,79 @@
 #pragma once
 
-#include <array>
-#include <utility>
-#include <vector>
-
+#include <juce_audio_processors/juce_audio_processors.h>
 #include <juce_dsp/juce_dsp.h>
+#include <atomic>
 
 /**
- * PhaseBloomEngine
- *
- * High-quality stereo phaser inspired by CHOWPhaser.  Implements a ladder of
- * first-order allpass sections with smoothed parameter control, stereo width,
- * soft-clipped feedback, tone control, and clickless topology/mode transitions.
- * UI/layout for PhaseBloom remains untouched – this class performs all DSP.
+ * PhaseBloomEngine - Lush stereo phaser with harmonic enrichment and "blooming" stereo character
+ * 
+ * Features:
+ * - Stereo synced phaser using juce::dsp::Phaser
+ * - Host BPM sync for rate parameter
+ * - Harmonic enrichment with saturation
+ * - Stereo spread control for phase offset between L/R
+ * - 8 parameters: Depth, Rate, Feedback, Center, Bloom, Spread, Resonance, Mix
  */
 class PhaseBloomEngine
 {
 public:
     PhaseBloomEngine();
-
+    ~PhaseBloomEngine() = default;
+    
+    // DSP lifecycle
     void prepare(double sampleRate, int samplesPerBlock, int numChannels);
     void reset();
-    void process(juce::AudioBuffer<float>& buffer);
-
-    // Parameter setters (raw values as delivered by existing UI/APVTS)
-    void setDepth(float value);
-    void setRate(float value);
-    void setFeedback(float value);
-    void setCenter(float value);
-    void setBloom(float value);      // mapped to stage count
-    void setSpread(float value);     // stereo amount
-    void setResonance(float value);  // tone control
-    void setMix(float value);
-    void setType(int typeIndex);
-    void setEnabled(bool shouldBeEnabled);
-
-    static juce::String getRateLabel(float normalisedValue);
-
+    void process(juce::AudioBuffer<float>& buffer, double hostBPM);
+    
+    // Parameter setters
+    void setDepth(float depth);           // 0.0 to 1.0
+    void setRate(float rate);             // 0.0 to 1.0 (maps to tempo divisions)
+    void setFeedback(float feedback);     // -1.0 to +1.0
+    void setCenter(float center);         // 100-4000 Hz
+    void setBloom(float bloom);           // 0.0 to 1.0 (harmonic enrichment)
+    void setSpread(float spread);         // 0.0 to 1.0 (stereo phase offset)
+    void setResonance(float resonance);   // 0.0 to 1.0 (Q factor)
+    void setMix(float mix);               // 0.0 to 1.0 (dry/wet)
+    void setEnabled(bool enabled);
+    
+    // Rate conversion helpers
+    static float rateToHz(float rateValue, double hostBPM);
+    static juce::String getRateLabel(float rateValue);
+    
 private:
-    struct CharacterProfile
-    {
-        int preferredStages = 6;
-        int stageLimit = 6;
-        float feedbackCap = 0.8f;
-        float depthScale = 1.0f;
-        float toneMultiplier = 1.0f;
-        float stereoFloor = 0.0f;
-        float centreSpreadScale = 1.0f;
-        float softClipAmount = 0.8f;
+    // JUCE DSP phaser instances for left and right channels (per-slot)
+    static constexpr int NUM_SLOTS = 4;
+    juce::dsp::Phaser<float> phaserL[NUM_SLOTS];
+    juce::dsp::Phaser<float> phaserR[NUM_SLOTS];
+    
+    // TEMPORARILY DISABLE DELAY LINES TO PREVENT CRASHES
+    // TODO: Re-implement bloom with safer approach
+    // juce::dsp::DelayLine<float> bloomDelayL[NUM_SLOTS];
+    // juce::dsp::DelayLine<float> bloomDelayR[NUM_SLOTS];
+    
+    // LFO state for stereo spread
+    float lfoPhase = 0.0f;
+    double sampleRate = 44100.0;
+    
+    // Parameters (smoothed for zipper-free operation)
+    juce::SmoothedValue<float> depth;
+    juce::SmoothedValue<float> rate;
+    juce::SmoothedValue<float> feedback;
+    juce::SmoothedValue<float> center;
+    juce::SmoothedValue<float> bloom;
+    juce::SmoothedValue<float> spread;
+    juce::SmoothedValue<float> resonance;
+    juce::SmoothedValue<float> mix;
+    
+    // State
+    bool isEnabled = false;
+    
+    // Tempo-synced rate divisions (beat divisions) - corrected for proper musical timing
+    static constexpr float RATE_DIVISIONS[9] = {
+        4.0f, 2.0f, 1.0f, 0.5f, 0.25f, 0.125f, 0.0625f, 0.03125f, 0.015625f
     };
-
-    struct FirstOrderAllpass
-    {
-        float z = 0.0f;
-        float multiplier = 1.0f;
+    
+    static constexpr const char* RATE_LABELS[9] = {
+        "4 Bars", "2 Bars", "1 Bar", "1/2", "1/4", "1/8", "1/16", "1/32", "1/64"
     };
-
-    struct AllpassLadder
-    {
-        void prepare(int numStages, float spread);
-        void reset();
-        void copyFrom(const AllpassLadder& other);
-        float process(float input, float baseFrequencyHz, float sampleRate);
-        int getStageCount() const { return static_cast<int>(stages.size()); }
-
-    private:
-        std::vector<FirstOrderAllpass> stages;
-    };
-
-    struct ChannelState
-    {
-        AllpassLadder current;
-        AllpassLadder pending;
-        juce::dsp::StateVariableTPTFilter<float> tone;
-        juce::dsp::StateVariableTPTFilter<float> pendingTone;
-        bool crossfadeActive = false;
-        int crossfadeSamplesRemaining = 0;
-        int crossfadeSamplesTotal = 0;
-        float feedbackStateCurrent = 0.0f;
-        float feedbackStatePending = 0.0f;
-        float lfoPhase = 0.0f;
-    };
-
-    void ensureChannelCount(int requiredChannels);
-    void updateSmoothers();
-    void updateFilter(juce::dsp::StateVariableTPTFilter<float>& filter, float cutoffHz);
-
-    void beginStageCrossfade(int newStageCount);
-    void beginCharacterCrossfade(int newCharacter);
-    bool anyChannelCrossfading() const;
-
-    float mapRateToHz(float parameterValue) const;
-    float mapFeedback(float parameterValue) const;
-    float mapCenterToHz(float parameterValue) const;
-    int mapStages(float parameterValue) const;
-    float mapStereoAmount(float parameterValue) const;
-    float computeStereoPhaseOffset(float stereoAmount, const CharacterProfile& profile) const;
-    std::pair<float, float> computeStereoCentres(float baseHz,
-                                                 float stereoAmount,
-                                                 const CharacterProfile& profile) const;
-    float mapToneToHz(float parameterValue) const;
-    float mapMix(float parameterValue) const;
-
-    double sampleRate = 48000.0;
-    int maxBlockSize = 512;
-    int numChannels = 2;
-    bool prepared = false;
-    bool enabled = false;
-
-    juce::LinearSmoothedValue<float> depthSmoothed;
-    juce::LinearSmoothedValue<float> rateSmoothed;
-    juce::LinearSmoothedValue<float> feedbackSmoothed;
-    juce::LinearSmoothedValue<float> centerSmoothed;
-    juce::LinearSmoothedValue<float> stereoSmoothed;
-    juce::LinearSmoothedValue<float> toneSmoothed;
-    juce::LinearSmoothedValue<float> mixSmoothed;
-
-    float depthTarget = 0.5f;
-    float rateTargetHz = 0.5f;
-    float feedbackTarget = 0.0f;
-    float centerTargetHz = 1000.0f;
-    float stereoTarget = 0.0f;
-    float toneTargetHz = 16000.0f;
-    float mixTarget = 0.5f;
-
-    juce::AudioBuffer<float> dryBuffer;
-    juce::dsp::ProcessSpec filterSpec { 48000.0, 512, 1 };
-    std::vector<ChannelState> channels;
-
-    static constexpr float crossfadeSeconds = 0.015f;
-    static constexpr float stereoCentreOffsetPercent = 0.03f;
-    static constexpr float sweepOctaves = 2.0f;
-
-    float bloomParameterCached = 0.2f;
-
-    int currentStages = 4;
-    int targetStages = 4;
-
-    std::array<CharacterProfile, 3> characters{};
-    int currentCharacter = 1; // Type B default
-    int targetCharacter = 1;
 };

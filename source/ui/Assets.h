@@ -76,10 +76,6 @@ struct UiAssets {
     std::unique_ptr<juce::Drawable> tabSaturateIcon; // Heat_Icon.svg
     std::unique_ptr<juce::Drawable> saturateBackgroundTab1, saturateBackgroundTab2, saturateBackgroundTab3, saturateBackgroundTab4;
     
-    // Filter assets
-    std::unique_ptr<juce::Drawable> tabFilterIcon; // Filter_Icon.svg
-    std::unique_ptr<juce::Drawable> filterBackgroundTab1, filterBackgroundTab2, filterBackgroundTab3, filterBackgroundTab4;
-    
     // Dub Delay backgrounds
     std::unique_ptr<juce::Drawable> dubdelayBackgroundTab1, dubdelayBackgroundTab2, dubdelayBackgroundTab3, dubdelayBackgroundTab4;
     

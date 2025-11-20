@@ -13,12 +13,12 @@
 #include "EffectRouter.h"
 #include "ui/OutputSpectrumView.h"
 #include "ui/SpectrumFilterSlider.h"
-#include "ui/GumroadLicenseDialog.h"
 
 // Forward declarations
 struct RandomizationManager;
 class PresetManager;
 class PresetBrowserOverlay;
+class GumroadLicenseManager;
 #include "ui/StepSequencer.h"
 
 // Tab system enum
@@ -72,14 +72,10 @@ private:
     public:
         LockButton();
         ~LockButton() override = default;
-    
-    static constexpr int defaultSize = 10;
-    static constexpr int defaultIconInset = 0;
         
         void paintButton(juce::Graphics& g, bool over, bool down) override;
         void setImages(std::unique_ptr<juce::Drawable> unlocked, std::unique_ptr<juce::Drawable> locked);
         void setAlpha(float alpha);
-    void setIconInset(int inset) { iconInset = inset; repaint(); }
         
     private:
         std::unique_ptr<juce::Drawable> unlockedImage;
@@ -87,7 +83,6 @@ private:
         std::unique_ptr<juce::Drawable> originalUnlockedImage;
         std::unique_ptr<juce::Drawable> originalLockedImage;
         float buttonAlpha = 1.0f;
-    int iconInset = defaultIconInset;
         
         JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (LockButton)
     };
@@ -299,6 +294,13 @@ public:
     std::unique_ptr<PresetBrowserOverlay> presetBrowser;
     std::unique_ptr<PresetSelectorButton> presetBrowserButton;
     std::unique_ptr<juce::DrawableButton> compCrushTabButton;
+    
+    // License management
+    std::unique_ptr<GumroadLicenseManager> licenseManager;
+    bool licenseDialogDismissed = false; // Track if user dismissed dialog
+    juce::Time lastLicenseDialogShowTime;
+    void checkLicenseOnStartup();
+    void showLicenseDialog();
     
     // COMPRESS+ gain reduction meter with professional exponential ballistics
     class GainReductionMeter : public juce::Component, public juce::Timer
@@ -953,8 +955,6 @@ public:
     std::array<std::unique_ptr<juce::Label>, 8> formantValueLabels;
     std::array<std::unique_ptr<IndicatorBar>, 8> formantIndicatorBars;
     std::array<std::unique_ptr<CustomDiceButton>, 8> formantDiceButtons;
-    std::array<std::unique_ptr<LockButton>, 8> formantLockButtons;
-    std::array<bool, 8> formantKnobLocked { false, false, false, false, false, false, false, false };
     
     // Formant power buttons
     std::unique_ptr<juce::DrawableButton> formantFxPowerButton;
@@ -1042,43 +1042,6 @@ public:
     std::vector<juce::Component*> reduxGroup; // All Redux UI components for visibility toggling
     std::vector<juce::Component*> phaseBloomGroup; // All PhaseBloom UI components for visibility toggling
     std::vector<juce::Component*> formantGroup; // All Formant UI components for visibility toggling
-    
-    // Filter page components (8 knobs: Type, Cutoff, Res, Slope, Drive, Spread, Key Track, Mix)
-    std::unique_ptr<CustomKnob> filterTypeKnob;
-    std::unique_ptr<juce::Label> filterTypeLabel;
-    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> filterTypeAttachment;
-    std::array<std::unique_ptr<CustomKnob>, 5> filterKnobs; // Cutoff, Res, Drive, Key Track, Mix (Spread removed)
-    std::array<std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>, 5> filterAttachments;
-    std::unique_ptr<CustomKnob> filterSlopeKnob;
-    std::unique_ptr<juce::Label> filterSlopeLabel;
-    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> filterSlopeAttachment;
-    std::array<std::unique_ptr<juce::Label>, 8> filterKnobLabels; // Labels for all 8 controls (Type, Cutoff, Res, Slope, Drive, Spread, Key Track, Mix)
-    std::array<std::unique_ptr<juce::Label>, 8> filterValueLabels; // Value labels for all 8 knobs
-    std::array<std::unique_ptr<IndicatorBar>, 8> filterIndicatorBars; // Indicators for all 8 knobs
-    std::array<std::unique_ptr<LockButton>, 8> filterLockButtons; // Lock buttons for all 8 knobs
-    std::array<bool, 8> filterKnobLocked { false, false, false, false, false, false, false, false };
-    std::unique_ptr<juce::Label> filterEffectsTitle;
-    std::unique_ptr<CustomDiceButton> filterDiceButton;
-    std::unique_ptr<juce::DrawableButton> filterFxPowerButton;
-    bool filterFxAreaEnabled = true;
-    
-    // Filter step sequencer area
-    std::array<std::unique_ptr<StepButton>, 16> filterStepButtons;
-    int filterUiSelectedStep = 0;
-    std::unique_ptr<juce::TextEditor> filterStepAmountLabel;
-    std::unique_ptr<juce::ComboBox> filterRateDropdown;
-    std::unique_ptr<CircularToggleButton> filterStdToggle;
-    std::unique_ptr<juce::Label> filterStepTitle;
-    std::unique_ptr<CustomDiceButton> filterStepDiceButton;
-    std::unique_ptr<juce::DrawableButton> filterStepPowerButton;
-    bool filterStepAreaEnabled = true;
-    
-    // Filter All Steps toggle
-    std::unique_ptr<AllStepsToggleButton> filterAllStepsToggle;
-    std::unique_ptr<juce::Label> filterAllStepsLabel;
-    bool filterAllStepsEnabled = false;
-    
-    std::vector<juce::Component*> filterGroup; // All Filter UI components for visibility toggling
     
     // Saturate page components (8 knobs)
     std::array<std::unique_ptr<CustomKnob>, 8> saturateKnobs;
@@ -1244,19 +1207,12 @@ public:
         void setupSaturateKnobs();
         void setupSaturateEffectsArea();
         void setupSaturateSequencerArea();
-        void setupFilterSequencerArea();
         void setupSaturateAllStepsToggle();
         void updateSaturateKnobLabels(int type);
         void updateSaturateFxAreaVisibility();
-        void updateFilterFxAreaVisibility();
         void updateSaturateStepAreaVisibility();
-        void updateFilterStepAreaVisibility();
         void updateSaturateSequencerUI();
         void onSaturateStepButtonClicked(int stepIndex);
-        
-        void updateFilterSequencerUI();
-        void onFilterStepButtonClicked(int stepIndex);
-        void updateFilterParameterFromKnob(int knobIndex);
         void updateSaturateParameterFromKnob(int knobIndex);
         void randomizeSaturateKnobValues();
         void randomizeIndividualSaturateKnob(int knobIndex);
@@ -1270,10 +1226,6 @@ public:
     void updateDubDelayTimeLabel(); // Update Time knob label based on sync mode
         void onDubDelayStepButtonClicked(int stepIndex);
         void updateDubDelayCurrentStepSnapshot(int knobIndex, float value);
-        
-        // Gumroad License management methods
-        void checkLicenseOnStartup();
-        void showLicenseDialog();
         
         // Redux page helper methods
         void setupReduxKnobs();
@@ -1306,10 +1258,6 @@ public:
         
         // Formant page helper methods
         void setupFormantKnobs();
-        void setupFilterKnobs();
-        void setupFilterEffectsArea();
-        void setupFilterAllStepsToggle();
-        void populateFilterGroup();
         void setupFormantEffectsArea();
         void setupFormantSequencerArea();
         void setupFormantAllStepsToggle();

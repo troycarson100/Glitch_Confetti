@@ -33,35 +33,6 @@ void RandomizationManager::handleAsyncUpdate()
     DBG("[RAND] ═══════════════════════════════════════════");
     DBG("[RAND] Starting randomization on message thread");
     randomizeAll();
-    
-    // Refresh UI to show new effects after randomization
-    if (editor) {
-        // Update tab button images to reflect new router assignments
-        editor->updateTabButtonImages();
-        // Refresh effect selector dropdowns
-        auto& router = processor.getEffectRouter();
-        if (editor->effectSelector1) editor->effectSelector1->setSelectedId(static_cast<int>(router.getEffectInSlot(SlotID::Slot1)) + 1, juce::dontSendNotification);
-        if (editor->effectSelector2) editor->effectSelector2->setSelectedId(static_cast<int>(router.getEffectInSlot(SlotID::Slot2)) + 1, juce::dontSendNotification);
-        if (editor->effectSelector3) editor->effectSelector3->setSelectedId(static_cast<int>(router.getEffectInSlot(SlotID::Slot3)) + 1, juce::dontSendNotification);
-        if (editor->effectSelector4) editor->effectSelector4->setSelectedId(static_cast<int>(router.getEffectInSlot(SlotID::Slot4)) + 1, juce::dontSendNotification);
-        
-        // Check if Filter is assigned to any slot and switch to that page
-        // Map slots to FxPageID: Slot1→SpaceDelay, Slot2→Panner, Slot3→Dirt, Slot4→Chorus
-        if (router.getEffectInSlot(SlotID::Slot1) == EffectID::Filter) {
-            editor->showPage(FxPageID::SpaceDelay);
-        } else if (router.getEffectInSlot(SlotID::Slot2) == EffectID::Filter) {
-            editor->showPage(FxPageID::Panner);
-        } else if (router.getEffectInSlot(SlotID::Slot3) == EffectID::Filter) {
-            editor->showPage(FxPageID::Dirt);
-        } else if (router.getEffectInSlot(SlotID::Slot4) == EffectID::Filter) {
-            editor->showPage(FxPageID::Chorus);
-        } else {
-            // Filter not assigned, just refresh current page
-            editor->showPage(editor->currentPage);
-        }
-        editor->repaint();
-    }
-    
     busy.store(false);
     DBG("[RAND] ═══════════════════════════════════════════");
 }
@@ -101,7 +72,7 @@ void RandomizationManager::randomizeEffectRouter()
     
     // Get all available effects (excluding master/compressor)
     std::vector<EffectID> availableEffects;
-    for (int i = 0; i <= 13; ++i) { // EffectID::SpaceDelay (0) to EffectID::Filter (13)
+    for (int i = 0; i <= 12; ++i) { // EffectID::SpaceDelay (0) to EffectID::Saturate (12)
         availableEffects.push_back(static_cast<EffectID>(i));
     }
     
@@ -375,29 +346,6 @@ void RandomizationManager::applyParamChanges()
                 break;
             }
             
-            case EffectID::Filter:
-            {
-                int step = processor.getFilterSelectedStep();
-                if (step >= 0 && step < 16) {
-                    auto s = processor.getFilterSafeSnapshot(step);
-                    // Load into filter knobs
-                    if (editor->filterTypeKnob) editor->filterTypeKnob->setValue(s.filter.type, juce::sendNotification);
-                    if (editor->filterKnobs[0]) { // Cutoff - convert frequency to normalized
-                        float normalized = s.filter.cutoff <= 5000.0f
-                            ? (s.filter.cutoff - 20.0f) / (5000.0f - 20.0f) * 0.75f
-                            : 0.75f + 0.25f * (std::log(s.filter.cutoff / 5000.0f) / std::log(4.0f));
-                        normalized = juce::jlimit(0.0f, 1.0f, normalized);
-                        editor->filterKnobs[0]->setValue(normalized, juce::sendNotification);
-                    }
-                    if (editor->filterKnobs[1]) editor->filterKnobs[1]->setValue(s.filter.resonance, juce::sendNotification);
-                    if (editor->filterSlopeKnob) editor->filterSlopeKnob->setValue(s.filter.slope, juce::sendNotification);
-                    if (editor->filterKnobs[2]) editor->filterKnobs[2]->setValue(s.filter.drive, juce::sendNotification);
-                    if (editor->filterKnobs[3]) editor->filterKnobs[3]->setValue(s.filter.keytrack, juce::sendNotification);
-                    DBG("[RAND]   Filter step " + juce::String(step) + " reloaded");
-                }
-                break;
-            }
-            
             default:
                 break;
         }
@@ -557,21 +505,6 @@ void RandomizationManager::applyStepChanges()
                 break;
             }
             
-            case EffectID::Filter:
-            {
-                auto snapshot = processor.getFilterSafeSnapshot(target.stepIndex);
-                snapshot.filter.type = static_cast<float>(static_cast<int>(rand01() * 5)); // 0-4
-                snapshot.filter.cutoff = 20.0f + rand01() * 19980.0f; // 20-20000 Hz
-                snapshot.filter.resonance = rand01(); // 0-1
-                snapshot.filter.slope = static_cast<float>(static_cast<int>(rand01() * 2)); // 0 or 1
-                snapshot.filter.drive = rand01() * 36.0f; // 0-36 dB
-                snapshot.filter.spread = 0.0f; // Spread removed - always 0
-                snapshot.filter.keytrack = rand01(); // 0-1
-                snapshot.filter.mix = 1.0f; // Mix is global, not per-step
-                processor.setFilterStepSnapshot(target.stepIndex, snapshot);
-                break;
-            }
-            
             default:
                 break;
         }
@@ -673,12 +606,6 @@ void RandomizationManager::applySequencerChanges()
                 processor.setForm2SequencerEnabled(sequencerEnabled);
                 processor.setForm2StepsUsed(stepsUsed);
                 processor.setForm2DivisionIndex(divisionIndex);
-                break;
-                
-            case EffectID::Filter:
-                processor.setFilterSequencerEnabled(sequencerEnabled);
-                processor.setFilterStepAmount(stepsUsed);
-                processor.setFilterDivisionIndex(divisionIndex);
                 break;
         }
         
