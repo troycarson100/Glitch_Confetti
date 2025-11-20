@@ -338,6 +338,23 @@ void SaturateProcessor::prepare(double fs, int blockSize)
         }
     }
 
+    // Initialize parameter smoothing (100ms for top knobs to prevent clicks and static)
+    const double smoothTime = 0.100;
+    driveSmooth.reset(sampleRate, smoothTime);
+    colorSmooth.reset(sampleRate, smoothTime);
+    shapeSmooth.reset(sampleRate, smoothTime);
+    biasSmooth.reset(sampleRate, smoothTime);
+    outputSmooth.reset(sampleRate, smoothTime);
+    mixSmooth.reset(sampleRate, smoothTime);
+    
+    // Set initial values
+    driveSmooth.setCurrentAndTargetValue(12.0f);
+    colorSmooth.setCurrentAndTargetValue(0.5f);
+    shapeSmooth.setCurrentAndTargetValue(0.5f);
+    biasSmooth.setCurrentAndTargetValue(0.0f);
+    outputSmooth.setCurrentAndTargetValue(0.0f);
+    mixSmooth.setCurrentAndTargetValue(1.0f);
+
     reset();
 }
 
@@ -352,6 +369,12 @@ void SaturateProcessor::reset()
 
     currentType = 0;
     crossfade = {};
+    
+    // Reset filter tracking to prevent clicks on page switch
+    prevPreTiltDb = 0.0f;
+    prevPostTiltDb = 0.0f;
+    prevHpCutHz = 30.0f;
+    prevToneNorm = 0.5f;
 }
 
 //==============================================================================
@@ -470,17 +493,40 @@ void SaturateProcessor::refreshFilters(ModelRuntime& runtime,
                                        double /*fs*/,
                                        int modelIndex)
 {
-    for (auto& ch : runtime.channels)
+    // Only update filters if values have changed significantly to prevent clicks
+    // Increased thresholds to reduce filter update frequency and prevent static
+    const float tiltThreshold = 0.2f;  // Increased from 0.1f
+    const float cutoffThreshold = 2.0f;  // Increased from 1.0f
+    const float toneThreshold = 0.02f;  // Increased from 0.01f
+    
+    bool needsUpdate = false;
+    
+    if (std::abs(params.preTiltDb - prevPreTiltDb) > tiltThreshold ||
+        std::abs(params.postTiltDb - prevPostTiltDb) > tiltThreshold ||
+        std::abs(params.hpCutHz - prevHpCutHz) > cutoffThreshold ||
+        std::abs(params.toneNorm - prevToneNorm) > toneThreshold)
     {
-        ch.preTilt.setTiltDb(params.preTiltDb);
-        ch.postTilt.setTiltDb(params.postTiltDb);
-        ch.preHP.setCutoff(params.hpCutHz);
-        ch.toneFilter.setTone(params.toneNorm);
+        needsUpdate = true;
+        prevPreTiltDb = params.preTiltDb;
+        prevPostTiltDb = params.postTiltDb;
+        prevHpCutHz = params.hpCutHz;
+        prevToneNorm = params.toneNorm;
+    }
+    
+    if (needsUpdate)
+    {
+        for (auto& ch : runtime.channels)
+        {
+            ch.preTilt.setTiltDb(params.preTiltDb);
+            ch.postTilt.setTiltDb(params.postTiltDb);
+            ch.preHP.setCutoff(params.hpCutHz);
+            ch.toneFilter.setTone(params.toneNorm);
 
-        if (modelIndex == 2)
-            ch.diode.setParameters(params.character, params.bias, params.character2);
-        else
-            ch.diode.setParameters(0.65f, params.bias, 4.0e4f);
+            if (modelIndex == 2)
+                ch.diode.setParameters(params.character, params.bias, params.character2);
+            else
+                ch.diode.setParameters(0.65f, params.bias, 4.0e4f);
+        }
     }
 
     runtime.lastDrive = params.driveDb;
@@ -503,6 +549,36 @@ void SaturateProcessor::process(juce::AudioBuffer<float>& buffer,
     if (numSamples <= 0 || buffer.getNumChannels() < 2)
         return;
 
+    // Enable flush-to-zero for stability
+    juce::ScopedNoDenormals noDenormals;
+
+    // Check if input is silent - if so, skip processing to avoid noise
+    float inputLevel = 0.0f;
+    for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
+    {
+        for (int n = 0; n < numSamples; ++n)
+        {
+            inputLevel += std::abs(buffer.getSample(ch, n));
+        }
+    }
+    inputLevel /= (numSamples * buffer.getNumChannels());
+    
+    // If input is essentially silent, skip processing to avoid noise
+    if (inputLevel < 1.0e-6f)
+    {
+        // Still update smoothers to prevent jumps when audio returns
+        for (int n = 0; n < numSamples; ++n)
+        {
+            driveSmooth.skip(1);
+            colorSmooth.skip(1);
+            shapeSmooth.skip(1);
+            biasSmooth.skip(1);
+            outputSmooth.skip(1);
+            mixSmooth.skip(1);
+        }
+        return;
+    }
+
     auto* typeParam = apvts.getRawParameterValue("satType");
     auto* driveParam = apvts.getRawParameterValue("satDrive");
     auto* colorParam = apvts.getRawParameterValue("satColor");
@@ -513,12 +589,33 @@ void SaturateProcessor::process(juce::AudioBuffer<float>& buffer,
     
     const int type = typeParam ? juce::jlimit(0, numModels - 1, static_cast<int>(typeParam->load())) : 0;
 
-    const float drive = driveParam ? driveParam->load() : 12.0f;
-    const float color = colorParam ? colorParam->load() : 0.5f;
-    const float shape = shapeParam ? shapeParam->load() : 0.5f;
-    const float bias = biasParam ? biasParam->load() : 0.0f;
-    const float output = outParam ? outParam->load() : 0.0f;
-    const float mix = mixParam ? mixParam->load() : 1.0f;
+    // Set target values for smoothing
+    driveSmooth.setTargetValue(driveParam ? driveParam->load() : 12.0f);
+    colorSmooth.setTargetValue(colorParam ? colorParam->load() : 0.5f);
+    shapeSmooth.setTargetValue(shapeParam ? shapeParam->load() : 0.5f);
+    biasSmooth.setTargetValue(biasParam ? biasParam->load() : 0.0f);
+    outputSmooth.setTargetValue(outParam ? outParam->load() : 0.0f);
+    mixSmooth.setTargetValue(mixParam ? mixParam->load() : 1.0f);
+    
+    // Get smoothed values (smoothing prevents clicks when knobs change)
+    // Use getNextValue() to advance smoothing and get smoothed value
+    const float drive = driveSmooth.getNextValue();
+    const float color = colorSmooth.getNextValue();
+    const float shape = shapeSmooth.getNextValue();
+    const float bias = biasSmooth.getNextValue();
+    const float output = outputSmooth.getNextValue();
+    const float mix = mixSmooth.getNextValue();
+    
+    // Skip remaining samples to keep smoothers in sync
+    for (int i = 1; i < numSamples; ++i)
+    {
+        driveSmooth.skip(1);
+        colorSmooth.skip(1);
+        shapeSmooth.skip(1);
+        biasSmooth.skip(1);
+        outputSmooth.skip(1);
+        mixSmooth.skip(1);
+    }
 
     ParameterSet params = mapParameters(static_cast<float>(type),
                                         drive,
@@ -572,15 +669,27 @@ void SaturateProcessor::processInternal(juce::AudioBuffer<float>& buffer,
 
     if (targetType != currentType)
     {
-        crossfade.active = true;
-        crossfade.previousType = currentType;
-        crossfade.totalSamples = static_cast<int>(crossfadeTimeSeconds * sampleRate);
-        crossfade.remainingSamples = crossfade.totalSamples;
+        // Only crossfade if we're switching between different types (not on first load)
+        // If previous type was 0 and we're switching, it's likely a page switch
+        if (currentType >= 0 && crossfade.totalSamples > 0)
+        {
+            crossfade.active = true;
+            crossfade.previousType = currentType;
+            crossfade.totalSamples = static_cast<int>(crossfadeTimeSeconds * sampleRate);
+            crossfade.remainingSamples = crossfade.totalSamples;
+        }
+        else
+        {
+            // First time or no previous type - no crossfade needed
+            crossfade.active = false;
+            crossfade.remainingSamples = 0;
+        }
         currentType = targetType;
         oversamplerSecondary->reset();
     }
 
     auto& runtime = modelStates[currentType];
+    // Refresh filters at the start of the block (will be checked again in processOversampledBlock)
     refreshFilters(runtime, liveParams, osSampleRate, targetType);
 
     renderModelToBuffer(currentType, runtime, buffer, liveParams, true);
@@ -745,9 +854,17 @@ void SaturateProcessor::processOversampledBlock(int modelIndex,
                     const float evenBlend = juce::jlimit(0.0f, 0.6f, params.character2);
                     float evenComponent = juce::jmap(evenBlend, 0.0f, 0.6f, cubicSoft, triodeApprox);
 
+                    // Improved analog saturation: better even/odd harmonic balance
+                    const float evenWeight = juce::jmap(driveBlend, 0.15f, 0.35f); // More even harmonics at higher drive
                     float result = juce::jlimit(-1.2f, 1.2f,
-                                                0.9f * oddComponent + 0.1f * (driveBlend * evenComponent));
-                    float processed = juce::jlimit(-1.0f, 1.0f, 0.75f * result + 0.25f * sample);
+                                                (1.0f - evenWeight) * oddComponent + evenWeight * evenComponent);
+                    
+                    // Warmer analog character: add subtle tube-like warmth and saturation
+                    const float tubeWarmth = std::tanh(result * 0.85f) * 1.1f;
+                    result = juce::jlimit(-1.2f, 1.2f, 0.7f * result + 0.3f * tubeWarmth);
+                    
+                    // More saturated blend for better analog character (was 75/25, now 85/15)
+                    float processed = juce::jlimit(-1.0f, 1.0f, 0.85f * result + 0.15f * sample);
                     const float stageMix = juce::jlimit(0.0f, 1.0f, driveBlend * userBlend);
                     sample = juce::jlimit(-1.0f, 1.0f, sample + stageMix * (processed - sample));
                 };

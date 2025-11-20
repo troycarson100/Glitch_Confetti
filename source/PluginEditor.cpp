@@ -5280,6 +5280,9 @@ void PluginEditor::showPage(FxPageID id)
             DBG("[ROUTER] Showing Saturate UI for slot " << slotIndex);
             setVisibleVec(saturateGroup, true);
             
+            // Reset processor to prevent pop when switching to Heat page
+            processorRef.resetSaturateProcessor();
+            
             // Restore UI state from APVTS parameters
             {
                 auto* fxEnabledParam = processorRef.getAPVTS().getRawParameterValue("saturateEnabled");

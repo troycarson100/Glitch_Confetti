@@ -242,6 +242,20 @@ private:
     juce::AudioBuffer<float> secondaryWetBuffer;
     juce::AudioBuffer<float> dryMatchedBuffer;
 
+    // Parameter smoothing to prevent clicks
+    juce::LinearSmoothedValue<float> driveSmooth;
+    juce::LinearSmoothedValue<float> colorSmooth;
+    juce::LinearSmoothedValue<float> shapeSmooth;
+    juce::LinearSmoothedValue<float> biasSmooth;
+    juce::LinearSmoothedValue<float> outputSmooth;
+    juce::LinearSmoothedValue<float> mixSmooth;
+    
+    // Track previous filter values to prevent clicks
+    float prevPreTiltDb = 0.0f;
+    float prevPostTiltDb = 0.0f;
+    float prevHpCutHz = 30.0f;
+    float prevToneNorm = 0.5f;
+
     //==============================================================================
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SaturateProcessor)
 };

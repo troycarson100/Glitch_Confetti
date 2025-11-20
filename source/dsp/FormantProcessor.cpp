@@ -236,14 +236,27 @@ void FormantProcessor::process(juce::AudioBuffer<float>& buffer, int numSamples,
             wetR += filteredR;
         }
         
-        // Scale to prevent clipping (parallel summing of 4 filters)
-        // Formants don't all peak simultaneously, scale appropriately
-        wetL *= 1.0f;  // No scale reduction needed
-        wetR *= 1.0f;
+        // Gain compensation: parallel bandpass filters reduce overall level
+        // Compensate for energy loss from 4 parallel filters
+        // Base compensation: ~+6dB to account for parallel filter energy reduction
+        float baseCompensation = juce::Decibels::decibelsToGain(6.0f);
+        
+        // Adjust compensation based on Q (sharper filters = more compensation needed)
+        // Q range is 0.4-18, where 1.0 = standard
+        float qCompensation = juce::jmap(q, 0.4f, 18.0f, 1.0f, 1.3f); // More compensation for sharper filters
+        
+        // Adjust for emphasis (higher emphasis = less compensation needed since we're already boosting)
+        float emphasisCompensation = juce::jmap(emphasis, -6.0f, 18.0f, 1.2f, 0.8f);
+        
+        // Combined compensation gain
+        float compensationGain = baseCompensation * qCompensation * emphasisCompensation;
+        
+        wetL *= compensationGain;
+        wetR *= compensationGain;
         
         // Guard against overload with high emphasis
         if (emphasis > 12.0f) {
-            float safetyScale = juce::Decibels::decibelsToGain(-6.0f); // -6 dB safety when hot
+            float safetyScale = juce::Decibels::decibelsToGain(-3.0f); // Reduced safety scale since we have compensation
             wetL *= safetyScale;
             wetR *= safetyScale;
         }

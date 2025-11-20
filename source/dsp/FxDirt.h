@@ -14,8 +14,8 @@ public:
     {
         sr = sampleRate;
         
-        // Smoothing for all parameters (30ms to avoid zipper)
-        const double smoothMs = 30.0;
+        // Smoothing for all parameters (50ms to avoid zipper and clicks)
+        const double smoothMs = 50.0;
         driveSmooth.reset(sr, smoothMs / 1000.0);
         colorSmooth.reset(sr, smoothMs / 1000.0);
         asymSmooth.reset(sr, smoothMs / 1000.0);
@@ -24,6 +24,16 @@ public:
         highCutSmooth.reset(sr, smoothMs / 1000.0);
         toneSmooth.reset(sr, smoothMs / 1000.0);
         mixSmooth.reset(sr, smoothMs / 1000.0);
+        
+        // Initialize smoothed values to prevent clicks on first use
+        driveSmooth.setCurrentAndTargetValue(1.0f);
+        colorSmooth.setCurrentAndTargetValue(0.0f);
+        asymSmooth.setCurrentAndTargetValue(0.0f);
+        textureSmooth.setCurrentAndTargetValue(0.35f);
+        lowCutSmooth.setCurrentAndTargetValue(60.0f);
+        highCutSmooth.setCurrentAndTargetValue(12000.0f);
+        toneSmooth.setCurrentAndTargetValue(0.0f);
+        mixSmooth.setCurrentAndTargetValue(1.0f);
         
         // Prepare filters
         for (int ch = 0; ch < 2; ++ch)
@@ -60,6 +70,38 @@ public:
         if (numSamples == 0 || numChannels == 0)
             return;
         
+        // Enable flush-to-zero for stability
+        juce::ScopedNoDenormals noDenormals;
+        
+        // Check if input is silent - if so, just pass through to avoid processing noise
+        float inputLevel = 0.0f;
+        for (int ch = 0; ch < numChannels; ++ch)
+        {
+            for (int n = 0; n < numSamples; ++n)
+            {
+                inputLevel += std::abs(buffer.getSample(ch, n));
+            }
+        }
+        inputLevel /= (numSamples * numChannels);
+        
+        // If input is essentially silent, skip processing to avoid noise
+        if (inputLevel < 1.0e-6f)
+        {
+            // Still update smoothers to prevent jumps when audio returns
+            for (int n = 0; n < numSamples; ++n)
+            {
+                driveSmooth.skip(1);
+                colorSmooth.skip(1);
+                asymSmooth.skip(1);
+                textureSmooth.skip(1);
+                lowCutSmooth.skip(1);
+                highCutSmooth.skip(1);
+                toneSmooth.skip(1);
+                mixSmooth.skip(1);
+            }
+            return;
+        }
+        
         // Store dry signal for mix
         juce::AudioBuffer<float> dryBuffer(numChannels, numSamples);
         for (int ch = 0; ch < numChannels; ++ch)
@@ -80,10 +122,29 @@ public:
             const float tone = toneSmooth.getNextValue();
             const float mix = mixSmooth.getNextValue();
             
-            // Update filter coefficients if needed (check every 64 samples)
+            // Update filter coefficients smoothly (only when values change significantly)
+            // Check every 64 samples to reduce CPU, but use smoothed values
             if (n % 64 == 0)
             {
-                updateFilters(lowCut, highCut, color, tone);
+                const float threshold = 0.1f; // Only update if change is significant
+                bool needsUpdate = false;
+                
+                if (std::abs(lowCut - prevLowCut) > threshold || 
+                    std::abs(highCut - prevHighCut) > threshold ||
+                    std::abs(color - prevColor) > 0.01f ||
+                    std::abs(tone - prevTone) > 0.01f)
+                {
+                    needsUpdate = true;
+                    prevLowCut = lowCut;
+                    prevHighCut = highCut;
+                    prevColor = color;
+                    prevTone = tone;
+                }
+                
+                if (needsUpdate)
+                {
+                    updateFilters(lowCut, highCut, color, tone);
+                }
             }
             
             // Process left channel
@@ -215,6 +276,12 @@ private:
     
     // DC blocker
     juce::dsp::ProcessorDuplicator<juce::dsp::IIR::Filter<float>, juce::dsp::IIR::Coefficients<float>> dcBlocker;
+    
+    // Track previous filter values to detect changes and prevent clicks
+    float prevLowCut = 60.0f;
+    float prevHighCut = 12000.0f;
+    float prevColor = 0.0f;
+    float prevTone = 0.0f;
     
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(FxDirt)
 };

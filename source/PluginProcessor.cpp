@@ -472,7 +472,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout PluginProcessor::createParam
     params.push_back(std::make_unique<juce::AudioParameterFloat>("formantMotion", "Formant Motion", 0.0f, 1.0f, 0.25f)); // Motion 0-1
     params.push_back(std::make_unique<juce::AudioParameterFloat>("formantAir", "Formant Air", 0.0f, 1.0f, 0.2f)); // Air 0-1
     params.push_back(std::make_unique<juce::AudioParameterFloat>("mix", "Mix", 0.0f, 1.0f, 1.0f)); // 0-1 dry/wet mix
-    params.push_back(std::make_unique<juce::AudioParameterBool>("formantEnabled", "Formant Enabled", false));
+    params.push_back(std::make_unique<juce::AudioParameterBool>("formantEnabled", "Formant Enabled", true));
     params.push_back(std::make_unique<juce::AudioParameterBool>("formantStepEnabled", "Formant Step Enabled", true));
     
     // Form 2 Parameters - Vocoder with scale-quantized carrier

@@ -577,6 +577,7 @@ public:
     
     // Saturate DSP Implementation
     SaturateProcessor saturateProcessor;
+    void resetSaturateProcessor() { saturateProcessor.reset(); }
     FilterProcessor filterProcessor;
     
     SaturateProcessor& getSaturateProcessor() { return saturateProcessor; }
