@@ -5303,24 +5303,13 @@ void PluginEditor::showPage(FxPageID id)
             }
             
             {
-                // Get current type value to initialize knob visibility
-                // Default to type 0 (clean/Spiral2) if not set
-                auto* typeParam = processorRef.getAPVTS().getRawParameterValue("satType");
-                int currentType = 0; // Default to clean
-                if (typeParam) {
-                    float typeValue = typeParam->load();
-                    currentType = static_cast<int>(typeValue * 7.0f);
-                } else {
-                    // Force type to 0 if parameter doesn't exist
-                    currentType = 0;
-                }
-                
-                // Update knob labels and visibility based on current type
-                updateSaturateKnobLabels(currentType);
+                // Always Clean mode (Type parameter removed)
+                // Update knob labels for Clean mode
+                updateSaturateKnobLabels(0); // Always Clean mode
             }
             
-            // Trigger initial value label updates (8 knobs)
-            for (int i = 0; i < 8; ++i) {
+            // Trigger initial value label updates (6 knobs)
+            for (int i = 0; i < 6; ++i) {
                 if (saturateKnobs[i]) {
                     saturateKnobs[i]->onValueChange();
                 }
@@ -8693,8 +8682,8 @@ void PluginEditor::onEffectSelectorChanged(int slotIndex)
                 updateSaturateStepAreaVisibility();
             }
             
-            // Trigger initial value label updates (8 knobs)
-            for (int i = 0; i < 8; ++i) {
+            // Trigger initial value label updates (6 knobs)
+            for (int i = 0; i < 6; ++i) {
                 if (saturateKnobs[i]) {
                     saturateKnobs[i]->onValueChange();
                 }
@@ -12973,15 +12962,15 @@ void PluginEditor::setupSaturateKnobs()
 {
     DBG("[UI] Setting up Saturate knobs...");
 
-    // Saturate knob names (7 knobs - oversample removed, always max)
+    // Saturate knob names (6 knobs - Type removed, only Clean mode)
     std::vector<juce::String> saturateKnobNames = {
-        "Type", "Drive", "Color", "Shape", "Bias", "Output", "Mix"
+        "Drive", "Color", "Shape", "Bias", "Output", "Mix"
     };
     
-    // Parameter IDs for APVTS attachments (7 knobs now, oversample is always max)
+    // Parameter IDs for APVTS attachments (6 knobs now, Type removed)
     std::vector<juce::String> saturateParamIds = {
-        "satType", "satDrive", "satColor", "satShape", 
-        "satBias", "satOut", "satMix"  // Removed satOsMode - always set to max (3 = 8×)
+        "satDrive", "satColor", "satShape", 
+        "satBias", "satOut", "satMix"
     };
 
     // Effect area bounds (same as other pages)
@@ -13004,8 +12993,8 @@ void PluginEditor::setupSaturateKnobs()
         processorRef.setSaturateStepSnapshot(step, snapshot);
     }
     
-    // Create 7 knobs (oversample removed, always max)
-    for (int i = 0; i < 7; ++i)
+    // Create 6 knobs (Type removed, only Clean mode)
+    for (int i = 0; i < 6; ++i)
     {
         saturateKnobs[i] = std::make_unique<CustomKnob>();
             addAndMakeVisible(saturateKnobs[i].get());
@@ -13016,31 +13005,27 @@ void PluginEditor::setupSaturateKnobs()
 
         // Set parameter ranges based on knob index
         switch (i) {
-            case 0: // Type (0-7)
-                saturateKnobs[i]->setRange(0.0, 7.0, 1.0);
-                saturateKnobs[i]->setValue(0.0, juce::dontSendNotification);
-                break;
-            case 1: // Drive (0-36 dB)
+            case 0: // Drive (0-36 dB)
                 saturateKnobs[i]->setRange(0.0, 36.0, 0.1);
                 saturateKnobs[i]->setValue(12.0, juce::dontSendNotification);
                 break;
-            case 2: // Color (0-1, dynamic)
+            case 1: // Color (0-1, dynamic)
                 saturateKnobs[i]->setRange(0.0, 1.0, 0.01);
                 saturateKnobs[i]->setValue(0.5, juce::dontSendNotification);
                 break;
-            case 3: // Shape (0-1, dynamic)
+            case 2: // Shape (0-1, dynamic)
                 saturateKnobs[i]->setRange(0.0, 1.0, 0.01);
                 saturateKnobs[i]->setValue(0.4, juce::dontSendNotification);
                 break;
-            case 4: // Bias (-0.2 to 0.2, dynamic)
+            case 3: // Bias (-0.2 to 0.2, dynamic)
                 saturateKnobs[i]->setRange(-0.2, 0.2, 0.01);
                 saturateKnobs[i]->setValue(0.0, juce::dontSendNotification);
                 break;
-            case 5: // Output (-24 to +12 dB)
+            case 4: // Output (-24 to +12 dB)
                 saturateKnobs[i]->setRange(-24.0, 12.0, 0.1);
                 saturateKnobs[i]->setValue(0.0, juce::dontSendNotification);
                 break;
-            case 6: // Mix (0-1) - now index 6 instead of 7
+            case 5: // Mix (0-1)
                 saturateKnobs[i]->setRange(0.0, 1.0, 0.01);
                 saturateKnobs[i]->setValue(1.0, juce::dontSendNotification);
                 break;
@@ -13052,59 +13037,45 @@ void PluginEditor::setupSaturateKnobs()
         if (assets.knobInside != nullptr)
             saturateKnobs[i]->setInnerImage(assets.knobInside->createCopy());
         
-        // Position knobs - Type (i=0) is hidden, so shift visible knobs to start at position 0
-        // Map: i=0 (Type) -> hidden, i=1 (Drive) -> position 0, i=2 (Color) -> position 1, etc.
+        // Position knobs in 2 rows of 4 (EXACT same as other effects)
         int x, y;
-        if (i == 0) {
-            // Hide Type knob by positioning it off-screen
-            x = -1000;
-            y = -1000;
-        } else {
-            // Shift all other knobs left by one position (i-1 instead of i)
-            int displayIndex = i - 1;
-            x = startX + (displayIndex % 4) * (knobSize + knobSpacing);
-            y = startY + (displayIndex / 4) * (knobSize + 20);
-            
-            if (displayIndex < 4)
-                y -= 23;
-            else
-                y -= 1;
-        }
+        x = startX + (i % 4) * (knobSize + knobSpacing);
+        y = startY + (i / 4) * (knobSize + 20);
+        
+        // Move all knob groups up 6px from current position, then top 4 down 8px (EXACT same as other effects)
+        if (i < 4)
+            y -= 23; // Moved up 6px from -25 to -31, then down 8px to -23
+        else
+            y -= 1;
         
         saturateKnobs[i]->setBounds(x, y, knobSize, knobSize);
         
-        // Create knob label (skip Type at i=0)
-        if (i > 0) {
-            saturateKnobLabels[i] = std::make_unique<juce::Label>();
-            saturateKnobLabels[i]->setText(saturateKnobNames[i], juce::dontSendNotification);
-            saturateKnobLabels[i]->setJustificationType(juce::Justification::centred);
-            saturateKnobLabels[i]->setColour(juce::Label::textColourId, juce::Colours::white);
-            saturateKnobLabels[i]->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 12.0f, juce::Font::bold));
-            saturateKnobLabels[i]->setBounds(x, y - 15, knobSize, 20);
-            addAndMakeVisible(saturateKnobLabels[i].get());
-            saturateKnobLabels[i]->setVisible(false);
-        }
+        // Create knob label
+        saturateKnobLabels[i] = std::make_unique<juce::Label>();
+        saturateKnobLabels[i]->setText(saturateKnobNames[i], juce::dontSendNotification);
+        saturateKnobLabels[i]->setJustificationType(juce::Justification::centred);
+        saturateKnobLabels[i]->setColour(juce::Label::textColourId, juce::Colours::white);
+        saturateKnobLabels[i]->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 12.0f, juce::Font::bold));
+        saturateKnobLabels[i]->setBounds(x, y - 15, knobSize, 20);
+        addAndMakeVisible(saturateKnobLabels[i].get());
+        saturateKnobLabels[i]->setVisible(false);
         
-        // Create value label (skip Type at i=0)
-        if (i > 0) {
-            saturateValueLabels[i] = std::make_unique<juce::Label>();
-            saturateValueLabels[i]->setText("0", juce::dontSendNotification);
-            saturateValueLabels[i]->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 10.0f, juce::Font::plain));
-            saturateValueLabels[i]->setColour(juce::Label::textColourId, juce::Colours::white);
-            saturateValueLabels[i]->setJustificationType(juce::Justification::centred);
-            addAndMakeVisible(saturateValueLabels[i].get());
-            saturateValueLabels[i]->setVisible(false);
-            saturateValueLabels[i]->setBounds(x, y + knobSize - 10, knobSize, 15);
-        }
+        // Create value label
+        saturateValueLabels[i] = std::make_unique<juce::Label>();
+        saturateValueLabels[i]->setText("0", juce::dontSendNotification);
+        saturateValueLabels[i]->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 10.0f, juce::Font::plain));
+        saturateValueLabels[i]->setColour(juce::Label::textColourId, juce::Colours::white);
+        saturateValueLabels[i]->setJustificationType(juce::Justification::centred);
+        addAndMakeVisible(saturateValueLabels[i].get());
+        saturateValueLabels[i]->setVisible(false);
+        saturateValueLabels[i]->setBounds(x, y + knobSize - 10, knobSize, 15);
         
-        // Create indicator bar (skip Type at i=0)
-        if (i > 0) {
-            saturateIndicatorBars[i] = std::make_unique<IndicatorBar>();
-            addAndMakeVisible(saturateIndicatorBars[i].get());
-            saturateIndicatorBars[i]->setVisible(false);
-            saturateIndicatorBars[i]->setBounds(x + 10, y + knobSize + 8, knobSize - 20, 13);
-            saturateIndicatorBars[i]->setValue(0.5f);
-        }
+        // Create indicator bar
+        saturateIndicatorBars[i] = std::make_unique<IndicatorBar>();
+        addAndMakeVisible(saturateIndicatorBars[i].get());
+        saturateIndicatorBars[i]->setVisible(false);
+        saturateIndicatorBars[i]->setBounds(x + 10, y + knobSize + 8, knobSize - 20, 13);
+        saturateIndicatorBars[i]->setValue(0.5f);
         
         // Create dice button (hidden like other pages - NOT added to component tree)
         saturateDiceButtons[i] = std::make_unique<CustomDiceButton>();
@@ -13113,8 +13084,8 @@ void PluginEditor::setupSaturateKnobs()
             randomizeIndividualSaturateKnob(i);
         };
         
-        // Create lock button
-        if (i < 6) { // Only for first 6 knobs (Mix at index 6 doesn't have lock)
+        // Create lock button (only for first 5 knobs, Mix at index 5 doesn't have lock)
+        if (i < 5) {
             saturateLockButtons[i] = std::make_unique<LockButton>();
             addAndMakeVisible(saturateLockButtons[i].get());
             saturateLockButtons[i]->setVisible(false);
@@ -13163,32 +13134,22 @@ void PluginEditor::setupSaturateKnobs()
                 // Update value label with appropriate formatting
                 juce::String valueText;
                 switch (i) {
-                    case 0: // Type - show model name
-                        {
-                            const char* modelNames[] = {"Spiral2", "Density2", "Drive", "Purest", "Mojo", "Console", "Coils", "Tubey"};
-                            int idx = static_cast<int>(value);
-                            valueText = modelNames[juce::jlimit(0, 7, idx)];
-                            
-                            // Update dynamic labels when Type changes
-                            updateSaturateKnobLabels(idx);
-                        }
-                        break;
-                    case 1: // Drive - show dB
+                    case 0: // Drive - show dB
                         valueText = juce::String(value, 1) + " dB";
                         break;
-                    case 2: // Color - show as percentage or Hz/dB depending on model
+                    case 1: // Color - show as percentage
                         valueText = juce::String(static_cast<int>(value * 100)) + "%";
                         break;
-                    case 3: // Shape - show as percentage
+                    case 2: // Shape - show as percentage
                         valueText = juce::String(static_cast<int>(value * 100)) + "%";
                         break;
-                    case 4: // Bias - show as is
+                    case 3: // Bias - show as is
                         valueText = juce::String(value, 2);
                         break;
-                    case 5: // Output - show dB
+                    case 4: // Output - show dB
                         valueText = juce::String(value, 1) + " dB";
                         break;
-                    case 6: // Mix - show as percentage (was case 7)
+                    case 5: // Mix - show as percentage
                         valueText = juce::String(static_cast<int>(value * 100)) + "%";
                         break;
                 }
@@ -13198,11 +13159,10 @@ void PluginEditor::setupSaturateKnobs()
                 if (saturateIndicatorBars[i]) {
                     float normValue = 0.0f;
                     switch (i) {
-                        case 0: normValue = value / 7.0f; break;
-                        case 1: normValue = value / 36.0f; break;
-                        case 2: case 3: case 6: normValue = value; break; // 0-1 (Mix is now index 6)
-                        case 4: normValue = (value + 0.2f) / 0.4f; break; // -0.2 to 0.2
-                        case 5: normValue = (value + 24.0f) / 36.0f; break; // -24 to 12
+                        case 0: normValue = value / 36.0f; break; // Drive
+                        case 1: case 2: case 5: normValue = value; break; // Color, Shape, Mix (0-1)
+                        case 3: normValue = (value + 0.2f) / 0.4f; break; // Bias (-0.2 to 0.2)
+                        case 4: normValue = (value + 24.0f) / 36.0f; break; // Output (-24 to 12)
                     }
                     saturateIndicatorBars[i]->setValue(normValue);
                 }
@@ -13211,20 +13171,19 @@ void PluginEditor::setupSaturateKnobs()
                 updateSaturateParameterFromKnob(i);
                 
                 // Handle all steps toggle - update all steps when enabled
-                if (saturateAllStepsEnabled && i != 6) { // Skip Mix (knob 6) which is global
+                if (saturateAllStepsEnabled && i != 5) { // Skip Mix (knob 5) which is global
                     // Save current selected step first (done above), then update all others
                     int currentStep = saturateUiSelectedStep;
                     for (int step = 0; step < 16; ++step) {
                         if (step != currentStep) {
                             auto snapshot = processorRef.getSaturateSafeSnapshot(step);
                             switch (i) {
-                                case 0: snapshot.saturate.type = value; break;
-                                case 1: snapshot.saturate.drive = value; break;
-                                case 2: snapshot.saturate.color = value; break;
-                                case 3: snapshot.saturate.shape = value; break;
-                                case 4: snapshot.saturate.bias = value; break;
-                                case 5: snapshot.saturate.output = value; break;
-                                // Mix (case 6) is global, not saved per step
+                                case 0: snapshot.saturate.drive = value; break;
+                                case 1: snapshot.saturate.color = value; break;
+                                case 2: snapshot.saturate.shape = value; break;
+                                case 3: snapshot.saturate.bias = value; break;
+                                case 4: snapshot.saturate.output = value; break;
+                                // Mix (case 5) is global, not saved per step
                             }
                             processorRef.setSaturateStepSnapshot(step, snapshot);
                         }
@@ -13307,14 +13266,14 @@ void PluginEditor::setupSaturateEffectsArea()
     saturateGroup.push_back(saturateFxPowerButton.get());
     
     // Add knobs and related components
-    for (int i = 0; i < 7; ++i) { // 7 knobs (oversample removed)
+    for (int i = 0; i < 6; ++i) { // 6 knobs (Type removed)
         if (saturateKnobs[i]) saturateGroup.push_back(saturateKnobs[i].get());
         if (saturateKnobLabels[i]) saturateGroup.push_back(saturateKnobLabels[i].get());
         if (saturateValueLabels[i]) saturateGroup.push_back(saturateValueLabels[i].get());
         if (saturateIndicatorBars[i]) saturateGroup.push_back(saturateIndicatorBars[i].get());
         if (saturateDiceButtons[i]) saturateGroup.push_back(saturateDiceButtons[i].get());
-        // Only add lock button for first 6 knobs (Mix at index 6 doesn't have lock)
-        if (i < 6 && saturateLockButtons[i]) saturateGroup.push_back(saturateLockButtons[i].get());
+        // Only add lock button for first 5 knobs (Mix at index 5 doesn't have lock)
+        if (i < 5 && saturateLockButtons[i]) saturateGroup.push_back(saturateLockButtons[i].get());
     }
     
     DBG("[UI] Saturate effects area setup complete");
@@ -13455,17 +13414,18 @@ void PluginEditor::setupSaturateSequencerArea()
         
         // Reload current step to UI (don't send notification to avoid triggering save)
         auto currentSnapshot = processorRef.getSaturateSafeSnapshot(saturateUiSelectedStep);
-        if (saturateKnobs[0]) saturateKnobs[0]->setValue(currentSnapshot.saturate.type, juce::dontSendNotification);
-        if (saturateKnobs[1]) saturateKnobs[1]->setValue(currentSnapshot.saturate.drive, juce::dontSendNotification);
-        if (saturateKnobs[2]) saturateKnobs[2]->setValue(currentSnapshot.saturate.color, juce::dontSendNotification);
-        if (saturateKnobs[3]) saturateKnobs[3]->setValue(currentSnapshot.saturate.shape, juce::dontSendNotification);
-        if (saturateKnobs[4]) saturateKnobs[4]->setValue(currentSnapshot.saturate.bias, juce::dontSendNotification);
-        if (saturateKnobs[5]) saturateKnobs[5]->setValue(currentSnapshot.saturate.output, juce::dontSendNotification);
+        // Type removed, only 6 knobs now: Drive, Color, Shape, Bias, Output, Mix
+        if (saturateKnobs[0]) saturateKnobs[0]->setValue(currentSnapshot.saturate.drive, juce::dontSendNotification);
+        if (saturateKnobs[1]) saturateKnobs[1]->setValue(currentSnapshot.saturate.color, juce::dontSendNotification);
+        if (saturateKnobs[2]) saturateKnobs[2]->setValue(currentSnapshot.saturate.shape, juce::dontSendNotification);
+        if (saturateKnobs[3]) saturateKnobs[3]->setValue(currentSnapshot.saturate.bias, juce::dontSendNotification);
+        if (saturateKnobs[4]) saturateKnobs[4]->setValue(currentSnapshot.saturate.output, juce::dontSendNotification);
+        if (saturateKnobs[5]) saturateKnobs[5]->setValue(currentSnapshot.saturate.mix, juce::dontSendNotification);
         // Oversample is always max (3 = 8×), not a knob anymore
         
-        // Update labels
-        updateSaturateKnobLabels(static_cast<int>(currentSnapshot.saturate.type));
-        for (int i = 0; i < 6; ++i) { // Only first 6 knobs (Mix is global)
+        // Update labels (no longer needed, but keep call for compatibility)
+        updateSaturateKnobLabels(0);
+        for (int i = 0; i < 6; ++i) { // All 6 knobs
             if (saturateKnobs[i] && saturateKnobs[i]->onValueChange) {
                 saturateKnobs[i]->onValueChange();
             }
@@ -13565,8 +13525,8 @@ void PluginEditor::updateSaturateFxAreaVisibility()
 {
     float alpha = saturateFxAreaEnabled ? 1.0f : 0.3f;
     
-    // Update knobs and labels alpha
-    for (int i = 0; i < 7; ++i) {
+    // Update knobs and labels alpha (6 knobs total)
+    for (int i = 0; i < 6; ++i) {
         if (saturateKnobs[i]) { 
             saturateKnobs[i]->setAlpha(alpha); 
             saturateKnobs[i]->setEnabled(saturateFxAreaEnabled);
@@ -13574,7 +13534,8 @@ void PluginEditor::updateSaturateFxAreaVisibility()
         if (saturateKnobLabels[i]) saturateKnobLabels[i]->setAlpha(alpha);
         if (saturateValueLabels[i]) saturateValueLabels[i]->setAlpha(alpha);
         if (saturateIndicatorBars[i]) saturateIndicatorBars[i]->setAlpha(alpha);
-        if (saturateLockButtons[i]) {
+        // Only first 5 knobs have lock buttons (Mix at index 5 doesn't have lock)
+        if (i < 5 && saturateLockButtons[i]) {
             saturateLockButtons[i]->setAlpha(alpha);
             saturateLockButtons[i]->setEnabled(saturateFxAreaEnabled);
         }
@@ -13650,98 +13611,7 @@ void PluginEditor::updateSaturateKnobLabels(int type)
     if (saturateKnobLabels[3]) saturateKnobLabels[3]->setText(info.label3, juce::dontSendNotification);
     if (saturateKnobLabels[4]) saturateKnobLabels[4]->setText(info.label4, juce::dontSendNotification);
     
-    // Update ranges for knobs 2-4 (Color, Shape, Bias)
-    // Note: The knobs themselves remain normalized 0-1; we just update the display
-    // The actual DSP mapping happens in SaturateProcessor based on the model
-
-    // Handle Type and Output knob visibility and Mix knob positioning based on type
-    bool hideTypeAndOutput = (type == 0); // Hide Type and Output when type is 0 (Spiral2/clean)
-    
-    // Hide/show Type knob (index 0) and its associated components
-    if (saturateKnobs[0]) {
-        saturateKnobs[0]->setVisible(!hideTypeAndOutput);
-        saturateKnobs[0]->setEnabled(!hideTypeAndOutput);
-    }
-    if (saturateKnobLabels[0]) {
-        saturateKnobLabels[0]->setVisible(!hideTypeAndOutput);
-        saturateKnobLabels[0]->setEnabled(!hideTypeAndOutput);
-    }
-    if (saturateValueLabels[0]) {
-        saturateValueLabels[0]->setVisible(!hideTypeAndOutput);
-        saturateValueLabels[0]->setEnabled(!hideTypeAndOutput);
-    }
-    if (saturateIndicatorBars[0]) {
-        saturateIndicatorBars[0]->setVisible(!hideTypeAndOutput);
-        saturateIndicatorBars[0]->setEnabled(!hideTypeAndOutput);
-    }
-    if (saturateLockButtons[0]) {
-        saturateLockButtons[0]->setVisible(!hideTypeAndOutput);
-        saturateLockButtons[0]->setEnabled(!hideTypeAndOutput);
-    }
-    
-    // Get the Output knob position (index 5) before hiding it
-    auto outputKnobBounds = saturateKnobs[5] ? saturateKnobs[5]->getBounds() : juce::Rectangle<int>();
-    
-    // Hide/show Output knob (index 5) and its associated components
-    if (saturateKnobs[5]) {
-        saturateKnobs[5]->setVisible(!hideTypeAndOutput);
-        saturateKnobs[5]->setEnabled(!hideTypeAndOutput);
-    }
-    if (saturateKnobLabels[5]) {
-        saturateKnobLabels[5]->setVisible(!hideTypeAndOutput);
-        saturateKnobLabels[5]->setEnabled(!hideTypeAndOutput);
-    }
-    if (saturateValueLabels[5]) {
-        saturateValueLabels[5]->setVisible(!hideTypeAndOutput);
-        saturateValueLabels[5]->setEnabled(!hideTypeAndOutput);
-    }
-    if (saturateIndicatorBars[5]) {
-        saturateIndicatorBars[5]->setVisible(!hideTypeAndOutput);
-        saturateIndicatorBars[5]->setEnabled(!hideTypeAndOutput);
-    }
-    if (saturateLockButtons[5]) {
-        saturateLockButtons[5]->setVisible(!hideTypeAndOutput);
-        saturateLockButtons[5]->setEnabled(!hideTypeAndOutput);
-    }
-    
-    // Move Mix knob (index 6) to Output knob's position when Output is hidden
-    if (saturateKnobs[6] && !outputKnobBounds.isEmpty()) {
-        if (hideTypeAndOutput) {
-            // Move Mix to Output's position
-            saturateKnobs[6]->setBounds(outputKnobBounds);
-            if (saturateKnobLabels[6]) {
-                saturateKnobLabels[6]->setBounds(outputKnobBounds.getX(), outputKnobBounds.getY() - 15, outputKnobBounds.getWidth(), 20);
-            }
-            if (saturateValueLabels[6]) {
-                saturateValueLabels[6]->setBounds(outputKnobBounds.getX(), outputKnobBounds.getY() + outputKnobBounds.getHeight() - 10, outputKnobBounds.getWidth(), 15);
-            }
-            if (saturateIndicatorBars[6]) {
-                saturateIndicatorBars[6]->setBounds(outputKnobBounds.getX() + 10, outputKnobBounds.getY() + outputKnobBounds.getHeight() + 8, outputKnobBounds.getWidth() - 20, 13);
-            }
-        } else {
-            // Restore Mix to its original position (2nd row, 3rd column)
-            auto effectArea = juce::Rectangle<int>(25, 54, 413, 296);
-            const int knobSize = 80;
-            const int knobSpacing = 20;
-            const int startX = effectArea.getX() + 15;
-            const int startY = effectArea.getY() + effectArea.getHeight() - 210;
-            
-            int x = startX + (6 % 4) * (knobSize + knobSpacing);
-            int y = startY + (6 / 4) * (knobSize + 20);
-            y -= 1; // Same offset as other second-row knobs
-            
-            saturateKnobs[6]->setBounds(x, y, knobSize, knobSize);
-            if (saturateKnobLabels[6]) {
-                saturateKnobLabels[6]->setBounds(x, y - 15, knobSize, 20);
-            }
-            if (saturateValueLabels[6]) {
-                saturateValueLabels[6]->setBounds(x, y + knobSize - 10, knobSize, 15);
-            }
-            if (saturateIndicatorBars[6]) {
-                saturateIndicatorBars[6]->setBounds(x + 10, y + knobSize + 8, knobSize - 20, 13);
-            }
-        }
-    }
+    // No longer needed - only Clean mode, all knobs always visible
 }
 
 void PluginEditor::onSaturateStepButtonClicked(int stepIndex)
@@ -13757,21 +13627,20 @@ void PluginEditor::onSaturateStepButtonClicked(int stepIndex)
     isLoadingFromSnapshot.store(true);
     
     if (!saturateAllStepsEnabled) {
-        // Update knobs with values from the snapshot
-        if (saturateKnobs[0]) saturateKnobs[0]->setValue(snapshot.saturate.type, juce::dontSendNotification);
-        if (saturateKnobs[1]) saturateKnobs[1]->setValue(snapshot.saturate.drive, juce::dontSendNotification);
-        if (saturateKnobs[2]) saturateKnobs[2]->setValue(snapshot.saturate.color, juce::dontSendNotification);
-        if (saturateKnobs[3]) saturateKnobs[3]->setValue(snapshot.saturate.shape, juce::dontSendNotification);
-        if (saturateKnobs[4]) saturateKnobs[4]->setValue(snapshot.saturate.bias, juce::dontSendNotification);
-        if (saturateKnobs[5]) saturateKnobs[5]->setValue(snapshot.saturate.output, juce::dontSendNotification);
+        // Update knobs with values from the snapshot (Type removed)
+        if (saturateKnobs[0]) saturateKnobs[0]->setValue(snapshot.saturate.drive, juce::dontSendNotification);
+        if (saturateKnobs[1]) saturateKnobs[1]->setValue(snapshot.saturate.color, juce::dontSendNotification);
+        if (saturateKnobs[2]) saturateKnobs[2]->setValue(snapshot.saturate.shape, juce::dontSendNotification);
+        if (saturateKnobs[3]) saturateKnobs[3]->setValue(snapshot.saturate.bias, juce::dontSendNotification);
+        if (saturateKnobs[4]) saturateKnobs[4]->setValue(snapshot.saturate.output, juce::dontSendNotification);
+        if (saturateKnobs[5]) saturateKnobs[5]->setValue(snapshot.saturate.mix, juce::dontSendNotification);
         // Oversample is always max (3 = 8×), not a knob anymore
-        // Knob 7 (Mix) is global, not per-step
         
-        // Update dynamic labels based on type
-        updateSaturateKnobLabels(static_cast<int>(snapshot.saturate.type));
+        // Update labels (no longer needed, but keep call for compatibility)
+        updateSaturateKnobLabels(0);
         
         // Trigger value change callbacks to update labels (but not save snapshots)
-        for (int i = 0; i < 6; ++i) { // Only first 6 knobs (Mix knob 6 is global)
+        for (int i = 0; i < 6; ++i) { // All 6 knobs
             if (saturateKnobs[i] && saturateKnobs[i]->onValueChange) {
                 saturateKnobs[i]->onValueChange();
             }
@@ -13816,28 +13685,25 @@ void PluginEditor::updateSaturateSequencerUI()
 
 void PluginEditor::updateSaturateParameterFromKnob(int knobIndex)
 {
-    if (knobIndex < 0 || knobIndex >= 7 || !saturateKnobs[knobIndex])
+    if (knobIndex < 0 || knobIndex >= 6 || !saturateKnobs[knobIndex])
         return;
     
         float value = saturateKnobs[knobIndex]->getValue();
         
-        // Update current step snapshot (Mix knob 6 is global, not saved)
+        // Update current step snapshot (Mix knob 5 is global, not saved)
+        // Map knob index: 0=Drive, 1=Color, 2=Shape, 3=Bias, 4=Output, 5=Mix
+        // Snapshot indices: 0=type (unused), 1=drive, 2=color, 3=shape, 4=bias, 5=output, 6=mix
+        // Pass knob index directly - function will map it correctly
         processorRef.updateSaturateCurrentStepSnapshot(knobIndex, value);
-    
-    // Ensure oversample is always max
-    auto* osParam = processorRef.getAPVTS().getParameter("satOsMode");
-    if (osParam && osParam->getValue() < 1.0f) {
-        osParam->setValueNotifyingHost(1.0f); // 3/3 = max (8×)
-    }
 }
 
 void PluginEditor::randomizeSaturateKnobValues()
 {
     DBG("[UI] Randomizing Saturate knob values...");
-    for (int i = 0; i < 7; ++i) {
+    for (int i = 0; i < 6; ++i) {
         if (saturateKnobs[i]) {
             // Check if knob is locked - skip if locked
-            if (i < 7 && saturateKnobLocked[i]) continue;
+            if (i < 6 && saturateKnobLocked[i]) continue;
             randomizeIndividualSaturateKnob(i);
         }
     }
@@ -13845,11 +13711,11 @@ void PluginEditor::randomizeSaturateKnobValues()
 
 void PluginEditor::randomizeIndividualSaturateKnob(int knobIndex)
 {
-    if (knobIndex < 0 || knobIndex >= 7) return;
+    if (knobIndex < 0 || knobIndex >= 6) return;
     if (!saturateKnobs[knobIndex]) return;
     
     // Check if knob is locked - don't randomize if locked
-    if (knobIndex < 7 && saturateKnobLocked[knobIndex]) {
+    if (knobIndex < 6 && saturateKnobLocked[knobIndex]) {
         DBG("[UI] Skipping locked Saturate knob " << knobIndex);
         return;
     }
@@ -13858,25 +13724,22 @@ void PluginEditor::randomizeIndividualSaturateKnob(int knobIndex)
     float newValue = 0.0f;
     
     switch (knobIndex) {
-        case 0: // Type (0-7)
-            newValue = static_cast<float>(rand.nextInt(8));
-            break;
-        case 1: // Drive (0-36 dB)
+        case 0: // Drive (0-36 dB)
             newValue = 6.0f + rand.nextFloat() * 24.0f; // 6-30 dB (musical range)
             break;
-        case 2: // Color (0-1)
+        case 1: // Color (0-1)
             newValue = 0.3f + rand.nextFloat() * 0.5f; // 0.3-0.8
             break;
-        case 3: // Shape (0-1)
+        case 2: // Shape (0-1)
             newValue = 0.2f + rand.nextFloat() * 0.6f; // 0.2-0.8
             break;
-        case 4: // Bias (-0.2 to 0.2)
+        case 3: // Bias (-0.2 to 0.2)
             newValue = -0.15f + rand.nextFloat() * 0.3f; // -0.15 to 0.15
             break;
-        case 5: // Output (-24 to +12 dB)
+        case 4: // Output (-24 to +12 dB)
             newValue = -12.0f + rand.nextFloat() * 18.0f; // -12 to +6 dB
             break;
-        case 6: // Mix (0-1) - was case 7
+        case 5: // Mix (0-1)
             newValue = 0.3f + rand.nextFloat() * 0.5f; // 0.3-0.8
             break;
     }

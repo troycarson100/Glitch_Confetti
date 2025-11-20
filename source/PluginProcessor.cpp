@@ -488,7 +488,6 @@ juce::AudioProcessorValueTreeState::ParameterLayout PluginProcessor::createParam
     params.push_back(std::make_unique<juce::AudioParameterBool>("form2StepEnabled", "Form 2 Step Enabled", true));
     
     // Saturate Parameters
-    params.push_back(std::make_unique<juce::AudioParameterInt>("satType", "Saturate Type", 0, 7, 0));
     params.push_back(std::make_unique<juce::AudioParameterFloat>("satDrive", "Drive", 0.0f, 36.0f, 12.0f));
     params.push_back(std::make_unique<juce::AudioParameterFloat>("satColor", "Color", 0.0f, 1.0f, 0.5f));
     params.push_back(std::make_unique<juce::AudioParameterFloat>("satShape", "Shape", 0.0f, 1.0f, 0.4f));
@@ -1982,7 +1981,6 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                         
                         // Read from step snapshot - don't update APVTS to prevent knob jumping
                         StepSnapshot snapshot = getSaturateSafeSnapshot(playingStep);
-                        float type = snapshot.saturate.type;
                         float drive = snapshot.saturate.drive;
                         float color = snapshot.saturate.color;
                         float shape = snapshot.saturate.shape;
@@ -1993,7 +1991,7 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                         // Process with snapshot values directly (no APVTS update)
                         // Pass stepChanged flag to enable smoother transitions
                         saturateProcessor.processWithSnapshot(buffer, buffer.getNumSamples(), 
-                                                             type, drive, color, shape, bias, output, mix,
+                                                             drive, color, shape, bias, output, mix,
                                                              stepChanged);
                         
                         lastPlayingStep = playingStep;
@@ -3862,31 +3860,30 @@ void PluginProcessor::updateSaturateCurrentStepSnapshot(int knobIndex, float val
     int currentStep = saturateUiSelectedStep.load();
     if (currentStep < 0 || currentStep >= 16) return;
     
-    // Mix (knob 6) is global, not saved to snapshots
-    if (knobIndex == 6) return;
+    // Mix (knob 5) is global, not saved to snapshots
+    if (knobIndex == 5) return;
     
     // Update the specific Saturate parameter in the snapshot
+    // Map knob indices: 0=Drive, 1=Color, 2=Shape, 3=Bias, 4=Output, 5=Mix
+    // Snapshot indices: 0=type (unused), 1=drive, 2=color, 3=shape, 4=bias, 5=output, 6=mix
     switch (knobIndex) {
-        case 0: // Type
-            saturateStepSnapshots[currentStep].saturate.type = value;
-            break;
-        case 1: // Drive
+        case 0: // Drive (knob 0 -> snapshot 1)
             saturateStepSnapshots[currentStep].saturate.drive = value;
             break;
-        case 2: // Color
+        case 1: // Color (knob 1 -> snapshot 2)
             saturateStepSnapshots[currentStep].saturate.color = value;
             break;
-        case 3: // Shape
+        case 2: // Shape (knob 2 -> snapshot 3)
             saturateStepSnapshots[currentStep].saturate.shape = value;
             break;
-        case 4: // Bias
+        case 3: // Bias (knob 3 -> snapshot 4)
             saturateStepSnapshots[currentStep].saturate.bias = value;
             break;
-        case 5: // Output
+        case 4: // Output (knob 4 -> snapshot 5)
             saturateStepSnapshots[currentStep].saturate.output = value;
             break;
         // Oversample is always max (3 = 8×), handled separately
-        // Mix (case 6) is global, not saved per step
+        // Mix (case 5) is global, not saved per step
     }
 }
 

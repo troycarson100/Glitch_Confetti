@@ -179,102 +179,17 @@ float SaturateProcessor::ToneFilter::process(float x)
 }
 
 //==============================================================================
-void SaturateProcessor::DiodeClipper::prepare(double fs)
-{
-    sampleRate = fs;
-    reset();
-}
-
-void SaturateProcessor::DiodeClipper::reset()
-{
-    lastOut = 0.0f;
-    lastDiode = 0.0f;
-}
-
-void SaturateProcessor::DiodeClipper::setParameters(float vf, float biasValue, float gbw)
-{
-    forwardVoltage = juce::jlimit(0.2f, 1.2f, vf);
-    bias = juce::jlimit(-0.5f, 0.5f, biasValue);
-    opampGbw = juce::jlimit(1.0e3f, 2.0e5f, gbw);
-}
-
-float SaturateProcessor::DiodeClipper::process(float x)
-{
-    const float R = 5600.0f;
-    const float C = 22e-9f;
-    const float dt = 1.0f / static_cast<float>(sampleRate);
-    const float alpha = dt / (R * C + dt);
-    const float pole = (1.0f - alpha) * lastOut + alpha * x;
-
-    float v = lastDiode;
-    const float vt = thermalVoltage;
-    const float Is = std::max(saturationCurrent, 1.0e-15f);
-
-    constexpr float maxExponent = 40.0f; // clamp to avoid overflow in exp()
-
-    for (int i = 0; i < 4; ++i)
-    {
-        const float posArg = juce::jlimit(-maxExponent, maxExponent, (v + bias + forwardVoltage) / vt);
-        const float negArg = juce::jlimit(-maxExponent, maxExponent, -(v + bias - forwardVoltage) / vt);
-
-        const float expV = std::exp(posArg);
-        const float expN = std::exp(negArg);
-        const float Id = Is * (expV - expN);
-        const float Gd = (Is / vt) * (expV + expN);
-
-        const float f = v + R * Id - pole;
-        const float df = 1.0f + R * Gd;
-
-        v -= f / df;
-    }
-
-    lastDiode = juce::jlimit(-3.0f, 3.0f, v);
-    const float sinhArg = juce::jlimit(-maxExponent, maxExponent, (v + bias) / vt);
-    const float diodeCurrent = saturationCurrent * std::sinh(sinhArg);
-    lastOut = juce::jlimit(-1.5f, 1.5f, pole - R * diodeCurrent);
-    return lastOut;
-}
-
-//==============================================================================
-float SaturateProcessor::Wavefolder::process(float x, float foldAmount)
-{
-    const float a = juce::jmap(juce::jlimit(0.0f, 1.0f, foldAmount), 1.0f, 4.0f);
-    float y = x;
-    for (int i = 0; i < 3; ++i)
-    {
-        y = std::fabs(y * a + 0.5f) - 0.5f;
-        y = juce::jlimit(-1.0f, 1.0f, y);
-    }
-        return y;
-    }
-    
-float SaturateProcessor::Rectifier::process(float x, float mix, float softness)
-{
-    const float sign = x >= 0.0f ? 1.0f : -1.0f;
-    const float half = 0.5f * (x + std::fabs(x));
-    const float full = std::fabs(x);
-    const float rectMix = juce::jlimit(0.0f, 1.0f, mix);
-    const float rectified = juce::jmap(rectMix, half, full);
-    const float k = juce::jmap(juce::jlimit(0.0f, 1.0f, softness), 1.5f, 0.5f);
-    return std::tanh(rectified * k) * sign;
-}
-
-//==============================================================================
 void SaturateProcessor::ModelRuntime::reset()
 {
     for (auto& ch : channels)
     {
         ch.adaaPrev = 0.0f;
-        ch.hysteresis = 0.0f;
-        ch.fuzzMem = 0.0f;
-        ch.rectLP = 0.0f;
         ch.envelope = 0.0f;
         ch.compEnv = 0.0f;
         ch.preTilt.reset();
         ch.postTilt.reset();
         ch.preHP.reset();
         ch.toneFilter.reset();
-        ch.diode.reset();
     }
 
     lastDrive = 12.0f;
@@ -312,20 +227,14 @@ void SaturateProcessor::prepare(double fs, int blockSize)
     };
 
     oversamplerPrimary = createOversampler(2);
-    oversamplerSecondary = createOversampler(2);
     oversamplerDry = createOversampler(2);
 
     oversamplerPrimary->initProcessing(static_cast<size_t>(maxBlockSize));
-    oversamplerSecondary->initProcessing(static_cast<size_t>(maxBlockSize));
     oversamplerDry->initProcessing(static_cast<size_t>(maxBlockSize));
 
     dryBuffer.setSize(2, maxBlockSize);
-    inputCopyBuffer.setSize(2, maxBlockSize);
-    secondaryWetBuffer.setSize(2, maxBlockSize);
     dryMatchedBuffer.setSize(2, maxBlockSize);
 
-    for (auto& runtime : modelStates)
-    {
         runtime.reset();
         for (auto& ch : runtime.channels)
         {
@@ -334,8 +243,6 @@ void SaturateProcessor::prepare(double fs, int blockSize)
             ch.preHP.prepare(osSampleRate, 28.0f, true);
             ch.postHP.prepare(osSampleRate, 18.0f, true);
             ch.toneFilter.prepare(osSampleRate);
-            ch.diode.prepare(osSampleRate);
-        }
     }
 
     // Initialize parameter smoothing (100ms for top knobs to prevent clicks and static)
@@ -361,15 +268,10 @@ void SaturateProcessor::prepare(double fs, int blockSize)
 void SaturateProcessor::reset()
 {
     if (oversamplerPrimary) oversamplerPrimary->reset();
-    if (oversamplerSecondary) oversamplerSecondary->reset();
     if (oversamplerDry) oversamplerDry->reset();
 
-    for (auto& runtime : modelStates)
         runtime.reset();
 
-    currentType = 0;
-    crossfade = {};
-    
     // Reset filter tracking to prevent clicks on page switch
     prevPreTiltDb = 0.0f;
     prevPostTiltDb = 0.0f;
@@ -378,8 +280,7 @@ void SaturateProcessor::reset()
 }
 
 //==============================================================================
-SaturateProcessor::ParameterSet SaturateProcessor::mapParameters(float type,
-                                                                 float drive,
+SaturateProcessor::ParameterSet SaturateProcessor::mapParameters(float drive,
                                                                  float color,
                                                                  float shape,
                                                                  float bias,
@@ -387,111 +288,48 @@ SaturateProcessor::ParameterSet SaturateProcessor::mapParameters(float type,
                                                                  float mix) const
 {
     ParameterSet p;
+    
+    // Drive: Musical exponential curve - smoother and more controlled
     p.driveDb = drive;
-    p.driveLin = dbToLinear(drive);
-    p.bias = bias * 0.5f;
+    const float driveNorm = drive / 36.0f;
+    // Smoother exponential curve for musical response
+    const float driveCurve = driveNorm * driveNorm * 0.8f + driveNorm * 0.6f;
+    p.driveLin = dbToLinear(drive * (0.5f + driveCurve * 0.6f));
+    
     p.mix = juce::jlimit(0.0f, 1.0f, mix);
     p.outputDb = output;
     p.outputLin = dbToLinear(output);
 
-    const float tone = juce::jlimit(0.0f, 1.0f, color);
+    const float colorNorm = juce::jlimit(0.0f, 1.0f, color);
     const float shapeNorm = juce::jlimit(0.0f, 1.0f, shape);
-    const int modelIndex = juce::jlimit(0, numModels - 1, static_cast<int>(std::roundf(type)));
 
-    switch (modelIndex)
-    {
-        case 0: // Clean
-        {
-            p.toneNorm = juce::jmap(tone, 0.18f, 0.92f);                 // wide sweetening range
-            p.preTiltDb = juce::jmap(shapeNorm, -4.0f, 4.0f);            // tilt EQ for colour
-            p.postTiltDb = -p.preTiltDb * 0.4f;
-            p.hpCutHz = juce::jmap(tone, 20.0f, 42.0f);                  // tighten lows as tone rises
-            p.bias = juce::jmap(bias, -0.55f, 0.55f);                    // stronger bias throw
-            p.character = juce::jmap(shapeNorm, 1.0f, 3.2f);             // odd-order strength
-            p.character2 = juce::jmap(tone, 0.0f, 0.65f);                // even harmonic blend
-            p.compAmount = juce::jmap(shapeNorm, 0.1f, 1.0f);            // reuse as user blend
-            break;
-        }
-
-        case 1: // Tape / transformer
-            p.toneNorm = juce::jmap(tone, 0.25f, 0.6f);
-            p.preTiltDb = juce::jmap(shapeNorm, -1.0f, 5.0f);
-            p.postTiltDb = -p.preTiltDb * 0.65f;
-            p.hpCutHz = juce::jmap(shapeNorm, 28.0f, 50.0f);
-            p.character = juce::jmap(shapeNorm, 0.6f, 1.4f);
-            p.character2 = juce::jmap(tone, 0.02f, 0.12f);
-            p.compAmount = juce::jmap(tone, 0.3f, 0.5f);
-            break;
-
-        case 2: // Diode clipper
-            p.toneNorm = juce::jmap(tone, 0.35f, 0.75f);
-            p.preTiltDb = juce::jmap(shapeNorm, -2.0f, 2.0f);
-            p.postTiltDb = juce::jmap(shapeNorm, -1.2f, 1.2f);
-            p.hpCutHz = juce::jmap(shapeNorm, 26.0f, 38.0f);
-            p.character = juce::jmap(shapeNorm, 0.35f, 0.85f);      // diode Vf
-            p.character2 = juce::jmap(tone, 2.0e4f, 9.0e4f);        // op-amp GBW
-            p.compAmount = juce::jmap(tone, 0.35f, 0.55f);
-            break;
-
-        case 3: // Op-amp soft clip
-            p.toneNorm = juce::jmap(tone, 0.4f, 0.9f);
-            p.preTiltDb = juce::jmap(shapeNorm, -1.5f, 1.5f);
-            p.postTiltDb = juce::jmap(shapeNorm, -0.8f, 0.8f);
-            p.hpCutHz = 28.0f;
-            p.character = juce::jmap(shapeNorm, 6000.0f, 16000.0f);  // GBW
-            p.character2 = 0.0f;
-            p.compAmount = juce::jmap(tone, 0.25f, 0.55f);
-            break;
-
-        case 4: // Wavefolder
-            p.toneNorm = juce::jmap(tone, 0.35f, 0.8f);
-            p.preTiltDb = juce::jmap(shapeNorm, -2.5f, 2.5f);
-            p.postTiltDb = juce::jmap(tone, -1.5f, 2.0f);
-            p.hpCutHz = juce::jmap(shapeNorm, 30.0f, 55.0f);
-            p.character = juce::jmap(shapeNorm, 0.6f, 1.8f);        // fold amount
-            p.character2 = juce::jmap(tone, 0.0f, 0.35f);           // sparkle mix
-            p.compAmount = juce::jmap(tone, 0.35f, 0.6f);
-            break;
-
-        case 5: // Centaur-style
-            p.toneNorm = juce::jmap(tone, 0.4f, 0.7f);
-            p.preTiltDb = juce::jmap(shapeNorm, -3.0f, 1.5f);
-            p.postTiltDb = juce::jmap(tone, -1.0f, 2.0f);
-            p.hpCutHz = juce::jmap(shapeNorm, 35.0f, 120.0f);
-            p.character = juce::jmap(shapeNorm, 650.0f, 1600.0f);   // mid frequency
-            p.character2 = juce::jmap(tone, 0.5f, 1.2f);            // mid Q
-            p.compAmount = juce::jmap(tone, 0.25f, 0.5f);
-            break;
-
-        case 6: // Fuzz / BJT
-            p.toneNorm = juce::jmap(tone, 0.3f, 0.65f);
-            p.preTiltDb = juce::jmap(shapeNorm, -5.0f, 0.5f);
-            p.postTiltDb = juce::jmap(tone, -1.0f, 1.5f);
-            p.hpCutHz = juce::jmap(shapeNorm, 40.0f, 120.0f);
-            p.character = juce::jmap(shapeNorm, 0.5f, 1.4f);        // gain hardness
-            p.character2 = juce::jmap(tone, 0.2f, 0.6f);            // leakage/sag
-            p.compAmount = juce::jmap(tone, 0.3f, 0.65f);
-            break;
-
-        case 7: // Rectifier / X-Dist
-        default:
-            p.toneNorm = juce::jmap(tone, 0.45f, 0.85f);
-            p.preTiltDb = juce::jmap(shapeNorm, -1.5f, 1.5f);
-            p.postTiltDb = juce::jmap(tone, -0.5f, 2.5f);
-            p.hpCutHz = juce::jmap(shapeNorm, 28.0f, 60.0f);
-            p.character = juce::jlimit(0.0f, 1.0f, shapeNorm);      // rect mix
-            p.character2 = juce::jmap(tone, 0.4f, 0.9f);            // softness
-            p.compAmount = juce::jmap(tone, 0.35f, 0.6f);
-            break;
-    }
+    // Color controls frequency response (brightness/tone)
+    // Low Color (0.0): Darker, low-mid emphasis
+    // High Color (1.0): Brighter, high-frequency emphasis
+    p.toneNorm = juce::jmap(colorNorm, 0.2f, 0.95f);  // Tone filter range
+    p.hpCutHz = juce::jmap(colorNorm, 80.0f, 200.0f); // HPF: 80Hz (dark) to 200Hz (bright)
+    p.preTiltDb = juce::jmap(colorNorm, -4.0f, 4.0f);  // Pre-tilt: -4dB (dark) to +4dB (bright) - reduced for smoother sound
+    p.postTiltDb = -p.preTiltDb * 0.3f;                // Compensatory post-tilt - reduced
+    
+    // Shape controls waveshape selection (0-1 maps to 5 different curves)
+    // Store shape selection in character field (0.0-1.0 for curve selection)
+    p.character = shapeNorm;  // 0.0 = soft tanh, 0.25 = hard tanh, 0.5 = cubic, 0.75 = asymmetric, 1.0 = polynomial
+    
+    // Bias for asymmetric saturation
+    p.bias = juce::jmap(bias, -0.3f, 0.3f);
+    
+    // Harmonic enhancement amount (use character2 for even/odd blend)
+    p.character2 = juce::jmap(shapeNorm, 0.2f, 0.8f);  // Harmonic amount based on shape
+    
+    // Compression amount
+    p.compAmount = juce::jmap(shapeNorm, 0.3f, 1.0f);
 
     return p;
 }
 
 void SaturateProcessor::refreshFilters(ModelRuntime& runtime,
                                        const ParameterSet& params,
-                                       double /*fs*/,
-                                       int modelIndex)
+                                       double /*fs*/)
 {
     // Only update filters if values have changed significantly to prevent clicks
     // Increased thresholds to reduce filter update frequency and prevent static
@@ -514,18 +352,13 @@ void SaturateProcessor::refreshFilters(ModelRuntime& runtime,
     }
     
     if (needsUpdate)
+{
+    for (auto& ch : runtime.channels)
     {
-        for (auto& ch : runtime.channels)
-        {
-            ch.preTilt.setTiltDb(params.preTiltDb);
-            ch.postTilt.setTiltDb(params.postTiltDb);
-            ch.preHP.setCutoff(params.hpCutHz);
-            ch.toneFilter.setTone(params.toneNorm);
-
-            if (modelIndex == 2)
-                ch.diode.setParameters(params.character, params.bias, params.character2);
-            else
-                ch.diode.setParameters(0.65f, params.bias, 4.0e4f);
+        ch.preTilt.setTiltDb(params.preTiltDb);
+        ch.postTilt.setTiltDb(params.postTiltDb);
+        ch.preHP.setCutoff(params.hpCutHz);
+        ch.toneFilter.setTone(params.toneNorm);
         }
     }
 
@@ -547,6 +380,10 @@ void SaturateProcessor::process(juce::AudioBuffer<float>& buffer,
                                 juce::AudioProcessorValueTreeState& apvts)
 {
     if (numSamples <= 0 || buffer.getNumChannels() < 2)
+        return;
+
+    // Safety check: ensure oversamplers are initialized and processor is prepared
+    if (!oversamplerPrimary || !oversamplerDry || sampleRate <= 0.0 || maxBlockSize <= 0)
         return;
 
     // Enable flush-to-zero for stability
@@ -579,7 +416,6 @@ void SaturateProcessor::process(juce::AudioBuffer<float>& buffer,
         return;
     }
 
-    auto* typeParam = apvts.getRawParameterValue("satType");
     auto* driveParam = apvts.getRawParameterValue("satDrive");
     auto* colorParam = apvts.getRawParameterValue("satColor");
     auto* shapeParam = apvts.getRawParameterValue("satShape");
@@ -587,8 +423,6 @@ void SaturateProcessor::process(juce::AudioBuffer<float>& buffer,
     auto* outParam = apvts.getRawParameterValue("satOut");
     auto* mixParam = apvts.getRawParameterValue("satMix");
     
-    const int type = typeParam ? juce::jlimit(0, numModels - 1, static_cast<int>(typeParam->load())) : 0;
-
     // Set target values for smoothing
     driveSmooth.setTargetValue(driveParam ? driveParam->load() : 12.0f);
     colorSmooth.setTargetValue(colorParam ? colorParam->load() : 0.5f);
@@ -617,20 +451,18 @@ void SaturateProcessor::process(juce::AudioBuffer<float>& buffer,
         mixSmooth.skip(1);
     }
 
-    ParameterSet params = mapParameters(static_cast<float>(type),
-                                        drive,
+    ParameterSet params = mapParameters(drive,
                                         color,
                                         shape,
                                         bias,
                                         output,
                                         mix);
 
-    processInternal(buffer, numSamples, params, type, false);
+    processInternal(buffer, numSamples, params, false);
 }
 
 void SaturateProcessor::processWithSnapshot(juce::AudioBuffer<float>& buffer,
                                             int numSamples,
-                                            float type,
                                             float drive,
                                             float color,
                                             float shape,
@@ -642,104 +474,38 @@ void SaturateProcessor::processWithSnapshot(juce::AudioBuffer<float>& buffer,
     if (numSamples <= 0 || buffer.getNumChannels() < 2)
         return;
 
-    const int typeIndex = juce::jlimit(0, numModels - 1, static_cast<int>(type));
+    // Safety check: ensure oversamplers are initialized and processor is prepared
+    if (!oversamplerPrimary || !oversamplerDry || sampleRate <= 0.0 || maxBlockSize <= 0)
+        return;
 
-    ParameterSet params = mapParameters(type,
-                                        drive,
+    ParameterSet params = mapParameters(drive,
                                         color,
                                         shape,
                                         bias,
                                         output,
                                         mix);
 
-    processInternal(buffer, numSamples, params, typeIndex, stepChanged);
+    processInternal(buffer, numSamples, params, stepChanged);
 }
 
 //==============================================================================
 void SaturateProcessor::processInternal(juce::AudioBuffer<float>& buffer,
                                         int numSamples,
                                         ParameterSet liveParams,
-                                        int targetType,
                                         bool stepChanged)
 {
     juce::ScopedNoDenormals guard;
 
+    // Safety check: ensure oversamplers are initialized and processor is prepared
+    if (!oversamplerPrimary || !oversamplerDry || sampleRate <= 0.0 || maxBlockSize <= 0)
+        return;
+
     dryBuffer.makeCopyOf(buffer, true);
-    inputCopyBuffer.makeCopyOf(buffer, true);
 
-    if (targetType != currentType)
-    {
-        // Only crossfade if we're switching between different types (not on first load)
-        // If previous type was 0 and we're switching, it's likely a page switch
-        if (currentType >= 0 && crossfade.totalSamples > 0)
-        {
-            crossfade.active = true;
-            crossfade.previousType = currentType;
-            crossfade.totalSamples = static_cast<int>(crossfadeTimeSeconds * sampleRate);
-            crossfade.remainingSamples = crossfade.totalSamples;
-        }
-        else
-        {
-            // First time or no previous type - no crossfade needed
-            crossfade.active = false;
-            crossfade.remainingSamples = 0;
-        }
-        currentType = targetType;
-        oversamplerSecondary->reset();
-    }
+    // Refresh filters at the start of the block
+    refreshFilters(runtime, liveParams, osSampleRate);
 
-    auto& runtime = modelStates[currentType];
-    // Refresh filters at the start of the block (will be checked again in processOversampledBlock)
-    refreshFilters(runtime, liveParams, osSampleRate, targetType);
-
-    renderModelToBuffer(currentType, runtime, buffer, liveParams, true);
-
-    if (crossfade.active && crossfade.remainingSamples > 0)
-    {
-        const int prevType = crossfade.previousType;
-        auto& prevRuntime = modelStates[prevType];
-        ParameterSet storedParams;
-        storedParams.driveDb = prevRuntime.lastDrive;
-        storedParams.driveLin = dbToLinear(prevRuntime.lastDrive);
-        storedParams.bias = prevRuntime.lastBias;
-        storedParams.toneNorm = prevRuntime.lastToneNorm;
-        storedParams.preTiltDb = prevRuntime.lastPreTilt;
-        storedParams.postTiltDb = prevRuntime.lastPostTilt;
-        storedParams.hpCutHz = prevRuntime.lastHpCut;
-        storedParams.character = prevRuntime.lastCharacter;
-        storedParams.character2 = prevRuntime.lastCharacter2;
-        storedParams.compAmount = prevRuntime.lastComp;
-        storedParams.mix = liveParams.mix;
-        storedParams.outputDb = prevRuntime.lastOutputDb;
-        storedParams.outputLin = dbToLinear(prevRuntime.lastOutputDb);
-
-        secondaryWetBuffer.makeCopyOf(inputCopyBuffer, true);
-        refreshFilters(prevRuntime, storedParams, osSampleRate, prevType);
-        renderModelToBuffer(prevType, prevRuntime, secondaryWetBuffer, storedParams, false);
-
-        auto* wetL = buffer.getWritePointer(0);
-        auto* wetR = buffer.getWritePointer(1);
-        auto* oldL = secondaryWetBuffer.getWritePointer(0);
-        auto* oldR = secondaryWetBuffer.getWritePointer(1);
-
-        for (int i = 0; i < numSamples; ++i)
-        {
-            const float phase = 1.0f - static_cast<float>(crossfade.remainingSamples) / static_cast<float>(crossfade.totalSamples);
-            const float fadeIn = equalPowerFadeIn(phase);
-            const float fadeOut = equalPowerFadeOut(phase);
-            wetL[i] = wetL[i] * fadeIn + oldL[i] * fadeOut;
-            wetR[i] = wetR[i] * fadeIn + oldR[i] * fadeOut;
-            --crossfade.remainingSamples;
-            if (crossfade.remainingSamples <= 0)
-                break;
-        }
-
-        if (crossfade.remainingSamples <= 0)
-        {
-            crossfade.active = false;
-            oversamplerSecondary->reset();
-        }
-    }
+    renderModelToBuffer(runtime, buffer, liveParams);
 
     dryMatchedBuffer.makeCopyOf(dryBuffer, true);
     juce::dsp::AudioBlock<float> dryBlock(dryMatchedBuffer);
@@ -762,27 +528,108 @@ void SaturateProcessor::processInternal(juce::AudioBuffer<float>& buffer,
 }
 
 //==============================================================================
-void SaturateProcessor::renderModelToBuffer(int modelIndex,
-                                            ModelRuntime& runtime,
+void SaturateProcessor::renderModelToBuffer(ModelRuntime& runtime,
                                             juce::AudioBuffer<float>& workBuffer,
-                                            const ParameterSet& params,
-                                            bool updateRuntimeParams)
+                                            const ParameterSet& params)
 {
+    // Safety check: ensure oversampler is initialized
+    if (!oversamplerPrimary)
+        return;
+
     juce::dsp::AudioBlock<float> block(workBuffer);
-    auto osBlock = updateRuntimeParams ? oversamplerPrimary->processSamplesUp(block)
-                                       : oversamplerSecondary->processSamplesUp(block);
+    auto osBlock = oversamplerPrimary->processSamplesUp(block);
 
-    processOversampledBlock(modelIndex, runtime, osBlock, params);
+    processOversampledBlock(runtime, osBlock, params);
 
-    if (updateRuntimeParams)
         oversamplerPrimary->processSamplesDown(block);
-    else
-        oversamplerSecondary->processSamplesDown(block);
 }
 
 //==============================================================================
-void SaturateProcessor::processOversampledBlock(int modelIndex,
-                                                ModelRuntime& runtime,
+// Helper functions for aggressive saturation
+float SaturateProcessor::applyWaveshape(float x, float shapeParam) const
+{
+    // Clamp input to prevent excessive values - reduced range for smoother sound
+    x = juce::jlimit(-2.5f, 2.5f, x);
+    
+    // Map shapeParam (0-1) to 5 different waveshaping curves - all smoother and more musical
+    if (shapeParam < 0.2f)
+    {
+        // Soft tanh (gentle, smooth, musical)
+        const float amount = juce::jmap(shapeParam, 0.0f, 0.2f, 0.6f, 0.9f);
+        return std::tanh(x * amount);
+    }
+    else if (shapeParam < 0.4f)
+    {
+        // Medium tanh (warm, musical)
+        const float amount = juce::jmap(shapeParam, 0.2f, 0.4f, 0.9f, 1.3f);
+        return std::tanh(x * amount);
+    }
+    else if (shapeParam < 0.6f)
+    {
+        // Cubic soft clip (smooth saturation, no harsh edges)
+        const float amount = juce::jmap(shapeParam, 0.4f, 0.6f, 1.1f, 1.6f);
+        float driven = x * amount;
+        // Smooth cubic curve - reduced coefficient for less harshness
+        float x3 = driven * driven * driven;
+        return juce::jlimit(-0.9f, 0.9f, driven - x3 * 0.12f);
+    }
+    else if (shapeParam < 0.8f)
+    {
+        // Asymmetric tube-like (warm, musical, subtle asymmetry)
+        const float amount = juce::jmap(shapeParam, 0.6f, 0.8f, 1.0f, 1.5f);
+        float driven = x * amount;
+        // Subtle asymmetric response for warmth
+        if (driven > 0.0f)
+            return std::tanh(driven * 0.93f) * 1.01f;
+        else
+            return std::tanh(driven * 0.90f) * 1.01f;
+    }
+    else
+    {
+        // Harder tanh (more aggressive but still smooth)
+        const float amount = juce::jmap(shapeParam, 0.8f, 1.0f, 1.4f, 2.0f);
+        float result = std::tanh(x * amount);
+        // Very gentle soft clipping for harder character
+        if (std::abs(result) > 0.88f)
+            result = juce::jlimit(-0.95f, 0.95f, result * 1.02f);
+        return result;
+    }
+}
+
+float SaturateProcessor::addHarmonics(float saturated, float driven, const ParameterSet& params) const
+{
+    // Add subtle harmonic content - much reduced to avoid static
+    const float harmonicAmount = params.character2;
+    const float driveAmount = juce::jlimit(0.0f, 1.0f, params.driveDb / 36.0f);
+    
+    // Only add harmonics at higher drive levels to avoid static at low levels
+    if (driveAmount < 0.3f)
+        return saturated;
+    
+    // Generate subtle even harmonics (2nd) - reduced significantly
+    const float evenHarm = driven * driven * 0.08f * harmonicAmount * driveAmount;
+    
+    // Generate subtle odd harmonics (3rd) - reduced significantly
+    const float thirdHarm = driven * driven * driven * 0.06f * (1.0f - harmonicAmount * 0.6f) * driveAmount;
+    
+    // Blend harmonics very subtly
+    float enriched = saturated;
+    enriched += evenHarm * 0.25f;
+    enriched += thirdHarm * 0.20f;
+    
+    return juce::jlimit(-1.0f, 1.0f, enriched);
+}
+
+float SaturateProcessor::blendDryWet(float dry, float wet, float mix) const
+{
+    // Equal-power crossfade for smooth blending
+    const float wetGain = std::sin(mix * juce::MathConstants<float>::halfPi);
+    const float dryGain = std::cos(mix * juce::MathConstants<float>::halfPi);
+    return dry * dryGain + wet * wetGain;
+}
+
+//==============================================================================
+void SaturateProcessor::processOversampledBlock(ModelRuntime& runtime,
                                                 juce::dsp::AudioBlock<float>& osBlock,
                                                 const ParameterSet& params)
 {
@@ -797,188 +644,81 @@ void SaturateProcessor::processOversampledBlock(int modelIndex,
     runtime.rmsOutAccum = 0.0f;
     runtime.rmsCount = osSamples;
 
-    const int modelIndexClamped = juce::jlimit(0, numModels - 1, modelIndex);
-    const bool isCleanModel = (modelIndexClamped == 0);
-    const float driveBlendGlobal = juce::jlimit(0.0f, 1.0f, params.driveDb / 24.0f);
+    const float driveBlendGlobal = juce::jlimit(0.0f, 1.0f, params.driveDb / 36.0f);
+
+    // Aggressive, colorful saturation with frequency-dependent processing
+    auto processAggressiveSaturation = [&](float& sample, ModelChannelState& state)
+    {
+        if (driveBlendGlobal <= 0.0001f)
+        {
+            state.envelope *= 0.995f;
+            return;
+        }
+
+        // Store original for dry/wet blending
+        const float original = sample;
+
+        // Stage 1: Frequency-dependent HPF (Color controls cutoff to remove rumble)
+        sample = state.preHP.process(sample);
+        
+        // Stage 2: Frequency-dependent drive (Color emphasizes highs/lows via pre-tilt)
+        float preEmphasis = state.preTilt.process(sample);
+        
+        // Apply drive with bias for asymmetry
+        const float driveLin = params.driveLin;
+        float driven = preEmphasis * driveLin + params.bias;
+        
+        // Clamp to prevent excessive values
+        driven = juce::jlimit(-3.0f, 3.0f, driven);
+
+        // Stage 3: Musical waveshaping (Shape selects curve: 0-1 maps to 5 curves)
+        float saturated = applyWaveshape(driven, params.character);
+        
+        // Stage 4: Subtle harmonic enhancement (only at higher drive)
+        saturated = addHarmonics(saturated, driven, params);
+        
+        // Gentle soft clipping to prevent harsh artifacts
+        saturated = juce::jlimit(-0.98f, 0.98f, saturated);
+
+        // Stage 5: Post-processing EQ
+        saturated = state.postTilt.process(saturated);
+        saturated = state.toneFilter.process(saturated);
+        saturated = state.postHP.process(saturated);
+
+        // Gentle compression for musical character (not aggressive)
+        const float absSat = std::abs(saturated);
+        const float envCoeff = std::exp(-1.0f / (compReleaseSeconds * static_cast<float>(osSampleRate)));
+        state.compEnv = envCoeff * state.compEnv + (1.0f - envCoeff) * absSat;
+        
+        // Much gentler compression threshold and ratio
+        if (state.compEnv > 0.75f)
+        {
+            const float over = state.compEnv / 0.75f;
+            const float gain = std::pow(over, -5.0f);  // Gentler compression
+            saturated *= juce::jlimit(0.7f, 1.0f, gain);
+        }
+
+        // Blend with original using equal-power crossfade
+        sample = blendDryWet(original, saturated, params.mix);
+        sample = juce::jlimit(-1.0f, 1.0f, sample);
+    };
 
     for (int i = 0; i < osSamples; ++i)
     {
-        const float driveLin = params.driveLin;
-        const float rawBias = params.bias;
-        const float compValue = params.compAmount;
-        const float characterValue = params.character;
-
         float l = left[i];
         float r = right[i];
 
         runtime.rmsInAccum += 0.5f * (l * l + r * r);
 
-        l = leftState.preHP.process(l);
-        r = rightState.preHP.process(r);
-
-        l = leftState.preTilt.process(l);
-        r = rightState.preTilt.process(r);
-
-        l = juce::jlimit(-4.0f, 4.0f, l * driveLin + rawBias);
-        r = juce::jlimit(-4.0f, 4.0f, r * driveLin + rawBias);
-
-        const float driveBlend = driveBlendGlobal;
-
-        switch (modelIndexClamped)
-        {
-            case 0: // Clean
-            {
-                auto processCleanStage = [&](float& sample, ModelChannelState& state)
-                {
-                    if (driveBlend <= 0.0001f)
-                    {
-                        state.envelope *= 0.995f;
-                        return;
-                    }
-
-                    const float oddGainBase = juce::jlimit(1.0f, 2.2f, params.character);
-                    const float oddGain = juce::jmap(driveBlend, 0.0f, 1.0f, 1.0f, oddGainBase);
-                    const float userBlend = juce::jlimit(0.0f, 1.0f, params.compAmount);
-
-                    state.envelope = 0.995f * state.envelope + 0.005f * sample;
-                    const float dynamicBias = juce::jlimit(-0.35f, 0.35f,
-                                                           params.bias + state.envelope * (0.08f * userBlend));
-                    const float biasedSample = juce::jlimit(-2.5f, 2.5f, sample + dynamicBias);
-
-                    const float oddComponent = adaaTanh(biasedSample * oddGain, state.adaaPrev);
-
-                    const float cubicSoft = softClipCubic(biasedSample, 0.6f);
-                    const float triodeApprox = juce::jlimit(-1.8f, 1.8f,
-                                                            (biasedSample * (1.5f + 0.5f * biasedSample * biasedSample)) /
-                                                            (1.5f + std::abs(biasedSample)));
-                    const float evenBlend = juce::jlimit(0.0f, 0.6f, params.character2);
-                    float evenComponent = juce::jmap(evenBlend, 0.0f, 0.6f, cubicSoft, triodeApprox);
-
-                    // Improved analog saturation: better even/odd harmonic balance
-                    const float evenWeight = juce::jmap(driveBlend, 0.15f, 0.35f); // More even harmonics at higher drive
-                    float result = juce::jlimit(-1.2f, 1.2f,
-                                                (1.0f - evenWeight) * oddComponent + evenWeight * evenComponent);
-                    
-                    // Warmer analog character: add subtle tube-like warmth and saturation
-                    const float tubeWarmth = std::tanh(result * 0.85f) * 1.1f;
-                    result = juce::jlimit(-1.2f, 1.2f, 0.7f * result + 0.3f * tubeWarmth);
-                    
-                    // More saturated blend for better analog character (was 75/25, now 85/15)
-                    float processed = juce::jlimit(-1.0f, 1.0f, 0.85f * result + 0.15f * sample);
-                    const float stageMix = juce::jlimit(0.0f, 1.0f, driveBlend * userBlend);
-                    sample = juce::jlimit(-1.0f, 1.0f, sample + stageMix * (processed - sample));
-                };
-
-                processCleanStage(l, leftState);
-                processCleanStage(r, rightState);
-                break;
-            }
-            case 1: // Tape / transformer
-            {
-                const float cubic = juce::jlimit(0.4f, 2.0f, characterValue);
-                l = softClipCubic(l, cubic);
-                r = softClipCubic(r, cubic);
-                leftState.hysteresis = 0.97f * leftState.hysteresis + 0.03f * l;
-                rightState.hysteresis = 0.97f * rightState.hysteresis + 0.03f * r;
-                l = 0.75f * l + 0.25f * leftState.hysteresis;
-                r = 0.75f * r + 0.25f * rightState.hysteresis;
-                break;
-            }
-            case 2: // Diode asym clip
-            {
-                l = leftState.diode.process(l);
-                r = rightState.diode.process(r);
-                break;
-            }
-            case 3: // Op-amp soft clip
-            {
-                const float gbw = juce::jlimit(2000.0f, 20000.0f, characterValue);
-                const float slew = 1.0f / juce::jmax(1000.0f, gbw);
-                l = adaaAtan(l * (1.0f + slew), leftState.adaaPrev);
-                r = adaaAtan(r * (1.0f + slew), rightState.adaaPrev);
-                break;
-            }
-            case 4: // Wavefolder
-            {
-                const float fold = juce::jlimit(0.4f, 2.0f, characterValue);
-                l = Wavefolder{}.process(l, fold);
-                r = Wavefolder{}.process(r, fold);
-                break;
-            }
-            case 5: // Centaur style
-            {
-                const float midFreq = juce::jlimit(200.0f, 3000.0f, params.character);
-                const float q = juce::jlimit(0.3f, 2.0f, params.character2);
-                float midL = leftState.postTilt.process(l);
-                float midR = rightState.postTilt.process(r);
-                juce::ignoreUnused(midFreq);
-                l = 0.7f * l + 0.3f * midL;
-                r = 0.7f * r + 0.3f * midR;
-                const float asymBias = rawBias * 0.5f;
-                l = saturateAsymmetric(l, asymBias, q);
-                r = saturateAsymmetric(r, asymBias, q);
-                break;
-            }
-            case 6: // Fuzz / BJT
-            {
-                leftState.fuzzMem = 0.92f * leftState.fuzzMem + 0.08f * l;
-                rightState.fuzzMem = 0.92f * rightState.fuzzMem + 0.08f * r;
-                const float fuzzHard = juce::jlimit(0.4f, 1.6f, characterValue);
-                const float asymBias = rawBias * 1.5f;
-                l = saturateAsymmetric(l, asymBias, fuzzHard);
-                r = saturateAsymmetric(r, asymBias, fuzzHard);
-                l = 0.8f * l + 0.2f * leftState.fuzzMem;
-                r = 0.8f * r + 0.2f * rightState.fuzzMem;
-                break;
-            }
-            case 7: // Rectifier / X-Dist
-            {
-                const float rectMix = characterValue;
-                const float softness = juce::jlimit(0.0f, 1.0f, params.toneNorm);
-                l = Rectifier{}.process(l, rectMix, softness);
-                r = Rectifier{}.process(r, rectMix, softness);
-                break;
-            }
-            default:
-                break;
-        }
-
-        l = leftState.postTilt.process(l);
-        r = rightState.postTilt.process(r);
-
-        l = leftState.toneFilter.process(l);
-        r = rightState.toneFilter.process(r);
-
-        l = leftState.postHP.process(l);
-        r = rightState.postHP.process(r);
-
-        if (!isCleanModel)
-        {
-            const float thresh = juce::jmap(compValue, 0.1f, 0.6f);
-            const float knee = juce::jmap(compValue, 2.0f, 6.0f);
-
-            auto applySoftLimiter = [&](float input, ModelChannelState& state) {
-                const float absIn = std::abs(input);
-                const float envCoeff = std::exp(-1.0f / (compReleaseSeconds * static_cast<float>(osSampleRate)));
-                state.compEnv = envCoeff * state.compEnv + (1.0f - envCoeff) * absIn;
-                if (state.compEnv <= thresh)
-                    return input;
-
-                const float over = state.compEnv / thresh;
-                const float gain = std::pow(over, -knee);
-                return input * juce::jlimit(0.0f, 1.0f, gain);
-            };
-
-            l = applySoftLimiter(l, leftState);
-            r = applySoftLimiter(r, rightState);
-        }
+        processAggressiveSaturation(l, leftState);
+        processAggressiveSaturation(r, rightState);
 
         left[i] = juce::jlimit(-1.0f, 1.0f, l);
         right[i] = juce::jlimit(-1.0f, 1.0f, r);
         runtime.rmsOutAccum += 0.5f * (left[i] * left[i] + right[i] * right[i]);
     }
 
-    updateAutoGain(runtime, osSamples, !isCleanModel);
+    updateAutoGain(runtime, osSamples, false);
 
     const float finalGain = runtime.autoGain * params.outputLin;
 
