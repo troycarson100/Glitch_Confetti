@@ -13573,14 +13573,14 @@ void PluginEditor::setupCompressSliders()
     
     // COMPRESS+ slider titles (Top row: Compressor controls, Bottom row: Drive/Lofi/Makeup Gain/Wet)
     const juce::StringArray compressSliderTitles = {
-        "THRESHOLD",
-        "ATTACK", 
-        "RELEASE",
-        "RATIO",
-        "DRIVE",
-        "LOFI",
-        "MAKEUP", 
-        "WET"
+        "Threshold",
+        "Attack", 
+        "Release",
+        "Ratio",
+        "Drive",
+        "Lofi",
+        "Makeup", 
+        "Wet"
     };
     
     // COMPRESS+ parameter IDs
