@@ -82,6 +82,9 @@ set(SourceFiles
     ${CMAKE_CURRENT_SOURCE_DIR}/source/ui/FilterPage.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/source/ui/PanIndicator.h
     ${CMAKE_CURRENT_SOURCE_DIR}/source/ui/PanIndicator.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/source/GumroadLicenseManager.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/source/GumroadLicenseManager.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/source/ui/GumroadLicenseDialog.h
 )
 
 target_sources(Stepper PRIVATE ${SourceFiles})

@@ -1,5 +1,6 @@
 #pragma once
 #include <juce_gui_basics/juce_gui_basics.h>
+#include "../FontManager.h"
 
 /**
  * Custom LookAndFeel for router effect selector dropdowns
@@ -19,7 +20,7 @@ public:
     
     juce::Font getComboBoxFont(juce::ComboBox&) override
     {
-        return juce::Font(16.0f); // Larger font for popup menu
+        return FontManager::getInstance().getFont("AlteHaasGroteskBold", 16.0f, juce::Font::plain); // Larger font for popup menu
     }
     
     void positionComboBoxText(juce::ComboBox& box, juce::Label& label) override

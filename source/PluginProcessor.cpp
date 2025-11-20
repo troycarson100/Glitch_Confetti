@@ -54,6 +54,25 @@ PluginProcessor::PluginProcessor()
 {
     // Wrap constructor body in try-catch to prevent crashes during initialization
     try {
+    // Initialize Gumroad License Manager
+    juce::String gumroadProductId = "nfdcum";
+    gumroadLicenseManager = std::make_unique<GumroadLicenseManager>(gumroadProductId);
+    
+    // Load saved license state
+    if (gumroadLicenseManager)
+    {
+        gumroadLicenseManager->loadLicenseState();
+        auto licenseInfo = gumroadLicenseManager->getCurrentLicense();
+        if (licenseInfo.isValid())
+        {
+            DBG("[Gumroad] Valid license found: " << licenseInfo.email << " (Uses: " << licenseInfo.usesCount << ")");
+        }
+        else if (!licenseInfo.licenseKey.isEmpty())
+        {
+            DBG("[Gumroad] License key found but invalid or expired: " << licenseInfo.licenseKey);
+        }
+    }
+    
     // Initialize delay sequencer state
     seq.enabled.store(false);
     seq.stepsUsed.store(16);
@@ -897,6 +916,13 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
     
     // Simplified processing to avoid crashes
     juce::ignoreUnused(midiMessages);
+    
+    // License enforcement: Block audio processing if no valid license
+    if (!isLicenseValid())
+    {
+        buffer.clear();
+        return;
+    }
     
 #if GC_SAFE_DELAY_ONLY
     const FxType fx = FxType::Delay;
@@ -2124,8 +2150,13 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                     if (seqState.enabled.load() && seqState.active.load()) {
                         int currentStep = seqState.currentStep.load();
                         bool stepChanged = (currentStep != lastSaturateStep);
-                        
-                        if (stepChanged && currentStep >= 0 && currentStep < 16) {
+
+                        if (isSaturateUserEditing())
+                        {
+                            if (stepChanged)
+                                lastSaturateStep = currentStep;
+                        }
+                        else if (stepChanged && currentStep >= 0 && currentStep < 16) {
                         StepSnapshot snapshot = getSaturateSafeSnapshot(currentStep);
                         
                         // Update APVTS parameters from sequencer snapshot (only when step changes)
@@ -4806,6 +4837,21 @@ void PluginProcessor::processCompressEffect(juce::AudioBuffer<float>& buffer)
     } else {
         // Compressor is disabled - bypass it
         compressEngine.setEnabled(false);
+    }
+}
+
+void PluginProcessor::setGumroadProductId(const juce::String& productId)
+{
+    if (gumroadLicenseManager)
+    {
+        gumroadLicenseManager->setProductId(productId);
+        DBG("[Gumroad] Product ID set to: " << productId);
+    }
+    else
+    {
+        // Create license manager if it doesn't exist
+        gumroadLicenseManager = std::make_unique<GumroadLicenseManager>(productId);
+        gumroadLicenseManager->loadLicenseState();
     }
 }
 

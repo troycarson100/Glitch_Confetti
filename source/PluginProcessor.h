@@ -23,6 +23,7 @@
 #include "ui/AudioRingBuffer.h"
 #include "EffectRouter.h"
 #include "dsp/SpectrumAnalyzer.h"
+#include "GumroadLicenseManager.h"
 
 // Real-time safe level tracking for meters
 struct MeterState {
@@ -148,6 +149,13 @@ public:
     
     // Effect router access
     EffectRouter& getEffectRouter() { return effectRouter; }
+    
+    // License management access
+    GumroadLicenseManager* getLicenseManager() { return gumroadLicenseManager.get(); }
+    bool isLicenseValid() const { return gumroadLicenseManager && gumroadLicenseManager->isLicenseValid(); }
+    
+    // Set your Gumroad product ID (call this in constructor or setup)
+    void setGumroadProductId(const juce::String& productId);
     
     // Sequencer state access for editor (Delay)
     int getPlayingStep() const noexcept { return seq.playingStep.load(); }
@@ -415,6 +423,9 @@ public:
     const MeterState& getInputMeter() const noexcept { return inputMeter; }
     const MeterState& getOutputMeter() const noexcept { return outputMeter; }
 
+    void setSaturateUserEditing(bool isEditing) noexcept { saturateUserEditing.store(isEditing); }
+    bool isSaturateUserEditing() const noexcept { return saturateUserEditing.load(); }
+
 private:
     // Parameters
     juce::AudioProcessorValueTreeState valueTreeState;
@@ -490,6 +501,7 @@ private:
     // Saturate Sequencer State (independent from all other sequencers)
     SeqState saturateSeq;
     std::atomic<int> saturateUiSelectedStep { 0 };  // Saturate editor's selected step
+    std::atomic<bool> saturateUserEditing { false };
     
     // Filter Sequencer State (independent from all other sequencers)
     // SeqState has default member initializers, so it's safe to access immediately
@@ -700,6 +712,9 @@ public:
            
            // FX routing
            FxType currentFx = FxType::Delay;
+           
+           // Gumroad License Manager
+           std::unique_ptr<GumroadLicenseManager> gumroadLicenseManager;
     
     // Helper functions - simplified
     

@@ -39,6 +39,7 @@ namespace
 #include "RandomizationManager.h"
 #include "PresetManager.h"
 #include "PresetBrowserComponent.h"
+#include "FontManager.h"
 
 //==============================================================================
 // CustomEffectDropdown Implementation
@@ -69,6 +70,12 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     
     // Allow children to receive mouse clicks and keyboard focus
     setInterceptsMouseClicks(true, true); // (for this component, for children)
+    
+    // Check license on startup (after a short delay to allow UI to initialize)
+    // TEMPORARILY DISABLED
+    // juce::Timer::callAfterDelay(1000, [this]() {
+    //     checkLicenseOnStartup();
+    // });
     
     // Load all UI assets
     if (!assets.loadAll()) {
@@ -368,6 +375,28 @@ PluginEditor::~PluginEditor()
 
 void PluginEditor::paint (juce::Graphics& g)
 {
+    // License enforcement: Show overlay if no valid license
+    // TEMPORARILY DISABLED
+    // if (!processorRef.isLicenseValid())
+    // {
+    //     // Draw semi-transparent overlay
+    //     g.fillAll(juce::Colour(0xCC000000)); // Dark overlay with alpha
+    //     
+    //     // Draw license required message
+    //     g.setColour(juce::Colours::white);
+    //     g.setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 24.0f, juce::Font::bold));
+    //     juce::String message = "License Required";
+    //     auto bounds = getLocalBounds();
+    //     auto textBounds = bounds.reduced(50, 50);
+    //     g.drawFittedText(message, textBounds.removeFromTop(40), juce::Justification::centred, 1);
+    //     
+    //     g.setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 16.0f, juce::Font::plain));
+    //     juce::String subtitle = "Please enter a valid Gumroad license key to use the plugin.\nPress Cmd+L (Mac) or Ctrl+L (Windows) to enter your license key.";
+    //     g.drawFittedText(subtitle, textBounds, juce::Justification::centred, 5);
+    //     
+    //     return; // Don't draw the rest of the UI
+    // }
+    
     // === LAYERED TAB BACKGROUNDS ===
     // Draw ALL tab backgrounds in order (Tab1, Tab2, Tab3, Tab4)
     // This creates a layered effect where inactive tabs peek out behind the active one
@@ -869,7 +898,7 @@ void PluginEditor::drawGridOverlay(juce::Graphics& g)
     const int fontSize = 10;
     
     g.setColour(juce::Colours::white.withAlpha(0.7f));
-    g.setFont(fontSize);
+    g.setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", fontSize, juce::Font::plain));
     
     // Draw vertical grid lines
     for (int x = 0; x <= bounds.getWidth(); x += gridSize)
@@ -897,7 +926,7 @@ void PluginEditor::drawGridOverlay(juce::Graphics& g)
     
     // Add section letters (A, B, C, D, etc.)
     g.setColour(juce::Colours::yellow.withAlpha(0.8f));
-    g.setFont(fontSize + 2);
+    g.setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", fontSize + 2, juce::Font::plain));
     
     int sectionIndex = 0;
     for (int y = gridSize; y < bounds.getHeight(); y += gridSize * 2)
@@ -948,6 +977,73 @@ void PluginEditor::drawMainAreas(juce::Graphics& g)
 
 void PluginEditor::timerCallback()
 {
+    // License enforcement: Periodically check license status
+    // TEMPORARILY DISABLED
+    // if (!processorRef.isLicenseValid())
+    // {
+    //     // Repaint to show overlay
+    //     repaint();
+    //     
+    //     // Check if we need to show/keep showing the license dialog
+    //     auto* licenseMgr = processorRef.getLicenseManager();
+    //     if (licenseMgr != nullptr)
+    //     {
+    //         auto licenseInfo = licenseMgr->getCurrentLicense();
+    //         // Re-open dialog if no license or invalid (check every 3 seconds)
+    //         // Only show if dialog isn't already visible
+    //         static int checkCounter = 30; // Start at 30 to avoid immediate check
+    //         static juce::Time lastDialogShowTime;
+    //         checkCounter++;
+    //         
+    //         if ((checkCounter % 30) == 0) // 30 * 100ms = 3 seconds
+    //         {
+    //             // Check if we should show dialog (no license or invalid)
+    //             if (licenseInfo.licenseKey.isEmpty() || 
+    //                 licenseInfo.status == GumroadLicenseStatus::Invalid ||
+    //                 licenseInfo.status == GumroadLicenseStatus::Refunded ||
+    //                 licenseInfo.status == GumroadLicenseStatus::Disputed)
+    //             {
+    //                 // Only show if we haven't shown one recently (avoid spam)
+    //                 auto timeSinceLastShow = juce::Time::getCurrentTime() - lastDialogShowTime;
+    //                 if (timeSinceLastShow.inMilliseconds() > 2000) // 2 second minimum between shows
+    //                 {
+    //                     // Check if dialog is already visible by checking for focused DialogWindow
+    //                     bool dialogVisible = false;
+    //                     if (auto* focused = juce::Component::getCurrentlyFocusedComponent())
+    //                     {
+    //                         if (focused->findParentComponentOfClass<juce::DialogWindow>() != nullptr)
+    //                             dialogVisible = true;
+    //                     }
+    //                     // Also check all top-level windows
+    //                     for (int i = 0; i < juce::TopLevelWindow::getNumTopLevelWindows(); ++i)
+    //                     {
+    //                         if (auto* window = juce::TopLevelWindow::getTopLevelWindow(i))
+    //                         {
+    //                             if (auto* dw = dynamic_cast<juce::DialogWindow*>(window))
+    //                             {
+    //                                 if (dw->isVisible())
+    //                                 {
+    //                                     dialogVisible = true;
+    //                                     break;
+    //                                 }
+    //                             }
+    //                         }
+    //                     }
+    //                     
+    //                     if (!dialogVisible)
+    //                     {
+    //                         lastDialogShowTime = juce::Time::getCurrentTime();
+    //                         showLicenseDialog();
+    //                     }
+    //                 }
+    //             }
+    //         }
+    //     }
+    //     
+    //     // Don't update UI if license is invalid
+    //     return;
+    // }
+    
     // Update knob values and UI based on parameter values
     for (int i = 0; i < 8; ++i)
     {
@@ -1563,6 +1659,13 @@ void PluginEditor::timerCallback()
 
 bool PluginEditor::keyPressed(const juce::KeyPress& key)
 {
+    // License dialog shortcut: Cmd+L (Mac) or Ctrl+L (Windows/Linux)
+    if (key.getModifiers().isCommandDown() && key.getKeyCode() == juce::KeyPress::createFromDescription("l").getKeyCode())
+    {
+        showLicenseDialog();
+        return true;
+    }
+    
     // If any step amount TextEditor has focus, let it handle the keypress
     if (autopanStepAmountLabel && autopanStepAmountLabel->hasKeyboardFocus(true)) {
         return false; // Let the TextEditor handle it
@@ -1588,6 +1691,52 @@ bool PluginEditor::keyPressed(const juce::KeyPress& key)
     
     // Otherwise, let the parent class handle it
     return false; // Don't consume the key, pass it up the chain
+}
+
+//==============================================================================
+// Gumroad License Management Implementation
+//==============================================================================
+
+void PluginEditor::checkLicenseOnStartup()
+{
+    auto* licenseMgr = processorRef.getLicenseManager();
+    if (licenseMgr == nullptr)
+        return;
+    
+    // Check if license is valid
+    if (!licenseMgr->isLicenseValid())
+    {
+        auto licenseInfo = licenseMgr->getCurrentLicense();
+        
+        // Show dialog if no license or invalid
+        if (licenseInfo.licenseKey.isEmpty() || 
+            licenseInfo.status == GumroadLicenseStatus::Invalid ||
+            licenseInfo.status == GumroadLicenseStatus::Refunded ||
+            licenseInfo.status == GumroadLicenseStatus::Disputed)
+        {
+            // Delay showing dialog slightly to allow UI to fully initialize
+            juce::Timer::callAfterDelay(500, [this]() {
+                showLicenseDialog();
+            });
+        }
+    }
+    else
+    {
+        auto licenseInfo = licenseMgr->getCurrentLicense();
+        DBG("[Gumroad] Valid license found on startup: " << licenseInfo.email);
+    }
+}
+
+void PluginEditor::showLicenseDialog()
+{
+    auto* licenseMgr = processorRef.getLicenseManager();
+    if (licenseMgr == nullptr)
+    {
+        DBG("[Gumroad] License manager not available - product ID may not be set");
+        return;
+    }
+    
+    GumroadLicenseDialog::showDialog(this, licenseMgr);
 }
 
 //==============================================================================
@@ -1811,7 +1960,7 @@ void LockButton::setAlpha(float alpha)
         
         // Draw "R" label in the center
         g.setColour(juce::Colours::white);
-        g.setFont(juce::Font(radius * 1.0f, juce::Font::bold));
+        g.setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", radius * 1.0f, juce::Font::bold));
         g.drawText("R", bounds, juce::Justification::centred);
     }
 
@@ -1941,7 +2090,7 @@ void CircularToggleButton::paintButton(juce::Graphics& g, bool over, bool down)
     
     // Draw text (black)
     g.setColour(juce::Colours::black);
-    g.setFont(juce::Font(14.0f, juce::Font::bold));
+    g.setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 14.0f, juce::Font::bold));
     g.drawText(getButtonText(), bounds, juce::Justification::centred);
 }
 
@@ -2008,7 +2157,7 @@ void PresetSelectorButton::paintButton(juce::Graphics& g, bool over, bool down)
     
     // Draw preset name after the save icon, moved right 30px
     g.setColour(juce::Colours::white);
-    g.setFont(juce::Font(13.0f, juce::Font::plain));
+    g.setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 13.0f, juce::Font::plain));
     auto textArea = juce::Rectangle<float>(bounds.getX() + 15 + 16 + 8 + 30, bounds.getY(), bounds.getWidth() - 80, bounds.getHeight());
     auto textBounds = g.getCurrentFont().getStringWidth(presetName);
     g.drawText(presetName, textArea, juce::Justification::centredLeft);
@@ -2120,7 +2269,7 @@ void StepButton::paintButton(juce::Graphics& g, bool over, bool down)
         
         // Draw step number
         g.setColour(juce::Colours::black.withAlpha(stepOpacity));
-        g.setFont(12.0f);
+        g.setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 12.0f, juce::Font::plain));
         g.drawText(juce::String(stepIndex + 1), bounds, juce::Justification::centred);
     }
     
@@ -2323,7 +2472,7 @@ void PluginEditor::setupKnobs()
         // Create label
         knobLabels[i] = std::make_unique<juce::Label>();
         knobLabels[i]->setText(knobNames[i], juce::dontSendNotification);
-        knobLabels[i]->setFont(juce::Font(12.0f, juce::Font::bold));
+        knobLabels[i]->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 12.0f, juce::Font::bold));
         knobLabels[i]->setColour(juce::Label::textColourId, juce::Colours::white);
         knobLabels[i]->setJustificationType(juce::Justification::centred);
         addAndMakeVisible(knobLabels[i].get());
@@ -2332,7 +2481,7 @@ void PluginEditor::setupKnobs()
         // Create value label
         valueLabels[i] = std::make_unique<juce::Label>();
         valueLabels[i]->setText("0", juce::dontSendNotification);
-        valueLabels[i]->setFont(juce::Font(10.0f, juce::Font::plain));
+        valueLabels[i]->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 10.0f, juce::Font::plain));
         valueLabels[i]->setColour(juce::Label::textColourId, juce::Colours::white);
         valueLabels[i]->setJustificationType(juce::Justification::centred);
         addAndMakeVisible(valueLabels[i].get());
@@ -2399,7 +2548,7 @@ void PluginEditor::setupMasterKnobs()
     // Create "MASTER" title in master area (top-left corner, 10px right)
     masterTitle = std::make_unique<juce::Label>();
     masterTitle->setText("MASTER", juce::dontSendNotification);
-    masterTitle->setFont(juce::Font(23.5f, juce::Font::bold)); // 15% smaller: 27.648 * 0.85 = 23.5
+    masterTitle->setFont(FontManager::getInstance().getFont("Akira Expanded", 18.5796875f, juce::Font::bold).withExtraKerningFactor(0.09f)); // 10% bigger: 16.890625 * 1.1 = 18.5796875, with 10% less letter spacing: 0.1 * 0.9 = 0.09
     masterTitle->setColour(juce::Label::textColourId, juce::Colours::white);
     masterTitle->setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(masterTitle.get());
@@ -3203,7 +3352,7 @@ void PluginEditor::setupMasterKnobs()
             // Create master label (title above knob)
             masterLabels[i] = std::make_unique<juce::Label>();
             masterLabels[i]->setText(masterKnobNames[i], juce::dontSendNotification);
-            masterLabels[i]->setFont(juce::Font(12.0f, juce::Font::bold));
+            masterLabels[i]->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 15.6f, juce::Font::bold)); // 30% larger: 12.0f * 1.3 = 15.6f
             masterLabels[i]->setColour(juce::Label::textColourId, juce::Colours::white);
             masterLabels[i]->setJustificationType(juce::Justification::centred);
             addAndMakeVisible(masterLabels[i].get());
@@ -3217,7 +3366,7 @@ void PluginEditor::setupMasterKnobs()
             } else { // Input and Output knobs
                 masterValueLabels[i]->setText("0.0 dB", juce::dontSendNotification);
             }
-            masterValueLabels[i]->setFont(juce::Font(10.0f, juce::Font::plain));
+            masterValueLabels[i]->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 10.0f, juce::Font::plain));
             masterValueLabels[i]->setColour(juce::Label::textColourId, juce::Colours::white);
             masterValueLabels[i]->setJustificationType(juce::Justification::centred);
             addAndMakeVisible(masterValueLabels[i].get());
@@ -3428,7 +3577,7 @@ void PluginEditor::setupMasterKnobs()
             // Create macro label (title above knob)
             macroLabels[i] = std::make_unique<juce::Label>();
             macroLabels[i]->setText(macroKnobNames[i], juce::dontSendNotification);
-            macroLabels[i]->setFont(juce::Font(12.0f, juce::Font::bold));
+            macroLabels[i]->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 12.0f, juce::Font::bold));
             macroLabels[i]->setColour(juce::Label::textColourId, juce::Colours::white);
             macroLabels[i]->setJustificationType(juce::Justification::centred);
             addAndMakeVisible(macroLabels[i].get());
@@ -3471,7 +3620,7 @@ void PluginEditor::setupMasterKnobs()
         // Create "EFFECT" title
         effectsTitle = std::make_unique<juce::Label>();
         effectsTitle->setText("EFFECT", juce::dontSendNotification);
-        effectsTitle->setFont(juce::Font(27.648f, juce::Font::bold)); // 20% bigger: 23.04f * 1.2 = 27.648f
+        effectsTitle->setFont(FontManager::getInstance().getFont("Akira Expanded", 18.6624f, juce::Font::bold).withExtraKerningFactor(0.09f)); // 10% smaller: 20.736f * 0.9 = 18.6624f, with 10% less letter spacing: 0.1 * 0.9 = 0.09
         effectsTitle->setColour(juce::Label::textColourId, juce::Colours::white);
         effectsTitle->setJustificationType(juce::Justification::centredLeft);
         addAndMakeVisible(effectsTitle.get());
@@ -3511,7 +3660,7 @@ void PluginEditor::setupMasterKnobs()
             } else {
                 g.drawEllipse(centre.x - radius, centre.y - radius, radius*2, radius*2, 2.0f);
             }
-            g.setFont(juce::Font(10.0f, juce::Font::bold));
+            g.setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 10.0f, juce::Font::bold));
             g.drawText("S", r, juce::Justification::centred);
         }
     };
@@ -3828,7 +3977,7 @@ void PluginEditor::setupAllStepsToggle()
     // Create "All Steps" label
     allStepsLabel = std::make_unique<juce::Label>();
     allStepsLabel->setText("All Steps", juce::dontSendNotification);
-    allStepsLabel->setFont(juce::Font(14.4f, juce::Font::bold)); // 12.0f * 1.2 = 14.4f (20% bigger)
+    allStepsLabel->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 14.4f, juce::Font::bold)); // 12.0f * 1.2 = 14.4f (20% bigger)
     allStepsLabel->setColour(juce::Label::textColourId, juce::Colours::white);
     allStepsLabel->setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(allStepsLabel.get());
@@ -3853,7 +4002,7 @@ void PluginEditor::setupSequencerArea()
     // Create STEP title (top left, moved down 10px total and 20% smaller)
     stepTitle = std::make_unique<juce::Label>();
     stepTitle->setText("STEP", juce::dontSendNotification);
-    stepTitle->setFont(juce::Font(22.118f, juce::Font::bold)); // 20% smaller: 27.648f * 0.8 = 22.118f
+    stepTitle->setFont(FontManager::getInstance().getFont("Akira Expanded", 13.436685f, juce::Font::bold).withExtraKerningFactor(0.09f)); // Adjusted size with 10% less letter spacing: 0.1 * 0.9 = 0.09
     stepTitle->setColour(juce::Label::textColourId, juce::Colours::white);
     stepTitle->setColour(juce::Label::backgroundColourId, juce::Colours::transparentBlack);
     stepTitle->setJustificationType(juce::Justification::centredLeft);
@@ -4113,7 +4262,7 @@ void PluginEditor::setupSequencerArea()
     // Create step amount label with white border (top right)
     stepAmountLabel = std::make_unique<juce::Label>();
     stepAmountLabel->setText("16", juce::dontSendNotification);
-    stepAmountLabel->setFont(juce::Font(16.0f, juce::Font::bold));
+    stepAmountLabel->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 16.0f, juce::Font::bold));
     stepAmountLabel->setColour(juce::Label::textColourId, juce::Colours::white);
     stepAmountLabel->setColour(juce::Label::backgroundColourId, juce::Colours::transparentBlack);
     stepAmountLabel->setColour(juce::Label::outlineColourId, juce::Colours::white);
@@ -5325,12 +5474,56 @@ void PluginEditor::showPage(FxPageID id)
             break;
         case EffectID::Saturate:
             DBG("[ROUTER] Showing Saturate UI for slot " << slotIndex);
+            
+            // Ensure type is set to Clean (0) before showing to prevent pop
+            {
+                auto* typeParam = processorRef.getAPVTS().getParameter("satType");
+                if (typeParam) {
+                    typeParam->setValueNotifyingHost(0.0f); // 0/7 = Clean
+                }
+                if (saturateKnobs[0]) {
+                    saturateKnobs[0]->setValue(0.0f, juce::dontSendNotification);
+                }
+            }
+            
             setVisibleVec(saturateGroup, true);
+            
+            // Explicitly hide Type knob and its components (they shouldn't be in group, but hide just in case)
+            if (saturateKnobs[0]) {
+                saturateKnobs[0]->setVisible(false);
+                saturateKnobs[0]->setEnabled(false);
+                saturateKnobs[0]->setAlpha(0.0f); // Make completely invisible
+            }
+            if (saturateKnobLabels[0]) {
+                saturateKnobLabels[0]->setVisible(false);
+                saturateKnobLabels[0]->setAlpha(0.0f);
+            }
+            if (saturateValueLabels[0]) {
+                saturateValueLabels[0]->setVisible(false);
+                saturateValueLabels[0]->setAlpha(0.0f);
+            }
+            if (saturateIndicatorBars[0]) {
+                saturateIndicatorBars[0]->setVisible(false);
+                saturateIndicatorBars[0]->setAlpha(0.0f);
+            }
+            if (saturateLockButtons[0]) {
+                saturateLockButtons[0]->setVisible(false);
+                saturateLockButtons[0]->setAlpha(0.0f);
+            }
             
             // Restore UI state from APVTS parameters
             {
                 auto* fxEnabledParam = processorRef.getAPVTS().getRawParameterValue("saturateEnabled");
-                saturateFxAreaEnabled = fxEnabledParam ? (fxEnabledParam->load() > 0.5f) : true; // Default ON
+                // If parameter doesn't exist or is false, set it to true (default ON)
+                if (!fxEnabledParam || fxEnabledParam->load() <= 0.5f) {
+                    auto* param = processorRef.getAPVTS().getParameter("saturateEnabled");
+                    if (param) {
+                        param->setValueNotifyingHost(1.0f); // Set to true
+                    }
+                    saturateFxAreaEnabled = true;
+                } else {
+                    saturateFxAreaEnabled = fxEnabledParam->load() > 0.5f;
+                }
                 
                 if (saturateFxPowerButton) {
                     saturateFxPowerButton->setToggleState(saturateFxAreaEnabled, juce::dontSendNotification);
@@ -5346,8 +5539,11 @@ void PluginEditor::showPage(FxPageID id)
                 updateSaturateStepAreaVisibility();
             }
             
-            // Trigger initial value label updates (8 knobs)
-            for (int i = 0; i < 8; ++i) {
+            // Ensure type is Clean (0) and update labels/layout immediately
+            updateSaturateKnobLabels(0); // This will hide Level knob and reposition Mix
+            
+            // Trigger initial value label updates (skip Type knob index 0)
+            for (int i = 1; i < 7; ++i) {
                 if (saturateKnobs[i]) {
                     saturateKnobs[i]->onValueChange();
                 }
@@ -5596,7 +5792,7 @@ void PluginEditor::setupAutoPanKnobs()
         // Create knob label (EXACT same positioning as delay page)
         autopanKnobLabels[i] = std::make_unique<juce::Label>();
         autopanKnobLabels[i]->setText(autopanKnobNames[i], juce::dontSendNotification);
-        autopanKnobLabels[i]->setFont(juce::Font(12.0f, juce::Font::bold));
+        autopanKnobLabels[i]->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 12.0f, juce::Font::bold));
         autopanKnobLabels[i]->setColour(juce::Label::textColourId, juce::Colours::white);
         autopanKnobLabels[i]->setJustificationType(juce::Justification::centred);
         addAndMakeVisible(autopanKnobLabels[i].get());
@@ -5606,7 +5802,7 @@ void PluginEditor::setupAutoPanKnobs()
         // Create value label (EXACT same positioning as delay page)
         autopanValueLabels[i] = std::make_unique<juce::Label>();
         autopanValueLabels[i]->setText("0", juce::dontSendNotification);
-        autopanValueLabels[i]->setFont(juce::Font(10.0f, juce::Font::plain));
+        autopanValueLabels[i]->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 10.0f, juce::Font::plain));
         autopanValueLabels[i]->setColour(juce::Label::textColourId, juce::Colours::white);
         autopanValueLabels[i]->setJustificationType(juce::Justification::centred);
         addAndMakeVisible(autopanValueLabels[i].get());
@@ -5658,7 +5854,7 @@ void PluginEditor::setupAutoPanEffectsArea()
     // Create "EFFECT" title (EXACT same as delay page)
     autopanEffectsTitle = std::make_unique<juce::Label>();
     autopanEffectsTitle->setText("EFFECT", juce::dontSendNotification);
-    autopanEffectsTitle->setFont(juce::Font(27.648f, juce::Font::bold)); // EXACT same as delay page
+    autopanEffectsTitle->setFont(FontManager::getInstance().getFont("Akira Expanded", 18.6624f, juce::Font::bold).withExtraKerningFactor(0.1f)); // 10% smaller: 20.736f * 0.9 = 18.6624f, with letter spacing
     autopanEffectsTitle->setColour(juce::Label::textColourId, juce::Colours::white);
     autopanEffectsTitle->setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(autopanEffectsTitle.get());
@@ -5699,7 +5895,7 @@ void PluginEditor::setupAutoPanEffectsArea()
             } else {
                 g.drawEllipse(centre.x - radius, centre.y - radius, radius*2, radius*2, 2.0f);
             }
-            g.setFont(juce::Font(10.0f, juce::Font::bold));
+            g.setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 10.0f, juce::Font::bold));
             g.drawText("S", r, juce::Justification::centred);
         }
     };
@@ -5800,7 +5996,7 @@ void PluginEditor::setupAutoPanSequencerArea()
     // Create step title
     autopanStepTitle = std::make_unique<juce::Label>();
     autopanStepTitle->setText("STEP", juce::dontSendNotification);
-    autopanStepTitle->setFont(juce::Font(22.118f, juce::Font::bold)); // 20% smaller: 27.648f * 0.8 = 22.118f
+    autopanStepTitle->setFont(FontManager::getInstance().getFont("Akira Expanded", 13.436685f, juce::Font::bold).withExtraKerningFactor(0.09f)); // Adjusted size with 10% less letter spacing: 0.1 * 0.9 = 0.09
     autopanStepTitle->setColour(juce::Label::textColourId, juce::Colours::white);
     autopanStepTitle->setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(autopanStepTitle.get());
@@ -5849,7 +6045,7 @@ void PluginEditor::setupAutoPanSequencerArea()
     };
     autopanStepAmountLabel = std::make_unique<DebugTextEditor>();
     autopanStepAmountLabel->setText("16");
-    autopanStepAmountLabel->setFont(juce::Font(16.0f, juce::Font::bold));
+    autopanStepAmountLabel->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 16.0f, juce::Font::bold));
     autopanStepAmountLabel->setColour(juce::TextEditor::textColourId, juce::Colours::white);
     autopanStepAmountLabel->setColour(juce::TextEditor::backgroundColourId, juce::Colours::transparentBlack);
     autopanStepAmountLabel->setColour(juce::TextEditor::outlineColourId, juce::Colours::white);
@@ -6085,7 +6281,7 @@ void PluginEditor::setupAutoPanAllStepsToggle()
     // Create "All Steps" label
     autopanAllStepsLabel = std::make_unique<juce::Label>();
     autopanAllStepsLabel->setText("All Steps", juce::dontSendNotification);
-    autopanAllStepsLabel->setFont(juce::Font(14.4f, juce::Font::bold)); // 12.0f * 1.2 = 14.4f (20% bigger)
+    autopanAllStepsLabel->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 14.4f, juce::Font::bold)); // 12.0f * 1.2 = 14.4f (20% bigger)
     autopanAllStepsLabel->setColour(juce::Label::textColourId, juce::Colours::white);
     autopanAllStepsLabel->setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(autopanAllStepsLabel.get());
@@ -6132,7 +6328,7 @@ void PluginEditor::setupSpaceDelayAllStepsToggle()
     // Create "All Steps" label
     spaceDelayAllStepsLabel = std::make_unique<juce::Label>();
     spaceDelayAllStepsLabel->setText("All Steps", juce::dontSendNotification);
-    spaceDelayAllStepsLabel->setFont(juce::Font(14.4f, juce::Font::bold)); // 12.0f * 1.2 = 14.4f (20% bigger)
+    spaceDelayAllStepsLabel->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 14.4f, juce::Font::bold)); // 12.0f * 1.2 = 14.4f (20% bigger)
     spaceDelayAllStepsLabel->setColour(juce::Label::textColourId, juce::Colours::white);
     spaceDelayAllStepsLabel->setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(spaceDelayAllStepsLabel.get());
@@ -6271,7 +6467,7 @@ void PluginEditor::setupDirtKnobs()
         // Create knob label (EXACT same positioning as AutoPan page)
         dirtKnobLabels[i] = std::make_unique<juce::Label>();
         dirtKnobLabels[i]->setText(dirtKnobNames[i], juce::dontSendNotification);
-        dirtKnobLabels[i]->setFont(juce::Font(12.0f, juce::Font::bold));
+        dirtKnobLabels[i]->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 12.0f, juce::Font::bold));
         dirtKnobLabels[i]->setColour(juce::Label::textColourId, juce::Colours::white);
         dirtKnobLabels[i]->setJustificationType(juce::Justification::centred);
         addAndMakeVisible(dirtKnobLabels[i].get());
@@ -6281,7 +6477,7 @@ void PluginEditor::setupDirtKnobs()
         // Create value label (EXACT same positioning as AutoPan page)
         dirtValueLabels[i] = std::make_unique<juce::Label>();
         dirtValueLabels[i]->setText("0", juce::dontSendNotification);
-        dirtValueLabels[i]->setFont(juce::Font(10.0f, juce::Font::plain));
+        dirtValueLabels[i]->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 10.0f, juce::Font::plain));
         dirtValueLabels[i]->setColour(juce::Label::textColourId, juce::Colours::white);
         dirtValueLabels[i]->setJustificationType(juce::Justification::centred);
         addAndMakeVisible(dirtValueLabels[i].get());
@@ -6330,7 +6526,7 @@ void PluginEditor::setupDirtEffectsArea()
     // Create "EFFECT" title
     dirtEffectsTitle = std::make_unique<juce::Label>();
     dirtEffectsTitle->setText("EFFECT", juce::dontSendNotification);
-    dirtEffectsTitle->setFont(juce::Font(27.648f, juce::Font::bold));
+    dirtEffectsTitle->setFont(FontManager::getInstance().getFont("Akira Expanded", 18.6624f, juce::Font::bold).withExtraKerningFactor(0.1f)); // 10% smaller: 20.736f * 0.9 = 18.6624f, with letter spacing
     dirtEffectsTitle->setColour(juce::Label::textColourId, juce::Colours::white);
     dirtEffectsTitle->setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(dirtEffectsTitle.get());
@@ -6397,7 +6593,7 @@ void PluginEditor::setupDirtSequencerArea()
     // Create step title (EXACT same as AutoPan)
     dirtStepTitle = std::make_unique<juce::Label>();
     dirtStepTitle->setText("STEP", juce::dontSendNotification);
-    dirtStepTitle->setFont(juce::Font(22.118f, juce::Font::bold)); // 20% smaller: 27.648f * 0.8 = 22.118f
+    dirtStepTitle->setFont(FontManager::getInstance().getFont("Akira Expanded", 13.436685f, juce::Font::bold).withExtraKerningFactor(0.09f)); // Adjusted size with 10% less letter spacing: 0.1 * 0.9 = 0.09
     dirtStepTitle->setColour(juce::Label::textColourId, juce::Colours::white);
     dirtStepTitle->setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(dirtStepTitle.get());
@@ -6445,7 +6641,7 @@ void PluginEditor::setupDirtSequencerArea()
     };
     dirtStepAmountLabel = std::make_unique<DirtDebugTextEditor>();
     dirtStepAmountLabel->setText("16");
-    dirtStepAmountLabel->setFont(juce::Font(16.0f, juce::Font::bold));
+    dirtStepAmountLabel->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 16.0f, juce::Font::bold));
     dirtStepAmountLabel->setColour(juce::TextEditor::textColourId, juce::Colours::white);
     dirtStepAmountLabel->setColour(juce::TextEditor::backgroundColourId, juce::Colours::transparentBlack);
     dirtStepAmountLabel->setColour(juce::TextEditor::outlineColourId, juce::Colours::white);
@@ -6649,7 +6845,7 @@ void PluginEditor::setupDirtAllStepsToggle()
     
     dirtAllStepsLabel = std::make_unique<juce::Label>();
     dirtAllStepsLabel->setText("All Steps", juce::dontSendNotification);
-    dirtAllStepsLabel->setFont(juce::Font(14.4f, juce::Font::bold));
+    dirtAllStepsLabel->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 14.4f, juce::Font::bold));
     dirtAllStepsLabel->setColour(juce::Label::textColourId, juce::Colours::white);
     dirtAllStepsLabel->setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(dirtAllStepsLabel.get());
@@ -7078,7 +7274,7 @@ void PluginEditor::setupChorusKnobs()
         // Create label
         chorusKnobLabels[i] = std::make_unique<juce::Label>();
         chorusKnobLabels[i]->setText(chorusKnobNames[i], juce::dontSendNotification);
-        chorusKnobLabels[i]->setFont(juce::Font(12.0f, juce::Font::bold));
+        chorusKnobLabels[i]->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 12.0f, juce::Font::bold));
         chorusKnobLabels[i]->setColour(juce::Label::textColourId, juce::Colours::white);
         chorusKnobLabels[i]->setJustificationType(juce::Justification::centred);
         addAndMakeVisible(chorusKnobLabels[i].get());
@@ -7088,7 +7284,7 @@ void PluginEditor::setupChorusKnobs()
         // Create value label
         chorusValueLabels[i] = std::make_unique<juce::Label>();
         chorusValueLabels[i]->setText("0", juce::dontSendNotification);
-        chorusValueLabels[i]->setFont(juce::Font(10.0f, juce::Font::plain));
+        chorusValueLabels[i]->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 10.0f, juce::Font::plain));
         chorusValueLabels[i]->setColour(juce::Label::textColourId, juce::Colours::white);
         chorusValueLabels[i]->setJustificationType(juce::Justification::centred);
         addAndMakeVisible(chorusValueLabels[i].get());
@@ -7149,7 +7345,7 @@ void PluginEditor::setupChorusEffectsArea()
     // Create "EFFECT" title
     chorusEffectsTitle = std::make_unique<juce::Label>();
     chorusEffectsTitle->setText("EFFECT", juce::dontSendNotification);
-    chorusEffectsTitle->setFont(juce::Font(27.648f, juce::Font::bold));
+    chorusEffectsTitle->setFont(FontManager::getInstance().getFont("Akira Expanded", 18.6624f, juce::Font::bold).withExtraKerningFactor(0.1f)); // 10% smaller: 20.736f * 0.9 = 18.6624f, with letter spacing
     chorusEffectsTitle->setColour(juce::Label::textColourId, juce::Colours::white);
     chorusEffectsTitle->setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(chorusEffectsTitle.get());
@@ -7215,7 +7411,7 @@ void PluginEditor::setupChorusSequencerArea()
     // Create step title
     chorusStepTitle = std::make_unique<juce::Label>();
     chorusStepTitle->setText("STEP", juce::dontSendNotification);
-    chorusStepTitle->setFont(juce::Font(22.118f, juce::Font::bold));
+    chorusStepTitle->setFont(FontManager::getInstance().getFont("Akira Expanded", 13.436685f, juce::Font::bold).withExtraKerningFactor(0.09f)); // Adjusted size with 10% less letter spacing: 0.1 * 0.9 = 0.09
     chorusStepTitle->setColour(juce::Label::textColourId, juce::Colours::white);
     chorusStepTitle->setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(chorusStepTitle.get());
@@ -7261,7 +7457,7 @@ void PluginEditor::setupChorusSequencerArea()
     };
     chorusStepAmountLabel = std::make_unique<ChorusDebugTextEditor>();
     chorusStepAmountLabel->setText("16");
-    chorusStepAmountLabel->setFont(juce::Font(16.0f, juce::Font::bold));
+    chorusStepAmountLabel->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 16.0f, juce::Font::bold));
     chorusStepAmountLabel->setColour(juce::TextEditor::textColourId, juce::Colours::white);
     chorusStepAmountLabel->setColour(juce::TextEditor::backgroundColourId, juce::Colours::transparentBlack);
     chorusStepAmountLabel->setColour(juce::TextEditor::outlineColourId, juce::Colours::white);
@@ -7462,7 +7658,7 @@ void PluginEditor::setupChorusAllStepsToggle()
     
     chorusAllStepsLabel = std::make_unique<juce::Label>();
     chorusAllStepsLabel->setText("All Steps", juce::dontSendNotification);
-    chorusAllStepsLabel->setFont(juce::Font(14.4f, juce::Font::bold));
+    chorusAllStepsLabel->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 14.4f, juce::Font::bold));
     chorusAllStepsLabel->setColour(juce::Label::textColourId, juce::Colours::white);
     chorusAllStepsLabel->setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(chorusAllStepsLabel.get());
@@ -7725,7 +7921,7 @@ void PluginEditor::setupReverbKnobs()
         // Create label
         reverbKnobLabels[i] = std::make_unique<juce::Label>();
         reverbKnobLabels[i]->setText(reverbKnobNames[i], juce::dontSendNotification);
-        reverbKnobLabels[i]->setFont(juce::Font(12.0f, juce::Font::bold));
+        reverbKnobLabels[i]->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 12.0f, juce::Font::bold));
         reverbKnobLabels[i]->setColour(juce::Label::textColourId, juce::Colours::white);
         reverbKnobLabels[i]->setJustificationType(juce::Justification::centred);
         addAndMakeVisible(reverbKnobLabels[i].get());
@@ -7735,7 +7931,7 @@ void PluginEditor::setupReverbKnobs()
         // Create value label
         reverbValueLabels[i] = std::make_unique<juce::Label>();
         reverbValueLabels[i]->setText("0", juce::dontSendNotification);
-        reverbValueLabels[i]->setFont(juce::Font(10.0f, juce::Font::plain));
+        reverbValueLabels[i]->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 10.0f, juce::Font::plain));
         reverbValueLabels[i]->setColour(juce::Label::textColourId, juce::Colours::white);
         reverbValueLabels[i]->setJustificationType(juce::Justification::centred);
         addAndMakeVisible(reverbValueLabels[i].get());
@@ -7796,7 +7992,7 @@ void PluginEditor::setupReverbEffectsArea()
     // Create "EFFECT" title
     reverbEffectsTitle = std::make_unique<juce::Label>();
     reverbEffectsTitle->setText("EFFECT", juce::dontSendNotification);
-    reverbEffectsTitle->setFont(juce::Font(27.648f, juce::Font::bold));
+    reverbEffectsTitle->setFont(FontManager::getInstance().getFont("Akira Expanded", 18.6624f, juce::Font::bold).withExtraKerningFactor(0.1f)); // 10% smaller: 20.736f * 0.9 = 18.6624f, with letter spacing
     reverbEffectsTitle->setColour(juce::Label::textColourId, juce::Colours::white);
     reverbEffectsTitle->setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(reverbEffectsTitle.get());
@@ -7870,7 +8066,7 @@ void PluginEditor::setupReverbSequencerArea()
     // Create step title
     reverbStepTitle = std::make_unique<juce::Label>();
     reverbStepTitle->setText("STEP", juce::dontSendNotification);
-    reverbStepTitle->setFont(juce::Font(22.118f, juce::Font::bold));
+    reverbStepTitle->setFont(FontManager::getInstance().getFont("Akira Expanded", 13.436685f, juce::Font::bold).withExtraKerningFactor(0.09f)); // Adjusted size with 10% less letter spacing: 0.1 * 0.9 = 0.09
     reverbStepTitle->setColour(juce::Label::textColourId, juce::Colours::white);
     reverbStepTitle->setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(reverbStepTitle.get());
@@ -7908,7 +8104,7 @@ void PluginEditor::setupReverbSequencerArea()
     // Step amount label (TextEditor)
     reverbStepAmountLabel = std::make_unique<juce::TextEditor>();
     reverbStepAmountLabel->setText("16");
-    reverbStepAmountLabel->setFont(juce::Font(16.0f, juce::Font::bold));
+    reverbStepAmountLabel->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 16.0f, juce::Font::bold));
     reverbStepAmountLabel->setColour(juce::TextEditor::textColourId, juce::Colours::white);
     reverbStepAmountLabel->setColour(juce::TextEditor::backgroundColourId, juce::Colours::transparentBlack);
     reverbStepAmountLabel->setColour(juce::TextEditor::outlineColourId, juce::Colours::white);
@@ -8120,7 +8316,7 @@ void PluginEditor::setupReverbAllStepsToggle()
     // Label - match Dirt's exact positioning
     reverbAllStepsLabel = std::make_unique<juce::Label>();
     reverbAllStepsLabel->setText("All Steps", juce::dontSendNotification);
-    reverbAllStepsLabel->setFont(juce::Font(14.4f, juce::Font::bold));
+    reverbAllStepsLabel->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 14.4f, juce::Font::bold));
     reverbAllStepsLabel->setColour(juce::Label::textColourId, juce::Colours::white);
     reverbAllStepsLabel->setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(reverbAllStepsLabel.get());
@@ -8669,12 +8865,54 @@ void PluginEditor::onEffectSelectorChanged(int slotIndex)
         case EffectID::Saturate:
         {
             DBG("[ROUTER] Showing Saturate group (" << saturateGroup.size() << " components)");
+            
+            // Ensure type is set to Clean (0) before showing to prevent pop
+            auto* typeParam = processorRef.getAPVTS().getParameter("satType");
+            if (typeParam) {
+                typeParam->setValueNotifyingHost(0.0f); // 0/7 = Clean
+            }
+            if (saturateKnobs[0]) {
+                saturateKnobs[0]->setValue(0.0f, juce::dontSendNotification);
+            }
+            
             setVisibleVec(saturateGroup, true);
+            
+            // Explicitly hide Type knob and its components (they shouldn't be in group, but hide just in case)
+            if (saturateKnobs[0]) {
+                saturateKnobs[0]->setVisible(false);
+                saturateKnobs[0]->setEnabled(false);
+                saturateKnobs[0]->setAlpha(0.0f); // Make completely invisible
+            }
+            if (saturateKnobLabels[0]) {
+                saturateKnobLabels[0]->setVisible(false);
+                saturateKnobLabels[0]->setAlpha(0.0f);
+            }
+            if (saturateValueLabels[0]) {
+                saturateValueLabels[0]->setVisible(false);
+                saturateValueLabels[0]->setAlpha(0.0f);
+            }
+            if (saturateIndicatorBars[0]) {
+                saturateIndicatorBars[0]->setVisible(false);
+                saturateIndicatorBars[0]->setAlpha(0.0f);
+            }
+            if (saturateLockButtons[0]) {
+                saturateLockButtons[0]->setVisible(false);
+                saturateLockButtons[0]->setAlpha(0.0f);
+            }
             
             // Restore UI state from APVTS parameters
             {
                 auto* fxEnabledParam = processorRef.getAPVTS().getRawParameterValue("saturateEnabled");
-                saturateFxAreaEnabled = fxEnabledParam ? (fxEnabledParam->load() > 0.5f) : true; // Default ON
+                // If parameter doesn't exist or is false, set it to true (default ON)
+                if (!fxEnabledParam || fxEnabledParam->load() <= 0.5f) {
+                    auto* param = processorRef.getAPVTS().getParameter("saturateEnabled");
+                    if (param) {
+                        param->setValueNotifyingHost(1.0f); // Set to true
+                    }
+                    saturateFxAreaEnabled = true;
+                } else {
+                    saturateFxAreaEnabled = fxEnabledParam->load() > 0.5f;
+                }
                 
                 if (saturateFxPowerButton) {
                     saturateFxPowerButton->setToggleState(saturateFxAreaEnabled, juce::dontSendNotification);
@@ -8690,8 +8928,11 @@ void PluginEditor::onEffectSelectorChanged(int slotIndex)
                 updateSaturateStepAreaVisibility();
             }
             
-            // Trigger initial value label updates (8 knobs)
-            for (int i = 0; i < 8; ++i) {
+            // Ensure type is Clean (0) and update labels/layout immediately
+            updateSaturateKnobLabels(0); // This will hide Level knob and reposition Mix
+            
+            // Trigger initial value label updates (skip Type knob index 0)
+            for (int i = 1; i < 7; ++i) {
                 if (saturateKnobs[i]) {
                     saturateKnobs[i]->onValueChange();
                 }
@@ -8972,7 +9213,7 @@ void PluginEditor::setupGranularKnobs()
         // Create label
         granularKnobLabels[i] = std::make_unique<juce::Label>();
         granularKnobLabels[i]->setText(granularKnobNames[i], juce::dontSendNotification);
-        granularKnobLabels[i]->setFont(juce::Font(12.0f, juce::Font::bold));
+        granularKnobLabels[i]->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 12.0f, juce::Font::bold));
         granularKnobLabels[i]->setColour(juce::Label::textColourId, juce::Colours::white);
         granularKnobLabels[i]->setJustificationType(juce::Justification::centred);
         addAndMakeVisible(granularKnobLabels[i].get());
@@ -8982,7 +9223,7 @@ void PluginEditor::setupGranularKnobs()
         // Create value label
         granularValueLabels[i] = std::make_unique<juce::Label>();
         granularValueLabels[i]->setText("0", juce::dontSendNotification);
-        granularValueLabels[i]->setFont(juce::Font(10.0f, juce::Font::plain));
+        granularValueLabels[i]->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 10.0f, juce::Font::plain));
         granularValueLabels[i]->setColour(juce::Label::textColourId, juce::Colours::white);
         granularValueLabels[i]->setJustificationType(juce::Justification::centred);
         addAndMakeVisible(granularValueLabels[i].get());
@@ -9036,7 +9277,7 @@ void PluginEditor::setupGranularKnobs()
             } else {
                 g.drawEllipse(centre.x - radius, centre.y - radius, radius*2, radius*2, 2.0f);
             }
-            g.setFont(juce::Font(10.0f, juce::Font::bold));
+            g.setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 10.0f, juce::Font::bold));
             g.drawText("S", r, juce::Justification::centred);
         }
     };
@@ -9160,7 +9401,7 @@ void PluginEditor::setupGranularEffectsArea()
     // Create "EFFECT" title
     granularEffectsTitle = std::make_unique<juce::Label>();
     granularEffectsTitle->setText("EFFECT", juce::dontSendNotification);
-    granularEffectsTitle->setFont(juce::Font(27.648f, juce::Font::bold));
+    granularEffectsTitle->setFont(FontManager::getInstance().getFont("Akira Expanded", 18.6624f, juce::Font::bold).withExtraKerningFactor(0.1f)); // 10% smaller: 20.736f * 0.9 = 18.6624f, with letter spacing
     granularEffectsTitle->setColour(juce::Label::textColourId, juce::Colours::white);
     granularEffectsTitle->setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(granularEffectsTitle.get());
@@ -9292,7 +9533,7 @@ void PluginEditor::setupGranularSequencerArea()
     // Create step title (EXACT same as Reverb)
     granularStepTitle = std::make_unique<juce::Label>();
     granularStepTitle->setText("STEP", juce::dontSendNotification);
-    granularStepTitle->setFont(juce::Font(22.118f, juce::Font::bold));
+    granularStepTitle->setFont(FontManager::getInstance().getFont("Akira Expanded", 13.436685f, juce::Font::bold).withExtraKerningFactor(0.09f)); // Adjusted size with 10% less letter spacing: 0.1 * 0.9 = 0.09
     granularStepTitle->setColour(juce::Label::textColourId, juce::Colours::white);
     granularStepTitle->setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(granularStepTitle.get());
@@ -9330,7 +9571,7 @@ void PluginEditor::setupGranularSequencerArea()
     // Step amount label (TextEditor)
     granularStepAmountLabel = std::make_unique<juce::TextEditor>();
     granularStepAmountLabel->setText("16");
-    granularStepAmountLabel->setFont(juce::Font(16.0f, juce::Font::bold));
+    granularStepAmountLabel->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 16.0f, juce::Font::bold));
     granularStepAmountLabel->setColour(juce::TextEditor::textColourId, juce::Colours::white);
     granularStepAmountLabel->setColour(juce::TextEditor::backgroundColourId, juce::Colours::transparentBlack);
     granularStepAmountLabel->setColour(juce::TextEditor::outlineColourId, juce::Colours::white);
@@ -9584,7 +9825,7 @@ void PluginEditor::setupGranularAllStepsToggle()
     // Label - match Reverb's exact positioning
     granularAllStepsLabel = std::make_unique<juce::Label>();
     granularAllStepsLabel->setText("All Steps", juce::dontSendNotification);
-    granularAllStepsLabel->setFont(juce::Font(14.4f, juce::Font::bold));
+    granularAllStepsLabel->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 14.4f, juce::Font::bold));
     granularAllStepsLabel->setColour(juce::Label::textColourId, juce::Colours::white);
     granularAllStepsLabel->setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(granularAllStepsLabel.get());
@@ -9809,7 +10050,7 @@ void PluginEditor::setupSlicerKnobs()
         // Create label
         slicerKnobLabels[i] = std::make_unique<juce::Label>();
         slicerKnobLabels[i]->setText(slicerKnobNames[i], juce::dontSendNotification);
-        slicerKnobLabels[i]->setFont(juce::Font(12.0f, juce::Font::bold));
+        slicerKnobLabels[i]->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 12.0f, juce::Font::bold));
         slicerKnobLabels[i]->setColour(juce::Label::textColourId, juce::Colours::white);
         slicerKnobLabels[i]->setJustificationType(juce::Justification::centred);
         addAndMakeVisible(slicerKnobLabels[i].get());
@@ -9819,7 +10060,7 @@ void PluginEditor::setupSlicerKnobs()
         // Create value label
         slicerValueLabels[i] = std::make_unique<juce::Label>();
         slicerValueLabels[i]->setText("0", juce::dontSendNotification);
-        slicerValueLabels[i]->setFont(juce::Font(10.0f, juce::Font::plain));
+        slicerValueLabels[i]->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 10.0f, juce::Font::plain));
         slicerValueLabels[i]->setColour(juce::Label::textColourId, juce::Colours::white);
         slicerValueLabels[i]->setJustificationType(juce::Justification::centred);
         addAndMakeVisible(slicerValueLabels[i].get());
@@ -9895,7 +10136,7 @@ void PluginEditor::setupSlicerEffectsArea()
     // Create "EFFECT" title label (match other pages)
     slicerEffectsTitle = std::make_unique<juce::Label>();
     slicerEffectsTitle->setText("EFFECT", juce::dontSendNotification);
-    slicerEffectsTitle->setFont(juce::Font(27.648f, juce::Font::bold));
+    slicerEffectsTitle->setFont(FontManager::getInstance().getFont("Akira Expanded", 18.6624f, juce::Font::bold).withExtraKerningFactor(0.1f)); // 10% smaller: 20.736f * 0.9 = 18.6624f, with letter spacing
     slicerEffectsTitle->setColour(juce::Label::textColourId, juce::Colours::white);
     slicerEffectsTitle->setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(slicerEffectsTitle.get());
@@ -10187,7 +10428,7 @@ void PluginEditor::setupSlicerSequencerArea()
     // Create step title
     slicerStepTitle = std::make_unique<juce::Label>();
     slicerStepTitle->setText("STEP", juce::dontSendNotification);
-    slicerStepTitle->setFont(juce::Font(22.118f, juce::Font::bold));
+    slicerStepTitle->setFont(FontManager::getInstance().getFont("Akira Expanded", 13.436685f, juce::Font::bold).withExtraKerningFactor(0.09f)); // Adjusted size with 10% less letter spacing: 0.1 * 0.9 = 0.09
     slicerStepTitle->setColour(juce::Label::textColourId, juce::Colours::white);
     slicerStepTitle->setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(slicerStepTitle.get());
@@ -10226,7 +10467,7 @@ void PluginEditor::setupSlicerSequencerArea()
     // Create step amount editor
     slicerStepAmountLabel = std::make_unique<juce::TextEditor>();
     slicerStepAmountLabel->setText("16");
-    slicerStepAmountLabel->setFont(juce::Font(16.0f, juce::Font::bold));
+    slicerStepAmountLabel->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 16.0f, juce::Font::bold));
     slicerStepAmountLabel->setColour(juce::TextEditor::textColourId, juce::Colours::white);
     slicerStepAmountLabel->setColour(juce::TextEditor::backgroundColourId, juce::Colours::transparentBlack);
     slicerStepAmountLabel->setColour(juce::TextEditor::outlineColourId, juce::Colours::white);
@@ -10394,7 +10635,7 @@ void PluginEditor::setupSlicerAllStepsToggle()
     
     slicerAllStepsLabel = std::make_unique<juce::Label>();
     slicerAllStepsLabel->setText("All Steps", juce::dontSendNotification);
-    slicerAllStepsLabel->setFont(juce::Font(14.4f, juce::Font::bold));
+    slicerAllStepsLabel->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 14.4f, juce::Font::bold));
     slicerAllStepsLabel->setColour(juce::Label::textColourId, juce::Colours::white);
     slicerAllStepsLabel->setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(slicerAllStepsLabel.get());
@@ -10644,7 +10885,7 @@ void PluginEditor::setupDubDelayKnobs()
         // Create label
         dubdelayKnobLabels[i] = std::make_unique<juce::Label>();
         dubdelayKnobLabels[i]->setText(dubdelayKnobNames[i], juce::dontSendNotification);
-        dubdelayKnobLabels[i]->setFont(juce::Font(12.0f, juce::Font::bold));
+        dubdelayKnobLabels[i]->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 12.0f, juce::Font::bold));
         dubdelayKnobLabels[i]->setColour(juce::Label::textColourId, juce::Colours::white);
         dubdelayKnobLabels[i]->setJustificationType(juce::Justification::centred);
         addAndMakeVisible(dubdelayKnobLabels[i].get());
@@ -10654,7 +10895,7 @@ void PluginEditor::setupDubDelayKnobs()
         // Create value label
         dubdelayValueLabels[i] = std::make_unique<juce::Label>();
         dubdelayValueLabels[i]->setText("0", juce::dontSendNotification);
-        dubdelayValueLabels[i]->setFont(juce::Font(10.0f, juce::Font::plain));
+        dubdelayValueLabels[i]->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 10.0f, juce::Font::plain));
         dubdelayValueLabels[i]->setColour(juce::Label::textColourId, juce::Colours::white);
         dubdelayValueLabels[i]->setJustificationType(juce::Justification::centred);
         addAndMakeVisible(dubdelayValueLabels[i].get());
@@ -10717,7 +10958,7 @@ void PluginEditor::setupDubDelayEffectsArea()
     // Effect title (ALWAYS "EFFECT", NOT the effect name!)
     dubdelayEffectsTitle = std::make_unique<juce::Label>();
     dubdelayEffectsTitle->setText("EFFECT", juce::dontSendNotification);
-    dubdelayEffectsTitle->setFont(juce::Font(27.648f, juce::Font::bold));
+    dubdelayEffectsTitle->setFont(FontManager::getInstance().getFont("Akira Expanded", 18.6624f, juce::Font::bold).withExtraKerningFactor(0.1f)); // 10% smaller: 20.736f * 0.9 = 18.6624f, with letter spacing
     dubdelayEffectsTitle->setColour(juce::Label::textColourId, juce::Colours::white);
     dubdelayEffectsTitle->setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(dubdelayEffectsTitle.get());
@@ -10781,7 +11022,7 @@ void PluginEditor::setupDubDelayEffectsArea()
             } else {
                 g.drawEllipse(centre.x - radius, centre.y - radius, radius*2, radius*2, 2.0f);
             }
-            g.setFont(juce::Font(10.0f, juce::Font::bold));
+            g.setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 10.0f, juce::Font::bold));
             g.drawText("S", r, juce::Justification::centred);
         }
     };
@@ -10839,7 +11080,7 @@ void PluginEditor::setupDubDelaySequencerArea()
     // "STEP" title
     dubdelayStepTitle = std::make_unique<juce::Label>();
     dubdelayStepTitle->setText("STEP", juce::dontSendNotification);
-    dubdelayStepTitle->setFont(juce::Font(22.118f, juce::Font::bold));
+    dubdelayStepTitle->setFont(FontManager::getInstance().getFont("Akira Expanded", 13.436685f, juce::Font::bold).withExtraKerningFactor(0.09f)); // Adjusted size with 10% less letter spacing: 0.1 * 0.9 = 0.09
     dubdelayStepTitle->setColour(juce::Label::textColourId, juce::Colours::white);
     dubdelayStepTitle->setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(dubdelayStepTitle.get());
@@ -10879,7 +11120,7 @@ void PluginEditor::setupDubDelaySequencerArea()
     // Step amount label (TextEditor - match Slicer with white outline)
     dubdelayStepAmountLabel = std::make_unique<juce::TextEditor>();
     dubdelayStepAmountLabel->setText("16");
-    dubdelayStepAmountLabel->setFont(juce::Font(16.0f, juce::Font::bold));
+    dubdelayStepAmountLabel->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 16.0f, juce::Font::bold));
     dubdelayStepAmountLabel->setColour(juce::TextEditor::textColourId, juce::Colours::white);
     dubdelayStepAmountLabel->setColour(juce::TextEditor::backgroundColourId, juce::Colours::transparentBlack);
     dubdelayStepAmountLabel->setColour(juce::TextEditor::outlineColourId, juce::Colours::white);
@@ -11088,7 +11329,7 @@ void PluginEditor::setupDubDelayAllStepsToggle()
     
     dubdelayAllStepsLabel = std::make_unique<juce::Label>();
     dubdelayAllStepsLabel->setText("All Steps", juce::dontSendNotification);
-    dubdelayAllStepsLabel->setFont(juce::Font(14.4f, juce::Font::bold));
+    dubdelayAllStepsLabel->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 14.4f, juce::Font::bold));
     dubdelayAllStepsLabel->setColour(juce::Label::textColourId, juce::Colours::white);
     dubdelayAllStepsLabel->setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(dubdelayAllStepsLabel.get());
@@ -11384,7 +11625,7 @@ void PluginEditor::setupFormantKnobs()
         formantKnobLabels[i]->setText(formantKnobTitles[i], juce::dontSendNotification);
         formantKnobLabels[i]->setJustificationType(juce::Justification::centred);
         formantKnobLabels[i]->setColour(juce::Label::textColourId, juce::Colours::white);
-        formantKnobLabels[i]->setFont(juce::Font(12.0f, juce::Font::bold));
+        formantKnobLabels[i]->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 12.0f, juce::Font::bold));
         formantKnobLabels[i]->setBounds(x, y - 15, knobSize, 20);
         
         // Create value label
@@ -11394,7 +11635,7 @@ void PluginEditor::setupFormantKnobs()
         formantValueLabels[i]->setText("0", juce::dontSendNotification);
         formantValueLabels[i]->setJustificationType(juce::Justification::centred);
         formantValueLabels[i]->setColour(juce::Label::textColourId, juce::Colours::white);
-        formantValueLabels[i]->setFont(juce::Font(10.0f, juce::Font::plain));
+        formantValueLabels[i]->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 10.0f, juce::Font::plain));
         formantValueLabels[i]->setBounds(x, y + knobSize - 10, knobSize, 15);
         
         // Create indicator bar
@@ -11527,7 +11768,7 @@ void PluginEditor::setupFormantEffectsArea()
     // Create "EFFECT" title label (ALWAYS "EFFECT", NOT the effect name!)
     formantEffectsTitle = std::make_unique<juce::Label>();
     formantEffectsTitle->setText("EFFECT", juce::dontSendNotification);
-    formantEffectsTitle->setFont(juce::Font(27.648f, juce::Font::bold));
+    formantEffectsTitle->setFont(FontManager::getInstance().getFont("Akira Expanded", 18.6624f, juce::Font::bold).withExtraKerningFactor(0.1f)); // 10% smaller: 20.736f * 0.9 = 18.6624f, with letter spacing
     formantEffectsTitle->setColour(juce::Label::textColourId, juce::Colours::white);
     formantEffectsTitle->setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(formantEffectsTitle.get());
@@ -11598,7 +11839,7 @@ void PluginEditor::setupFormantSequencerArea()
     // Create STEP title (EXACT same as Space Delay page)
     formantStepTitle = std::make_unique<juce::Label>();
     formantStepTitle->setText("STEP", juce::dontSendNotification);
-    formantStepTitle->setFont(juce::Font(22.118f, juce::Font::bold)); // 20% smaller: 27.648f * 0.8 = 22.118f
+    formantStepTitle->setFont(FontManager::getInstance().getFont("Akira Expanded", 13.436685f, juce::Font::bold).withExtraKerningFactor(0.09f)); // Adjusted size with 10% less letter spacing: 0.1 * 0.9 = 0.09
     formantStepTitle->setColour(juce::Label::textColourId, juce::Colours::white);
     formantStepTitle->setColour(juce::Label::backgroundColourId, juce::Colours::transparentBlack);
     formantStepTitle->setJustificationType(juce::Justification::centredLeft);
@@ -11674,7 +11915,7 @@ void PluginEditor::setupFormantSequencerArea()
     // Create step amount label (EXACT same as Space Delay page)
     formantStepAmountLabel = std::make_unique<juce::Label>();
     formantStepAmountLabel->setText("16", juce::dontSendNotification);
-    formantStepAmountLabel->setFont(juce::Font(16.0f, juce::Font::bold));
+    formantStepAmountLabel->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 16.0f, juce::Font::bold));
     formantStepAmountLabel->setColour(juce::Label::textColourId, juce::Colours::white);
     formantStepAmountLabel->setColour(juce::Label::backgroundColourId, juce::Colours::transparentBlack);
     formantStepAmountLabel->setColour(juce::Label::outlineColourId, juce::Colours::white);
@@ -11869,7 +12110,7 @@ void PluginEditor::setupFormantAllStepsToggle()
     // Create "All Steps" label (EXACT same as Space Delay page)
     formantAllStepsLabel = std::make_unique<juce::Label>();
     formantAllStepsLabel->setText("All Steps", juce::dontSendNotification);
-    formantAllStepsLabel->setFont(juce::Font(14.4f, juce::Font::bold)); // 12.0f * 1.2 = 14.4f (20% bigger)
+    formantAllStepsLabel->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 14.4f, juce::Font::bold)); // 12.0f * 1.2 = 14.4f (20% bigger)
     formantAllStepsLabel->setColour(juce::Label::textColourId, juce::Colours::white);
     formantAllStepsLabel->setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(formantAllStepsLabel.get());
@@ -11940,25 +12181,45 @@ void PluginEditor::setupSaturateKnobs()
     const int startX = effectArea.getX() + 15;
     const int startY = effectArea.getY() + effectArea.getHeight() - 210;
 
+    // Set type to 0 (Clean) FIRST - before any audio processing to prevent pop
+    auto* typeParam = processorRef.getAPVTS().getParameter("satType");
+    if (typeParam) {
+        // Set without notification first to avoid triggering audio updates
+        typeParam->setValue(0.0f); // 0/7 = Clean
+        typeParam->setValueNotifyingHost(0.0f); // Then notify host
+    }
+    
     // Set oversample to max (3 = 8×) in APVTS and snapshots
     auto* osParam = processorRef.getAPVTS().getParameter("satOsMode");
     if (osParam) {
         osParam->setValueNotifyingHost(1.0f); // 3/3 = max (8×)
     }
     
-    // Initialize all snapshots with max oversample
+    // Initialize all snapshots with max oversample and Clean type (0)
     for (int step = 0; step < 16; ++step) {
         auto snapshot = processorRef.getSaturateSafeSnapshot(step);
         snapshot.saturate.oversample = 3.0f; // Max (8×)
+        snapshot.saturate.type = 0.0f; // Clean by default
         processorRef.setSaturateStepSnapshot(step, snapshot);
     }
     
     // Create 7 knobs (oversample removed, always max)
+    // Type knob (index 0) is created but hidden - always set to Clean (0)
     for (int i = 0; i < 7; ++i)
     {
         saturateKnobs[i] = std::make_unique<CustomKnob>();
-        addAndMakeVisible(saturateKnobs[i].get());
-        saturateKnobs[i]->setVisible(false);
+        // Type knob (index 0) is hidden - use addChildComponent instead of addAndMakeVisible
+        if (i == 0) {
+            addChildComponent(saturateKnobs[i].get()); // Add but don't make visible
+        } else {
+            addAndMakeVisible(saturateKnobs[i].get());
+        }
+        // Hide Type knob (index 0) - it's always Clean (0)
+        saturateKnobs[i]->setVisible(i != 0);
+        saturateKnobs[i]->setEnabled(i != 0); // Disable Type knob so it can't be interacted with
+        if (i == 0) {
+            saturateKnobs[i]->setAlpha(0.0f); // Make Type knob completely invisible
+        }
         
         saturateKnobs[i]->setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
         saturateKnobs[i]->setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
@@ -12001,11 +12262,13 @@ void PluginEditor::setupSaturateKnobs()
         if (assets.knobInside != nullptr)
             saturateKnobs[i]->setInnerImage(assets.knobInside->createCopy());
         
-        // Position knobs (same layout as Dub Delay)
-        int x = startX + (i % 4) * (knobSize + knobSpacing);
-        int y = startY + (i / 4) * (knobSize + 20);
+        // Position knobs - skip Type knob (index 0) for layout, but still create it
+        // For visible knobs (i > 0), adjust position to skip the Type knob slot
+        int visibleIndex = (i == 0) ? 0 : i - 1; // Type knob uses slot 0, others shift left
+        int x = startX + (visibleIndex % 4) * (knobSize + knobSpacing);
+        int y = startY + (visibleIndex / 4) * (knobSize + 20);
         
-        if (i < 4)
+        if (visibleIndex < 4)
             y -= 23;
         else
             y -= 1;
@@ -12017,25 +12280,49 @@ void PluginEditor::setupSaturateKnobs()
         saturateKnobLabels[i]->setText(saturateKnobNames[i], juce::dontSendNotification);
         saturateKnobLabels[i]->setJustificationType(juce::Justification::centred);
         saturateKnobLabels[i]->setColour(juce::Label::textColourId, juce::Colours::white);
-        saturateKnobLabels[i]->setFont(juce::Font(12.0f, juce::Font::bold));
+        saturateKnobLabels[i]->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 12.0f, juce::Font::bold));
         saturateKnobLabels[i]->setBounds(x, y - 15, knobSize, 20);
-        addAndMakeVisible(saturateKnobLabels[i].get());
-        saturateKnobLabels[i]->setVisible(false);
+        // Type knob label (index 0) is hidden
+        if (i == 0) {
+            addChildComponent(saturateKnobLabels[i].get()); // Add but don't make visible
+        } else {
+            addAndMakeVisible(saturateKnobLabels[i].get());
+        }
+        saturateKnobLabels[i]->setVisible(i != 0);
+        if (i == 0) {
+            saturateKnobLabels[i]->setAlpha(0.0f); // Make Type label completely invisible
+        }
         
         // Create value label
         saturateValueLabels[i] = std::make_unique<juce::Label>();
         saturateValueLabels[i]->setText("0", juce::dontSendNotification);
-        saturateValueLabels[i]->setFont(juce::Font(10.0f, juce::Font::plain));
+        saturateValueLabels[i]->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 10.0f, juce::Font::plain));
         saturateValueLabels[i]->setColour(juce::Label::textColourId, juce::Colours::white);
         saturateValueLabels[i]->setJustificationType(juce::Justification::centred);
-        addAndMakeVisible(saturateValueLabels[i].get());
-        saturateValueLabels[i]->setVisible(false);
+        // Type knob value label (index 0) is hidden
+        if (i == 0) {
+            addChildComponent(saturateValueLabels[i].get()); // Add but don't make visible
+        } else {
+            addAndMakeVisible(saturateValueLabels[i].get());
+        }
+        saturateValueLabels[i]->setVisible(i != 0);
+        if (i == 0) {
+            saturateValueLabels[i]->setAlpha(0.0f); // Make Type value label completely invisible
+        }
         saturateValueLabels[i]->setBounds(x, y + knobSize - 10, knobSize, 15);
         
         // Create indicator bar
         saturateIndicatorBars[i] = std::make_unique<IndicatorBar>();
-        addAndMakeVisible(saturateIndicatorBars[i].get());
-        saturateIndicatorBars[i]->setVisible(false);
+        // Type knob indicator bar (index 0) is hidden
+        if (i == 0) {
+            addChildComponent(saturateIndicatorBars[i].get()); // Add but don't make visible
+        } else {
+            addAndMakeVisible(saturateIndicatorBars[i].get());
+        }
+        saturateIndicatorBars[i]->setVisible(i != 0);
+        if (i == 0) {
+            saturateIndicatorBars[i]->setAlpha(0.0f); // Make Type indicator bar completely invisible
+        }
         saturateIndicatorBars[i]->setBounds(x + 10, y + knobSize + 8, knobSize - 20, 13);
         saturateIndicatorBars[i]->setValue(0.5f);
         
@@ -12046,8 +12333,8 @@ void PluginEditor::setupSaturateKnobs()
             randomizeIndividualSaturateKnob(i);
         };
         
-        // Create lock button
-        if (i < 7) { // Only for first 7 knobs (Mix doesn't have lock)
+        // Create lock button (skip for Type knob index 0)
+        if (i > 0 && i < 7) { // Skip Type (index 0) and Mix (index 6)
             saturateLockButtons[i] = std::make_unique<LockButton>();
             addAndMakeVisible(saturateLockButtons[i].get());
             saturateLockButtons[i]->setVisible(false);
@@ -12081,6 +12368,21 @@ void PluginEditor::setupSaturateKnobs()
             // Skip if loading from snapshot (prevents circular updates during randomization)
             if (isLoadingFromSnapshot.load())
                 return;
+
+            // Type knob (index 0) is always Clean (0) - prevent changes
+            if (i == 0) {
+                saturateKnobs[0]->setValue(0.0, juce::dontSendNotification);
+                return;
+            }
+
+            if (juce::ModifierKeys::getCurrentModifiers().isAnyMouseButtonDown())
+            {
+                processorRef.setSaturateUserEditing(true);
+                juce::Timer::callAfterDelay(120, [processor = &processorRef]()
+                {
+                    processor->setSaturateUserEditing(false);
+                });
+            }
             
             if (saturateKnobs[i] != nullptr && saturateValueLabels[i] != nullptr) {
                 float value = saturateKnobs[i]->getValue();
@@ -12088,14 +12390,15 @@ void PluginEditor::setupSaturateKnobs()
                 // Update value label with appropriate formatting
                 juce::String valueText;
                 switch (i) {
-                    case 0: // Type - show model name
+                    case 0: // Type - always Clean (0), should not be visible
                         {
-                            const char* modelNames[] = {"Spiral2", "Density2", "Drive", "Purest", "Mojo", "Console", "Coils", "Tubey"};
-                            int idx = static_cast<int>(value);
-                            valueText = modelNames[juce::jlimit(0, 7, idx)];
+                            // Ensure type stays at 0 (Clean)
+                            value = 0.0f;
+                            const char* modelNames[] = {"Clean", "Density2", "Drive", "Purest", "Mojo", "Console", "Coils", "Tubey"};
+                            valueText = modelNames[0]; // Always Clean
                             
-                            // Update dynamic labels when Type changes
-                            updateSaturateKnobLabels(idx);
+                            // Update dynamic labels for Clean type
+                            updateSaturateKnobLabels(0);
                         }
                         break;
                     case 1: // Drive - show dB
@@ -12136,20 +12439,22 @@ void PluginEditor::setupSaturateKnobs()
                 updateSaturateParameterFromKnob(i);
                 
                 // Handle all steps toggle - update all steps when enabled
-                if (saturateAllStepsEnabled && i != 6) { // Skip Mix (knob 6) which is global
+                // Skip Type (index 0, always Clean) and Mix (knob 6, which is global)
+                if (saturateAllStepsEnabled && i != 0 && i != 6) {
                     // Save current selected step first (done above), then update all others
                     int currentStep = saturateUiSelectedStep;
                     for (int step = 0; step < 16; ++step) {
                         if (step != currentStep) {
                             auto snapshot = processorRef.getSaturateSafeSnapshot(step);
+                            // Ensure type stays at 0 (Clean) for all steps
+                            snapshot.saturate.type = 0.0f;
                             switch (i) {
-                                case 0: snapshot.saturate.type = value; break;
                                 case 1: snapshot.saturate.drive = value; break;
                                 case 2: snapshot.saturate.color = value; break;
                                 case 3: snapshot.saturate.shape = value; break;
                                 case 4: snapshot.saturate.bias = value; break;
                                 case 5: snapshot.saturate.output = value; break;
-                                // Mix (case 6) is global, not saved per step
+                                // Type (case 0) is always Clean, Mix (case 6) is global
                             }
                             processorRef.setSaturateStepSnapshot(step, snapshot);
                         }
@@ -12177,7 +12482,7 @@ void PluginEditor::setupSaturateEffectsArea()
     // Effect title
     saturateEffectsTitle = std::make_unique<juce::Label>();
     saturateEffectsTitle->setText("EFFECT", juce::dontSendNotification);
-    saturateEffectsTitle->setFont(juce::Font(27.648f, juce::Font::bold));
+    saturateEffectsTitle->setFont(FontManager::getInstance().getFont("Akira Expanded", 18.6624f, juce::Font::bold).withExtraKerningFactor(0.1f)); // 10% smaller: 20.736f * 0.9 = 18.6624f, with letter spacing
     saturateEffectsTitle->setColour(juce::Label::textColourId, juce::Colours::white);
     saturateEffectsTitle->setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(saturateEffectsTitle.get());
@@ -12231,8 +12536,11 @@ void PluginEditor::setupSaturateEffectsArea()
     saturateGroup.push_back(saturateDiceButton.get());
     saturateGroup.push_back(saturateFxPowerButton.get());
     
-    // Add knobs and related components
+    // Add knobs and related components (skip Type knob index 0)
     for (int i = 0; i < 7; ++i) { // 7 knobs (oversample removed)
+        // Skip Type knob (index 0) - it's hidden and always Clean
+        if (i == 0) continue;
+        
         if (saturateKnobs[i]) saturateGroup.push_back(saturateKnobs[i].get());
         if (saturateKnobLabels[i]) saturateGroup.push_back(saturateKnobLabels[i].get());
         if (saturateValueLabels[i]) saturateGroup.push_back(saturateValueLabels[i].get());
@@ -12240,11 +12548,6 @@ void PluginEditor::setupSaturateEffectsArea()
         if (saturateDiceButtons[i]) saturateGroup.push_back(saturateDiceButtons[i].get());
         if (saturateLockButtons[i]) saturateGroup.push_back(saturateLockButtons[i].get());
     }
-    // Mix knob (index 7) - no lock button
-    if (saturateKnobs[6]) saturateGroup.push_back(saturateKnobs[6].get());
-    if (saturateKnobLabels[6]) saturateGroup.push_back(saturateKnobLabels[6].get());
-    if (saturateValueLabels[6]) saturateGroup.push_back(saturateValueLabels[6].get());
-    if (saturateIndicatorBars[6]) saturateGroup.push_back(saturateIndicatorBars[6].get());
     
     DBG("[UI] Saturate effects area setup complete");
 }
@@ -12258,7 +12561,7 @@ void PluginEditor::setupSaturateSequencerArea()
     // "STEP" title
     saturateStepTitle = std::make_unique<juce::Label>();
     saturateStepTitle->setText("STEP", juce::dontSendNotification);
-    saturateStepTitle->setFont(juce::Font(22.118f, juce::Font::bold));
+    saturateStepTitle->setFont(FontManager::getInstance().getFont("Akira Expanded", 13.436685f, juce::Font::bold).withExtraKerningFactor(0.09f)); // Adjusted size with 10% less letter spacing: 0.1 * 0.9 = 0.09
     saturateStepTitle->setColour(juce::Label::textColourId, juce::Colours::white);
     saturateStepTitle->setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(saturateStepTitle.get());
@@ -12298,7 +12601,7 @@ void PluginEditor::setupSaturateSequencerArea()
     // Step amount label
     saturateStepAmountLabel = std::make_unique<juce::TextEditor>();
     saturateStepAmountLabel->setText("16");
-    saturateStepAmountLabel->setFont(juce::Font(16.0f, juce::Font::bold));
+    saturateStepAmountLabel->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 16.0f, juce::Font::bold));
     saturateStepAmountLabel->setColour(juce::TextEditor::textColourId, juce::Colours::white);
     saturateStepAmountLabel->setColour(juce::TextEditor::backgroundColourId, juce::Colours::transparentBlack);
     saturateStepAmountLabel->setColour(juce::TextEditor::outlineColourId, juce::Colours::white);
@@ -12369,20 +12672,35 @@ void PluginEditor::setupSaturateSequencerArea()
             auto snapshot = processorRef.getSaturateSafeSnapshot(step);
             
             // Randomize all Saturate parameters for this step
-            snapshot.saturate.type = static_cast<float>(rng.nextInt(8)); // 0-7
+            // Type is always Clean (0) - not randomized
+            snapshot.saturate.type = 0.0f; // Always Clean
             snapshot.saturate.drive = 6.0f + rng.nextFloat() * 24.0f; // 6-30 dB
             snapshot.saturate.color = 0.3f + rng.nextFloat() * 0.5f; // 0.3-0.8
             snapshot.saturate.shape = 0.2f + rng.nextFloat() * 0.6f; // 0.2-0.8
             snapshot.saturate.bias = -0.15f + rng.nextFloat() * 0.3f; // -0.15 to 0.15
             snapshot.saturate.output = -12.0f + rng.nextFloat() * 18.0f; // -12 to +6 dB
-            snapshot.saturate.oversample = static_cast<float>(rng.nextInt(4)); // 0-3
+            snapshot.saturate.oversample = 3.0f; // Always max (8×)
             
             processorRef.setSaturateStepSnapshot(step, snapshot);
         }
         
+        // Randomize Mix knob (index 6) - it's global but should still randomize
+        if (saturateKnobs[6]) {
+            juce::Random mixRng;
+            float randomMix = mixRng.nextFloat(); // 0.0 to 1.0
+            saturateKnobs[6]->setValue(randomMix, juce::dontSendNotification);
+            // Update the global Mix parameter
+            auto* mixParam = processorRef.getAPVTS().getParameter("satMix");
+            if (mixParam) {
+                mixParam->setValueNotifyingHost(randomMix);
+            }
+        }
+        
         // Reload current step to UI (don't send notification to avoid triggering save)
         auto currentSnapshot = processorRef.getSaturateSafeSnapshot(saturateUiSelectedStep);
-        if (saturateKnobs[0]) saturateKnobs[0]->setValue(currentSnapshot.saturate.type, juce::dontSendNotification);
+        // Ensure type is always Clean (0)
+        currentSnapshot.saturate.type = 0.0f;
+        if (saturateKnobs[0]) saturateKnobs[0]->setValue(0.0f, juce::dontSendNotification);
         if (saturateKnobs[1]) saturateKnobs[1]->setValue(currentSnapshot.saturate.drive, juce::dontSendNotification);
         if (saturateKnobs[2]) saturateKnobs[2]->setValue(currentSnapshot.saturate.color, juce::dontSendNotification);
         if (saturateKnobs[3]) saturateKnobs[3]->setValue(currentSnapshot.saturate.shape, juce::dontSendNotification);
@@ -12390,9 +12708,10 @@ void PluginEditor::setupSaturateSequencerArea()
         if (saturateKnobs[5]) saturateKnobs[5]->setValue(currentSnapshot.saturate.output, juce::dontSendNotification);
         // Oversample is always max (3 = 8×), not a knob anymore
         
-        // Update labels
-        updateSaturateKnobLabels(static_cast<int>(currentSnapshot.saturate.type));
-        for (int i = 0; i < 6; ++i) { // Only first 6 knobs (Mix is global)
+        // Update labels for Clean type (0)
+        updateSaturateKnobLabels(0);
+        // Skip Type knob (index 0) - update knobs 1-5 and Mix (6)
+        for (int i = 1; i < 7; ++i) {
             if (saturateKnobs[i] && saturateKnobs[i]->onValueChange) {
                 saturateKnobs[i]->onValueChange();
             }
@@ -12583,15 +12902,15 @@ void PluginEditor::setupFilterKnobs()
         }
         // Note: knobIdx 7 is now empty (was Mix, moved to position 6)
         
-        // Create label for all knobs (skip empty position - knobIdx 7)
-        if (knobIdx != 7) { // Skip empty position 7
-            // Map knobIdx to filterKnobNames index: 0→0, 1→1, 2→2, 3→3, 4→4, 5→5 (Key Track), 6→6 (Mix)
-            int namesIdx = (knobIdx <= 6) ? knobIdx : 0;
-            // Label indices match knobIdx directly (0-7), except knobIdx 5 (spread) is skipped
-            int labelIdx = knobIdx; // Use same index as knobIdx (labels array has 8 elements, spread slot 5 is empty)
+        // Create label for all knobs (skip empty position - knobIdx 7, and skip Type/Slope which have separate labels)
+        if (knobIdx != 7 && knobIdx != 0 && knobIdx != 3) { // Skip empty position 7, Type (0), and Slope (3) - they have separate labels
+            // Map knobIdx to filterKnobNames index: 1→1 (Cutoff), 2→2 (Resonance), 4→4 (Drive), 5→5 (Key Track), 6→6 (Mix)
+            int namesIdx = knobIdx; // Direct mapping for non-special knobs
+            // Label indices match knobIdx directly (0-7), except knobIdx 0 (Type), 3 (Slope), 5 (spread removed), and 7 (empty)
+            int labelIdx = knobIdx; // Use same index as knobIdx (labels array has 8 elements)
             filterKnobLabels[labelIdx] = std::make_unique<juce::Label>();
             filterKnobLabels[labelIdx]->setText(filterKnobNames[namesIdx], juce::dontSendNotification);
-            filterKnobLabels[labelIdx]->setFont(juce::Font(12.0f, juce::Font::bold));
+            filterKnobLabels[labelIdx]->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 12.0f, juce::Font::bold));
             filterKnobLabels[labelIdx]->setColour(juce::Label::textColourId, juce::Colours::white);
             filterKnobLabels[labelIdx]->setJustificationType(juce::Justification::centred);
             addAndMakeVisible(filterKnobLabels[labelIdx].get());
@@ -12601,7 +12920,7 @@ void PluginEditor::setupFilterKnobs()
             // Create value label for all knobs
             filterValueLabels[labelIdx] = std::make_unique<juce::Label>();
             filterValueLabels[labelIdx]->setText("0", juce::dontSendNotification);
-            filterValueLabels[labelIdx]->setFont(juce::Font(10.0f, juce::Font::plain));
+            filterValueLabels[labelIdx]->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 10.0f, juce::Font::plain));
             filterValueLabels[labelIdx]->setColour(juce::Label::textColourId, juce::Colours::white);
             filterValueLabels[labelIdx]->setJustificationType(juce::Justification::centred);
             addAndMakeVisible(filterValueLabels[labelIdx].get());
@@ -12642,7 +12961,7 @@ void PluginEditor::setupFilterKnobs()
     // Create Type label
     filterTypeLabel = std::make_unique<juce::Label>();
     filterTypeLabel->setText("Type", juce::dontSendNotification);
-    filterTypeLabel->setFont(juce::Font(12.0f, juce::Font::bold));
+    filterTypeLabel->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 12.0f, juce::Font::bold));
     filterTypeLabel->setColour(juce::Label::textColourId, juce::Colours::white);
     filterTypeLabel->setJustificationType(juce::Justification::centred);
     addAndMakeVisible(filterTypeLabel.get());
@@ -12675,10 +12994,26 @@ void PluginEditor::setupFilterKnobs()
         repaint();
     };
     
+    // Create value label and indicator bar for Type knob (position 0)
+    filterValueLabels[0] = std::make_unique<juce::Label>();
+    filterValueLabels[0]->setText("LP", juce::dontSendNotification);
+    filterValueLabels[0]->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 10.0f, juce::Font::plain));
+    filterValueLabels[0]->setColour(juce::Label::textColourId, juce::Colours::white);
+    filterValueLabels[0]->setJustificationType(juce::Justification::centred);
+    addAndMakeVisible(filterValueLabels[0].get());
+    filterValueLabels[0]->setVisible(false);
+    filterValueLabels[0]->setBounds(typeX, typeKnobY + knobSize - 10, knobSize, 15);
+    
+    filterIndicatorBars[0] = std::make_unique<IndicatorBar>();
+    addAndMakeVisible(filterIndicatorBars[0].get());
+    filterIndicatorBars[0]->setVisible(false);
+    filterIndicatorBars[0]->setBounds(typeX + 10, typeKnobY + knobSize + 8, knobSize - 20, 13);
+    filterIndicatorBars[0]->setValue(0.0f);
+    
     // Create Slope label
     filterSlopeLabel = std::make_unique<juce::Label>();
     filterSlopeLabel->setText("Slope", juce::dontSendNotification);
-    filterSlopeLabel->setFont(juce::Font(12.0f, juce::Font::bold));
+    filterSlopeLabel->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 12.0f, juce::Font::bold));
     filterSlopeLabel->setColour(juce::Label::textColourId, juce::Colours::white);
     filterSlopeLabel->setJustificationType(juce::Justification::centred);
     addAndMakeVisible(filterSlopeLabel.get());
@@ -12714,6 +13049,22 @@ void PluginEditor::setupFilterKnobs()
         filterKnobLocked[3] = filterLockButtons[3]->getToggleState();
         repaint();
     };
+    
+    // Create value label and indicator bar for Slope knob (position 3)
+    filterValueLabels[3] = std::make_unique<juce::Label>();
+    filterValueLabels[3]->setText("24dB", juce::dontSendNotification);
+    filterValueLabels[3]->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 10.0f, juce::Font::plain));
+    filterValueLabels[3]->setColour(juce::Label::textColourId, juce::Colours::white);
+    filterValueLabels[3]->setJustificationType(juce::Justification::centred);
+    addAndMakeVisible(filterValueLabels[3].get());
+    filterValueLabels[3]->setVisible(false);
+    filterValueLabels[3]->setBounds(slopeX, slopeKnobY + knobSize - 10, knobSize, 15);
+    
+    filterIndicatorBars[3] = std::make_unique<IndicatorBar>();
+    addAndMakeVisible(filterIndicatorBars[3].get());
+    filterIndicatorBars[3]->setVisible(false);
+    filterIndicatorBars[3]->setBounds(slopeX + 10, slopeKnobY + knobSize + 8, knobSize - 20, 13);
+    filterIndicatorBars[3]->setValue(1.0f);
     
     // Create attachments for Type and Slope
     filterTypeAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
@@ -12914,7 +13265,7 @@ void PluginEditor::setupFilterEffectsArea()
     // Create "EFFECT" title
     filterEffectsTitle = std::make_unique<juce::Label>();
     filterEffectsTitle->setText("EFFECT", juce::dontSendNotification);
-    filterEffectsTitle->setFont(juce::Font(27.648f, juce::Font::bold));
+    filterEffectsTitle->setFont(FontManager::getInstance().getFont("Akira Expanded", 18.6624f, juce::Font::bold).withExtraKerningFactor(0.1f)); // 10% smaller: 20.736f * 0.9 = 18.6624f, with letter spacing
     filterEffectsTitle->setColour(juce::Label::textColourId, juce::Colours::white);
     filterEffectsTitle->setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(filterEffectsTitle.get());
@@ -12971,7 +13322,7 @@ void PluginEditor::setupFilterSequencerArea()
     // Create "STEP" title
     filterStepTitle = std::make_unique<juce::Label>();
     filterStepTitle->setText("STEP", juce::dontSendNotification);
-    filterStepTitle->setFont(juce::Font(22.118f, juce::Font::bold));
+    filterStepTitle->setFont(FontManager::getInstance().getFont("Akira Expanded", 13.436685f, juce::Font::bold).withExtraKerningFactor(0.09f)); // Adjusted size with 10% less letter spacing: 0.1 * 0.9 = 0.09
     filterStepTitle->setColour(juce::Label::textColourId, juce::Colours::white);
     filterStepTitle->setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(filterStepTitle.get());
@@ -13085,7 +13436,7 @@ void PluginEditor::setupFilterSequencerArea()
     // Create step amount label
     filterStepAmountLabel = std::make_unique<juce::TextEditor>();
     filterStepAmountLabel->setText("16");
-    filterStepAmountLabel->setFont(juce::Font(16.0f, juce::Font::bold));
+    filterStepAmountLabel->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 16.0f, juce::Font::bold));
     filterStepAmountLabel->setColour(juce::TextEditor::textColourId, juce::Colours::white);
     filterStepAmountLabel->setColour(juce::TextEditor::backgroundColourId, juce::Colours::transparentBlack);
     filterStepAmountLabel->setColour(juce::TextEditor::outlineColourId, juce::Colours::white);
@@ -13213,7 +13564,7 @@ void PluginEditor::setupFilterAllStepsToggle()
     
     filterAllStepsLabel = std::make_unique<juce::Label>();
     filterAllStepsLabel->setText("All Steps", juce::dontSendNotification);
-    filterAllStepsLabel->setFont(juce::Font(14.4f, juce::Font::bold));
+    filterAllStepsLabel->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 14.4f, juce::Font::bold));
     filterAllStepsLabel->setColour(juce::Label::textColourId, juce::Colours::white);
     filterAllStepsLabel->setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(filterAllStepsLabel.get());
@@ -13302,7 +13653,7 @@ void PluginEditor::setupSaturateAllStepsToggle()
     // All Steps label (match Dub Delay)
     saturateAllStepsLabel = std::make_unique<juce::Label>();
     saturateAllStepsLabel->setText("All Steps", juce::dontSendNotification);
-    saturateAllStepsLabel->setFont(juce::Font(14.4f, juce::Font::bold));
+    saturateAllStepsLabel->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 14.4f, juce::Font::bold));
     saturateAllStepsLabel->setColour(juce::Label::textColourId, juce::Colours::white);
     saturateAllStepsLabel->setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(saturateAllStepsLabel.get());
@@ -13322,8 +13673,30 @@ void PluginEditor::updateSaturateFxAreaVisibility()
 {
     float alpha = saturateFxAreaEnabled ? 1.0f : 0.3f;
     
-    // Update knobs and labels alpha
+    // Update knobs and labels alpha (skip Type knob index 0)
     for (int i = 0; i < 7; ++i) {
+        // Skip Type knob (index 0) - it's hidden and always Clean
+        if (i == 0) {
+            // Keep Type knob and its components completely invisible
+            if (saturateKnobs[0]) {
+                saturateKnobs[0]->setVisible(false);
+                saturateKnobs[0]->setAlpha(0.0f);
+            }
+            if (saturateKnobLabels[0]) {
+                saturateKnobLabels[0]->setVisible(false);
+                saturateKnobLabels[0]->setAlpha(0.0f);
+            }
+            if (saturateValueLabels[0]) {
+                saturateValueLabels[0]->setVisible(false);
+                saturateValueLabels[0]->setAlpha(0.0f);
+            }
+            if (saturateIndicatorBars[0]) {
+                saturateIndicatorBars[0]->setVisible(false);
+                saturateIndicatorBars[0]->setAlpha(0.0f);
+            }
+            continue;
+        }
+        
         if (saturateKnobs[i]) { 
             saturateKnobs[i]->setAlpha(alpha); 
             saturateKnobs[i]->setEnabled(saturateFxAreaEnabled);
@@ -13535,17 +13908,18 @@ void PluginEditor::updateSaturateKnobLabels(int type)
         const char* label2;
         const char* label3;
         const char* label4;
+        const char* label5;
     };
     
     static const ModelInfo models[8] = {
-        {"Density", "Asym", "Bias"}, // Spiral2
-        {"Thick", "Focus", "LoCut"}, // Density2
-        {"Hard", "Asym", "LoCut"}, // Drive
-        {"Heat", "AirGain", "LoCut"}, // PurestDrive
-        {"Warm", "Presence", "HiCut"}, // Mojo
-        {"Trim", "Focus", "HiCut"}, // Console
-        {"Iron", "Asym", "Bump"}, // Coils
-        {"Blend", "Sag", "LoCut"}  // Tubey
+        {"Tone",       "Blend",  "Bias",   "Level"},   // Clean
+        {"HF Tilt",    "Core",   "Bias",   "Satur"},   // Tape / Transformer
+        {"Tone",       "Diodes", "Bias",   "Comp"},    // Diode Clip (WDF)
+        {"Tone",       "Slew",   "Bias",   "Post"},    // Op-Amp Soft Clip
+        {"Tone",       "Fold",   "Bias",   "Spark"},   // Wavefolder
+        {"Tone",       "Mid",    "Bias",   "Presence"},// Centaur-style
+        {"Tone",       "Leak",   "Bias",   "Comp"},    // Fuzz / BJT
+        {"Tone",       "Rect",   "Bias",   "Warmth"}   // Rectifier / X-Dist
     };
     
     if (type < 0 || type >= 8) return;
@@ -13556,10 +13930,66 @@ void PluginEditor::updateSaturateKnobLabels(int type)
     if (saturateKnobLabels[2]) saturateKnobLabels[2]->setText(info.label2, juce::dontSendNotification);
     if (saturateKnobLabels[3]) saturateKnobLabels[3]->setText(info.label3, juce::dontSendNotification);
     if (saturateKnobLabels[4]) saturateKnobLabels[4]->setText(info.label4, juce::dontSendNotification);
+    if (saturateKnobLabels[5]) saturateKnobLabels[5]->setText(info.label5, juce::dontSendNotification);
     
     // Update ranges for knobs 2-4 (Color, Shape, Bias)
     // Note: The knobs themselves remain normalized 0-1; we just update the display
     // The actual DSP mapping happens in SaturateProcessor based on the model
+
+    const bool shouldShowLevelKnob = (type != 0); // Clean type (0) hides the Level/Output control
+    const bool saturatePageVisible = (saturateEffectsTitle != nullptr && saturateEffectsTitle->isVisible());
+    auto updateLevelComponent = [shouldShowLevelKnob, saturatePageVisible](juce::Component* comp)
+    {
+        if (comp == nullptr)
+            return;
+
+        if (!shouldShowLevelKnob)
+            comp->setVisible(false);
+        else if (saturatePageVisible)
+            comp->setVisible(true);
+
+        comp->setEnabled(shouldShowLevelKnob);
+        comp->setAlpha(shouldShowLevelKnob ? 1.0f : 0.0f);
+    };
+
+    if (saturateKnobs[5])
+        updateLevelComponent(saturateKnobs[5].get());
+    updateLevelComponent(saturateKnobLabels[5].get());
+    updateLevelComponent(saturateValueLabels[5].get());
+    updateLevelComponent(saturateIndicatorBars[5].get());
+    updateLevelComponent(saturateLockButtons[5].get());
+    
+    // Reposition Mix knob (index 6) when Output is hidden
+    // When Output (index 5) is hidden, Mix should move to its position
+    if (saturateKnobs[6]) { // Mix knob
+        auto effectArea = juce::Rectangle<int>(25, 54, 413, 296);
+        const int knobSize = 80;
+        const int knobSpacing = 20;
+        const int startX = effectArea.getX() + 15;
+        const int startY = effectArea.getY() + effectArea.getHeight() - 210;
+        
+        // Calculate position: if Output is hidden, Mix goes to Output's position (visibleIndex 4)
+        // Otherwise, Mix goes to its normal position (visibleIndex 5)
+        int mixVisibleIndex = shouldShowLevelKnob ? 5 : 4; // Output's position when hidden
+        int x = startX + (mixVisibleIndex % 4) * (knobSize + knobSpacing);
+        int y = startY + (mixVisibleIndex / 4) * (knobSize + 20);
+        if (mixVisibleIndex < 4)
+            y -= 23;
+        else
+            y -= 1;
+        
+        saturateKnobs[6]->setBounds(x, y, knobSize, knobSize);
+        if (saturateKnobLabels[6]) saturateKnobLabels[6]->setBounds(x, y - 15, knobSize, 20);
+        if (saturateValueLabels[6]) saturateValueLabels[6]->setBounds(x, y + knobSize - 10, knobSize, 15);
+        if (saturateIndicatorBars[6]) saturateIndicatorBars[6]->setBounds(x + 10, y + knobSize + 8, knobSize - 20, 13);
+        if (saturateLockButtons[6]) {
+            juce::Font labelFont(12.0f, juce::Font::bold);
+            int textWidth = labelFont.getStringWidth("Mix");
+            int lockX = x + (knobSize / 2) + (textWidth / 2) + 5;
+            int lockY = y - 10;
+            saturateLockButtons[6]->setBounds(lockX, lockY, 10, 10);
+        }
+    }
 }
 
 void PluginEditor::onSaturateStepButtonClicked(int stepIndex)
@@ -13575,26 +14005,32 @@ void PluginEditor::onSaturateStepButtonClicked(int stepIndex)
     isLoadingFromSnapshot.store(true);
     
     if (!saturateAllStepsEnabled) {
-        // Update knobs with values from the snapshot
-        if (saturateKnobs[0]) saturateKnobs[0]->setValue(snapshot.saturate.type, juce::dontSendNotification);
+        // Ensure type is always Clean (0) and set it (Type knob is hidden but still exists)
+        snapshot.saturate.type = 0.0f;
+        if (saturateKnobs[0]) saturateKnobs[0]->setValue(0.0f, juce::dontSendNotification);
         if (saturateKnobs[1]) saturateKnobs[1]->setValue(snapshot.saturate.drive, juce::dontSendNotification);
         if (saturateKnobs[2]) saturateKnobs[2]->setValue(snapshot.saturate.color, juce::dontSendNotification);
         if (saturateKnobs[3]) saturateKnobs[3]->setValue(snapshot.saturate.shape, juce::dontSendNotification);
         if (saturateKnobs[4]) saturateKnobs[4]->setValue(snapshot.saturate.bias, juce::dontSendNotification);
         if (saturateKnobs[5]) saturateKnobs[5]->setValue(snapshot.saturate.output, juce::dontSendNotification);
         // Oversample is always max (3 = 8×), not a knob anymore
-        // Knob 7 (Mix) is global, not per-step
+        // Knob 6 (Mix) is global, not per-step
         
-        // Update dynamic labels based on type
-        updateSaturateKnobLabels(static_cast<int>(snapshot.saturate.type));
+        // Update dynamic labels for Clean type (0) - this will hide Level knob and reposition Mix
+        updateSaturateKnobLabels(0);
         
         // Trigger value change callbacks to update labels (but not save snapshots)
-        for (int i = 0; i < 6; ++i) { // Only first 6 knobs (Mix knob 6 is global)
+        // Skip Type knob (index 0) and Mix knob (index 6)
+        for (int i = 1; i < 6; ++i) {
             if (saturateKnobs[i] && saturateKnobs[i]->onValueChange) {
                 saturateKnobs[i]->onValueChange();
             }
         }
     }
+    
+    // Always update layout when step is clicked (even if allStepsEnabled)
+    // This ensures Mix knob is repositioned correctly
+    updateSaturateKnobLabels(0);
     
     // Clear flag
     isLoadingFromSnapshot.store(false);
@@ -13632,15 +14068,28 @@ void PluginEditor::updateSaturateParameterFromKnob(int knobIndex)
     if (knobIndex < 0 || knobIndex >= 7 || !saturateKnobs[knobIndex])
         return;
     
-    float value = saturateKnobs[knobIndex]->getValue();
-    
-    // Update current step snapshot (Mix knob 6 is global, not saved)
-    processorRef.updateSaturateCurrentStepSnapshot(knobIndex, value);
+    // Type knob (index 0) is always Clean (0) - ensure it stays that way
+    if (knobIndex == 0) {
+        saturateKnobs[0]->setValue(0.0f, juce::dontSendNotification);
+        // Still update snapshot to ensure type is 0
+        processorRef.updateSaturateCurrentStepSnapshot(0, 0.0f);
+    } else {
+        float value = saturateKnobs[knobIndex]->getValue();
+        
+        // Update current step snapshot (Mix knob 6 is global, not saved)
+        processorRef.updateSaturateCurrentStepSnapshot(knobIndex, value);
+    }
     
     // Ensure oversample is always max
     auto* osParam = processorRef.getAPVTS().getParameter("satOsMode");
     if (osParam && osParam->getValue() < 1.0f) {
         osParam->setValueNotifyingHost(1.0f); // 3/3 = max (8×)
+    }
+    
+    // Ensure type is always Clean (0) in APVTS
+    auto* typeParam = processorRef.getAPVTS().getParameter("satType");
+    if (typeParam && typeParam->getValue() != 0.0f) {
+        typeParam->setValueNotifyingHost(0.0f); // 0/7 = Clean
     }
 }
 
@@ -13648,6 +14097,9 @@ void PluginEditor::randomizeSaturateKnobValues()
 {
     DBG("[UI] Randomizing Saturate knob values...");
     for (int i = 0; i < 7; ++i) {
+        // Skip Type knob (index 0) - it's always Clean (0)
+        if (i == 0) continue;
+        
         if (saturateKnobs[i]) {
             // Check if knob is locked - skip if locked
             if (i < 7 && saturateKnobLocked[i]) continue;
@@ -13661,6 +14113,9 @@ void PluginEditor::randomizeIndividualSaturateKnob(int knobIndex)
     if (knobIndex < 0 || knobIndex >= 7) return;
     if (!saturateKnobs[knobIndex]) return;
     
+    // Skip Type knob (index 0) - it's always Clean (0)
+    if (knobIndex == 0) return;
+    
     // Check if knob is locked - don't randomize if locked
     if (knobIndex < 7 && saturateKnobLocked[knobIndex]) {
         DBG("[UI] Skipping locked Saturate knob " << knobIndex);
@@ -13671,8 +14126,8 @@ void PluginEditor::randomizeIndividualSaturateKnob(int knobIndex)
     float newValue = 0.0f;
     
     switch (knobIndex) {
-        case 0: // Type (0-7)
-            newValue = static_cast<float>(rand.nextInt(8));
+        case 0: // Type (0-7) - should never reach here, always Clean (0)
+            newValue = 0.0f; // Always Clean
             break;
         case 1: // Drive (0-36 dB)
             newValue = 6.0f + rand.nextFloat() * 24.0f; // 6-30 dB (musical range)
@@ -13812,7 +14267,7 @@ void PluginEditor::setupForm2Knobs()
         form2KnobLabels[i]->setText(form2KnobTitles[i], juce::dontSendNotification);
         form2KnobLabels[i]->setJustificationType(juce::Justification::centred);
         form2KnobLabels[i]->setColour(juce::Label::textColourId, juce::Colours::white);
-        form2KnobLabels[i]->setFont(juce::Font(12.0f, juce::Font::bold));
+        form2KnobLabels[i]->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 12.0f, juce::Font::bold));
         form2KnobLabels[i]->setBounds(x, y - 15, knobSize, 20);
         
         // Create value label
@@ -13822,7 +14277,7 @@ void PluginEditor::setupForm2Knobs()
         form2ValueLabels[i]->setText("0", juce::dontSendNotification);
         form2ValueLabels[i]->setJustificationType(juce::Justification::centred);
         form2ValueLabels[i]->setColour(juce::Label::textColourId, juce::Colours::white);
-        form2ValueLabels[i]->setFont(juce::Font(10.0f, juce::Font::plain));
+        form2ValueLabels[i]->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 10.0f, juce::Font::plain));
         form2ValueLabels[i]->setBounds(x, y + knobSize - 10, knobSize, 15);
         
         // Create indicator bar
@@ -13982,7 +14437,7 @@ void PluginEditor::setupForm2EffectsArea()
     // Create "EFFECT" title label (ALWAYS "EFFECT", NOT the effect name!)
     form2EffectsTitle = std::make_unique<juce::Label>();
     form2EffectsTitle->setText("EFFECT", juce::dontSendNotification);
-    form2EffectsTitle->setFont(juce::Font(27.648f, juce::Font::bold));
+    form2EffectsTitle->setFont(FontManager::getInstance().getFont("Akira Expanded", 18.6624f, juce::Font::bold).withExtraKerningFactor(0.1f)); // 10% smaller: 20.736f * 0.9 = 18.6624f, with letter spacing
     form2EffectsTitle->setColour(juce::Label::textColourId, juce::Colours::white);
     form2EffectsTitle->setJustificationType(juce::Justification::centredLeft);
     form2EffectsTitle->setBounds(effectArea.getX() + 10, effectArea.getY() + 5, 100, 30);
@@ -14043,7 +14498,7 @@ void PluginEditor::setupForm2SequencerArea()
     // Create step title
     form2StepTitle = std::make_unique<juce::Label>();
     form2StepTitle->setText("STEP", juce::dontSendNotification);
-    form2StepTitle->setFont(juce::Font(22.118f, juce::Font::bold));
+    form2StepTitle->setFont(FontManager::getInstance().getFont("Akira Expanded", 13.436685f, juce::Font::bold).withExtraKerningFactor(0.09f)); // Adjusted size with 10% less letter spacing: 0.1 * 0.9 = 0.09
     form2StepTitle->setColour(juce::Label::textColourId, juce::Colours::white);
     form2StepTitle->setJustificationType(juce::Justification::centredLeft);
     form2StepTitle->setBounds(sequencerArea.getX() + 10, sequencerArea.getY(), 80, 30);
@@ -14077,7 +14532,7 @@ void PluginEditor::setupForm2SequencerArea()
     // Create step amount label (TextEditor)
     form2StepAmountLabel = std::make_unique<juce::TextEditor>();
     form2StepAmountLabel->setText("16");
-    form2StepAmountLabel->setFont(juce::Font(16.0f, juce::Font::bold));
+    form2StepAmountLabel->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 16.0f, juce::Font::bold));
     form2StepAmountLabel->setColour(juce::TextEditor::textColourId, juce::Colours::white);
     form2StepAmountLabel->setColour(juce::TextEditor::backgroundColourId, juce::Colours::transparentBlack);
     form2StepAmountLabel->setColour(juce::TextEditor::outlineColourId, juce::Colours::white);
@@ -14262,7 +14717,7 @@ void PluginEditor::setupForm2AllStepsToggle()
     
     form2AllStepsLabel = std::make_unique<juce::Label>();
     form2AllStepsLabel->setText("All Steps", juce::dontSendNotification);
-    form2AllStepsLabel->setFont(juce::Font(14.4f, juce::Font::bold));
+    form2AllStepsLabel->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 14.4f, juce::Font::bold));
     form2AllStepsLabel->setColour(juce::Label::textColourId, juce::Colours::white);
     form2AllStepsLabel->setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(form2AllStepsLabel.get());
@@ -14541,7 +14996,7 @@ void PluginEditor::setupReduxKnobs()
         reduxKnobLabels[i]->setText(reduxKnobTitles[i], juce::dontSendNotification);
         reduxKnobLabels[i]->setJustificationType(juce::Justification::centred);
         reduxKnobLabels[i]->setColour(juce::Label::textColourId, juce::Colours::white);
-        reduxKnobLabels[i]->setFont(juce::Font(12.0f, juce::Font::bold));
+        reduxKnobLabels[i]->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 12.0f, juce::Font::bold));
         reduxKnobLabels[i]->setBounds(x, y - 15, knobSize, 20); // Moved down 5px from -20 to -15 (same as other effects)
         
         // Create value label
@@ -14551,7 +15006,7 @@ void PluginEditor::setupReduxKnobs()
         reduxValueLabels[i]->setText("0", juce::dontSendNotification);
         reduxValueLabels[i]->setJustificationType(juce::Justification::centred);
         reduxValueLabels[i]->setColour(juce::Label::textColourId, juce::Colours::white);
-        reduxValueLabels[i]->setFont(juce::Font(10.0f, juce::Font::plain));
+        reduxValueLabels[i]->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 10.0f, juce::Font::plain));
         reduxValueLabels[i]->setBounds(x, y + knobSize - 10, knobSize, 15); // Same as other effects
         
         // Create indicator bar
@@ -14692,7 +15147,7 @@ void PluginEditor::setupReduxEffectsArea()
     // Create "EFFECT" title label (ALWAYS "EFFECT", NOT the effect name!)
     reduxEffectsTitle = std::make_unique<juce::Label>();
     reduxEffectsTitle->setText("EFFECT", juce::dontSendNotification);
-    reduxEffectsTitle->setFont(juce::Font(27.648f, juce::Font::bold));
+    reduxEffectsTitle->setFont(FontManager::getInstance().getFont("Akira Expanded", 18.6624f, juce::Font::bold).withExtraKerningFactor(0.1f)); // 10% smaller: 20.736f * 0.9 = 18.6624f, with letter spacing
     reduxEffectsTitle->setColour(juce::Label::textColourId, juce::Colours::white);
     reduxEffectsTitle->setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(reduxEffectsTitle.get());
@@ -14760,14 +15215,14 @@ void PluginEditor::setupCompressSliders()
     
     // COMPRESS+ slider titles (Top row: Compressor controls, Bottom row: Drive/Lofi/Makeup Gain/Wet)
     const juce::StringArray compressSliderTitles = {
-        "THRESHOLD",
-        "ATTACK", 
-        "RELEASE",
-        "RATIO",
-        "DRIVE",
-        "LOFI",
-        "MAKEUP", 
-        "WET"
+        "Threshold",
+        "Attack", 
+        "Release",
+        "Ratio",
+        "Drive",
+        "Lofi",
+        "Makeup", 
+        "Wet"
     };
     
     // COMPRESS+ parameter IDs
@@ -14873,7 +15328,7 @@ void PluginEditor::setupCompressSliders()
         // Create title label
         auto label = std::make_unique<juce::Label>();
         label->setText(compressSliderTitles[i], juce::dontSendNotification);
-        label->setFont(juce::Font(12.0f, juce::Font::bold));
+        label->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 12.0f, juce::Font::bold));
         label->setColour(juce::Label::textColourId, juce::Colours::white);
         label->setColour(juce::Label::backgroundColourId, juce::Colours::transparentBlack); // Remove black background
         label->setJustificationType(juce::Justification::centredLeft);
@@ -14885,7 +15340,7 @@ void PluginEditor::setupCompressSliders()
         // Create value label
         auto valueLabel = std::make_unique<juce::Label>();
         valueLabel->setText("0.0", juce::dontSendNotification);
-        valueLabel->setFont(juce::Font(10.0f, juce::Font::bold));
+        valueLabel->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 10.0f, juce::Font::bold));
         valueLabel->setColour(juce::Label::textColourId, juce::Colours::white);
         valueLabel->setColour(juce::Label::backgroundColourId, juce::Colours::transparentBlack); // Remove black background
         valueLabel->setJustificationType(juce::Justification::centred);
@@ -15005,7 +15460,7 @@ void PluginEditor::setupReduxSequencerArea()
     // Create step title
     reduxStepTitle = std::make_unique<juce::Label>();
     reduxStepTitle->setText("STEP", juce::dontSendNotification);
-    reduxStepTitle->setFont(juce::Font(22.118f, juce::Font::bold));
+    reduxStepTitle->setFont(FontManager::getInstance().getFont("Akira Expanded", 13.436685f, juce::Font::bold).withExtraKerningFactor(0.09f)); // Adjusted size with 10% less letter spacing: 0.1 * 0.9 = 0.09
     reduxStepTitle->setColour(juce::Label::textColourId, juce::Colours::white);
     reduxStepTitle->setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(reduxStepTitle.get());
@@ -15044,7 +15499,7 @@ void PluginEditor::setupReduxSequencerArea()
     // Create step amount editor
     reduxStepAmountLabel = std::make_unique<juce::TextEditor>();
     reduxStepAmountLabel->setText("16");
-    reduxStepAmountLabel->setFont(juce::Font(16.0f, juce::Font::bold));
+    reduxStepAmountLabel->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 16.0f, juce::Font::bold));
     reduxStepAmountLabel->setColour(juce::TextEditor::textColourId, juce::Colours::white);
     reduxStepAmountLabel->setColour(juce::TextEditor::backgroundColourId, juce::Colours::transparentBlack);
     reduxStepAmountLabel->setColour(juce::TextEditor::outlineColourId, juce::Colours::white);
@@ -15223,7 +15678,7 @@ void PluginEditor::setupReduxAllStepsToggle()
     // Create all steps label (EXACT same positioning as other effects)
     reduxAllStepsLabel = std::make_unique<juce::Label>();
     reduxAllStepsLabel->setText("All Steps", juce::dontSendNotification);
-    reduxAllStepsLabel->setFont(juce::Font(14.4f, juce::Font::bold));
+    reduxAllStepsLabel->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 14.4f, juce::Font::bold));
     reduxAllStepsLabel->setColour(juce::Label::textColourId, juce::Colours::white);
     reduxAllStepsLabel->setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(reduxAllStepsLabel.get());
@@ -15533,7 +15988,7 @@ void PluginEditor::setupPhaseBloomKnobs()
         phaseBloomKnobLabels[i]->setText(phaseBloomKnobTitles[i], juce::dontSendNotification);
         phaseBloomKnobLabels[i]->setJustificationType(juce::Justification::centred);
         phaseBloomKnobLabels[i]->setColour(juce::Label::textColourId, juce::Colours::white);
-        phaseBloomKnobLabels[i]->setFont(juce::Font(12.0f, juce::Font::bold));
+        phaseBloomKnobLabels[i]->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 12.0f, juce::Font::bold));
         phaseBloomKnobLabels[i]->setBounds(x, y - 15, knobSize, 20); // Moved down 5px from -20 to -15 (same as other effects)
         
         // Create value label
@@ -15543,7 +15998,7 @@ void PluginEditor::setupPhaseBloomKnobs()
         phaseBloomValueLabels[i]->setText("0", juce::dontSendNotification);
         phaseBloomValueLabels[i]->setJustificationType(juce::Justification::centred);
         phaseBloomValueLabels[i]->setColour(juce::Label::textColourId, juce::Colours::white);
-        phaseBloomValueLabels[i]->setFont(juce::Font(10.0f, juce::Font::plain));
+        phaseBloomValueLabels[i]->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 10.0f, juce::Font::plain));
         phaseBloomValueLabels[i]->setBounds(x, y + knobSize - 10, knobSize, 15); // Same as other effects
         
         // Create indicator bar
@@ -15692,7 +16147,7 @@ void PluginEditor::setupPhaseBloomEffectsArea()
     // Create "EFFECT" title label (ALWAYS "EFFECT", NOT the effect name!)
     phaseBloomEffectsTitle = std::make_unique<juce::Label>();
     phaseBloomEffectsTitle->setText("EFFECT", juce::dontSendNotification);
-    phaseBloomEffectsTitle->setFont(juce::Font(27.648f, juce::Font::bold));
+    phaseBloomEffectsTitle->setFont(FontManager::getInstance().getFont("Akira Expanded", 18.6624f, juce::Font::bold).withExtraKerningFactor(0.1f)); // 10% smaller: 20.736f * 0.9 = 18.6624f, with letter spacing
     phaseBloomEffectsTitle->setColour(juce::Label::textColourId, juce::Colours::white);
     phaseBloomEffectsTitle->setJustificationType(juce::Justification::centredLeft);
     phaseBloomEffectsTitle->setBounds(effectArea.getX() + 10, effectArea.getY() + 5, 100, 30);
@@ -15753,7 +16208,7 @@ void PluginEditor::setupPhaseBloomSequencerArea()
     // Create step title
     phaseBloomStepTitle = std::make_unique<juce::Label>();
     phaseBloomStepTitle->setText("STEP", juce::dontSendNotification);
-    phaseBloomStepTitle->setFont(juce::Font(22.118f, juce::Font::bold));
+    phaseBloomStepTitle->setFont(FontManager::getInstance().getFont("Akira Expanded", 13.436685f, juce::Font::bold).withExtraKerningFactor(0.09f)); // Adjusted size with 10% less letter spacing: 0.1 * 0.9 = 0.09
     phaseBloomStepTitle->setColour(juce::Label::textColourId, juce::Colours::white);
     phaseBloomStepTitle->setJustificationType(juce::Justification::centredLeft);
     phaseBloomStepTitle->setBounds(sequencerArea.getX() + 10, sequencerArea.getY(), 80, 30);
@@ -15787,7 +16242,7 @@ void PluginEditor::setupPhaseBloomSequencerArea()
     // Create step amount label (TextEditor)
     phaseBloomStepAmountLabel = std::make_unique<juce::TextEditor>();
     phaseBloomStepAmountLabel->setText("16");
-    phaseBloomStepAmountLabel->setFont(juce::Font(16.0f, juce::Font::bold));
+    phaseBloomStepAmountLabel->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 16.0f, juce::Font::bold));
     phaseBloomStepAmountLabel->setColour(juce::TextEditor::textColourId, juce::Colours::white);
     phaseBloomStepAmountLabel->setColour(juce::TextEditor::backgroundColourId, juce::Colours::transparentBlack);
     phaseBloomStepAmountLabel->setColour(juce::TextEditor::outlineColourId, juce::Colours::white);
@@ -15960,7 +16415,7 @@ void PluginEditor::setupPhaseBloomAllStepsToggle()
     // Create all steps label
     phaseBloomAllStepsLabel = std::make_unique<juce::Label>();
     phaseBloomAllStepsLabel->setText("All Steps", juce::dontSendNotification);
-    phaseBloomAllStepsLabel->setFont(juce::Font(14.4f, juce::Font::bold));
+    phaseBloomAllStepsLabel->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 14.4f, juce::Font::bold));
     phaseBloomAllStepsLabel->setColour(juce::Label::textColourId, juce::Colours::white);
     phaseBloomAllStepsLabel->setJustificationType(juce::Justification::centredLeft);
     phaseBloomAllStepsLabel->setBounds(effectArea.getX() + effectArea.getWidth()/2 + buttonSize/2 + 5 + 30, 

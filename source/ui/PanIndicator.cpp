@@ -1,4 +1,5 @@
 #include "PanIndicator.h"
+#include "../FontManager.h"
 
 PanIndicator::PanIndicator()
 {
@@ -25,7 +26,7 @@ void PanIndicator::paint(juce::Graphics& g)
     
     // L/C/R labels - positioned at left, center, and right
     g.setColour(juce::Colours::white.withAlpha(0.8f));
-    g.setFont(juce::Font(12.0f, juce::Font::bold));
+    g.setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 12.0f, juce::Font::bold));
     
     // L on the left side
     auto leftBounds = bounds.reduced(8.0f, 4.0f).removeFromLeft(20);

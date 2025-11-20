@@ -13,6 +13,7 @@
 #include "EffectRouter.h"
 #include "ui/OutputSpectrumView.h"
 #include "ui/SpectrumFilterSlider.h"
+#include "ui/GumroadLicenseDialog.h"
 
 // Forward declarations
 struct RandomizationManager;
@@ -1269,6 +1270,10 @@ public:
     void updateDubDelayTimeLabel(); // Update Time knob label based on sync mode
         void onDubDelayStepButtonClicked(int stepIndex);
         void updateDubDelayCurrentStepSnapshot(int knobIndex, float value);
+        
+        // Gumroad License management methods
+        void checkLicenseOnStartup();
+        void showLicenseDialog();
         
         // Redux page helper methods
         void setupReduxKnobs();
