@@ -3,8 +3,8 @@
 FilterProcessor::FilterProcessor()
 {
     try {
-        cutoffSm.reset(48000.0, 0.015); // 15ms smoothing
-        resSm.reset(48000.0, 0.015);
+        cutoffSm.reset(48000.0, 0.001); // 1ms smoothing for fast response
+        resSm.reset(48000.0, 0.001);
         cutoffSm.setCurrentAndTargetValue(1200.0f);
         resSm.setCurrentAndTargetValue(0.35f);
         DBG("[FilterProcessor] Constructor completed successfully");
@@ -29,8 +29,8 @@ void FilterProcessor::prepare(double sampleRate, int maxBlockSize)
     specCached.maximumBlockSize = static_cast<juce::uint32>(maxBlockSize);
     specCached.numChannels = 2;
     
-    cutoffSm.reset(sampleRate, 0.015);
-    resSm.reset(sampleRate, 0.015);
+    cutoffSm.reset(sampleRate, 0.001); // 1ms smoothing for fast response
+    resSm.reset(sampleRate, 0.001);
     cutoffSm.setCurrentAndTargetValue(1200.0f);
     resSm.setCurrentAndTargetValue(0.35f);
     
@@ -53,7 +53,22 @@ void FilterProcessor::prepare(double sampleRate, int maxBlockSize)
 void FilterProcessor::setTargets(const Targets& t)
 {
     targetType = t.type;
-    cutoffSm.setTargetValue(juce::jlimit(20.0f, 20000.0f, t.cutoff));
+    
+    // Clamp cutoff to valid range
+    float newCutoff = juce::jlimit(20.0f, 20000.0f, t.cutoff);
+    
+    // Detect large cutoff changes (>20% change) and use instant update
+    float currentCutoff = cutoffSm.getCurrentValue();
+    float cutoffChange = std::abs(newCutoff - currentCutoff) / juce::jmax(1.0f, currentCutoff);
+    
+    if (cutoffChange > 0.2f) {
+        // Large change - instant update for responsive knob movement
+        cutoffSm.setCurrentAndTargetValue(newCutoff);
+    } else {
+        // Small change - use smoothing
+        cutoffSm.setTargetValue(newCutoff);
+    }
+    
     resSm.setTargetValue(juce::jlimit(0.0f, 0.95f, t.res));
     slope = t.slope;
     drive = t.drive;
@@ -99,13 +114,6 @@ void FilterProcessor::process(juce::AudioBuffer<float>& buffer, int numSamples)
         currentType = targetType;
     }
     
-    // Update params block-rate
-    float cut = cutoffSm.getNextValue();
-    float r = resSm.getNextValue();
-    
-    // Apply key track
-    applyKeyTrack(cut);
-    
     // Drive pre-filter
     float gPre = juce::Decibels::decibelsToGain(drive);
     buffer.applyGain(gPre);
@@ -129,6 +137,26 @@ void FilterProcessor::process(juce::AudioBuffer<float>& buffer, int numSamples)
     auto ioBlockSub = ioBlock.getSubBlock(0, numSamples);
     
     blockA.copyFrom(ioBlockSub);
+    
+    // Process current filter with responsive cutoff updates
+    // Advance smoothing through the entire block to get the final smoothed value
+    float cut = cutoffSm.getCurrentValue();
+    float r = resSm.getCurrentValue();
+    
+    // Advance smoothing through the block (update every 4 samples for balance)
+    const int updateInterval = 4;
+    for (int i = 0; i < numSamples; i += updateInterval) {
+        cut = cutoffSm.getNextValue();
+        r = resSm.getNextValue();
+        // Advance remaining samples in this interval by calling getNextValue multiple times
+        for (int j = 1; j < updateInterval && (i + j) < numSamples; ++j) {
+            cut = cutoffSm.getNextValue();
+            r = resSm.getNextValue();
+        }
+    }
+    
+    // Apply key track
+    applyKeyTrack(cut);
     
     // Process current filter
     if (cur) {
