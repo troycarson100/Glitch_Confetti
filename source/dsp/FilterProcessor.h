@@ -232,24 +232,47 @@ struct CombProc : IFilter {
         delayL = std::make_unique<FractionalDelay>(bufferSize);
         delayR = std::make_unique<FractionalDelay>(bufferSize);
         
-        // Internal LP for stability (12-16 kHz)
+        // Reset delay lines to ensure clean state
+        if (delayL) delayL->reset();
+        if (delayR) delayR->reset();
+        
+        // Internal LP for stability
         lpL.prepare(spec);
         lpR.prepare(spec);
         lpL.setType(juce::dsp::StateVariableTPTFilterType::lowpass);
         lpR.setType(juce::dsp::StateVariableTPTFilterType::lowpass);
         lpL.setCutoffFrequency(14000.0f);
         lpR.setCutoffFrequency(14000.0f);
+        
+        // Reset LP filters to ensure clean state
+        lpL.reset();
+        lpR.reset();
+        
+        // HPF for DC blocking in feedback path (prevents DC buildup and oscillation)
+        hpfL.prepare(spec);
+        hpfR.prepare(spec);
+        hpfL.setType(juce::dsp::StateVariableTPTFilterType::highpass);
+        hpfR.setType(juce::dsp::StateVariableTPTFilterType::highpass);
+        hpfL.setCutoffFrequency(40.0f);
+        hpfR.setCutoffFrequency(40.0f);
+        
+        // Reset HPF filters to ensure clean state
+        hpfL.reset();
+        hpfR.reset();
     }
     
     void set(float cutoffHz, float res, float slopeOrDepth, int slopeSel, float driveDb, float spreadCents, float fs) override {
         // cutoff becomes Tune (Hz) for comb
         float tuneHz = juce::jlimit(40.0f, 8000.0f, cutoffHz);
         
-        // res becomes Feedback
-        feedback = juce::jlimit(0.0f, 0.95f, res);
+        // res becomes Feedback - scale it for stability
+        // Map 0-1 resonance to 0-0.4 feedback (reduced to prevent oscillation and ringing)
+        // Higher values cause high-pitch ringing and instability
+        feedback = juce::jlimit(0.0f, 0.4f, res * 0.4f);
         
-        // slope becomes Depth (feed-forward tap)
-        depth = (slopeSel == 1) ? slopeOrDepth : 0.0f;
+        // slopeOrDepth becomes Depth (feed-forward tap) - always use it for comb filters
+        // Scale depth to make effect more pronounced (0-1 range)
+        depth = juce::jlimit(0.0f, 1.0f, slopeOrDepth);
         
         // Calculate delay length: L = fs / TuneHz
         float delaySamples = static_cast<float>(fs) / tuneHz;
@@ -266,13 +289,20 @@ struct CombProc : IFilter {
         delaySamplesL = juce::jlimit(1.0f, static_cast<float>(delayL->getBufferSize() - 1), delaySamplesL);
         delaySamplesR = juce::jlimit(1.0f, static_cast<float>(delayR->getBufferSize() - 1), delaySamplesR);
         
-        // Update LP if feedback/depth are high
-        if (feedback > 0.8f || depth > 0.5f) {
-            lpL.setCutoffFrequency(12000.0f);
-            lpR.setCutoffFrequency(12000.0f);
+        // Update LP cutoff based on feedback level for stability
+        // Lower cutoff for higher feedback to prevent oscillation
+        if (feedback > 0.25f) {
+            // High feedback: use lower cutoff (5-6kHz) for aggressive filtering
+            lpL.setCutoffFrequency(5000.0f);
+            lpR.setCutoffFrequency(5000.0f);
+        } else if (feedback > 0.15f) {
+            // Medium feedback: use moderate cutoff (7-8kHz)
+            lpL.setCutoffFrequency(7000.0f);
+            lpR.setCutoffFrequency(7000.0f);
         } else {
-            lpL.setCutoffFrequency(16000.0f);
-            lpR.setCutoffFrequency(16000.0f);
+            // Low feedback: use higher cutoff (10-12kHz) for more presence
+            lpL.setCutoffFrequency(10000.0f);
+            lpR.setCutoffFrequency(10000.0f);
         }
     }
     
@@ -287,47 +317,132 @@ struct CombProc : IFilter {
         auto* outL = out.getChannelPointer(0);
         auto* outR = out.getChannelPointer(1);
         
-        // Temporary buffers for LP processing
-        juce::AudioBuffer<float> lpTempL(1, numSamples);
-        juce::AudioBuffer<float> lpTempR(1, numSamples);
-        float* lpTempLData = lpTempL.getWritePointer(0);
-        float* lpTempRData = lpTempR.getWritePointer(0);
-        
         for (int i = 0; i < numSamples; ++i) {
             // Left channel
+            // Read delayed signal from delay line
             float delayedL = delayL->read(delaySamplesL);
             
-            // Feedback path with LP
-            float fbL = delayedL * feedback * combPolarity;
-            lpTempLData[i] = fbL;
+            // Store clean delayed signal for output (BEFORE feedback processing)
+            // This is the key pattern from DubDelayProcessor
+            float wetL = delayedL;
             
-            // Feed-forward tap (depth) - use current input
-            float ffL = inL[i] * depth;
+            // Process feedback path (like DubDelayProcessor pattern)
+            // Apply HPF first to remove DC buildup (prevents oscillation)
+            float fbProcessL = hpfL.processSample(0, delayedL);
             
-            // Output: delayed + feed-forward
-            outL[i] = delayedL + ffL;
+            // Apply LP filter for stability
+            fbProcessL = lpL.processSample(0, fbProcessL);
             
-            // Right channel
+            // Calculate feedback: apply gain with polarity and reduce by 0.6x (like DubDelay)
+            // Standard feedback comb: y[n] = x[n] + g * y[n-M] where g = feedback * polarity
+            // Reduce feedback further for comb+ at higher resonance to prevent ringing
+            float feedbackForDelay = feedback;
+            if (combPolarity > 0) {
+                // Comb+: reduce feedback much more aggressively at higher resonance (>50% = >0.2 feedback)
+                if (feedback > 0.2f) {
+                    // High resonance: reduce by 50% to prevent ringing
+                    feedbackForDelay = feedback * 0.5f;
+                } else {
+                    // Low resonance: reduce by 10% for more presence
+                    feedbackForDelay = feedback * 0.9f;
+                }
+            }
+            float fbL = fbProcessL * feedbackForDelay * combPolarity * 0.6f;
+            
+            // Safety check: prevent feedback instability and NaN values
+            if (!std::isfinite(fbL)) {
+                fbL = 0.0f;
+            }
+            
+            // Clamp feedback to prevent runaway (like DubDelayProcessor)
+            fbL = juce::jlimit(-0.9f, 0.9f, fbL);
+            
+            // Feed-forward component (depth): adds delayed signal to output
+            // This creates the characteristic comb filter notches
+            // Scale depth for both to make them more prominent
+            float effectiveDepth = depth;
+            if (combPolarity < 0) {
+                // Comb-: boost depth by 100% (2x) to make it much more apparent
+                effectiveDepth = depth * 2.0f;
+                effectiveDepth = juce::jlimit(0.0f, 1.0f, effectiveDepth);
+            } else {
+                // Comb+: boost depth more aggressively at low resonance, less at high
+                if (feedback > 0.2f) {
+                    // High resonance: moderate boost to prevent ringing
+                    effectiveDepth = depth * 1.2f;
+                } else {
+                    // Low-medium resonance: strong boost for prominence
+                    effectiveDepth = depth * 1.6f;
+                }
+                effectiveDepth = juce::jlimit(0.0f, 1.0f, effectiveDepth);
+            }
+            
+            float ffL = wetL * effectiveDepth;
+            
+            // Standard comb filter output: input + delayed * feedback + feedforward
+            // For Comb+: output = input + delayed * feedback + delayed * depth
+            // For Comb-: output = input - delayed * feedback + delayed * depth
+            // Scale feedback differently for comb- vs comb+ to balance the effect
+            float effectiveFeedbackForOutput = feedback;
+            if (combPolarity < 0) {
+                // Comb-: boost feedback by 100% (2x) to make it much more apparent
+                effectiveFeedbackForOutput = feedback * 2.0f;
+                effectiveFeedbackForOutput = juce::jlimit(0.0f, 0.7f, effectiveFeedbackForOutput);
+            } else {
+                // Comb+: boost feedback more at low resonance, reduce at high to prevent ringing
+                if (feedback > 0.2f) {
+                    // High resonance: reduce by 20% to prevent ringing
+                    effectiveFeedbackForOutput = feedback * 0.8f;
+                } else {
+                    // Low-medium resonance: boost by 50% for strong prominence
+                    effectiveFeedbackForOutput = feedback * 1.5f;
+                }
+            }
+            
+            float outputL = inL[i] + wetL * effectiveFeedbackForOutput * combPolarity + ffL;
+            
+            // Soft limit to prevent clipping
+            if (std::abs(outputL) > 2.0f) {
+                outputL = std::tanh(outputL * 0.4f) * 2.5f;
+            }
+            outputL = juce::jlimit(-2.5f, 2.5f, outputL);
+            
+            outL[i] = outputL;
+            
+            // Write input + feedback to delay line (standard feedback comb structure)
+            // This is the key: write input + filtered feedback, NOT the output
+            float delayInputL = inL[i] + fbL;
+            // Limit what goes into delay to prevent runaway
+            delayInputL = juce::jlimit(-2.0f, 2.0f, delayInputL);
+            delayL->write(delayInputL);
+            
+            // Right channel (same processing, reuse effectiveDepth and effectiveFeedbackForOutput from left)
             float delayedR = delayR->read(delaySamplesR);
+            float wetR = delayedR;
             
-            float fbR = delayedR * feedback * combPolarity;
-            lpTempRData[i] = fbR;
+            float fbProcessR = hpfR.processSample(0, delayedR);
+            fbProcessR = lpR.processSample(0, fbProcessR);
+            float fbR = fbProcessR * feedbackForDelay * combPolarity * 0.6f;
             
-            float ffR = inR[i] * depth;
+            if (!std::isfinite(fbR)) {
+                fbR = 0.0f;
+            }
+            fbR = juce::jlimit(-0.9f, 0.9f, fbR);
             
-            outR[i] = delayedR + ffR;
-        }
-        
-        // Process LP filters on feedback buffers
-        juce::dsp::AudioBlock<float> lpBlockL(lpTempL);
-        juce::dsp::AudioBlock<float> lpBlockR(lpTempR);
-        lpL.process(juce::dsp::ProcessContextReplacing<float>(lpBlockL));
-        lpR.process(juce::dsp::ProcessContextReplacing<float>(lpBlockR));
-        
-        // Now write filtered feedback to delay
-        for (int i = 0; i < numSamples; ++i) {
-            delayL->write(inL[i] + lpTempLData[i]);
-            delayR->write(inR[i] + lpTempRData[i]);
+            // Reuse effectiveDepth and effectiveFeedbackForOutput from left channel calculation
+            float ffR = wetR * effectiveDepth;
+            
+            float outputR = inR[i] + wetR * effectiveFeedbackForOutput * combPolarity + ffR;
+            if (std::abs(outputR) > 2.0f) {
+                outputR = std::tanh(outputR * 0.4f) * 2.5f;
+            }
+            outputR = juce::jlimit(-2.5f, 2.5f, outputR);
+            
+            outR[i] = outputR;
+            
+            float delayInputR = inR[i] + fbR;
+            delayInputR = juce::jlimit(-2.0f, 2.0f, delayInputR);
+            delayR->write(delayInputR);
         }
     }
     
@@ -335,6 +450,7 @@ private:
     int combPolarity; // -1 for Comb-, +1 for Comb+
     std::unique_ptr<FractionalDelay> delayL, delayR;
     juce::dsp::StateVariableTPTFilter<float> lpL, lpR;
+    juce::dsp::StateVariableTPTFilter<float> hpfL, hpfR; // HPF for DC blocking in feedback path
     float feedback = 0.0f;
     float depth = 0.0f;
     float baseDelaySamples = 100.0f;

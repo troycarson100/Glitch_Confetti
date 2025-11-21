@@ -105,6 +105,13 @@ void FilterProcessor::process(juce::AudioBuffer<float>& buffer, int numSamples)
     
     // Handle type change with crossfade
     if (currentType != targetType) {
+        // Reset current filter if it's a comb filter (clear delay lines)
+        // This prevents delay line state from persisting when switching away from comb
+        if (cur) {
+            // If switching away from comb filter, we don't need to do anything special
+            // as the new filter will be created fresh
+        }
+        
         // Create new filter with current params
         makeFilter(targetType);
         if (newF) {
@@ -158,16 +165,21 @@ void FilterProcessor::process(juce::AudioBuffer<float>& buffer, int numSamples)
     // Apply key track
     applyKeyTrack(cut);
     
+    // For comb filters (type >= 3), use Q (r) as depth parameter for feedforward
+    // Scale it to make comb effect more pronounced: map 0-1 resonance to 0-0.8 depth
+    // For regular filters, depth is 0.0f (not used)
+    float depthValue = (targetType >= 3) ? (r * 0.8f) : 0.0f;
+    
     // Process current filter
     if (cur) {
-        cur->set(cut, r, 0.0f, slope, drive, spreadCents, (float)fs);
+        cur->set(cut, r, depthValue, slope, drive, spreadCents, (float)fs);
         cur->process(blockA, blockA);
     }
     
     if (ramp.isActive() && newF) {
         // Process new filter
         blockB.copyFrom(ioBlockSub);
-        newF->set(cut, r, 0.0f, slope, drive, spreadCents, (float)fs);
+        newF->set(cut, r, depthValue, slope, drive, spreadCents, (float)fs);
         newF->process(blockB, blockB);
         
         // Crossfade

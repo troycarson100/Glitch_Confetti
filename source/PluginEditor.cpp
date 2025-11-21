@@ -12572,13 +12572,24 @@ void PluginEditor::setupFilterSequencerArea()
     filterStepPowerButton->setVisible(false);
     filterStepPowerButton->setToggleState(filterStepAreaEnabled, juce::dontSendNotification);
     filterStepPowerButton->onClick = [this]() {
+        // Read the button state after it has toggled
         filterStepAreaEnabled = filterStepPowerButton->getToggleState();
-        updateFilterStepAreaVisibility();
+        DBG("[UI] Filter sequencer power button clicked. New state: " << (filterStepAreaEnabled ? "ON" : "OFF"));
+        
+        // Update processor state
         processorRef.setFilterSequencerEnabled(filterStepAreaEnabled);
+        
+        // Update APVTS parameter if it exists (for state persistence)
         auto* param = processorRef.getAPVTS().getParameter("filterStepEnabled");
         if (param) {
             param->setValueNotifyingHost(filterStepAreaEnabled ? 1.0f : 0.0f);
         }
+        
+        // Update UI visibility
+        updateFilterStepAreaVisibility();
+        
+        // Refresh sequencer UI to show current state
+        updateFilterSequencerUI();
     };
     
     DBG("[UI] Filter sequencer area setup complete");
@@ -12741,8 +12752,10 @@ void PluginEditor::updateFilterStepAreaVisibility()
         filterStepDiceButton->setEnabled(filterStepAreaEnabled);
     }
     if (filterStepPowerButton) {
-        filterStepPowerButton->setAlpha(alpha);
-        filterStepPowerButton->setEnabled(filterStepAreaEnabled);
+        // Power button should always be enabled so user can turn sequencer back on
+        // Only change alpha to show visual state
+        filterStepPowerButton->setAlpha(filterStepAreaEnabled ? 1.0f : 0.3f);
+        filterStepPowerButton->setEnabled(true); // Always enabled so it can be toggled
     }
     repaint();
 }
@@ -13047,7 +13060,7 @@ void PluginEditor::setupSaturateKnobs()
             y -= 23; // Moved up 6px from -25 to -31, then down 8px to -23
         else
             y -= 1;
-        
+            
         saturateKnobs[i]->setBounds(x, y, knobSize, knobSize);
         
         // Create knob label
@@ -13057,7 +13070,7 @@ void PluginEditor::setupSaturateKnobs()
         saturateKnobLabels[i]->setColour(juce::Label::textColourId, juce::Colours::white);
         saturateKnobLabels[i]->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 12.0f, juce::Font::bold));
         saturateKnobLabels[i]->setBounds(x, y - 15, knobSize, 20);
-        addAndMakeVisible(saturateKnobLabels[i].get());
+            addAndMakeVisible(saturateKnobLabels[i].get());
         saturateKnobLabels[i]->setVisible(false);
         
         // Create value label
@@ -13066,13 +13079,13 @@ void PluginEditor::setupSaturateKnobs()
         saturateValueLabels[i]->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 10.0f, juce::Font::plain));
         saturateValueLabels[i]->setColour(juce::Label::textColourId, juce::Colours::white);
         saturateValueLabels[i]->setJustificationType(juce::Justification::centred);
-        addAndMakeVisible(saturateValueLabels[i].get());
+            addAndMakeVisible(saturateValueLabels[i].get());
         saturateValueLabels[i]->setVisible(false);
         saturateValueLabels[i]->setBounds(x, y + knobSize - 10, knobSize, 15);
         
         // Create indicator bar
         saturateIndicatorBars[i] = std::make_unique<IndicatorBar>();
-        addAndMakeVisible(saturateIndicatorBars[i].get());
+            addAndMakeVisible(saturateIndicatorBars[i].get());
         saturateIndicatorBars[i]->setVisible(false);
         saturateIndicatorBars[i]->setBounds(x + 10, y + knobSize + 8, knobSize - 20, 13);
         saturateIndicatorBars[i]->setValue(0.5f);
@@ -14478,7 +14491,7 @@ void PluginEditor::updateDubDelaySequencerUI()
     }
     
     // Update step amount display (don't overwrite if user is editing)
-    if (dubdelayStepAmountLabel != nullptr && !dubdelayStepAmountLabel->hasKeyboardFocus(true)) {
+    if (dubdelayStepAmountLabel != nullptr && !dubdelayStepAmountLabel->hasKeyboardFocus(true)) {                                                               
         juce::String currentText = dubdelayStepAmountLabel->getText();
         juce::String newText = juce::String(stepsUsed);
         // Only update if the value has actually changed to avoid text doubling
