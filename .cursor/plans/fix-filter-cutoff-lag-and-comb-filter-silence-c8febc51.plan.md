@@ -1,93 +1,63 @@
-<!-- c8febc51-1014-4a8f-821e-696510ed8bb7 1cc25977-2d93-4700-b39a-928f400322e7 -->
-# Replace Comb Filter DSP with Stable Implementation
+<!-- c8febc51-1014-4a8f-821e-696510ed8bb7 eb7d4b7f-dd1f-4ef2-8256-b6f47729ebb2 -->
+# Fix Comb- Prominence and Comb+ Clipping
 
 ## Problem Analysis
 
-The current comb filter implementation is causing high-pitch ringing, indicating:
+- **Comb-**: Still not prominent enough (currently 1.3x boost, -0.90 max feedback)
+- **Comb+**: Still has some clipping despite 0.5x reduction and aggressive limiting
 
-1. **Feedback loop instability**: The delay line contains feedback that's being read and fed back again, creating oscillation
-2. **Incorrect topology**: The output calculation may be adding delayed signal that already contains feedback
-3. **Missing DC blocking**: No high-pass filter to prevent DC buildup
-4. **Insufficient loop attenuation**: Feedback gain may be too high relative to filtering
+## Solution Strategy
 
-## Solution: Standard Comb Filter Implementation
+### 1. Increase Comb- Prominence
 
-Based on research and the working DubDelayProcessor pattern, implement a proper comb filter using:
+**File**: `source/dsp/FilterProcessor.h`
 
-### Standard Comb Filter Equations:
+- Increase `COMB_MINUS_OUTPUT_BOOST` from 1.3f to **1.6f** (60% boost instead of 30%)
+- Increase `MAX_FEEDBACK_MINUS` from -0.90f to **-0.95f** (stronger negative feedback for deeper notches)
+- Reduce `COMB_MINUS_DAMPING` from 0.18f to **0.15f** (less damping = sharper notches)
+- This will make Comb- much more audible and prominent
 
-- **Feedback Comb**: `y[n] = x[n] + g * y[n-M]` where g is feedback gain
-- **Feedforward Comb**: `y[n] = x[n] + a * x[n-M]` where a is feedforward gain
-- **Combined**: `y[n] = x[n] + g * y[n-M] + a * x[n-M]`
+### 2. Eliminate Comb+ Clipping
 
-### Key Implementation Details:
+**File**: `source/dsp/FilterProcessor.h`
 
-1. **Delay Line Structure**:
+- Reduce `COMB_PLUS_OUTPUT_REDUCTION` from 0.5f to **0.45f** (55% reduction instead of 50%)
+- Reduce `MAX_FEEDBACK_PLUS` from 0.85f to **0.80f** (lower max feedback = less accumulation)
+- Add pre-output soft clipping stage before the existing output processing
+- Tighten `OUTPUT_HARD_LIMIT` from 0.75f to **0.70f** (tighter final limit)
+- Add additional soft limit stage specifically for Comb+ output path
 
-- Read delayed signal from delay line
-- Store clean delayed signal BEFORE feedback processing (for output)
-- Process feedback path separately with filtering
-- Write `input + filtered_feedback` to delay (not the output)
+### 3. Enhanced Protection Stages
 
-2. **Feedback Path Processing** (like DubDelayProcessor):
+**File**: `source/dsp/FilterProcessor.h`
 
-- Apply HPF (40Hz) to remove DC buildup
-- Apply LPF for stability
-- Scale feedback gain appropriately (0.6x multiplier like DubDelay)
-- Clamp feedback to prevent runaway (-0.9 to 0.9)
+- In `process()` method, add pre-output soft clipping for Comb+:
+  - Apply `softClip()` with threshold 0.6f before the output reduction multiplier
+  - This catches peaks before they get amplified by the feedback
+- Add Comb+ specific output limiting:
+  - After output reduction, apply additional `softLimit()` with 0.65f threshold
+  - Then apply existing soft clip and soft limit stages
 
-3. **Output Calculation**:
+## Implementation Details
 
-- For Comb+: `output = input + delayed * feedback + delayed * depth`
-- For Comb-: `output = input - delayed * feedback + delayed * depth`
-- The delayed signal used in output is the CLEAN delayed signal (before feedback processing)
+### Constants to Update (lines ~260-274)
 
-4. **Stability Measures**:
+```cpp
+MAX_FEEDBACK_PLUS = 0.80f;        // Reduced from 0.85f
+MAX_FEEDBACK_MINUS = -0.95f;      // Increased from -0.90f
+COMB_MINUS_DAMPING = 0.15f;       // Reduced from 0.18f
+COMB_PLUS_OUTPUT_REDUCTION = 0.45f; // Reduced from 0.5f
+COMB_MINUS_OUTPUT_BOOST = 1.6f;   // Increased from 1.3f
+OUTPUT_HARD_LIMIT = 0.70f;        // Reduced from 0.75f
+```
 
-- DC-blocking HPF in feedback path
-- Aggressive LPF in feedback path (lower cutoff for stability)
-- Feedback gain reduction (0.6x multiplier)
-- Proper clamping at multiple stages
-- NaN/infinity checks
+### Process Method Updates (lines ~437-456 for left, ~492-511 for right)
 
-## Implementation Steps
+- For Comb+ output path: Add pre-output soft clipping before reduction multiplier
+- For Comb- output path: Keep existing boost, but with higher multiplier
+- Add Comb+ specific additional soft limit stage after reduction
 
-### File: `source/dsp/FilterProcessor.h`
+## Expected Results
 
-**1. Add HPF to CombProc** (lines 222-250):
-
-- Add `juce::dsp::StateVariableTPTFilter<float> hpfL, hpfR;` member variables
-- Initialize HPF in `prepare()`: set to highpass, 40Hz cutoff
-- Reset HPF in `prepare()`
-
-**2. Rewrite `CombProc::process()` method** (lines 303-400):
-
-- Read delayed signal
-- Store clean delayed for output: `wetL = delayedL`
-- Process feedback path:
-- Apply HPF: `delayedL = hpfL.processSample(0, delayedL)`
-- Apply LPF: `delayedL = lpL.processSample(0, delayedL)`
-- Calculate feedback: `fbL = delayedL * feedback * polarity * 0.6f` (0.6x reduction)
-- Clamp: `fbL = juce::jlimit(-0.9f, 0.9f, fbL)`
-- Calculate output:
-- Feedforward: `ffL = wetL * depth`
-- Output: `output = input + wetL * feedback * polarity + ffL`
-- Write to delay: `delay.write(input + fbL)`
-- Apply soft limiting to output
-
-**3. Adjust parameter scaling in `set()` method** (lines 252-301):
-
-- Reduce maximum feedback from 0.5 to 0.4
-- Ensure feedback is always positive (0.0 to 0.4 range)
-- Adjust LP cutoff based on feedback level (lower for higher feedback)
-
-## Expected Result
-
-- No high-pitch ringing or oscillation
-- Stable comb filter behavior at all resonance levels
-- Comb- and Comb+ both work correctly
-- Musical, usable comb filter effect
-
-### To-dos
-
-- [x] 
+- **Comb-**: Much more prominent and audible (60% boost, stronger feedback, sharper notches)
+- **Comb+**: No clipping even at high resonance (more aggressive reduction, lower max feedback, additional protection stages)

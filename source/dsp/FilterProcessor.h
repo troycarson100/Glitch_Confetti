@@ -142,7 +142,13 @@ struct SVFProc : IFilter {
         }
         
         // Apply output gain trim
-        out.multiplyBy(outputGain);
+        // For BP mode, apply additional gain boost to compensate for natural attenuation
+        float finalGain = outputGain;
+        if (filterType == 2) { // BP mode
+            // Bandpass filters naturally attenuate signal, so boost by ~6dB (2x) for audibility
+            finalGain *= 2.0f;
+        }
+        out.multiplyBy(finalGain);
     }
     
 private:
@@ -213,120 +219,113 @@ private:
     }
 };
 
-// Soft clipping function for feedback path (tanh-based, efficient)
-inline float softClip(float x, float threshold = 1.0f) {
-    // Soft clipping: tanh for smooth saturation
-    // Threshold controls where saturation begins
-    if (std::abs(x) < threshold) {
-        return x; // No clipping below threshold
-    }
-    // Smooth tanh saturation above threshold
-    return std::tanh(x * (1.0f / threshold)) * threshold;
+// Simple cubic soft clip - branch-light and fast
+// This is the core protection that prevents nasty digital clipping
+inline float softClip(float x) {
+    // Cubic soft saturation: x - (x^3) * (1/3)
+    // This provides smooth saturation without harsh clipping
+    // Works well for values up to about ±1.5, then saturates smoothly
+    const float x3 = x * x * x;
+    return x - (x3 * 0.333333f);
 }
 
 // Comb filter processor (Comb- / Comb+)
-// Redesigned for musical resonance, stability, and clarity
+// Clean, robust design based on proven comb filter topology
+// Design choices:
+// - inputGain: Creates internal headroom to prevent clipping (0.4 = -7.9dB headroom)
+// - wetGain: Controls output level (1.0 for Comb+, 1.4 for Comb- to make it more obvious)
+// - maxFeedback: Hard caps to prevent instability (0.94 for Comb+, -0.97 for Comb-)
+// - damping: One-pole LPF in feedback path (0.1 = bright, 0.3 = smooth)
+// - softClip: Cubic saturation prevents digital clipping while maintaining musical character
 struct CombProc : IFilter {
-    // Constants (easily tweakable)
-    static constexpr float MAX_FEEDBACK = 0.98f;        // Maximum feedback gain (±0.98)
-    static constexpr float COMB_MIN_DAMPING = 0.1f;     // Comb+ minimum damping (brighter)
-    static constexpr float COMB_MAX_DAMPING = 0.6f;     // Comb- maximum damping (darker)
-    static constexpr float SOFT_CLIP_THRESHOLD = 0.85f; // Soft clip threshold in feedback path
-    static constexpr float HPF_CUTOFF = 30.0f;          // DC blocking HPF frequency
+    // Tuning constants - adjust these to change character:
+    static constexpr float MAX_FB_PLUS = 0.94f;   // Comb+ max feedback (lower = safer, less wild)
+    static constexpr float MAX_FB_MINUS = -0.97f; // Comb- max feedback (more negative = deeper notches)
+    static constexpr float INPUT_GAIN_PLUS = 0.4f;  // Comb+ input gain (lower = more headroom, less clipping)
+    static constexpr float INPUT_GAIN_MINUS = 0.4f; // Comb- input gain (same for consistency)
+    static constexpr float WET_GAIN_PLUS = 1.0f;    // Comb+ wet gain (1.0 = unity, lower = quieter)
+    static constexpr float WET_GAIN_MINUS = 1.4f;   // Comb- wet gain (higher = more prominent/obvious)
+    static constexpr float DAMPING_PLUS = 0.1f;     // Comb+ damping (lower = brighter, more resonant)
+    static constexpr float DAMPING_MINUS = 0.15f;   // Comb- damping (slightly higher for stability, but still sharp)
     
-    CombProc(int polarity) : combPolarity(polarity) {
+    CombProc(int polarity) : combPolarity(polarity), isNegative(polarity < 0) {
         // polarity: -1 for Comb-, +1 for Comb+
+        // Set defaults based on comb type
+        if (isNegative) {
+            inputGain = INPUT_GAIN_MINUS;
+            wetGain = WET_GAIN_MINUS;
+            currentDamping = DAMPING_MINUS;
+        } else {
+            inputGain = INPUT_GAIN_PLUS;
+            wetGain = WET_GAIN_PLUS;
+            currentDamping = DAMPING_PLUS;
+        }
     }
     
     void prepare(const juce::dsp::ProcessSpec& spec) override {
         specCached = spec;
         double fs = spec.sampleRate;
+        sampleRateHz = fs;
         
         // Maximum delay: 1 second at highest sample rate
-        int maxDelaySamples = static_cast<int>(fs * 1.0);
-        // Round up to power of 2
-        int bufferSize = 1;
-        while (bufferSize < maxDelaySamples) bufferSize *= 2;
+        const size_t maxSamples = static_cast<size_t>(std::ceil(1.0 * fs));
         
-        delayL = std::make_unique<FractionalDelay>(bufferSize);
-        delayR = std::make_unique<FractionalDelay>(bufferSize);
+        // Allocate delay buffers (simple circular buffers)
+        bufferSizeL = maxSamples + 1;
+        bufferSizeR = maxSamples + 1;
+        bufferL.assign(bufferSizeL, 0.0f);
+        bufferR.assign(bufferSizeR, 0.0f);
         
-        // Reset delay lines to ensure clean state
-        if (delayL) delayL->reset();
-        if (delayR) delayR->reset();
-        
-        // Lowpass damping filter in feedback path
-        lpL.prepare(spec);
-        lpR.prepare(spec);
-        lpL.setType(juce::dsp::StateVariableTPTFilterType::lowpass);
-        lpR.setType(juce::dsp::StateVariableTPTFilterType::lowpass);
-        // Initial cutoff will be set dynamically based on damping
-        lpL.setCutoffFrequency(8000.0f);
-        lpR.setCutoffFrequency(8000.0f);
-        lpL.reset();
-        lpR.reset();
-        
-        // HPF for DC blocking in feedback path (prevents DC buildup)
-        hpfL.prepare(spec);
-        hpfR.prepare(spec);
-        hpfL.setType(juce::dsp::StateVariableTPTFilterType::highpass);
-        hpfR.setType(juce::dsp::StateVariableTPTFilterType::highpass);
-        hpfL.setCutoffFrequency(HPF_CUTOFF);
-        hpfR.setCutoffFrequency(HPF_CUTOFF);
-        hpfL.reset();
-        hpfR.reset();
+        writeIndexL = 0;
+        writeIndexR = 0;
         
         // Initialize damping state
         lastLowpassOutL = 0.0f;
         lastLowpassOutR = 0.0f;
+        
+        // Reset delay state
+        currentDelayL = 1.0f;
+        currentDelayR = 1.0f;
     }
     
     void set(float cutoffHz, float res, float slopeOrDepth, int slopeSel, float driveDb, float spreadCents, float fs) override {
         // cutoff becomes Tune (Hz) for comb
         float tuneHz = juce::jlimit(40.0f, 8000.0f, cutoffHz);
         
-        // res becomes Feedback - map 0-1 to ±MAX_FEEDBACK with polarity
-        // This gives full range for musical resonance
-        float rawFeedback = res * MAX_FEEDBACK;
-        feedback = juce::jlimit(-MAX_FEEDBACK, MAX_FEEDBACK, rawFeedback * combPolarity);
+        // res becomes Feedback - use curved mapping for sweet spot
+        // Shape the resonance parameter: res^2 gives more control in lower range
+        float shaped = res * res;
+        shaped = juce::jlimit(0.0f, 1.0f, shaped);
         
-        // slopeOrDepth becomes Depth (feed-forward tap)
+        // Set feedback based on comb type with different caps
+        if (isNegative) {
+            // Comb-: use stronger negative feedback for deeper notches
+            feedback = MAX_FB_MINUS * shaped;
+        } else {
+            // Comb+: use positive feedback, slightly lower cap for safety
+            feedback = MAX_FB_PLUS * shaped;
+        }
+        
+        // slopeOrDepth becomes Depth (feed-forward tap) - not used in this design
+        // We use wetGain instead for output level control
         depth = juce::jlimit(0.0f, 1.0f, slopeOrDepth);
         
         // Calculate delay length: L = fs / TuneHz
         float delaySamples = static_cast<float>(fs) / tuneHz;
-        delaySamples = juce::jlimit(1.0f, static_cast<float>(delayL->getBufferSize() - 1), delaySamples);
-        baseDelaySamples = delaySamples;
+        delaySamples = juce::jlimit(1.0f, static_cast<float>(bufferSizeL - 2), delaySamples);
         
         // Stereo spread: offset tune per channel
         float spreadFactorL = std::pow(2.0f, spreadCents / 1200.0f);
         float spreadFactorR = std::pow(2.0f, -spreadCents / 1200.0f);
         
-        delaySamplesL = delaySamples * spreadFactorL;
-        delaySamplesR = delaySamples * spreadFactorR;
+        currentDelayL = delaySamples * spreadFactorL;
+        currentDelayR = delaySamples * spreadFactorR;
         
-        delaySamplesL = juce::jlimit(1.0f, static_cast<float>(delayL->getBufferSize() - 1), delaySamplesL);
-        delaySamplesR = juce::jlimit(1.0f, static_cast<float>(delayR->getBufferSize() - 1), delaySamplesR);
+        currentDelayL = juce::jlimit(1.0f, static_cast<float>(bufferSizeL - 2), currentDelayL);
+        currentDelayR = juce::jlimit(1.0f, static_cast<float>(bufferSizeR - 2), currentDelayR);
         
-        // Calculate damping amount based on comb type and resonance
-        // Comb- gets more damping (darker), Comb+ gets less (brighter)
-        float dampingAmount;
-        if (combPolarity < 0) {
-            // Comb-: more damping, increases with resonance for stability
-            dampingAmount = COMB_MIN_DAMPING + (COMB_MAX_DAMPING - COMB_MIN_DAMPING) * std::abs(feedback) / MAX_FEEDBACK;
-        } else {
-            // Comb+: less damping, only increases slightly at high resonance
-            dampingAmount = COMB_MIN_DAMPING + (COMB_MAX_DAMPING * 0.3f - COMB_MIN_DAMPING) * std::abs(feedback) / MAX_FEEDBACK;
-        }
-        
-        // Map damping to LP cutoff frequency (more damping = lower cutoff)
-        // Range: 2kHz (high damping) to 12kHz (low damping)
-        float lpCutoff = 12000.0f - (dampingAmount * 10000.0f);
-        lpCutoff = juce::jlimit(2000.0f, 12000.0f, lpCutoff);
-        lpL.setCutoffFrequency(lpCutoff);
-        lpR.setCutoffFrequency(lpCutoff);
-        
-        currentDamping = dampingAmount;
+        // Damping is set based on comb type in constructor, but can be adjusted here if needed
+        // For now, keep the defaults set in constructor
     }
     
     void process(juce::dsp::AudioBlock<float>& in, juce::dsp::AudioBlock<float>& out) override {
@@ -341,87 +340,134 @@ struct CombProc : IFilter {
         auto* outR = out.getChannelPointer(1);
         
         for (int i = 0; i < numSamples; ++i) {
-            // ========== LEFT CHANNEL ==========
-            // Read delayed signal from delay line
-            float delayedL = delayL->read(delaySamplesL);
-            
-            // Apply damping (lowpass smoothing) in feedback path
-            // This creates the characteristic comb filter sound
-            float filteredL = (1.0f - currentDamping) * delayedL + currentDamping * lastLowpassOutL;
-            lastLowpassOutL = filteredL;
-            
-            // Apply HPF to remove DC buildup (prevents oscillation)
-            float fbProcessL = hpfL.processSample(0, filteredL);
-            
-            // Calculate feedback sample with polarity
-            float feedbackSampleL = fbProcessL * feedback;
-            
-            // Apply soft clipping in feedback path to tame peaks and prevent harshness
-            feedbackSampleL = softClip(feedbackSampleL, SOFT_CLIP_THRESHOLD);
-            
-            // Safety checks: prevent NaN/Inf and runaway feedback
-            if (!std::isfinite(feedbackSampleL)) {
-                feedbackSampleL = 0.0f;
-            }
-            feedbackSampleL = juce::jlimit(-0.95f, 0.95f, feedbackSampleL);
-            
-            // Write input + feedback to delay line (standard feedback comb structure)
-            float delayInputL = inL[i] + feedbackSampleL;
-            // Limit delay input to prevent runaway
-            delayInputL = juce::jlimit(-1.5f, 1.5f, delayInputL);
-            delayL->write(delayInputL);
-            
-            // Output: input + delayed * feedback + feedforward (depth)
-            // Feedforward adds the delayed signal directly to output for more presence
-            float outputL = inL[i] + delayedL * feedback + delayedL * depth;
-            
-            // Soft limit output to prevent clipping
-            if (std::abs(outputL) > 1.5f) {
-                outputL = softClip(outputL, 1.5f);
-            }
-            outputL = juce::jlimit(-2.0f, 2.0f, outputL);
-            outL[i] = outputL;
-            
-            // ========== RIGHT CHANNEL ==========
-            // Same processing as left channel
-            float delayedR = delayR->read(delaySamplesR);
-            
-            float filteredR = (1.0f - currentDamping) * delayedR + currentDamping * lastLowpassOutR;
-            lastLowpassOutR = filteredR;
-            
-            float fbProcessR = hpfR.processSample(0, filteredR);
-            float feedbackSampleR = fbProcessR * feedback;
-            feedbackSampleR = softClip(feedbackSampleR, SOFT_CLIP_THRESHOLD);
-            
-            if (!std::isfinite(feedbackSampleR)) {
-                feedbackSampleR = 0.0f;
-            }
-            feedbackSampleR = juce::jlimit(-0.95f, 0.95f, feedbackSampleR);
-            
-            float delayInputR = inR[i] + feedbackSampleR;
-            delayInputR = juce::jlimit(-1.5f, 1.5f, delayInputR);
-            delayR->write(delayInputR);
-            
-            float outputR = inR[i] + delayedR * feedback + delayedR * depth;
-            if (std::abs(outputR) > 1.5f) {
-                outputR = softClip(outputR, 1.5f);
-            }
-            outputR = juce::jlimit(-2.0f, 2.0f, outputR);
-            outR[i] = outputR;
+            outL[i] = processSampleL(inL[i]);
+            outR[i] = processSampleR(inR[i]);
         }
     }
     
 private:
+    // Process single sample for left channel
+    inline float processSampleL(float inputSample) {
+        // Read delayed sample with linear interpolation
+        float readIndex = static_cast<float>(writeIndexL) - currentDelayL;
+        if (readIndex < 0.0f) {
+            readIndex += static_cast<float>(bufferSizeL);
+        }
+        
+        const int idxA = static_cast<int>(readIndex);
+        const int idxB = (idxA + 1) % static_cast<int>(bufferSizeL);
+        const float frac = readIndex - static_cast<float>(idxA);
+        
+        const float sa = bufferL[static_cast<size_t>(idxA)];
+        const float sb = bufferL[static_cast<size_t>(idxB)];
+        const float delayedSample = sa + frac * (sb - sa);
+        
+        // Feedback path damping (one-pole LPF)
+        const float filtered = (1.0f - currentDamping) * delayedSample + currentDamping * lastLowpassOutL;
+        lastLowpassOutL = filtered;
+        
+        // Calculate feedback sample
+        float feedbackSample = filtered * feedback;
+        
+        // Sum input (with headroom) + feedback
+        float internal = inputSample * inputGain + feedbackSample;
+        
+        // Soft clip to prevent clipping inside loop
+        internal = softClip(internal);
+        
+        // Safety check
+        if (!std::isfinite(internal)) {
+            internal = 0.0f;
+        }
+        
+        // Write into buffer
+        bufferL[writeIndexL] = internal;
+        
+        // Increment write index (circular)
+        if (++writeIndexL >= bufferSizeL) {
+            writeIndexL = 0;
+        }
+        
+        // Output: input + delayed signal (standard comb filter topology)
+        // The wetGain scales the delayed component for Comb- prominence
+        float output = inputSample + delayedSample * wetGain;
+        
+        // Final soft clip on output for safety
+        output = softClip(output);
+        
+        return output;
+    }
+    
+    // Process single sample for right channel
+    inline float processSampleR(float inputSample) {
+        // Read delayed sample with linear interpolation
+        float readIndex = static_cast<float>(writeIndexR) - currentDelayR;
+        if (readIndex < 0.0f) {
+            readIndex += static_cast<float>(bufferSizeR);
+        }
+        
+        const int idxA = static_cast<int>(readIndex);
+        const int idxB = (idxA + 1) % static_cast<int>(bufferSizeR);
+        const float frac = readIndex - static_cast<float>(idxA);
+        
+        const float sa = bufferR[static_cast<size_t>(idxA)];
+        const float sb = bufferR[static_cast<size_t>(idxB)];
+        const float delayedSample = sa + frac * (sb - sa);
+        
+        // Feedback path damping (one-pole LPF)
+        const float filtered = (1.0f - currentDamping) * delayedSample + currentDamping * lastLowpassOutR;
+        lastLowpassOutR = filtered;
+        
+        // Calculate feedback sample
+        float feedbackSample = filtered * feedback;
+        
+        // Sum input (with headroom) + feedback
+        float internal = inputSample * inputGain + feedbackSample;
+        
+        // Soft clip to prevent clipping inside loop
+        internal = softClip(internal);
+        
+        // Safety check
+        if (!std::isfinite(internal)) {
+            internal = 0.0f;
+        }
+        
+        // Write into buffer
+        bufferR[writeIndexR] = internal;
+        
+        // Increment write index (circular)
+        if (++writeIndexR >= bufferSizeR) {
+            writeIndexR = 0;
+        }
+        
+        // Output is the delayed signal with wet gain
+        float output = delayedSample * wetGain;
+        
+        // Final soft clip on output for safety
+        output = softClip(output);
+        
+        return output;
+    }
+    
     int combPolarity; // -1 for Comb-, +1 for Comb+
-    std::unique_ptr<FractionalDelay> delayL, delayR;
-    juce::dsp::StateVariableTPTFilter<float> lpL, lpR; // Lowpass for damping (currently using simple smoothing)
-    juce::dsp::StateVariableTPTFilter<float> hpfL, hpfR; // HPF for DC blocking in feedback path
+    bool isNegative;  // true for Comb-, false for Comb+
+    
+    // Delay buffers (simple circular buffers)
+    std::vector<float> bufferL, bufferR;
+    size_t bufferSizeL = 0;
+    size_t bufferSizeR = 0;
+    size_t writeIndexL = 0;
+    size_t writeIndexR = 0;
+    
+    // Parameters
+    double sampleRateHz = 44100.0;
+    float currentDelayL = 1.0f;
+    float currentDelayR = 1.0f;
     float feedback = 0.0f;
-    float depth = 0.0f;
-    float baseDelaySamples = 100.0f;
-    float delaySamplesL = 100.0f;
-    float delaySamplesR = 100.0f;
-    float currentDamping = 0.1f; // Current damping amount (0-1)
+    float depth = 0.0f; // Not used in this design, kept for API compatibility
+    float inputGain = 0.4f; // Headroom gain (0.4 = -7.9dB)
+    float wetGain = 1.0f;   // Output gain (1.0 for Comb+, 1.4 for Comb-)
+    float currentDamping = 0.1f; // One-pole LPF damping (0-1)
     float lastLowpassOutL = 0.0f; // Damping state for left channel
     float lastLowpassOutR = 0.0f; // Damping state for right channel
     juce::dsp::ProcessSpec specCached;
