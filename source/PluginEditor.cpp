@@ -1510,6 +1510,9 @@ void PluginEditor::timerCallback()
     // Update Saturate (Heat) sequencer UI
     updateSaturateSequencerUI();
     
+    // Update Filter sequencer UI
+    updateFilterSequencerUI();
+    
     // Update Dub Delay time label (handles sync mode display)
     updateDubDelayTimeLabel();
     
@@ -12423,7 +12426,9 @@ void PluginEditor::setupFilterSequencerArea()
             if (!filterKnobLocked[5]) {
                 snapshot.filter.keytrack = rng.nextFloat(); // 0-1
             }
-            // Mix is global, not randomized per step
+            if (!filterKnobLocked[6]) {
+                snapshot.filter.mix = rng.nextFloat(); // 0-1
+            }
             
             processorRef.setFilterStepSnapshot(step, snapshot);
         }
@@ -12853,8 +12858,19 @@ void PluginEditor::updateFilterParameterFromKnob(int knobIndex)
     // knobIndex: -1 = Type, -2 = Slope, 0-3 = filterKnobs[0-3] (Cutoff, Res, Drive, Key Track)
     // Mix knob (filterKnobs[4]) is global, not saved per step
     
-    // Get current step
+    // Get current step - if sequencer is active, update the playing step, otherwise update selected step
+    const auto& seqState = processorRef.getFilterSeqState();
     int currentStep = filterUiSelectedStep;
+    
+    // If sequencer is enabled and active, update the playing step instead of selected step
+    // This ensures knob changes affect the audio immediately during playback
+    if (seqState.enabled.load() && seqState.active.load()) {
+        int playingStep = processorRef.getFilterPlayingStep();
+        if (playingStep >= 0 && playingStep < 16) {
+            currentStep = playingStep;
+        }
+    }
+    
     if (currentStep < 0 || currentStep >= 16) return;
     
     // Get value and save to snapshot
@@ -12886,7 +12902,7 @@ void PluginEditor::updateFilterSequencerUI()
         const auto& seqState = processorRef.getFilterSeqState();
         stepsUsed = seqState.stepsUsed.load();
         
-    for (int i = 0; i < 16; ++i) {
+        for (int i = 0; i < 16; ++i) {
             if (filterStepButtons[i] != nullptr) {
                 bool isSelected = (i == selectedStep);
                 filterStepButtons[i]->setSelected(isSelected);
@@ -12894,6 +12910,48 @@ void PluginEditor::updateFilterSequencerUI()
                 filterStepButtons[i]->setPlaying(sequencerEnabled && (i == playingStep) && (i != selectedStep));
                 bool shouldBeEnabled = i < stepsUsed;
                 filterStepButtons[i]->setEnabledStep(shouldBeEnabled);
+            }
+        }
+        
+        // Update indicator bars based on current playing step (if sequencer is active)
+        if (seqState.enabled.load() && seqState.active.load() && playingStep >= 0 && playingStep < 16) {
+            auto snapshot = processorRef.getFilterSafeSnapshot(playingStep);
+            
+            // Update Type indicator bar (index 0)
+            if (filterIndicatorBars[0]) {
+                filterIndicatorBars[0]->setValue(snapshot.filter.type / 4.0f);
+            }
+            
+            // Update Cutoff indicator bar (index 1)
+            if (filterIndicatorBars[1] && filterKnobs[0]) {
+                // Convert frequency to normalized value
+                float freq = juce::jlimit(20.0f, 20000.0f, snapshot.filter.cutoff);
+                float normalized = freq <= 5000.0f 
+                    ? 0.75f * (freq - 20.0f) / (5000.0f - 20.0f)
+                    : 0.75f + 0.25f * (std::log(freq / 5000.0f) / std::log(4.0f));
+                normalized = juce::jlimit(0.0f, 1.0f, normalized);
+                filterIndicatorBars[1]->setValue(normalized);
+            }
+            
+            // Update Resonance indicator bar (index 2)
+            if (filterIndicatorBars[2]) {
+                filterIndicatorBars[2]->setValue(snapshot.filter.resonance);
+            }
+            
+            // Update Slope indicator bar (index 3)
+            if (filterIndicatorBars[3]) {
+                filterIndicatorBars[3]->setValue(snapshot.filter.slope);
+            }
+            
+            // Update Drive indicator bar (index 4)
+            if (filterIndicatorBars[4]) {
+                float driveNorm = snapshot.filter.drive / 36.0f;
+                filterIndicatorBars[4]->setValue(driveNorm);
+            }
+            
+            // Update Key Track indicator bar (index 5)
+            if (filterIndicatorBars[5]) {
+                filterIndicatorBars[5]->setValue(snapshot.filter.keytrack);
             }
         }
     } catch (...) {
@@ -12942,21 +13000,107 @@ void PluginEditor::onFilterStepButtonClicked(int stepIndex)
         if (filterKnobs[2]) filterKnobs[2]->setValue(snapshot.filter.drive, juce::dontSendNotification);
         // Key Track knob (filterKnobs[3])
         if (filterKnobs[3]) filterKnobs[3]->setValue(snapshot.filter.keytrack, juce::dontSendNotification);
-        // Mix knob (filterKnobs[4]) is global, not per-step
+        // Mix knob (filterKnobs[4]) - update from snapshot
+        if (filterKnobs[4]) filterKnobs[4]->setValue(snapshot.filter.mix, juce::dontSendNotification);
         
         // Clear flag before triggering callbacks so labels update
         isLoadingFromSnapshot.store(false);
         
-        // Trigger value change callbacks to update labels (but not save snapshots)
+        // Explicitly update value labels from snapshot values (before triggering callbacks)
+        // Type label (index 0)
+        if (filterValueLabels[0] && filterTypeKnob) {
+            float typeValue = filterTypeKnob->getValue();
+            const char* types[] = { "LP", "HP", "BP", "Comb-", "Comb+" };
+            int idx = static_cast<int>(juce::jlimit(0.0f, 4.0f, typeValue));
+            filterValueLabels[0]->setText(types[idx], juce::dontSendNotification);
+        }
+        
+        // Cutoff label (index 1)
+        if (filterValueLabels[1] && filterKnobs[0]) {
+            float value = filterKnobs[0]->getValue();
+            float freq = value <= 0.75f 
+                ? 20.0f + (5000.0f - 20.0f) * (value / 0.75f)
+                : 5000.0f * std::pow(4.0f, (value - 0.75f) / 0.25f);
+            filterValueLabels[1]->setText(juce::String(static_cast<int>(freq)) + " Hz", juce::dontSendNotification);
+        }
+        
+        // Resonance label (index 2)
+        if (filterValueLabels[2] && filterKnobs[1]) {
+            float value = filterKnobs[1]->getValue();
+            filterValueLabels[2]->setText(juce::String(static_cast<int>(value * 100)) + "%", juce::dontSendNotification);
+        }
+        
+        // Slope label (index 3)
+        if (filterValueLabels[3] && filterSlopeKnob) {
+            float value = filterSlopeKnob->getValue();
+            filterValueLabels[3]->setText(value > 0.5f ? "24dB" : "12dB", juce::dontSendNotification);
+        }
+        
+        // Drive label (index 4)
+        if (filterValueLabels[4] && filterKnobs[2]) {
+            float value = filterKnobs[2]->getValue();
+            float drivePercent = (value / 36.0f) * 100.0f;
+            filterValueLabels[4]->setText(juce::String(static_cast<int>(drivePercent)) + "%", juce::dontSendNotification);
+        }
+        
+        // Key Track label (index 5)
+        if (filterValueLabels[5] && filterKnobs[3]) {
+            float value = filterKnobs[3]->getValue();
+            filterValueLabels[5]->setText(juce::String(static_cast<int>(value * 100)) + "%", juce::dontSendNotification);
+        }
+        
+        // Mix label (index 6) - update if mix knob exists
+        if (filterValueLabels[6] && filterKnobs[4]) {
+            float value = filterKnobs[4]->getValue();
+            filterValueLabels[6]->setText(juce::String(static_cast<int>(value * 100)) + "%", juce::dontSendNotification);
+        }
+        
+        // Trigger value change callbacks to update indicator bars (but not save snapshots)
+        isLoadingFromSnapshot.store(true); // Set flag to prevent saving during callbacks
         if (filterTypeKnob && filterTypeKnob->onValueChange) filterTypeKnob->onValueChange();
         if (filterSlopeKnob && filterSlopeKnob->onValueChange) filterSlopeKnob->onValueChange();
         for (int i = 0; i < 5; ++i) { // Only first 5 knobs (Mix knob 5 is global)
             if (filterKnobs[i] && filterKnobs[i]->onValueChange) {
-                // Temporarily set flag to prevent saving during callback
-                isLoadingFromSnapshot.store(true);
                 filterKnobs[i]->onValueChange();
-                isLoadingFromSnapshot.store(false);
             }
+        }
+        isLoadingFromSnapshot.store(false); // Clear flag after callbacks
+        
+        // Explicitly update indicator bars from snapshot values
+        // Type indicator bar (index 0)
+        if (filterIndicatorBars[0]) {
+            filterIndicatorBars[0]->setValue(snapshot.filter.type / 4.0f);
+        }
+        
+        // Cutoff indicator bar (index 1) - convert frequency to normalized
+        if (filterIndicatorBars[1]) {
+            float freq = juce::jlimit(20.0f, 20000.0f, snapshot.filter.cutoff);
+            float normalized = freq <= 5000.0f 
+                ? 0.75f * (freq - 20.0f) / (5000.0f - 20.0f)
+                : 0.75f + 0.25f * (std::log(freq / 5000.0f) / std::log(4.0f));
+            normalized = juce::jlimit(0.0f, 1.0f, normalized);
+            filterIndicatorBars[1]->setValue(normalized);
+        }
+        
+        // Resonance indicator bar (index 2)
+        if (filterIndicatorBars[2]) {
+            filterIndicatorBars[2]->setValue(snapshot.filter.resonance);
+        }
+        
+        // Slope indicator bar (index 3)
+        if (filterIndicatorBars[3]) {
+            filterIndicatorBars[3]->setValue(snapshot.filter.slope);
+        }
+        
+        // Drive indicator bar (index 4)
+        if (filterIndicatorBars[4]) {
+            float driveNorm = snapshot.filter.drive / 36.0f;
+            filterIndicatorBars[4]->setValue(driveNorm);
+        }
+        
+        // Key Track indicator bar (index 5)
+        if (filterIndicatorBars[5]) {
+            filterIndicatorBars[5]->setValue(snapshot.filter.keytrack);
         }
     }
     

@@ -12,6 +12,8 @@ PluginProcessor::PluginProcessor()
                        ),
     valueTreeState(*this, nullptr, "Parameters", createParameterLayout())
 {
+    // Denormal protection - prevents denormalized numbers that can kill performance
+    juce::FloatVectorOperations::disableDenormalisedNumberSupport();
     // Initialize delay sequencer state
     seq.enabled.store(false);
     seq.stepsUsed.store(16);
@@ -136,26 +138,6 @@ PluginProcessor::PluginProcessor()
     }
     DBG("[Stepper] Initialized Saturate step snapshots with default values");
     
-    // Initialize Filter sequencer
-    filterSeq.enabled.store(true); // Start enabled
-    filterSeq.stepsUsed.store(16);
-    filterSeq.divisionIndex.store(5); // 1/8 default
-    filterSeq.playingStep.store(0);
-    filterUiSelectedStep.store(0); // Initialize UI selected step
-    
-    // Initialize Filter step snapshots with defaults
-    for (int i = 0; i < 16; ++i) {
-        filterStepSnapshots[i].filter.type = 0.0f; // LP
-        filterStepSnapshots[i].filter.cutoff = 1200.0f; // 1200 Hz
-        filterStepSnapshots[i].filter.resonance = 0.35f;
-        filterStepSnapshots[i].filter.slope = 1.0f; // 24dB
-        filterStepSnapshots[i].filter.drive = 6.0f;
-        filterStepSnapshots[i].filter.spread = 0.0f; // Spread removed
-        filterStepSnapshots[i].filter.keytrack = 0.0f;
-        filterStepSnapshots[i].filter.mix = 1.0f;
-    }
-    DBG("[Stepper] Initialized Filter step snapshots with default values");
-    
     // Initialize Redux sequencer
     reduxSeq.enabled.store(true); // Start enabled
     reduxSeq.stepsUsed.store(16);
@@ -198,6 +180,26 @@ PluginProcessor::PluginProcessor()
     form2Seq.enabled.store(true);
     form2Seq.active.store(false);
     DBG("[Stepper] Initialized Form 2 step snapshots with default values");
+    
+    // Initialize Filter sequencer
+    filterSeq.enabled.store(true); // Start enabled
+    filterSeq.stepsUsed.store(16);
+    filterSeq.divisionIndex.store(5); // 1/8 default
+    filterSeq.playingStep.store(0);
+    filterUiSelectedStep.store(0); // Initialize UI selected step
+    
+    // Initialize Filter step snapshots with defaults
+    for (int i = 0; i < 16; ++i) {
+        filterStepSnapshots[i].filter.type = 0.0f;        // LP (0=LP, 1=HP, 2=BP, 3=Comb-, 4=Comb+)
+        filterStepSnapshots[i].filter.cutoff = 1200.0f;   // 1200 Hz default
+        filterStepSnapshots[i].filter.resonance = 0.35f;   // 35% default
+        filterStepSnapshots[i].filter.slope = 1.0f;       // 24dB default
+        filterStepSnapshots[i].filter.drive = 6.0f;       // 6 dB default
+        filterStepSnapshots[i].filter.spread = 0.0f;      // No spread
+        filterStepSnapshots[i].filter.keytrack = 0.0f;    // No key tracking
+        filterStepSnapshots[i].filter.mix = 1.0f;         // 100% wet
+    }
+    DBG("[Stepper] Initialized Filter step snapshots with default values");
     
     // Initialize UI state
     uiSelectedStep.store(0);
@@ -448,7 +450,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout PluginProcessor::createParam
     params.push_back(std::make_unique<juce::AudioParameterFloat>("reduxDrive", "Redux Drive", 0.0f, 10.0f, 1.0f));
     params.push_back(std::make_unique<juce::AudioParameterFloat>("reduxEmphasis", "Redux Emphasis", 0.0f, 1.0f, 0.5f));
     params.push_back(std::make_unique<juce::AudioParameterFloat>("reduxMix", "Redux Mix", 0.0f, 1.0f, 0.5f));
-    params.push_back(std::make_unique<juce::AudioParameterBool>("reduxEnabled", "Redux Enabled", false));
+    params.push_back(std::make_unique<juce::AudioParameterBool>("reduxEnabled", "Redux Enabled", true));
     params.push_back(std::make_unique<juce::AudioParameterBool>("reduxStepEnabled", "Redux Step Enabled", true));
     
     // PhaseBloom Parameters - 8 sliders
@@ -472,7 +474,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout PluginProcessor::createParam
     params.push_back(std::make_unique<juce::AudioParameterFloat>("formantMotion", "Formant Motion", 0.0f, 1.0f, 0.25f)); // Motion 0-1
     params.push_back(std::make_unique<juce::AudioParameterFloat>("formantAir", "Formant Air", 0.0f, 1.0f, 0.2f)); // Air 0-1
     params.push_back(std::make_unique<juce::AudioParameterFloat>("mix", "Mix", 0.0f, 1.0f, 1.0f)); // 0-1 dry/wet mix
-    params.push_back(std::make_unique<juce::AudioParameterBool>("formantEnabled", "Formant Enabled", true));
+    params.push_back(std::make_unique<juce::AudioParameterBool>("formantEnabled", "Formant Enabled", false));
     params.push_back(std::make_unique<juce::AudioParameterBool>("formantStepEnabled", "Formant Step Enabled", true));
     
     // Form 2 Parameters - Vocoder with scale-quantized carrier
@@ -488,6 +490,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout PluginProcessor::createParam
     params.push_back(std::make_unique<juce::AudioParameterBool>("form2StepEnabled", "Form 2 Step Enabled", true));
     
     // Saturate Parameters
+    params.push_back(std::make_unique<juce::AudioParameterInt>("satType", "Saturate Type", 0, 7, 0));
     params.push_back(std::make_unique<juce::AudioParameterFloat>("satDrive", "Drive", 0.0f, 36.0f, 12.0f));
     params.push_back(std::make_unique<juce::AudioParameterFloat>("satColor", "Color", 0.0f, 1.0f, 0.5f));
     params.push_back(std::make_unique<juce::AudioParameterFloat>("satShape", "Shape", 0.0f, 1.0f, 0.4f));
@@ -498,27 +501,24 @@ juce::AudioProcessorValueTreeState::ParameterLayout PluginProcessor::createParam
     params.push_back(std::make_unique<juce::AudioParameterBool>("saturateEnabled", "Saturate Enabled", true)); // Default ON
     params.push_back(std::make_unique<juce::AudioParameterBool>("saturateStepEnabled", "Saturate Step Enabled", true));
     
-    // Filter Parameters (8 knobs: fType, cutoff, res, slope, drive, spread, keytrack, filterMix)
-    params.push_back(std::make_unique<juce::AudioParameterInt>("fType", "Filter Type", 0, 4, 0)); // 0=LP, 1=HP, 2=BP, 3=Comb-, 4=Comb+
-    // Custom frequency range: 0-75% knob = 20Hz-5000Hz, 75-100% knob = 5000Hz-20000Hz
-    // Parameter stores normalized value (0.0-1.0) for linear knob rotation
-    // Conversion to frequency happens in processBlock using convertNormalizedToFrequency()
-    params.push_back(std::make_unique<juce::AudioParameterFloat>("cutoff", "Cutoff", 
-        juce::NormalisableRange<float>(0.0f, 1.0f, 0.001f), 0.18f)); // Normalized: ~0.18 = 1200Hz
-    params.push_back(std::make_unique<juce::AudioParameterFloat>("res", "Resonance", 
-        juce::NormalisableRange<float>(0.0f, 1.0f, 0.01f), 0.35f));
-    params.push_back(std::make_unique<juce::AudioParameterFloat>("slope", "Slope", 
-        juce::NormalisableRange<float>(0.0f, 1.0f, 0.01f), 1.0f)); // 0=12dB, 1=24dB
-    params.push_back(std::make_unique<juce::AudioParameterFloat>("filterDrive", "Drive", 
-        juce::NormalisableRange<float>(0.0f, 36.0f, 0.5f), 6.0f)); // dB, 0.5dB increments
-    params.push_back(std::make_unique<juce::AudioParameterFloat>("spread", "Spread", 
-        juce::NormalisableRange<float>(-50.0f, 50.0f, 0.1f), 0.0f)); // cents
-    params.push_back(std::make_unique<juce::AudioParameterFloat>("keytrack", "Key Track", 
-        juce::NormalisableRange<float>(0.0f, 1.0f, 0.01f), 0.0f));
+    // Filter Parameters - 8 knobs
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("filterLowCut", "Filter Low Cut", 
+        juce::NormalisableRange<float>(20.0f, 20000.0f, 1.0f, 0.5f), 20.0f)); // Hz, log scale
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("filterHighCut", "Filter High Cut", 
+        juce::NormalisableRange<float>(20.0f, 20000.0f, 1.0f, 0.5f), 20000.0f)); // Hz, log scale
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("filterResonance", "Filter Resonance", 
+        juce::NormalisableRange<float>(0.0f, 0.95f, 0.0f, 1.0f), 0.35f)); // 0-0.95
+    params.push_back(std::make_unique<juce::AudioParameterChoice>("filterType", "Filter Type", 
+        juce::StringArray{"LP", "HP", "BP", "Comb-", "Comb+"}, 0)); // 0=LP default
+    params.push_back(std::make_unique<juce::AudioParameterChoice>("filterSlope", "Filter Slope", 
+        juce::StringArray{"12dB", "24dB"}, 1)); // 0=12dB, 1=24dB, default 24dB
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("filterDrive", "Filter Drive", 
+        juce::NormalisableRange<float>(0.0f, 24.0f, 0.1f, 1.0f), 6.0f)); // dB
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("filterQ", "Filter Q", 
+        juce::NormalisableRange<float>(0.5f, 10.0f, 0.01f, 0.5f), 0.707f)); // Q factor
     params.push_back(std::make_unique<juce::AudioParameterFloat>("filterMix", "Filter Mix", 
-        juce::NormalisableRange<float>(0.0f, 1.0f, 0.01f), 1.0f));
+        juce::NormalisableRange<float>(0.0f, 1.0f, 0.0f, 1.0f), 1.0f)); // 0-1 dry/wet
     params.push_back(std::make_unique<juce::AudioParameterBool>("filterEnabled", "Filter Enabled", true)); // Default ON
-    params.push_back(std::make_unique<juce::AudioParameterBool>("filterStepEnabled", "Filter Step Enabled", true));
     
     return { params.begin(), params.end() };
 }
@@ -628,16 +628,15 @@ void PluginProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
     saturateProcessor.prepare(sampleRate, samplesPerBlock);
     saturateSeq.prepare(sampleRate); // Initialize Saturate sequencer with sample rate
     
-    // Prepare Filter DSP
-    filterProcessor.prepare(sampleRate, samplesPerBlock);
-    filterSeq.prepare(sampleRate); // Initialize Filter sequencer with sample rate
-    
     // Prepare Form 2 DSP
     juce::dsp::ProcessSpec form2Spec;
     form2Spec.sampleRate = sampleRate;
     form2Spec.maximumBlockSize = static_cast<juce::uint32>(samplesPerBlock);
     form2Spec.numChannels = static_cast<juce::uint32>(getTotalNumInputChannels());
     form2Processor.prepare(form2Spec);
+    
+    // Prepare Filter DSP
+    filterProcessor.prepare(sampleRate, samplesPerBlock);
     
     // Prepare COMPRESS+ DSP - Master effect
     juce::dsp::ProcessSpec compressSpec;
@@ -746,6 +745,35 @@ void PluginProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 
 void PluginProcessor::releaseResources()
 {
+    // Suspend processing to prevent audio callbacks during cleanup
+    suspendProcessing(true);
+    
+    // Clear all buffers to prevent access to invalid memory
+    // dryBuffer removed - no longer needed
+    
+    // Reset all sequencer states to prevent access during destruction
+    seq.active.store(false);
+    autopanSeq.active.store(false);
+    dirtSeq.active.store(false);
+    chorusSeq.active.store(false);
+    reverbSeq.active.store(false);
+    granularSeq.active.store(false);
+    slicerSeq.active.store(false);
+    dubdelaySeq.active.store(false);
+    spacedelaySeq.active.store(false);
+    reduxSeq.active.store(false);
+    phaseBloomSeq.active.store(false);
+    formantSeq.active.store(false);
+    saturateSeq.active.store(false);
+    form2Seq.active.store(false);
+    
+    // Clear transport cache
+    transportCache.valid.store(false);
+    transportCache.playing.store(false);
+    
+    // Disable spectrum analyzer to prevent async callbacks during destruction
+    // Clear the output view reference directly (safe to do here)
+    spectrumAnalyzer.setOutputView(nullptr);
 }
 
 #ifndef JucePlugin_PreferredChannelConfigurations
@@ -813,8 +841,6 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                 spacedelaySeq.resetPhase();  // Space Delay sequencer phase reset
                 phaseBloomSeq.resetPhase();  // PhaseBloom sequencer phase reset
                 reduxSeq.resetPhase();      // Redux sequencer phase reset
-                saturateSeq.resetPhase();    // Saturate sequencer phase reset
-                filterSeq.resetPhase();      // Filter sequencer phase reset
                 
                 // Auto-enable delay sequencer on DAW play (only if user hasn't explicitly disabled it)
                 if (followHost.load() && !userDisabledSequencer.load()) {
@@ -900,16 +926,16 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                     DBG("[FORM2 SEQ] ✓ Activated on play edge");
                 }
                 
-                // Filter sequencer activates if enabled (independent of followHost)
-                if (filterSeq.enabled.load()) {
-                    filterSeq.active.store(true);  // Activate Filter sequencer
-                    DBG("[FILTER SEQ] ✓ Activated on play edge");
-                }
-                
                 // Redux sequencer activates if enabled (independent of followHost)
                 if (reduxSeq.enabled.load()) {
                     reduxSeq.active.store(true);  // Activate Redux sequencer
                     DBG("[REDUX SEQ] ✓ Activated on play edge");
+                }
+                
+                // Filter sequencer activates if enabled (independent of followHost)
+                if (filterSeq.enabled.load()) {
+                    filterSeq.active.store(true);  // Activate Filter sequencer
+                    DBG("[FILTER SEQ] ✓ Activated on play edge");
                 }
                 
                 DBG("[SEQ] Play edge detected");
@@ -1006,6 +1032,14 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                     form2Seq.currentStep.store(form2Step);
                     form2Seq.playingStep.store(form2Step);
                     DBG("[FORM2 SEQ] Lock-in at PPQ=" << ppq << " -> step " << form2Step);
+                }
+                
+                if (filterSeq.enabled.load() && filterSeq.active.load()) {
+                    const int filterStep = filterSeq.computeStepFromPPQ(ppq);
+                    const int safeStep = juce::jlimit(0, 15, filterStep);
+                    filterSeq.currentStep.store(safeStep);
+                    filterSeq.playingStep.store(safeStep);
+                    DBG("[FILTER SEQ] Lock-in at PPQ=" << ppq << " -> step " << safeStep);
                 }
                 
                 armPending.store(false);
@@ -1163,21 +1197,6 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                 saturateSeq.active.store(false);
             }
             
-            // Filter sequencer stepping (shares same PPQ/transport, independent timing)
-            if (isPlaying && ppqValid && filterSeq.enabled.load() && filterSeq.active.load()) {
-                const int filterStep = filterSeq.computeStepFromPPQ(ppq);
-                if (filterStep != filterSeq.currentStep.load()) {
-                    filterSeq.currentStep.store(filterStep);
-                    filterSeq.playingStep.store(filterStep);
-                    DBG("[FILTER SEQ] ★ Step changed to: " << filterStep << " PPQ: " << ppq);
-                }
-            }
-            
-            // Deactivate sequencer if not playing
-            if (!isPlaying && filterSeq.active.load()) {
-                filterSeq.active.store(false);
-            }
-            
             // Form 2 sequencer stepping (shares same PPQ/transport, independent timing)
             if (isPlaying && ppqValid && form2Seq.active.load()) {
                 const int form2Step = form2Seq.computeStepFromPPQ(ppq);
@@ -1196,6 +1215,23 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                     reduxSeq.playingStep.store(reduxStep);
                     DBG("[REDUX SEQ] ★ Step changed to: " << reduxStep << " PPQ: " << ppq);
                 }
+            }
+            
+            // Filter sequencer stepping (shares same PPQ/transport, independent timing)
+            if (isPlaying && ppqValid && filterSeq.enabled.load() && filterSeq.active.load()) {
+                const int filterStep = filterSeq.computeStepFromPPQ(ppq);
+                // Safety check: ensure step is valid before storing
+                const int safeStep = juce::jlimit(0, 15, filterStep);
+                if (safeStep != filterSeq.currentStep.load()) {
+                    filterSeq.currentStep.store(safeStep);
+                    filterSeq.playingStep.store(safeStep);
+                    DBG("[FILTER SEQ] ★ Step changed to: " << safeStep << " PPQ: " << ppq);
+                }
+            }
+            
+            // Deactivate filter sequencer if not playing
+            if (!isPlaying && filterSeq.active.load()) {
+                filterSeq.active.store(false);
             }
             
             // Publish AutoPan Sequencer Visual Clock (independent from Delay sequencer)
@@ -1990,6 +2026,7 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                         
                         // Process with snapshot values directly (no APVTS update)
                         // Pass stepChanged flag to enable smoother transitions
+                        // NOTE: type parameter removed - processWithSnapshot doesn't take it
                         saturateProcessor.processWithSnapshot(buffer, buffer.getNumSamples(), 
                                                              drive, color, shape, bias, output, mix,
                                                              stepChanged);
@@ -2003,148 +2040,6 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                 break;
             }
             
-            case EffectID::Filter:
-            {
-                // Check if effect is enabled
-                auto* filterEnabledParam = valueTreeState.getRawParameterValue("filterEnabled");
-                bool isFilterEnabled = filterEnabledParam ? (filterEnabledParam->load() > 0.5f) : false;
-                
-                if (isFilterEnabled) {
-                    // Get Filter sequencer state
-                    try {
-                        auto& seqState = filterSeq;
-                        
-                        // Read filter parameters (from sequencer snapshot if active, else APVTS)
-                        FilterProcessor::Targets targets;
-                        
-                        // Helper function to convert normalized cutoff (0-1) to frequency
-                        auto convertNormalizedCutoffToFrequency = [](float normalized) -> float {
-                            normalized = juce::jlimit(0.0f, 1.0f, normalized);
-                            if (normalized <= 0.75f) {
-                                // 0-75% knob = 20Hz-5000Hz (linear)
-                                return 20.0f + (5000.0f - 20.0f) * (normalized / 0.75f);
-                            } else {
-                                // 75-100% knob = 5000Hz-20000Hz (exponential)
-                                float t = (normalized - 0.75f) / 0.25f; // 0-1 in the upper range
-                                return 5000.0f * std::pow(4.0f, t); // 5000 * 4^t = 5000 to 20000
-                            }
-                        };
-                        
-                        // Safety check: ensure sequencer state is valid before accessing
-                        if (seqState.enabled.load(std::memory_order_acquire) && seqState.active.load(std::memory_order_acquire))
-                        {
-                            // Get playing step snapshot (the step that's actually playing during sequencer playback)
-                            int playingStep = seqState.playingStep.load(std::memory_order_acquire);
-                            if (playingStep >= 0 && playingStep < 16)
-                            {
-                                StepSnapshot snapshot = getFilterSafeSnapshot(playingStep);
-                            
-                                // Clamp and validate snapshot values
-                                targets.type = static_cast<int>(juce::jlimit(0, 4, static_cast<int>(std::round(snapshot.filter.type))));
-                                targets.cutoff = juce::jlimit(20.0f, 20000.0f, snapshot.filter.cutoff);
-                                targets.res = juce::jlimit(0.0f, 1.0f, snapshot.filter.resonance);
-                                targets.slope = (snapshot.filter.slope > 0.5f) ? 1 : 0;
-                                targets.drive = juce::jlimit(0.0f, 36.0f, snapshot.filter.drive);
-                                targets.spread = 0.0f; // Spread removed - always 0
-                                targets.keytrack = juce::jlimit(0.0f, 1.0f, snapshot.filter.keytrack);
-                                // Mix is always from APVTS (global, not per-step)
-                                auto* mixParam = valueTreeState.getRawParameterValue("filterMix");
-                                targets.mix = mixParam ? juce::jlimit(0.0f, 1.0f, mixParam->load()) : 1.0f;
-                            }
-                            else
-                            {
-                                // Fallback to APVTS if step invalid
-                                auto* typeParam = valueTreeState.getRawParameterValue("fType");
-                                auto* cutoffParam = valueTreeState.getRawParameterValue("cutoff");
-                                auto* resParam = valueTreeState.getRawParameterValue("res");
-                                auto* slopeParam = valueTreeState.getRawParameterValue("slope");
-                                auto* driveParam = valueTreeState.getRawParameterValue("filterDrive");
-                                auto* keytrackParam = valueTreeState.getRawParameterValue("keytrack");
-                                auto* mixParam = valueTreeState.getRawParameterValue("filterMix");
-                                
-                                if (typeParam && cutoffParam && resParam && slopeParam && 
-                                    driveParam && keytrackParam && mixParam)
-                                {
-                                    targets.type = static_cast<int>(typeParam->load());
-                                    // Convert normalized cutoff (0-1) to frequency using custom curve
-                                    float normalized = juce::jlimit(0.0f, 1.0f, cutoffParam->load());
-                                    targets.cutoff = convertNormalizedCutoffToFrequency(normalized);
-                                    targets.res = juce::jlimit(0.0f, 1.0f, resParam->load());
-                                    targets.slope = (slopeParam->load() > 0.5f) ? 1 : 0;
-                                    targets.drive = juce::jlimit(0.0f, 36.0f, driveParam->load());
-                                    targets.spread = 0.0f; // Spread removed - always 0
-                                    targets.keytrack = juce::jlimit(0.0f, 1.0f, keytrackParam->load());
-                                    targets.mix = juce::jlimit(0.0f, 1.0f, mixParam->load());
-                                }
-                                else
-                                {
-                                    // Use defaults if parameters missing
-                                    targets.type = 0;
-                                    targets.cutoff = 1200.0f;
-                                    targets.res = 0.35f;
-                                    targets.slope = 1;
-                                    targets.drive = 6.0f;
-                                    targets.spread = 0.0f; // Spread removed
-                                    targets.keytrack = 0.0f;
-                                    targets.mix = 1.0f;
-                                }
-                            }
-                        }
-                        else
-                        {
-                            // Sequencer not active - read from APVTS
-                            auto* typeParam = valueTreeState.getRawParameterValue("fType");
-                            auto* cutoffParam = valueTreeState.getRawParameterValue("cutoff");
-                            auto* resParam = valueTreeState.getRawParameterValue("res");
-                            auto* slopeParam = valueTreeState.getRawParameterValue("slope");
-                            auto* driveParam = valueTreeState.getRawParameterValue("filterDrive");
-                            auto* keytrackParam = valueTreeState.getRawParameterValue("keytrack");
-                            auto* mixParam = valueTreeState.getRawParameterValue("filterMix");
-                            
-                            if (typeParam && cutoffParam && resParam && slopeParam && 
-                                driveParam && keytrackParam && mixParam)
-                            {
-                                targets.type = static_cast<int>(typeParam->load());
-                                // Convert normalized cutoff (0-1) to frequency using custom curve
-                                float normalized = juce::jlimit(0.0f, 1.0f, cutoffParam->load());
-                                targets.cutoff = convertNormalizedCutoffToFrequency(normalized);
-                                targets.res = juce::jlimit(0.0f, 1.0f, resParam->load());
-                                targets.slope = (slopeParam->load() > 0.5f) ? 1 : 0;
-                                targets.drive = juce::jlimit(0.0f, 36.0f, driveParam->load());
-                                targets.spread = 0.0f; // Spread removed - always 0
-                                targets.keytrack = juce::jlimit(0.0f, 1.0f, keytrackParam->load());
-                                targets.mix = juce::jlimit(0.0f, 1.0f, mixParam->load());
-                            }
-                            else
-                            {
-                                // Use defaults if parameters missing
-                                targets.type = 0;
-                                targets.cutoff = 1200.0f;
-                                targets.res = 0.35f;
-                                targets.slope = 1;
-                                targets.drive = 6.0f;
-                                targets.spread = 0.0f; // Spread removed
-                                targets.keytrack = 0.0f;
-                                targets.mix = 1.0f;
-                            }
-                        }
-                        
-                        // Set filter targets (key tracking is handled internally by FilterProcessor)
-                        filterProcessor.setTargets(targets);
-                        
-                        // Process filter
-                        filterProcessor.process(buffer, buffer.getNumSamples());
-                    } catch (const std::exception& e) {
-                        DBG("[FILTER] Error processing filter: " << e.what());
-                        // Skip filter processing on error - don't crash
-                    } catch (...) {
-                        DBG("[FILTER] Unknown error processing filter");
-                        // Skip filter processing on error - don't crash
-                    }
-                }
-                break;
-            }
-
             case EffectID::Form2:
             {
                 // Check if effect is enabled
@@ -2176,10 +2071,11 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                             snapshot.form2.mix = juce::jlimit(0.0f, 1.0f, snapshot.form2.mix);
                             
                             // Set Form2 parameters from sequencer
-                            // Note: Form2Processor doesn't support rootNote, scale, or chordSize
-                            // form2Processor.setRootNote(snapshot.form2.rootNote);
-                            // form2Processor.setScale(snapshot.form2.scale);
-                            // form2Processor.setChordSize(snapshot.form2.chordSize);
+                            // NOTE: Form2Processor uses vowel/emphasis/sharpness, not rootNote/scale/chordSize
+                            // Map rootNote to vowel (0-11 -> 0-4, wrapping)
+                            form2Processor.setVowel(static_cast<float>(snapshot.form2.rootNote % 5));
+                            // form2Processor.setScale() - not available, use default
+                            // form2Processor.setChordSize() - not available, use default
                             form2Processor.setShift(snapshot.form2.shift);
                             form2Processor.setBrightness(snapshot.form2.color);
                             form2Processor.setMotion(snapshot.form2.motion);
@@ -2216,10 +2112,11 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                             brightnessParam && motionParam && airParam && mixParam)
                         {
                             // Set Form2 parameters
-                            // Note: Form2Processor doesn't support rootNote, scale, or chordSize
-                            // form2Processor.setRootNote(static_cast<int>(rootNoteParam->load()));
-                            // form2Processor.setScale(static_cast<int>(scaleParam->load()));
-                            // form2Processor.setChordSize(static_cast<int>(chordSizeParam->load()));
+                            // NOTE: Form2Processor uses vowel/emphasis/sharpness, not rootNote/scale/chordSize
+                            // Map rootNote to vowel (0-11 -> 0-4, wrapping)
+                            form2Processor.setVowel(static_cast<float>(static_cast<int>(rootNoteParam->load()) % 5));
+                            // form2Processor.setScale() - not available, use default
+                            // form2Processor.setChordSize() - not available, use default
                             form2Processor.setShift(shiftParam->load());
                             form2Processor.setBrightness(brightnessParam->load());
                             form2Processor.setMotion(motionParam->load());
@@ -2239,6 +2136,259 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                 }
                 break;
             }
+            
+            case EffectID::Filter:
+            {
+                // TEMP TEST: Uncomment this to bypass filter processing and test if issue is in filter chain
+                // buffer.makeCopyOf(dryBuffer); // or just return without processing
+                // break;
+                
+                // Check if effect is enabled
+                auto* filterEnabledParam = valueTreeState.getRawParameterValue("filterEnabled");
+                bool isFilterEnabled = filterEnabledParam ? (filterEnabledParam->load() > 0.5f) : false;
+                
+                if (!isFilterEnabled || buffer.getNumChannels() < 2 || buffer.getNumSamples() == 0) {
+                    break;
+                }
+                
+                // Get Filter sequencer state
+                auto& seqState = filterSeq;
+                    
+                    // Read filter parameters (from sequencer snapshot if active, else APVTS)
+                    FilterProcessor::Targets targets;
+                    
+                    // Helper function to convert normalized cutoff (0-1) to frequency
+                    auto convertNormalizedCutoffToFrequency = [](float normalized) -> float {
+                        normalized = juce::jlimit(0.0f, 1.0f, normalized);
+                        if (normalized <= 0.75f) {
+                            // 0-75% knob = 20Hz-5000Hz (linear)
+                            return 20.0f + (5000.0f - 20.0f) * (normalized / 0.75f);
+                        } else {
+                            // 75-100% knob = 5000Hz-20000Hz (exponential)
+                            float t = (normalized - 0.75f) / 0.25f; // 0-1 in the upper range
+                            return 5000.0f * std::pow(4.0f, t); // 5000 * 4^t = 5000 to 20000
+                        }
+                    };
+                    
+                    // Safety check: ensure sequencer state is valid before accessing
+                    if (seqState.enabled.load(std::memory_order_acquire) && seqState.active.load(std::memory_order_acquire))
+                    {
+                        // Get playing step snapshot (the step that's actually playing during sequencer playback)
+                        int playingStep = seqState.playingStep.load(std::memory_order_acquire);
+                        if (playingStep >= 0 && playingStep < 16)
+                        {
+                            StepSnapshot snapshot = getFilterSafeSnapshot(playingStep);
+                        
+                            // Clamp and validate snapshot values with comprehensive safety checks
+                            // CRITICAL: Ensure sequencer never feeds insane values that can kill the filter
+                            targets.type = static_cast<int>(juce::jlimit(0, 4, static_cast<int>(std::round(snapshot.filter.type))));
+                            
+                            // For comb filters (type 3 or 4), ensure cutoff is in valid range (40-8000 Hz for comb tuning)
+                            // For other filters, use full range (20-20000 Hz)
+                            float minCutoff = (targets.type >= 3) ? 40.0f : 20.0f;
+                            float maxCutoff = (targets.type >= 3) ? 8000.0f : 20000.0f;
+                            targets.cutoff = juce::jlimit(minCutoff, maxCutoff, snapshot.filter.cutoff);
+                            
+                            // NEVER let frequency be zero or negative - this causes division by zero in delay calculation
+                            if (targets.cutoff <= 0.0f || !std::isfinite(targets.cutoff)) {
+                                targets.cutoff = (targets.type >= 3) ? 40.0f : 20.0f; // Safe default
+                            }
+                            
+                            // Ensure resonance is valid (especially for comb filters)
+                            // Clamp strictly to 0-1 range - values > 1 can cause feedback > 1 and blow up
+                            targets.res = juce::jlimit(0.0f, 1.0f, snapshot.filter.resonance);
+                            if (!std::isfinite(targets.res)) {
+                                targets.res = 0.35f; // Safe default
+                            }
+                            
+                            targets.slope = (snapshot.filter.slope > 0.5f) ? 1 : 0;
+                            targets.drive = juce::jlimit(0.0f, 36.0f, snapshot.filter.drive);
+                            targets.spread = 0.0f; // Spread removed - always 0
+                            targets.keytrack = juce::jlimit(0.0f, 1.0f, snapshot.filter.keytrack);
+                            // Mix is always from APVTS (global, not per-step)
+                            auto* mixParam = valueTreeState.getRawParameterValue("filterMix");
+                            targets.mix = mixParam ? juce::jlimit(0.0f, 1.0f, mixParam->load()) : 1.0f;
+                            
+                            // Q is not in Targets struct - it's handled internally by FilterProcessor
+                        }
+                        else
+                        {
+                            // Fallback to APVTS if step invalid
+                            auto* typeParam = valueTreeState.getRawParameterValue("filterType");
+                            auto* lowCutParam = valueTreeState.getRawParameterValue("filterLowCut");
+                            auto* highCutParam = valueTreeState.getRawParameterValue("filterHighCut");
+                            auto* resParam = valueTreeState.getRawParameterValue("filterResonance");
+                            auto* slopeParam = valueTreeState.getRawParameterValue("filterSlope");
+                            auto* driveParam = valueTreeState.getRawParameterValue("filterDrive");
+                            // Keytrack is stored in snapshot but not as separate APVTS parameter - use 0.0f
+                            auto* mixParam = valueTreeState.getRawParameterValue("filterMix");
+                            
+                            if (typeParam && lowCutParam && highCutParam && resParam && slopeParam && 
+                                driveParam && mixParam)
+                            {
+                                // Type and slope are Choice parameters
+                                auto* typeChoiceParam = dynamic_cast<juce::AudioParameterChoice*>(valueTreeState.getParameter("filterType"));
+                                auto* slopeChoiceParam = dynamic_cast<juce::AudioParameterChoice*>(valueTreeState.getParameter("filterSlope"));
+                                targets.type = typeChoiceParam ? typeChoiceParam->getIndex() : 0;
+                                targets.slope = slopeChoiceParam ? slopeChoiceParam->getIndex() : 1;
+                                
+                                float lowCut = lowCutParam->load();
+                                float highCut = highCutParam->load();
+                                
+                                // Use appropriate cutoff based on filter type
+                                if (targets.type == 0) {
+                                    targets.cutoff = highCut;
+                                } else if (targets.type == 1) {
+                                    targets.cutoff = lowCut;
+                                } else if (targets.type == 2) {
+                                    targets.cutoff = (lowCut + highCut) * 0.5f;
+                                } else {
+                                    targets.cutoff = juce::jlimit(40.0f, 8000.0f, lowCut);
+                                }
+                                
+                                // NEVER let frequency be zero or negative
+                                if (targets.cutoff <= 0.0f || !std::isfinite(targets.cutoff)) {
+                                    targets.cutoff = (targets.type >= 3) ? 40.0f : 20.0f; // Safe default
+                                }
+                                
+                                // Clamp resonance strictly to 0-1 - values > 1 can cause feedback > 1
+                                targets.res = juce::jlimit(0.0f, 1.0f, resParam->load());
+                                if (!std::isfinite(targets.res)) {
+                                    targets.res = 0.35f; // Safe default
+                                }
+                                targets.drive = juce::jlimit(0.0f, 36.0f, driveParam->load());
+                                targets.spread = 0.0f; // Spread removed - always 0
+                                targets.keytrack = 0.0f; // Keytrack not in APVTS - use default
+                                targets.mix = juce::jlimit(0.0f, 1.0f, mixParam->load());
+                            }
+                            else
+                            {
+                                // Use defaults if parameters missing
+                                targets.type = 0;
+                                targets.cutoff = 1200.0f;
+                                targets.res = 0.35f;
+                                targets.slope = 1;
+                                targets.drive = 6.0f;
+                                targets.spread = 0.0f; // Spread removed
+                                targets.keytrack = 0.0f;
+                                targets.mix = 1.0f;
+                            }
+                        }
+                    }
+                    else
+                    {
+                        // Sequencer not active - read from APVTS
+                        auto* typeParam = valueTreeState.getRawParameterValue("filterType");
+                        auto* lowCutParam = valueTreeState.getRawParameterValue("filterLowCut");
+                        auto* highCutParam = valueTreeState.getRawParameterValue("filterHighCut");
+                        auto* resParam = valueTreeState.getRawParameterValue("filterResonance");
+                        auto* slopeParam = valueTreeState.getRawParameterValue("filterSlope");
+                        auto* driveParam = valueTreeState.getRawParameterValue("filterDrive");
+                        // Keytrack is stored in snapshot but not as separate APVTS parameter - use 0.0f
+                        auto* mixParam = valueTreeState.getRawParameterValue("filterMix");
+                        
+                        if (typeParam && lowCutParam && highCutParam && resParam && slopeParam && 
+                            driveParam && mixParam)
+                        {
+                            // Type and slope are Choice parameters
+                            auto* typeChoiceParam = dynamic_cast<juce::AudioParameterChoice*>(valueTreeState.getParameter("filterType"));
+                            auto* slopeChoiceParam = dynamic_cast<juce::AudioParameterChoice*>(valueTreeState.getParameter("filterSlope"));
+                            targets.type = typeChoiceParam ? typeChoiceParam->getIndex() : 0;
+                            targets.slope = slopeChoiceParam ? slopeChoiceParam->getIndex() : 1;
+                            
+                            float lowCut = lowCutParam->load();
+                            float highCut = highCutParam->load();
+                            
+                            // Use appropriate cutoff based on filter type
+                            if (targets.type == 0) {
+                                targets.cutoff = highCut;
+                            } else if (targets.type == 1) {
+                                targets.cutoff = lowCut;
+                            } else if (targets.type == 2) {
+                                targets.cutoff = (lowCut + highCut) * 0.5f;
+                            } else {
+                                targets.cutoff = juce::jlimit(40.0f, 8000.0f, lowCut);
+                            }
+                            
+                            // NEVER let frequency be zero or negative
+                            if (targets.cutoff <= 0.0f || !std::isfinite(targets.cutoff)) {
+                                targets.cutoff = (targets.type >= 3) ? 40.0f : 20.0f; // Safe default
+                            }
+                            
+                            // Clamp resonance strictly to 0-1 - values > 1 can cause feedback > 1
+                            targets.res = juce::jlimit(0.0f, 1.0f, resParam->load());
+                            if (!std::isfinite(targets.res)) {
+                                targets.res = 0.35f; // Safe default
+                            }
+                            
+                            targets.drive = juce::jlimit(0.0f, 36.0f, driveParam->load());
+                            targets.spread = 0.0f; // Spread removed - always 0
+                            targets.keytrack = 0.0f; // Keytrack not in APVTS - use default
+                            targets.mix = juce::jlimit(0.0f, 1.0f, mixParam->load());
+                        }
+                        else
+                        {
+                            // Use defaults if parameters missing
+                            targets.type = 0;
+                            targets.cutoff = 1200.0f;
+                            targets.res = 0.35f;
+                            targets.slope = 1;
+                            targets.drive = 6.0f;
+                            targets.spread = 0.0f; // Spread removed
+                            targets.keytrack = 0.0f;
+                            targets.mix = 1.0f;
+                        }
+                    }
+                    
+                    // Final safety validation before processing
+                    targets.type = juce::jlimit(0, 4, targets.type);
+                    // Cutoff range depends on filter type
+                    float minCutoff = (targets.type >= 3) ? 40.0f : 20.0f;
+                    float maxCutoff = (targets.type >= 3) ? 8000.0f : 20000.0f;
+                    targets.cutoff = juce::jlimit(minCutoff, maxCutoff, targets.cutoff);
+                    // CRITICAL: Ensure cutoff is finite - non-finite values will crash comb filter delay calculation
+                    if (!std::isfinite(targets.cutoff)) {
+                        targets.cutoff = (targets.type >= 3) ? 40.0f : 20.0f;
+                    }
+                    targets.res = juce::jlimit(0.0f, 1.0f, targets.res);
+                    // CRITICAL: Ensure resonance is finite - non-finite values will cause feedback blowup
+                    if (!std::isfinite(targets.res)) {
+                        targets.res = 0.35f;
+                    }
+                    targets.slope = juce::jlimit(0, 1, targets.slope);
+                    targets.drive = juce::jlimit(0.0f, 36.0f, targets.drive);
+                    if (!std::isfinite(targets.drive)) {
+                        targets.drive = 6.0f;
+                    }
+                    targets.mix = juce::jlimit(0.0f, 1.0f, targets.mix);
+                    if (!std::isfinite(targets.mix)) {
+                        targets.mix = 1.0f;
+                    }
+                    
+                    // Set filter targets (key tracking is handled internally by FilterProcessor)
+                    filterProcessor.setTargets(targets);
+                    
+                    // Process filter with exception handling
+                    // Use flag to prevent recursive processing if error occurs
+                    bool filterProcessingFailed = false;
+                    try {
+                        filterProcessor.process(buffer, buffer.getNumSamples());
+                    } catch (const std::exception& e) {
+                        DBG("[FILTER] Error processing filter: " << e.what());
+                        filterProcessingFailed = true;
+                    } catch (...) {
+                        DBG("[FILTER] Unknown error processing filter");
+                        filterProcessingFailed = true;
+                    }
+                    
+                    // If processing failed, just pass through buffer unchanged (don't try to process again)
+                    // This prevents infinite loops if the filter is in a bad state
+                    if (filterProcessingFailed) {
+                        // Buffer is already in its current state, just continue
+                        // No need to process again as that could cause recursion
+                    }
+                break;
+            }
         }
     }
     
@@ -2246,6 +2396,8 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
     processCompressEffect(buffer);
     
     // Safety check: detect and fix NaN/infinity values that could cause audio to go silent
+    // Last-resort guard: ensure NaNs/infinity don't escape into the host
+    // This is cheap and catches any NaN/infinity that slipped through from any effect
     for (int channel = 0; channel < buffer.getNumChannels(); ++channel)
     {
         float* channelData = buffer.getWritePointer(channel);
@@ -2253,11 +2405,10 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
         {
             float& sampleValue = channelData[sample];
             
-            // Check for NaN or infinity values
+            // Check for NaN or infinity values - must be first check
             if (!std::isfinite(sampleValue))
             {
-                DBG("[SAFETY] Detected invalid audio value: " << sampleValue << " at channel " << channel << " sample " << sample);
-                sampleValue = 0.0f; // Reset to silence
+                sampleValue = 0.0f; // Reset to silence (don't log here - too expensive in audio thread)
             }
             
             // Clamp to reasonable range to prevent extreme values
@@ -2669,14 +2820,6 @@ void PluginProcessor::getStateInformation (juce::MemoryBlock& destData)
     saturateSeqTree.setProperty("stdMode", saturateSeq.stdMode.load(), nullptr);
     seqSettings.addChild(saturateSeqTree, -1, nullptr);
     
-    // Filter sequencer
-    auto filterSeqTree = juce::ValueTree("FilterSequencer");
-    filterSeqTree.setProperty("enabled", filterSeq.enabled.load(), nullptr);
-    filterSeqTree.setProperty("stepsUsed", filterSeq.stepsUsed.load(), nullptr);
-    filterSeqTree.setProperty("divisionIndex", filterSeq.divisionIndex.load(), nullptr);
-    filterSeqTree.setProperty("stdMode", filterSeq.stdMode.load(), nullptr);
-    seqSettings.addChild(filterSeqTree, -1, nullptr);
-    
     state.addChild(seqSettings, -1, nullptr);
     
     // Save step snapshots for all effects
@@ -2805,21 +2948,6 @@ void PluginProcessor::getStateInformation (juce::MemoryBlock& destData)
         stepTree.setProperty("output", saturateStepSnapshots[i].saturate.output, nullptr);
         stepTree.setProperty("oversample", saturateStepSnapshots[i].saturate.oversample, nullptr);
         stepTree.setProperty("mix", saturateStepSnapshots[i].saturate.mix, nullptr);
-        stepsnapshots.addChild(stepTree, -1, nullptr);
-    }
-    
-    // Filter snapshots
-    for (int i = 0; i < 16; ++i)
-    {
-        auto stepTree = juce::ValueTree("FilterStep" + juce::String(i));
-        stepTree.setProperty("type", filterStepSnapshots[i].filter.type, nullptr);
-        stepTree.setProperty("cutoff", filterStepSnapshots[i].filter.cutoff, nullptr);
-        stepTree.setProperty("resonance", filterStepSnapshots[i].filter.resonance, nullptr);
-        stepTree.setProperty("slope", filterStepSnapshots[i].filter.slope, nullptr);
-        stepTree.setProperty("drive", filterStepSnapshots[i].filter.drive, nullptr);
-        stepTree.setProperty("spread", filterStepSnapshots[i].filter.spread, nullptr);
-        stepTree.setProperty("keytrack", filterStepSnapshots[i].filter.keytrack, nullptr);
-        stepTree.setProperty("mix", filterStepSnapshots[i].filter.mix, nullptr);
         stepsnapshots.addChild(stepTree, -1, nullptr);
     }
     
@@ -2965,16 +3093,6 @@ void PluginProcessor::setStateInformation (const void* data, int sizeInBytes)
                 saturateSeq.stepsUsed.store(saturateSeqTree.getProperty("stepsUsed", 16));
                 saturateSeq.divisionIndex.store(saturateSeqTree.getProperty("divisionIndex", 5));
                 saturateSeq.stdMode.store(saturateSeqTree.getProperty("stdMode", 0));
-            }
-            
-            // Filter sequencer
-            auto filterSeqTree = seqSettings.getChildWithName("FilterSequencer");
-            if (filterSeqTree.isValid())
-            {
-                filterSeq.enabled.store(filterSeqTree.getProperty("enabled", true));
-                filterSeq.stepsUsed.store(filterSeqTree.getProperty("stepsUsed", 16));
-                filterSeq.divisionIndex.store(filterSeqTree.getProperty("divisionIndex", 5));
-                filterSeq.stdMode.store(filterSeqTree.getProperty("stdMode", 0));
             }
         }
         
@@ -3123,23 +3241,6 @@ void PluginProcessor::setStateInformation (const void* data, int sizeInBytes)
                     saturateStepSnapshots[i].saturate.output = stepTree.getProperty("output", 0.0f);
                     saturateStepSnapshots[i].saturate.oversample = stepTree.getProperty("oversample", 3.0f);
                     saturateStepSnapshots[i].saturate.mix = stepTree.getProperty("mix", 1.0f);
-                }
-            }
-            
-            // Filter snapshots
-            for (int i = 0; i < 16; ++i)
-            {
-                auto stepTree = stepsnapshots.getChildWithName("FilterStep" + juce::String(i));
-                if (stepTree.isValid())
-                {
-                    filterStepSnapshots[i].filter.type = stepTree.getProperty("type", 0.0f);
-                    filterStepSnapshots[i].filter.cutoff = stepTree.getProperty("cutoff", 1200.0f);
-                    filterStepSnapshots[i].filter.resonance = stepTree.getProperty("resonance", 0.35f);
-                    filterStepSnapshots[i].filter.slope = stepTree.getProperty("slope", 1.0f);
-                    filterStepSnapshots[i].filter.drive = stepTree.getProperty("drive", 6.0f);
-                    filterStepSnapshots[i].filter.spread = stepTree.getProperty("spread", 0.0f);
-                    filterStepSnapshots[i].filter.keytrack = stepTree.getProperty("keytrack", 0.0f);
-                    filterStepSnapshots[i].filter.mix = stepTree.getProperty("mix", 1.0f);
                 }
             }
         }
@@ -3855,45 +3956,13 @@ void PluginProcessor::setSaturateStepSnapshot(int step, const StepSnapshot& snap
     }
 }
 
-void PluginProcessor::updateSaturateCurrentStepSnapshot(int knobIndex, float value)
-{
-    int currentStep = saturateUiSelectedStep.load();
-    if (currentStep < 0 || currentStep >= 16) return;
-    
-    // Mix (knob 5) is global, not saved to snapshots
-    if (knobIndex == 5) return;
-    
-    // Update the specific Saturate parameter in the snapshot
-    // Map knob indices: 0=Drive, 1=Color, 2=Shape, 3=Bias, 4=Output, 5=Mix
-    // Snapshot indices: 0=type (unused), 1=drive, 2=color, 3=shape, 4=bias, 5=output, 6=mix
-    switch (knobIndex) {
-        case 0: // Drive (knob 0 -> snapshot 1)
-            saturateStepSnapshots[currentStep].saturate.drive = value;
-            break;
-        case 1: // Color (knob 1 -> snapshot 2)
-            saturateStepSnapshots[currentStep].saturate.color = value;
-            break;
-        case 2: // Shape (knob 2 -> snapshot 3)
-            saturateStepSnapshots[currentStep].saturate.shape = value;
-            break;
-        case 3: // Bias (knob 3 -> snapshot 4)
-            saturateStepSnapshots[currentStep].saturate.bias = value;
-            break;
-        case 4: // Output (knob 4 -> snapshot 5)
-            saturateStepSnapshots[currentStep].saturate.output = value;
-            break;
-        // Oversample is always max (3 = 8×), handled separately
-        // Mix (case 5) is global, not saved per step
-    }
-}
-
 // Filter snapshot accessors
 StepSnapshot PluginProcessor::getFilterSafeSnapshot(int step) const
 {
     if (step >= 0 && step < 16) {
         return filterStepSnapshots[step];
     }
-    return filterStepSnapshots[0];
+    return filterStepSnapshots[0]; // Return first step as safe fallback
 }
 
 void PluginProcessor::setFilterStepSnapshot(int step, const StepSnapshot& snapshot) noexcept
@@ -3905,13 +3974,30 @@ void PluginProcessor::setFilterStepSnapshot(int step, const StepSnapshot& snapsh
 
 void PluginProcessor::updateFilterCurrentStepSnapshot(int knobIndex, float value)
 {
+    // Get current step - if sequencer is active, update the playing step, otherwise update selected step
     int currentStep = filterUiSelectedStep.load();
+    
+    // If sequencer is enabled and active, update the playing step instead of selected step
+    // This ensures knob changes affect the audio immediately during playback
+    if (filterSeq.enabled.load() && filterSeq.active.load()) {
+        int playingStep = filterSeq.playingStep.load();
+        if (playingStep >= 0 && playingStep < 16) {
+            currentStep = playingStep;
+        }
+    }
+    
     if (currentStep < 0 || currentStep >= 16) return;
     
     // Update the specific Filter parameter in the snapshot
-    // Note: Type (knobIdx 0) and Slope (knobIdx 3) are special knobs, mapped differently
+    // Note: Type (knobIdx -1) and Slope (knobIdx -2) are special knobs, mapped differently
     // Regular knobs: 0=Cutoff, 1=Res, 2=Drive, 3=Key Track, 4=Mix
     switch (knobIndex) {
+        case -1: // Type
+            filterStepSnapshots[currentStep].filter.type = value;
+            break;
+        case -2: // Slope
+            filterStepSnapshots[currentStep].filter.slope = value;
+            break;
         case 0: // Cutoff
             filterStepSnapshots[currentStep].filter.cutoff = value;
             break;
@@ -3928,7 +4014,39 @@ void PluginProcessor::updateFilterCurrentStepSnapshot(int knobIndex, float value
             filterStepSnapshots[currentStep].filter.mix = value;
             break;
     }
-    // Type and Slope are handled separately via filterTypeKnob and filterSlopeKnob
+}
+
+void PluginProcessor::updateSaturateCurrentStepSnapshot(int knobIndex, float value)
+{
+    int currentStep = saturateUiSelectedStep.load();
+    if (currentStep < 0 || currentStep >= 16) return;
+    
+    // Mix (knob 6) is global, not saved to snapshots
+    if (knobIndex == 6) return;
+    
+    // Update the specific Saturate parameter in the snapshot
+    switch (knobIndex) {
+        case 0: // Type
+            saturateStepSnapshots[currentStep].saturate.type = value;
+            break;
+        case 1: // Drive
+            saturateStepSnapshots[currentStep].saturate.drive = value;
+            break;
+        case 2: // Color
+            saturateStepSnapshots[currentStep].saturate.color = value;
+            break;
+        case 3: // Shape
+            saturateStepSnapshots[currentStep].saturate.shape = value;
+            break;
+        case 4: // Bias
+            saturateStepSnapshots[currentStep].saturate.bias = value;
+            break;
+        case 5: // Output
+            saturateStepSnapshots[currentStep].saturate.output = value;
+            break;
+        // Oversample is always max (3 = 8×), handled separately
+        // Mix (case 6) is global, not saved per step
+    }
 }
 
 // Space Delay snapshot accessors

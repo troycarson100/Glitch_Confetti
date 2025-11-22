@@ -1,63 +1,113 @@
-<!-- c8febc51-1014-4a8f-821e-696510ed8bb7 eb7d4b7f-dd1f-4ef2-8256-b6f47729ebb2 -->
-# Fix Comb- Prominence and Comb+ Clipping
+<!-- c8febc51-1014-4a8f-821e-696510ed8bb7 6992dc92-2b7b-4937-af36-e6c3bbf38628 -->
+# Fix Comb Filter Progressive Channel Failure
 
 ## Problem Analysis
 
-- **Comb-**: Still not prominent enough (currently 1.3x boost, -0.90 max feedback)
-- **Comb+**: Still has some clipping despite 0.5x reduction and aggressive limiting
+The comb filter is experiencing progressive channel failure:
 
-## Solution Strategy
+1. Right channel goes silent first (returns `0.0f` on error instead of passing through)
+2. Left channel fails next
+3. Plugin stops processing entirely
 
-### 1. Increase Comb- Prominence
+Root causes identified:
 
-**File**: `source/dsp/FilterProcessor.h`
+- Right channel returns `0.0f` instead of input when buffer is invalid (`processSampleR` line 459)
+- No state validation or recovery mechanism when buffers become corrupted
+- Recursive exception handling that tries to process again after errors
+- Write indices (`writeIndexL`, `writeIndexR`) can become corrupted without detection
+- No health check or re-initialization when buffers are invalid
 
-- Increase `COMB_MINUS_OUTPUT_BOOST` from 1.3f to **1.6f** (60% boost instead of 30%)
-- Increase `MAX_FEEDBACK_MINUS` from -0.90f to **-0.95f** (stronger negative feedback for deeper notches)
-- Reduce `COMB_MINUS_DAMPING` from 0.18f to **0.15f** (less damping = sharper notches)
-- This will make Comb- much more audible and prominent
+## Implementation Plan
 
-### 2. Eliminate Comb+ Clipping
-
-**File**: `source/dsp/FilterProcessor.h`
-
-- Reduce `COMB_PLUS_OUTPUT_REDUCTION` from 0.5f to **0.45f** (55% reduction instead of 50%)
-- Reduce `MAX_FEEDBACK_PLUS` from 0.85f to **0.80f** (lower max feedback = less accumulation)
-- Add pre-output soft clipping stage before the existing output processing
-- Tighten `OUTPUT_HARD_LIMIT` from 0.75f to **0.70f** (tighter final limit)
-- Add additional soft limit stage specifically for Comb+ output path
-
-### 3. Enhanced Protection Stages
+### 1. Fix Right Channel Error Handling
 
 **File**: `source/dsp/FilterProcessor.h`
 
-- In `process()` method, add pre-output soft clipping for Comb+:
-  - Apply `softClip()` with threshold 0.6f before the output reduction multiplier
-  - This catches peaks before they get amplified by the feedback
-- Add Comb+ specific output limiting:
-  - After output reduction, apply additional `softLimit()` with 0.65f threshold
-  - Then apply existing soft clip and soft limit stages
+- Change `processSampleR` to return `inputSample` instead of `0.0f` when buffer is invalid (line 459)
+- This ensures right channel passes through input instead of going silent
 
-## Implementation Details
+### 2. Add State Validation Before Processing
 
-### Constants to Update (lines ~260-274)
+**File**: `source/dsp/FilterProcessor.h`
 
-```cpp
-MAX_FEEDBACK_PLUS = 0.80f;        // Reduced from 0.85f
-MAX_FEEDBACK_MINUS = -0.95f;      // Increased from -0.90f
-COMB_MINUS_DAMPING = 0.15f;       // Reduced from 0.18f
-COMB_PLUS_OUTPUT_REDUCTION = 0.45f; // Reduced from 0.5f
-COMB_MINUS_OUTPUT_BOOST = 1.6f;   // Increased from 1.3f
-OUTPUT_HARD_LIMIT = 0.70f;        // Reduced from 0.75f
-```
+- Add `bool isValidState()` method to `CombProc` that checks:
+- Buffer sizes are valid (> 0)
+- Buffers are not empty
+- Write indices are within bounds
+- Delay values are finite and in valid range
+- Call this validation in `process()` before processing each block
+- If invalid, re-prepare the filter and log a warning
 
-### Process Method Updates (lines ~437-456 for left, ~492-511 for right)
+### 3. Add Write Index Validation and Recovery
 
-- For Comb+ output path: Add pre-output soft clipping before reduction multiplier
-- For Comb- output path: Keep existing boost, but with higher multiplier
-- Add Comb+ specific additional soft limit stage after reduction
+**File**: `source/dsp/FilterProcessor.h`
 
-## Expected Results
+- Add validation in `processSampleL` and `processSampleR` before incrementing write indices:
+- Ensure `writeIndexL < bufferSizeL` before incrementing
+- Ensure `writeIndexR < bufferSizeR` before incrementing
+- If invalid, clamp to valid range: `writeIndexL = juce::jlimit(0, bufferSizeL - 1, writeIndexL)`
+- After incrementing, ensure indices wrap correctly
 
-- **Comb-**: Much more prominent and audible (60% boost, stronger feedback, sharper notches)
-- **Comb+**: No clipping even at high resonance (more aggressive reduction, lower max feedback, additional protection stages)
+### 4. Add Recovery Mechanism
+
+**File**: `source/dsp/FilterProcessor.h`
+
+- Add `void recover()` method to `CombProc` that:
+- Resets write indices to 0
+- Clears buffer state (fills with zeros)
+- Resets delay values to safe defaults
+- Resets damping state variables
+- Call `recover()` from `process()` if `isValidState()` returns false
+- Also call `recover()` from `prepare()` to ensure clean state
+
+### 5. Fix Exception Handling to Prevent Recursion
+
+**File**: `source/PluginProcessor.cpp`
+
+- In the exception handler (lines 2287-2310), add a flag to prevent recursive processing:
+- Set `bool filterProcessingFailed = false;` before try block
+- If exception caught, set flag and skip recursive `process()` call
+- Instead, just pass through the buffer unchanged
+- This prevents infinite loops if the filter is in a bad state
+
+### 6. Add Per-Channel Error Detection
+
+**File**: `source/dsp/FilterProcessor.h`
+
+- Modify `process()` to catch exceptions per-sample and handle gracefully:
+- Wrap `processSampleL()` and `processSampleR()` calls in try-catch
+- If exception, use input sample as fallback for that channel
+- Log which channel failed (if logging enabled)
+
+### 7. Add Health Check Before Each Block
+
+**File**: `source/dsp/FilterProcessor.cpp`
+
+- In `FilterProcessor::process()`, before calling `cur->process()`:
+- If `cur` is a `CombProc`, cast and check `isValidState()`
+- If invalid, log warning and re-prepare the filter
+- This catches corruption before it causes channel failure
+
+### 8. Ensure Proper Re-initialization on Type Change
+
+**File**: `source/dsp/FilterProcessor.cpp`
+
+- In `FilterProcessor::process()` when switching filter types (lines 107-122):
+- If switching to/from comb filter, ensure `recover()` is called on the new filter
+- Reset crossfade ramp if recovery was needed
+- This prevents corrupted state from carrying over
+
+## Files to Modify
+
+1. `source/dsp/FilterProcessor.h` - Comb filter implementation with state validation and recovery
+2. `source/dsp/FilterProcessor.cpp` - Filter processor with health checks and re-initialization
+3. `source/PluginProcessor.cpp` - Exception handling fix to prevent recursion
+
+## Testing Considerations
+
+- Test with comb filters on sequencer steps
+- Test rapid switching between filter types
+- Test with extreme parameter values (very high/low resonance, cutoff)
+- Test with randomized sequencer steps
+- Monitor for right channel failing first
+- Verify audio continues processing even when errors occur

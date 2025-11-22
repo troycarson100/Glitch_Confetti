@@ -52,13 +52,21 @@ void FilterProcessor::prepare(double sampleRate, int maxBlockSize)
 
 void FilterProcessor::setTargets(const Targets& t)
 {
-    targetType = t.type;
+    targetType = juce::jlimit(0, 4, t.type);
     
-    // Clamp cutoff to valid range
-    float newCutoff = juce::jlimit(20.0f, 20000.0f, t.cutoff);
+    // Clamp cutoff to valid range and ensure it's finite
+    // CRITICAL: Non-finite cutoff will cause division by zero in comb filter delay calculation
+    float newCutoff = t.cutoff;
+    if (!std::isfinite(newCutoff) || newCutoff <= 0.0f) {
+        newCutoff = (targetType >= 3) ? 40.0f : 20.0f; // Safe default based on filter type
+    }
+    newCutoff = juce::jlimit(20.0f, 20000.0f, newCutoff);
     
     // Detect large cutoff changes (>20% change) and use instant update
     float currentCutoff = cutoffSm.getCurrentValue();
+    if (!std::isfinite(currentCutoff) || currentCutoff <= 0.0f) {
+        currentCutoff = newCutoff; // Reset if current value is invalid
+    }
     float cutoffChange = std::abs(newCutoff - currentCutoff) / juce::jmax(1.0f, currentCutoff);
     
     if (cutoffChange > 0.2f) {
@@ -69,12 +77,18 @@ void FilterProcessor::setTargets(const Targets& t)
         cutoffSm.setTargetValue(newCutoff);
     }
     
-    resSm.setTargetValue(juce::jlimit(0.0f, 0.95f, t.res));
-    slope = t.slope;
-    drive = t.drive;
-    spreadCents = t.spread;
-    kt = t.keytrack;
-    mix = t.mix;
+    // Ensure resonance is finite and valid
+    float newRes = t.res;
+    if (!std::isfinite(newRes) || newRes < 0.0f) {
+        newRes = 0.35f; // Safe default
+    }
+    resSm.setTargetValue(juce::jlimit(0.0f, 0.95f, newRes));
+    
+    slope = juce::jlimit(0, 1, t.slope);
+    drive = std::isfinite(t.drive) ? juce::jlimit(0.0f, 36.0f, t.drive) : 6.0f;
+    spreadCents = std::isfinite(t.spread) ? t.spread : 0.0f;
+    kt = std::isfinite(t.keytrack) ? juce::jlimit(0.0f, 1.0f, t.keytrack) : 0.0f;
+    mix = std::isfinite(t.mix) ? juce::jlimit(0.0f, 1.0f, t.mix) : 1.0f;
 }
 
 void FilterProcessor::process(juce::AudioBuffer<float>& buffer, int numSamples)
@@ -108,14 +122,24 @@ void FilterProcessor::process(juce::AudioBuffer<float>& buffer, int numSamples)
         // Reset current filter if it's a comb filter (clear delay lines)
         // This prevents delay line state from persisting when switching away from comb
         if (cur) {
-            // If switching away from comb filter, we don't need to do anything special
-            // as the new filter will be created fresh
+            auto* combFilterOld = dynamic_cast<CombProc*>(cur.get());
+            if (combFilterOld) {
+                // Recover old comb filter state before switching
+                combFilterOld->recover();
+            }
         }
         
         // Create new filter with current params
         makeFilter(targetType);
         if (newF) {
             newF->prepare(specCached);
+            
+            // If switching to comb filter, ensure it's in clean state
+            auto* combFilterNew = dynamic_cast<CombProc*>(newF.get());
+            if (combFilterNew) {
+                combFilterNew->recover(); // Ensure clean state
+            }
+            
             ramp.start(fs, 20.0); // 20ms crossfade
         }
         currentType = targetType;
@@ -172,11 +196,43 @@ void FilterProcessor::process(juce::AudioBuffer<float>& buffer, int numSamples)
     
     // Process current filter
     if (cur) {
+        // Health check: if current filter is a CombProc, validate its state before processing
+        // This catches corruption before it causes channel failure
+        auto* combFilter = dynamic_cast<CombProc*>(cur.get());
+        if (combFilter) {
+            if (!combFilter->isValidState()) {
+                // State is invalid - try recovery (safe to do in audio thread)
+                combFilter->recover();
+                // If still invalid after recovery, skip processing this block (pass through)
+                // Can't call prepare() from audio thread, so just skip if recovery didn't work
+                if (!combFilter->isValidState()) {
+                    // Just copy input to output and skip filter processing
+                    ioBlockSub.copyFrom(blockA);
+                    return;
+                }
+            }
+        }
+        
         cur->set(cut, r, depthValue, slope, drive, spreadCents, (float)fs);
         cur->process(blockA, blockA);
     }
     
     if (ramp.isActive() && newF) {
+        // Health check: if new filter is a CombProc, validate its state before processing
+        auto* combFilterNew = dynamic_cast<CombProc*>(newF.get());
+        if (combFilterNew) {
+            if (!combFilterNew->isValidState()) {
+                // State is invalid - try recovery (safe to do in audio thread)
+                combFilterNew->recover();
+                // If still invalid after recovery, skip crossfade and just use current filter
+                if (!combFilterNew->isValidState()) {
+                    // Skip crossfade, just use current filter output
+                    ioBlockSub.copyFrom(blockA);
+                    return;
+                }
+            }
+        }
+        
         // Process new filter
         blockB.copyFrom(ioBlockSub);
         newF->set(cut, r, depthValue, slope, drive, spreadCents, (float)fs);
