@@ -35,9 +35,18 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     licenseManager->loadLicenseState();
     
     // Check license on startup (after a short delay to allow UI to initialize)
-    juce::Timer::callAfterDelay(1000, [this]() {
-        checkLicenseOnStartup();
-    });
+    // Fix: Use SafePointer to prevent accessing destroyed editor during shutdown
+    // Fix: Check global shutdown flag before posting async callback
+    if (!processorRef.globalShutdownFlag.load()) {
+        auto safeThis = juce::Component::SafePointer<PluginEditor>(this);
+        juce::Timer::callAfterDelay(1000, [safeThis]() {
+            if (auto* self = safeThis.getComponent()) {
+                if (!self->isShuttingDown.load() && !self->processorRef.globalShutdownFlag.load()) {
+                    self->checkLicenseOnStartup();
+                }
+            }
+        });
+    }
     
     // Set the size to match our desired dimensions
     setSize (974, 532);
@@ -345,7 +354,115 @@ PluginEditor::PluginEditor (PluginProcessor& p)
 
 PluginEditor::~PluginEditor()
 {
+    // Fix: Set shutdown flags FIRST so any pending callbacks can check them and abort
+    isShuttingDown.store(true);
+    processorRef.globalShutdownFlag.store(true);
+    
+    // Fix: Use MessageManagerLock to prevent timer callbacks during destruction
+    // This ensures JUCE's timer thread cannot call callbacks while we're destroying components
+    // CRITICAL: We MUST get the lock, otherwise timers can fire during destruction
+    juce::MessageManagerLock mmLock;
+    if (mmLock.lockWasGained()) {
+        // Stop all timers safely while we have the lock
+        // This prevents any new timer callbacks from being queued
+        stopAllTimersSafely();
+    } else {
+        // If we can't get the lock, we're in a bad state
+        // At least try to stop the editor timer
     stopTimer();
+    }
+    
+    // Fix: Stop license manager thread FIRST before any component destruction
+    // This prevents async callbacks from firing during shutdown
+    if (licenseManager) {
+        licenseManager.reset(); // Destructor will stop thread safely
+    }
+    
+    // Fix: prevent RandomizationManager::handleAsyncUpdate() from firing after UI destruction
+    if (randomizationManager) {
+        randomizationManager->clearEditor();
+        randomizationManager->cancelPendingUpdate();
+    }
+    
+    // Fix: Clear component groups BEFORE children are destroyed (they're just pointers)
+    // This prevents any child destructor from accessing dangling group pointers
+    // JUCE will automatically destroy all child components, so we don't need removeAllChildren()
+    spaceDelayGroup.clear();
+    pannerGroup.clear();
+    dirtGroup.clear();
+    chorusGroup.clear();
+    reverbGroup.clear();
+    granularGroup.clear();
+    slicerGroup.clear();
+    dubdelayGroup.clear();
+    reduxGroup.clear();
+    phaseBloomGroup.clear();
+    formantGroup.clear();
+    saturateGroup.clear();
+    form2Group.clear();
+    filterGroup.clear();
+    
+    // Fix: DON'T try to access child components during destruction - this can cause crashes
+    // JUCE's Component destructor will automatically destroy all children
+    // Each child's destructor will automatically call stopTimer() if it inherits from Timer
+    // Trying to manually stop timers or disable children during destruction can cause
+    // race conditions with JUCE's internal timer thread
+    
+    // Fix: DON'T call removeAllChildren() - JUCE will destroy children automatically
+    // Calling it explicitly can cause destruction order issues and crashes during shutdown
+    // The Component destructor handles child destruction safely
+    
+    // Children will be destroyed automatically by JUCE Component destructor
+    // All child components with timers (GainReductionMeter, SmallGainReductionMeter, 
+    // OutputSpectrumView, DualBarMeter, PanManBar) have destructors that stop their timers
+    // The isShuttingDown flag ensures timerCallback() won't access destroyed components
+}
+
+void PluginEditor::stopAllTimersSafely()
+{
+    // Fix: Stop editor timer first
+    stopTimer();
+    
+    // Fix: Recursively stop all child component timers
+    // This prevents JUCE's timer thread from calling callbacks on components being destroyed
+    // Note: We don't call callPendingTimersSynchronously() here because it can cause issues
+    // during shutdown if the MessageManager is already being destroyed
+    for (int i = getNumChildComponents() - 1; i >= 0; --i)
+    {
+        if (auto* child = getChildComponent(i))
+        {
+            // Stop timer if component inherits from Timer
+            if (auto* timer = dynamic_cast<juce::Timer*>(child))
+            {
+                try {
+                    timer->stopTimer();
+                } catch (...) {
+                    // Ignore exceptions during shutdown
+                }
+            }
+            
+            // Recursively stop timers in nested children
+            // Note: JUCE components don't have a built-in recursive timer stopper,
+            // but we can check if the child is a Component and iterate its children
+            if (auto* component = dynamic_cast<juce::Component*>(child))
+            {
+                for (int j = component->getNumChildComponents() - 1; j >= 0; --j)
+                {
+                    if (auto* nestedChild = component->getChildComponent(j))
+                    {
+                        if (auto* nestedTimer = dynamic_cast<juce::Timer*>(nestedChild))
+                        {
+                            try {
+                                nestedTimer->stopTimer();
+                            } catch (...) {
+                                // Ignore exceptions during shutdown
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 void PluginEditor::paint (juce::Graphics& g)
@@ -923,6 +1040,17 @@ void PluginEditor::drawMainAreas(juce::Graphics& g)
 
 void PluginEditor::timerCallback()
 {
+    // Fix: Check global shutdown flag FIRST to prevent any operations during shutdown
+    if (processorRef.globalShutdownFlag.load() || isShuttingDown.load()) {
+        return;
+    }
+    
+    // Fix: Check if MessageManager is still valid (might be destroyed during shutdown)
+    auto* mm = juce::MessageManager::getInstanceWithoutCreating();
+    if (mm == nullptr) {
+        return; // MessageManager destroyed, can't safely update UI
+    }
+    
     // Update knob values and UI based on parameter values
     for (int i = 0; i < 8; ++i)
     {
@@ -1507,10 +1635,8 @@ void PluginEditor::timerCallback()
     // Update Formant sequencer UI
     updateFormantSequencerUI();
     
-    // Update Saturate (Heat) sequencer UI
     updateSaturateSequencerUI();
     
-    // Update Filter sequencer UI
     updateFilterSequencerUI();
     
     // Update Dub Delay time label (handles sync mode display)
@@ -4666,7 +4792,7 @@ void PluginEditor::setupTabSystem()
         selector->addItem("Dub Echo", 8);
         selector->addItem("Redux", 9);
         selector->addItem("PhaseBloom", 10);
-        selector->addItem("Form", 11);
+        selector->addItem("Form", 11); // EffectID::Formant (10)
         // Form2 removed - using Formant instead
         // selector->addItem("Form 2", 12); // EffectID::Form2 (11)
         selector->addItem("Heat", 13); // EffectID::Saturate (12)
@@ -5242,6 +5368,7 @@ void PluginEditor::showPage(FxPageID id)
             updatePhaseBloomSequencerUI();
             
             break;
+        // TEMPORARILY DISABLED: Formant/Form page
         case EffectID::Formant:
             DBG("[ROUTER] Formant case triggered - formantGroup size: " << formantGroup.size());
             setVisibleVec(formantGroup, true);
@@ -8625,6 +8752,8 @@ void PluginEditor::onEffectSelectorChanged(int slotIndex)
             DBG("[ROUTER] ✓ PhaseBloom group shown");
             break;
         }
+        // TEMPORARILY DISABLED: Formant/Form page
+        /*
         case EffectID::Formant:
         {
             DBG("[ROUTER] Showing Formant group (" << formantGroup.size() << " components)");
@@ -8661,6 +8790,7 @@ void PluginEditor::onEffectSelectorChanged(int slotIndex)
             updateFormantOverlay();
             break;
         }
+        */
         case EffectID::Saturate:
         {
             DBG("[ROUTER] Showing Saturate group (" << saturateGroup.size() << " components)");
@@ -12902,7 +13032,7 @@ void PluginEditor::updateFilterSequencerUI()
         const auto& seqState = processorRef.getFilterSeqState();
         stepsUsed = seqState.stepsUsed.load();
         
-        for (int i = 0; i < 16; ++i) {
+    for (int i = 0; i < 16; ++i) {
             if (filterStepButtons[i] != nullptr) {
                 bool isSelected = (i == selectedStep);
                 filterStepButtons[i]->setSelected(isSelected);
@@ -17132,19 +17262,37 @@ void PluginEditor::checkLicenseOnStartup()
     if (!licenseInfo.licenseKey.isEmpty())
     {
         DBG("[LICENSE] Verifying saved license key on startup...");
-        licenseManager->verifyLicenseAsync(licenseInfo.licenseKey, false, [this](const GumroadLicenseInfo& info) {
-            if (info.isValid())
-            {
-                DBG("[LICENSE] License verified successfully on startup");
-                repaint(); // Update UI
-            }
-            else
-            {
-                DBG("[LICENSE] Saved license key is invalid");
-                // Show dialog if invalid
-                juce::MessageManager::callAsync([this]() {
-                    showLicenseDialog();
-                });
+        // Fix: Use SafePointer to prevent accessing destroyed editor during shutdown
+        auto safeThis = juce::Component::SafePointer<PluginEditor>(this);
+        licenseManager->verifyLicenseAsync(licenseInfo.licenseKey, false, [safeThis](const GumroadLicenseInfo& info) {
+            if (auto* self = safeThis.getComponent()) {
+                if (self->isShuttingDown.load()) {
+                    return; // Don't process if shutting down
+                }
+                
+                if (info.isValid())
+                {
+                    DBG("[LICENSE] License verified successfully on startup");
+                    // Fix: Only repaint if not shutting down
+                    if (!self->isShuttingDown.load()) {
+                        self->repaint(); // Update UI
+                    }
+                }
+                else
+                {
+                    DBG("[LICENSE] Saved license key is invalid");
+                    // Show dialog if invalid - use SafePointer to prevent accessing destroyed editor
+                    auto* mm = juce::MessageManager::getInstanceWithoutCreating();
+                    if (mm != nullptr && safeThis != nullptr) {
+                        mm->callAsync([safeThis]() {
+                            if (auto* selfPtr = safeThis.getComponent()) {
+                                if (!selfPtr->isShuttingDown.load()) {
+                                    selfPtr->showLicenseDialog();
+                                }
+                            }
+                        });
+                    }
+                }
             }
         });
     }
@@ -17168,5 +17316,93 @@ void PluginEditor::showLicenseDialog()
         lastLicenseDialogShowTime = juce::Time::getCurrentTime();
         DBG("[LICENSE] Dialog dismissed by user");
     });
+}
+
+//==============================================================================
+// Nested class timer callback implementations
+//==============================================================================
+
+void PluginEditor::GainReductionMeter::timerCallback()
+{
+    // Fix: Check global shutdown flag FIRST - use static method to avoid forward declaration issues
+    // This is critical to prevent operations during shutdown
+    if (PluginProcessor::isShuttingDown()) {
+        return;
+    }
+    
+    // Fix: Check if component and MessageManager are still valid before repainting
+    // This prevents crashes when timer callback fires during component destruction
+    auto* mm = juce::MessageManager::getInstanceWithoutCreating();
+    if (mm == nullptr || getParentComponent() == nullptr || !isVisible())
+        return;
+    
+    // Apply asymmetric exponential smoothing (VU-style ballistics)
+    float coeff;
+    if (targetValue > currentDisplayValue) {
+        // Fast attack for rises
+        coeff = attackCoeff;
+    } else {
+        // Very slow release for smooth decay
+        coeff = releaseCoeff;
+    }
+    
+    // Exponential smoothing: y[n] = coeff * y[n-1] + (1-coeff) * x[n]
+    currentDisplayValue = coeff * currentDisplayValue + (1.0f - coeff) * targetValue;
+    
+    // Update peak hold with smooth decay
+    if (targetValue > peakValue) {
+        peakValue = targetValue;
+        peakHoldCounter = peakHoldTimeMs;
+    } else {
+        peakHoldCounter = juce::jmax(0.0f, peakHoldCounter - (1000.0f / 60.0f));
+        if (peakHoldCounter <= 0.0f) {
+            // Smooth peak decay
+            peakValue = juce::jmax(currentDisplayValue, peakValue * 0.98f);
+        }
+    }
+    
+    repaint();
+}
+
+void PluginEditor::SmallGainReductionMeter::timerCallback()
+{
+    // Fix: Check global shutdown flag FIRST - use static method to avoid forward declaration issues
+    // This is critical to prevent operations during shutdown
+    if (PluginProcessor::isShuttingDown()) {
+        return;
+    }
+    
+    // Fix: Check if component and MessageManager are still valid before repainting
+    // This prevents crashes when timer callback fires during component destruction
+    auto* mm = juce::MessageManager::getInstanceWithoutCreating();
+    if (mm == nullptr || getParentComponent() == nullptr || !isVisible())
+        return;
+    
+    // Apply asymmetric exponential smoothing (VU-style ballistics)
+    float coeff;
+    if (targetValue > currentDisplayValue) {
+        // Fast attack for rises
+        coeff = attackCoeff;
+    } else {
+        // Very slow release for smooth decay
+        coeff = releaseCoeff;
+    }
+    
+    // Exponential smoothing: y[n] = coeff * y[n-1] + (1-coeff) * x[n]
+    currentDisplayValue = coeff * currentDisplayValue + (1.0f - coeff) * targetValue;
+    
+    // Update peak hold with smooth decay
+    if (targetValue > peakValue) {
+        peakValue = targetValue;
+        peakHoldCounter = peakHoldTimeMs;
+    } else {
+        peakHoldCounter = juce::jmax(0.0f, peakHoldCounter - (1000.0f / 60.0f));
+        if (peakHoldCounter <= 0.0f) {
+            // Smooth peak decay
+            peakValue = juce::jmax(currentDisplayValue, peakValue * 0.98f);
+        }
+    }
+    
+    repaint();
 }
 

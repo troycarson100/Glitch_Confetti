@@ -3,8 +3,9 @@
 
 FontManager& FontManager::getInstance()
 {
-    static FontManager instance;
-    return instance;
+    // Leaky singleton: allocate once, never destroyed.
+    static FontManager* instance = new FontManager();
+    return *instance;
 }
 
 juce::Font FontManager::getFont(const juce::String& fontName, float height, int style)

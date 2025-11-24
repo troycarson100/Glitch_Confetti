@@ -5,6 +5,9 @@
 #include <chrono>
 
 //==============================================================================
+// Fix: Initialize global shutdown flag
+std::atomic<bool> PluginProcessor::globalShutdownFlag { false };
+
 PluginProcessor::PluginProcessor()
      : AudioProcessor (BusesProperties()
                        .withInput  ("Input",  juce::AudioChannelSet::stereo(), true)
@@ -12,6 +15,9 @@ PluginProcessor::PluginProcessor()
                        ),
     valueTreeState(*this, nullptr, "Parameters", createParameterLayout())
 {
+    // Fix: Initialize global shutdown flag to false
+    globalShutdownFlag.store(false);
+    
     // Denormal protection - prevents denormalized numbers that can kill performance
     juce::FloatVectorOperations::disableDenormalisedNumberSupport();
     // Initialize delay sequencer state
@@ -764,16 +770,16 @@ void PluginProcessor::releaseResources()
     reduxSeq.active.store(false);
     phaseBloomSeq.active.store(false);
     formantSeq.active.store(false);
-    saturateSeq.active.store(false);
+             saturateSeq.active.store(false);
     form2Seq.active.store(false);
+    filterSeq.active.store(false);
     
     // Clear transport cache
     transportCache.valid.store(false);
     transportCache.playing.store(false);
     
-    // Disable spectrum analyzer to prevent async callbacks during destruction
-    // Clear the output view reference directly (safe to do here)
-    spectrumAnalyzer.setOutputView(nullptr);
+    // Fix: disable analyzer so no MessageManager::callAsync callbacks fire after shutdown
+    spectrumAnalyzer.disable();
 }
 
 #ifndef JucePlugin_PreferredChannelConfigurations
@@ -932,6 +938,7 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                     DBG("[REDUX SEQ] ✓ Activated on play edge");
                 }
                 
+                // Filter sequencer activates if enabled (independent of followHost)
                 // Filter sequencer activates if enabled (independent of followHost)
                 if (filterSeq.enabled.load()) {
                     filterSeq.active.store(true);  // Activate Filter sequencer
@@ -1940,11 +1947,10 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
             
             case EffectID::Formant:
             {
-                // TEMPORARILY DISABLED: Check if effect is enabled
+                // Check if effect is enabled
                 auto* formantEnabledParam = valueTreeState.getRawParameterValue("formantEnabled");
                 bool isFormantEnabled = formantEnabledParam ? (formantEnabledParam->load() > 0.5f) : false;
                 
-                // Skip processing to prevent crash - Formant effect disabled
                 if (isFormantEnabled)
                 {
                     // Get Formant sequencer state
@@ -1957,27 +1963,27 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                         int currentStep = formantSeq.currentStep.load();
                         if (currentStep >= 0 && currentStep < 16)
                         {
-                        StepSnapshot snapshot = getFormantSafeSnapshot(currentStep);
-                        
-                        // Safety check for parameter values
-                        snapshot.formant.vowel = juce::jlimit(0.0f, 4.0f, snapshot.formant.vowel);
-                        snapshot.formant.resonance = juce::jlimit(0.4f, 18.0f, snapshot.formant.resonance);
-                        snapshot.formant.intensity = juce::jlimit(-6.0f, 18.0f, snapshot.formant.intensity);
-                        snapshot.formant.mix = juce::jlimit(0.0f, 1.0f, snapshot.formant.mix);
-                        
-                        // Set snapshot values into APVTS for processing
-                        auto* vowelParam = valueTreeState.getRawParameterValue("vowel");
-                        auto* resonanceParam = valueTreeState.getRawParameterValue("resonance");
-                        auto* intensityParam = valueTreeState.getRawParameterValue("intensity");
-                        auto* mixParam = valueTreeState.getRawParameterValue("mix");
-                        
-                        if (vowelParam) *vowelParam = snapshot.formant.vowel;
-                        if (resonanceParam) *resonanceParam = snapshot.formant.resonance;
-                        if (intensityParam) *intensityParam = snapshot.formant.intensity;
-                        if (mixParam) *mixParam = snapshot.formant.mix;
-                        
-                        // Only process if mix > 0
-                        if (snapshot.formant.mix > 0.0f)
+                            StepSnapshot snapshot = getFormantSafeSnapshot(currentStep);
+                            
+                            // Safety check for parameter values
+                            snapshot.formant.vowel = juce::jlimit(0.0f, 4.0f, snapshot.formant.vowel);
+                            snapshot.formant.resonance = juce::jlimit(0.4f, 18.0f, snapshot.formant.resonance);
+                            snapshot.formant.intensity = juce::jlimit(-6.0f, 18.0f, snapshot.formant.intensity);
+                            snapshot.formant.mix = juce::jlimit(0.0f, 1.0f, snapshot.formant.mix);
+                            
+                            // Set snapshot values into APVTS for processing
+                            auto* vowelParam = valueTreeState.getRawParameterValue("vowel");
+                            auto* resonanceParam = valueTreeState.getRawParameterValue("resonance");
+                            auto* intensityParam = valueTreeState.getRawParameterValue("intensity");
+                            auto* mixParam = valueTreeState.getRawParameterValue("mix");
+                            
+                            if (vowelParam) *vowelParam = snapshot.formant.vowel;
+                            if (resonanceParam) *resonanceParam = snapshot.formant.resonance;
+                            if (intensityParam) *intensityParam = snapshot.formant.intensity;
+                            if (mixParam) *mixParam = snapshot.formant.mix;
+                            
+                            // Only process if mix > 0
+                            if (snapshot.formant.mix > 0.0f)
                             {
                                 // Process Formant effect
                                 formantProcessor.process(buffer, buffer.getNumSamples(), valueTreeState);
@@ -2722,6 +2728,51 @@ bool PluginProcessor::hasEditor() const
 juce::AudioProcessorEditor* PluginProcessor::createEditor()
 {
     return new PluginEditor (*this);
+}
+
+void PluginProcessor::editorBeingDeleted(juce::AudioProcessorEditor* editor)
+{
+    // Fix: Set global shutdown flag FIRST to prevent any async operations
+    globalShutdownFlag.store(true);
+    
+    // Fix: Suspend processing FIRST to prevent processBlock from running during editor destruction
+    // This is critical to avoid race conditions where audio processing tries to access UI
+    suspendProcessing(true);
+    
+    // Fix: Called by JUCE when the editor is being deleted
+    // This is called BEFORE the editor destructor, so we can do cleanup here
+    // Disable spectrum analyzer to prevent async callbacks during destruction
+    spectrumAnalyzer.disable();
+    
+    // Reset all sequencer active flags to prevent access during destruction
+    seq.active.store(false);
+    autopanSeq.active.store(false);
+    dirtSeq.active.store(false);
+    chorusSeq.active.store(false);
+    reverbSeq.active.store(false);
+    granularSeq.active.store(false);
+    slicerSeq.active.store(false);
+    dubdelaySeq.active.store(false);
+    spacedelaySeq.active.store(false);
+    reduxSeq.active.store(false);
+    phaseBloomSeq.active.store(false);
+    formantSeq.active.store(false);
+             saturateSeq.active.store(false);
+    form2Seq.active.store(false);
+    filterSeq.active.store(false);
+    
+    // Fix: Clear transport cache to prevent any stale references
+    transportCache.valid.store(false);
+    transportCache.playing.store(false);
+    transportCache.bpm.store(120.0);
+    transportCache.ppq.store(0.0);
+    transportCache.barStartPpq.store(0.0);
+    transportCache.tsNum.store(4);
+    transportCache.tsDen.store(4);
+    
+    // Fix: DON'T use Thread::sleep here - it blocks the message thread and can cause issues
+    // suspendProcessing(true) is sufficient to stop audio processing
+    // The editor destructor will handle component cleanup safely
 }
 
 //==============================================================================
@@ -4622,6 +4673,18 @@ void PluginProcessor::processCompressEffect(juce::AudioBuffer<float>& buffer)
     } else {
         // Compressor is disabled - bypass it
         compressEngine.setEnabled(false);
+    }
+    
+    // Fix: Final paranoid guard - ensure no NaN/infinity values are passed back to host
+    // This doesn't fix teardown bugs, but guarantees no NaNs/inf are being passed back during normal processing
+    for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
+    {
+        float* d = buffer.getWritePointer(ch);
+        for (int n = 0; n < buffer.getNumSamples(); ++n)
+        {
+            if (!std::isfinite(d[n]))
+                d[n] = 0.0f;
+        }
     }
 }
 

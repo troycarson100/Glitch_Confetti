@@ -23,7 +23,7 @@ public:
     
 private:
     FontManager() = default;
-    ~FontManager() = default;
+    ~FontManager() = default;   // will never actually be called with the leaky singleton
     
     // Store loaded fonts
     std::map<juce::String, juce::Font> loadedFonts;
@@ -31,5 +31,5 @@ private:
     // Load font from BinaryData
     juce::Font loadFontFromBinaryData(const juce::String& fontName, float height, int style);
     
-    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(FontManager)
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (FontManager)
 };
