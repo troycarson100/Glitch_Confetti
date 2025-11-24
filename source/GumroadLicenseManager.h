@@ -100,6 +100,7 @@ private:
     juce::String productId;
     GumroadLicenseInfo currentLicense;
     std::atomic<bool> verificationInProgress { false };
+    std::atomic<bool> isShuttingDown { false }; // Fix: prevent callbacks during shutdown
     
     // Queue for async verification requests
     struct VerificationRequest

@@ -30,6 +30,18 @@ void RandomizationManager::handleAsyncUpdate()
 {
     jassert(juce::MessageManager::getInstance()->isThisTheMessageThread());
     
+    // Fix: Check global shutdown flag FIRST to prevent any operations during shutdown
+    if (processor.globalShutdownFlag.load()) {
+        busy.store(false);
+        return;
+    }
+    
+    // Fix: bail immediately if the editor has already been destroyed
+    if (editor == nullptr) {
+        busy.store(false);
+        return;
+    }
+    
     DBG("[RAND] ═══════════════════════════════════════════");
     DBG("[RAND] Starting randomization on message thread");
     randomizeAll();
@@ -39,6 +51,16 @@ void RandomizationManager::handleAsyncUpdate()
 
 void RandomizationManager::randomizeAll()
 {
+    // Fix: Check global shutdown flag FIRST to prevent any operations during shutdown
+    if (processor.globalShutdownFlag.load()) {
+        return;
+    }
+    
+    // Fix: randomization is skipped if shutdown has already begun
+    if (editor == nullptr) {
+        return;
+    }
+    
     // Suspend processing briefly
     processor.suspendProcessing(true);
     
@@ -70,10 +92,14 @@ void RandomizationManager::randomizeEffectRouter()
 {
     DBG("[RAND] Randomizing effect router assignments...");
     
-    // Get all available effects (excluding master/compressor)
+    // Get all available effects (excluding master/compressor and Form2)
     std::vector<EffectID> availableEffects;
-    for (int i = 0; i <= 12; ++i) { // EffectID::SpaceDelay (0) to EffectID::Saturate (12)
-        availableEffects.push_back(static_cast<EffectID>(i));
+    for (int i = 0; i <= 13; ++i) { // EffectID::SpaceDelay (0) to EffectID::Filter (13)
+        EffectID effect = static_cast<EffectID>(i);
+        // Exclude Form2 (11) - using Formant (10) instead
+        if (effect != EffectID::Form2) {
+            availableEffects.push_back(effect);
+        }
     }
     
     // Randomly select 4 effects
@@ -156,6 +182,69 @@ void RandomizationManager::collectTargets()
         + juce::String(sequencerTargets.size()) + " sequencers");
 }
 
+// Helper function to safely set parameter value directly (bypassing slider to avoid snapToLegalValue crash)
+// This sets the parameter in APVTS directly, and the SliderAttachment will automatically sync the slider
+static void safeSetParameterValue(juce::RangedAudioParameter* param, float denormalizedValue)
+{
+    if (!param)
+        return;
+    
+    // Check if value is finite
+    if (!std::isfinite(denormalizedValue)) {
+        DBG("[RAND] ERROR: Non-finite value for parameter " + param->getName());
+        return;
+    }
+    
+    try {
+        // Handle different parameter types safely
+        auto* choiceParam = dynamic_cast<juce::AudioParameterChoice*>(param);
+        auto* intParam = dynamic_cast<juce::AudioParameterInt*>(param);
+        
+        if (choiceParam) {
+            // For Choice parameters, convert float to int index, then normalize
+            int numChoices = choiceParam->choices.size();
+            if (numChoices > 0) {
+                int index = juce::roundToInt(juce::jlimit(0.0f, static_cast<float>(numChoices - 1), denormalizedValue));
+                // Normalize: index / (numChoices - 1)
+                float normalizedValue = numChoices > 1 ? static_cast<float>(index) / static_cast<float>(numChoices - 1) : 0.0f;
+                normalizedValue = juce::jlimit(0.0f, 1.0f, normalizedValue);
+                // Set parameter directly - SliderAttachment will sync the slider automatically
+                param->setValueNotifyingHost(normalizedValue);
+            }
+        } else if (intParam) {
+            // For Int parameters, convert float to int, then normalize
+            const auto& range = intParam->getNormalisableRange();
+            int minValue = static_cast<int>(range.start);
+            int maxValue = static_cast<int>(range.end);
+            int intValue = juce::roundToInt(juce::jlimit(static_cast<float>(minValue), static_cast<float>(maxValue), denormalizedValue));
+            // Normalize: (intValue - minValue) / (maxValue - minValue)
+            float normalizedValue = (maxValue > minValue) ? static_cast<float>(intValue - minValue) / static_cast<float>(maxValue - minValue) : 0.0f;
+            normalizedValue = juce::jlimit(0.0f, 1.0f, normalizedValue);
+            // Set parameter directly - SliderAttachment will sync the slider automatically
+            param->setValueNotifyingHost(normalizedValue);
+        } else {
+            // For Float parameters, manually calculate normalized value to avoid snapToLegalValue
+            const auto& range = param->getNormalisableRange();
+            // Clamp denormalized value to parameter's range
+            float clampedDenorm = juce::jlimit(range.start, range.end, denormalizedValue);
+            
+            // Manual conversion to avoid snap function issues
+            // Normalize: (value - start) / (end - start)
+            float normalizedValue = 0.0f;
+            if (range.end > range.start) {
+                normalizedValue = (clampedDenorm - range.start) / (range.end - range.start);
+            }
+            normalizedValue = juce::jlimit(0.0f, 1.0f, normalizedValue);
+            // Set parameter directly - SliderAttachment will sync the slider automatically
+            param->setValueNotifyingHost(normalizedValue);
+        }
+    } catch (const std::exception& e) {
+        DBG("[RAND] ERROR: Exception setting parameter value for " + param->getName() + ": " + juce::String(e.what()));
+    } catch (...) {
+        DBG("[RAND] ERROR: Unknown exception setting parameter value for " + param->getName());
+    }
+}
+
 void RandomizationManager::applyParamChanges()
 {
     // After randomizing all step snapshots, reload current step into knobs for each effect
@@ -183,15 +272,16 @@ void RandomizationManager::applyParamChanges()
                 int step = processor.getSelectedStep();
                 if (step >= 0 && step < 16) {
                     auto s = processor.getSafeSnapshot(step);
-                    // Load into knobs (which triggers APVTS update via attachments)
-                    if (editor->knobs[0]) editor->knobs[0]->setValue((s.delay.timeMs - 10.0f) / (2000.0f - 10.0f), juce::sendNotification);
-                    if (editor->knobs[1]) editor->knobs[1]->setValue(s.delay.feedback / 100.0f, juce::sendNotification);
-                    if (editor->knobs[2]) editor->knobs[2]->setValue(s.delay.wowDepth / 100.0f, juce::sendNotification);
-                    if (editor->knobs[3]) editor->knobs[3]->setValue((s.delay.wowRate - 0.1f) / (8.0f - 0.1f), juce::sendNotification);
-                    if (editor->knobs[4]) editor->knobs[4]->setValue(s.delay.saturation / 100.0f, juce::sendNotification);
-                    if (editor->knobs[5]) editor->knobs[5]->setValue((s.delay.highCut - 1000.0f) / (20000.0f - 1000.0f), juce::sendNotification);
-                    if (editor->knobs[6]) editor->knobs[6]->setValue((s.delay.lowCut - 20.0f) / (2000.0f - 20.0f), juce::sendNotification);
-                    if (editor->knobs[7]) editor->knobs[7]->setValue(s.delay.mix / 100.0f, juce::sendNotification);
+                    std::vector<juce::String> paramIds = {"delayTimeMs", "delayFeedback", "delayWowDepth", "delayWowRate", 
+                                                          "delaySaturation", "delayHighCut", "delayLowCut", "delayMix"};
+                    safeSetParameterValue(apvts.getParameter(paramIds[0]), s.delay.timeMs);
+                    safeSetParameterValue(apvts.getParameter(paramIds[1]), s.delay.feedback * 100.0f);
+                    safeSetParameterValue(apvts.getParameter(paramIds[2]), s.delay.wowDepth * 100.0f);
+                    safeSetParameterValue(apvts.getParameter(paramIds[3]), s.delay.wowRate);
+                    safeSetParameterValue(apvts.getParameter(paramIds[4]), s.delay.saturation * 100.0f);
+                    safeSetParameterValue(apvts.getParameter(paramIds[5]), s.delay.highCut);
+                    safeSetParameterValue(apvts.getParameter(paramIds[6]), s.delay.lowCut);
+                    safeSetParameterValue(apvts.getParameter(paramIds[7]), s.delay.mix * 100.0f);
                     DBG("[RAND]   SpaceDelay step " + juce::String(step) + " reloaded");
                 }
                 break;
@@ -202,13 +292,14 @@ void RandomizationManager::applyParamChanges()
                 int step = editor->autopanUiSelectedStep;
                 if (step >= 0 && step < 16) {
                     auto s = processor.getAutoPanSafeSnapshot(step);
-                    // Load into knobs (CRITICAL: Use dontSendNotification to prevent All Steps trigger)
-                    if (editor->autopanKnobs[0]) editor->autopanKnobs[0]->setValue(s.autopan.rate, juce::dontSendNotification);
-                    if (editor->autopanKnobs[1]) editor->autopanKnobs[1]->setValue(s.autopan.phase, juce::dontSendNotification);
-                    if (editor->autopanKnobs[2]) editor->autopanKnobs[2]->setValue((float)s.autopan.waveType, juce::dontSendNotification);
-                    if (editor->autopanKnobs[3]) editor->autopanKnobs[3]->setValue(s.autopan.waveShape, juce::dontSendNotification);
-                    if (editor->autopanKnobs[4]) editor->autopanKnobs[4]->setValue(s.autopan.inverted ? 1.0f : 0.0f, juce::dontSendNotification);
-                    if (editor->autopanKnobs[5]) editor->autopanKnobs[5]->setValue(s.autopan.amount, juce::dontSendNotification);
+                    std::vector<juce::String> paramIds = {"autopanRate", "autopanPhase", "autopanWaveType", "autopanWaveShape", 
+                                                          "autopanInverted", "autopanAmount"};
+                    safeSetParameterValue(apvts.getParameter(paramIds[0]), s.autopan.rate);
+                    safeSetParameterValue(apvts.getParameter(paramIds[1]), s.autopan.phase);
+                    safeSetParameterValue(apvts.getParameter(paramIds[2]), (float)s.autopan.waveType);
+                    safeSetParameterValue(apvts.getParameter(paramIds[3]), s.autopan.waveShape);
+                    safeSetParameterValue(apvts.getParameter(paramIds[4]), s.autopan.inverted ? 1.0f : 0.0f);
+                    safeSetParameterValue(apvts.getParameter(paramIds[5]), s.autopan.amount);
                     DBG("[RAND]   AutoPan step " + juce::String(step) + " reloaded");
                 }
                 break;
@@ -219,15 +310,16 @@ void RandomizationManager::applyParamChanges()
                 int step = editor->dirtUiSelectedStep;
                 if (step >= 0 && step < 16) {
                     auto s = processor.getDirtSafeSnapshot(step);
-                    // Load into knobs
-                    if (editor->dirtKnobs[0]) editor->dirtKnobs[0]->setValue(s.dirt.drive, juce::sendNotification);
-                    if (editor->dirtKnobs[1]) editor->dirtKnobs[1]->setValue(s.dirt.color, juce::sendNotification);
-                    if (editor->dirtKnobs[2]) editor->dirtKnobs[2]->setValue(s.dirt.asym, juce::sendNotification);
-                    if (editor->dirtKnobs[3]) editor->dirtKnobs[3]->setValue(s.dirt.texture, juce::sendNotification);
-                    if (editor->dirtKnobs[4]) editor->dirtKnobs[4]->setValue(s.dirt.lowCut, juce::sendNotification);
-                    if (editor->dirtKnobs[5]) editor->dirtKnobs[5]->setValue(s.dirt.highCut, juce::sendNotification);
-                    if (editor->dirtKnobs[6]) editor->dirtKnobs[6]->setValue(s.dirt.tone, juce::sendNotification);
-                    if (editor->dirtKnobs[7]) editor->dirtKnobs[7]->setValue(s.dirt.mix, juce::sendNotification);
+                    std::vector<juce::String> paramIds = {"dirtDrive", "dirtColor", "dirtAsym", "dirtTexture", 
+                                                          "dirtLowCut", "dirtHighCut", "dirtTone", "dirtMix"};
+                    safeSetParameterValue(apvts.getParameter(paramIds[0]), s.dirt.drive);
+                    safeSetParameterValue(apvts.getParameter(paramIds[1]), s.dirt.color);
+                    safeSetParameterValue(apvts.getParameter(paramIds[2]), s.dirt.asym);
+                    safeSetParameterValue(apvts.getParameter(paramIds[3]), s.dirt.texture);
+                    safeSetParameterValue(apvts.getParameter(paramIds[4]), s.dirt.lowCut);
+                    safeSetParameterValue(apvts.getParameter(paramIds[5]), s.dirt.highCut);
+                    safeSetParameterValue(apvts.getParameter(paramIds[6]), s.dirt.tone);
+                    safeSetParameterValue(apvts.getParameter(paramIds[7]), s.dirt.mix);
                     DBG("[RAND]   Dirt step " + juce::String(step) + " reloaded");
                 }
                 break;
@@ -238,15 +330,16 @@ void RandomizationManager::applyParamChanges()
                 int step = editor->chorusUiSelectedStep;
                 if (step >= 0 && step < 16) {
                     auto s = processor.getChorusSafeSnapshot(step);
-                    // Load into knobs
-                    if (editor->chorusKnobs[0]) editor->chorusKnobs[0]->setValue(s.chorus.delayTime, juce::sendNotification);
-                    if (editor->chorusKnobs[1]) editor->chorusKnobs[1]->setValue(s.chorus.rate, juce::sendNotification);
-                    if (editor->chorusKnobs[2]) editor->chorusKnobs[2]->setValue(s.chorus.depth, juce::sendNotification);
-                    if (editor->chorusKnobs[3]) editor->chorusKnobs[3]->setValue(s.chorus.feedback, juce::sendNotification);
-                    if (editor->chorusKnobs[4]) editor->chorusKnobs[4]->setValue(s.chorus.voices, juce::sendNotification);
-                    if (editor->chorusKnobs[5]) editor->chorusKnobs[5]->setValue(s.chorus.width, juce::sendNotification);
-                    if (editor->chorusKnobs[6]) editor->chorusKnobs[6]->setValue(s.chorus.tone, juce::sendNotification);
-                    if (editor->chorusKnobs[7]) editor->chorusKnobs[7]->setValue(s.chorus.mix, juce::sendNotification);
+                    std::vector<juce::String> paramIds = {"chorusDelayMs", "chorusRateHz", "chorusDepthMs", "chorusFeedback", 
+                                                          "chorusVoices", "chorusWidth", "chorusShape", "chorusMix"};
+                    safeSetParameterValue(apvts.getParameter(paramIds[0]), s.chorus.delayTime);
+                    safeSetParameterValue(apvts.getParameter(paramIds[1]), s.chorus.rate);
+                    safeSetParameterValue(apvts.getParameter(paramIds[2]), s.chorus.depth);
+                    safeSetParameterValue(apvts.getParameter(paramIds[3]), s.chorus.feedback);
+                    safeSetParameterValue(apvts.getParameter(paramIds[4]), s.chorus.voices);
+                    safeSetParameterValue(apvts.getParameter(paramIds[5]), s.chorus.width);
+                    safeSetParameterValue(apvts.getParameter(paramIds[6]), s.chorus.tone);
+                    safeSetParameterValue(apvts.getParameter(paramIds[7]), s.chorus.mix);
                     DBG("[RAND]   Chorus step " + juce::String(step) + " reloaded");
                 }
                 break;
@@ -257,15 +350,16 @@ void RandomizationManager::applyParamChanges()
                 int step = editor->reverbUiSelectedStep;
                 if (step >= 0 && step < 16) {
                     auto s = processor.getReverbSafeSnapshot(step);
-                    // Load into knobs
-                    if (editor->reverbKnobs[0]) editor->reverbKnobs[0]->setValue(s.reverb.type, juce::sendNotification); // Width
-                    if (editor->reverbKnobs[1]) editor->reverbKnobs[1]->setValue(s.reverb.size, juce::sendNotification);
-                    if (editor->reverbKnobs[2]) editor->reverbKnobs[2]->setValue(s.reverb.predelayMs, juce::sendNotification);
-                    if (editor->reverbKnobs[3]) editor->reverbKnobs[3]->setValue(s.reverb.dampHz, juce::sendNotification);
-                    if (editor->reverbKnobs[4]) editor->reverbKnobs[4]->setValue(s.reverb.diffusion, juce::sendNotification);
-                    if (editor->reverbKnobs[5]) editor->reverbKnobs[5]->setValue(s.reverb.early, juce::sendNotification);
-                    if (editor->reverbKnobs[6]) editor->reverbKnobs[6]->setValue(s.reverb.decaySec, juce::sendNotification);
-                    if (editor->reverbKnobs[7]) editor->reverbKnobs[7]->setValue(s.reverb.mix, juce::sendNotification);
+                    std::vector<juce::String> paramIds = {"verbWidth", "verbSize", "verbPredelayMs", "verbDampHz", 
+                                                          "verbDiffusion", "verbEarlyLevel", "verbDecaySec", "verbMix"};
+                    safeSetParameterValue(apvts.getParameter(paramIds[0]), s.reverb.type);
+                    safeSetParameterValue(apvts.getParameter(paramIds[1]), s.reverb.size);
+                    safeSetParameterValue(apvts.getParameter(paramIds[2]), s.reverb.predelayMs);
+                    safeSetParameterValue(apvts.getParameter(paramIds[3]), s.reverb.dampHz);
+                    safeSetParameterValue(apvts.getParameter(paramIds[4]), s.reverb.diffusion);
+                    safeSetParameterValue(apvts.getParameter(paramIds[5]), s.reverb.early);
+                    safeSetParameterValue(apvts.getParameter(paramIds[6]), s.reverb.decaySec);
+                    safeSetParameterValue(apvts.getParameter(paramIds[7]), s.reverb.mix);
                     DBG("[RAND]   Reverb step " + juce::String(step) + " reloaded");
                 }
                 break;
@@ -276,15 +370,16 @@ void RandomizationManager::applyParamChanges()
                 int step = editor->granularUiSelectedStep;
                 if (step >= 0 && step < 16) {
                     auto s = processor.getGranularSafeSnapshot(step);
-                    // Load into knobs
-                    if (editor->granularKnobs[0]) editor->granularKnobs[0]->setValue(s.granular.sizeMs, juce::sendNotification);
-                    if (editor->granularKnobs[1]) editor->granularKnobs[1]->setValue(s.granular.densityHz, juce::sendNotification);
-                    if (editor->granularKnobs[2]) editor->granularKnobs[2]->setValue(s.granular.position, juce::sendNotification);
-                    if (editor->granularKnobs[3]) editor->granularKnobs[3]->setValue(s.granular.sprayMs, juce::sendNotification);
-                    if (editor->granularKnobs[4]) editor->granularKnobs[4]->setValue(s.granular.pitchSemi, juce::sendNotification);
-                    if (editor->granularKnobs[5]) editor->granularKnobs[5]->setValue(s.granular.random, juce::sendNotification);
-                    if (editor->granularKnobs[6]) editor->granularKnobs[6]->setValue(s.granular.texture, juce::sendNotification);
-                    if (editor->granularKnobs[7]) editor->granularKnobs[7]->setValue(s.granular.mix, juce::sendNotification);
+                    std::vector<juce::String> paramIds = {"granSizeMs", "granDensityHz", "granPosition", "granSprayMs",
+                                                          "granPitchSemi", "granRandom", "granTexture", "granMix"};
+                    safeSetParameterValue(apvts.getParameter(paramIds[0]), s.granular.sizeMs);
+                    safeSetParameterValue(apvts.getParameter(paramIds[1]), s.granular.densityHz);
+                    safeSetParameterValue(apvts.getParameter(paramIds[2]), s.granular.position);
+                    safeSetParameterValue(apvts.getParameter(paramIds[3]), s.granular.sprayMs);
+                    safeSetParameterValue(apvts.getParameter(paramIds[4]), s.granular.pitchSemi);
+                    safeSetParameterValue(apvts.getParameter(paramIds[5]), s.granular.random);
+                    safeSetParameterValue(apvts.getParameter(paramIds[6]), s.granular.texture);
+                    safeSetParameterValue(apvts.getParameter(paramIds[7]), s.granular.mix);
                     DBG("[RAND]   Granular step " + juce::String(step) + " reloaded");
                 }
                 break;
@@ -295,13 +390,14 @@ void RandomizationManager::applyParamChanges()
                 int step = editor->slicerUiSelectedStep;
                 if (step >= 0 && step < 16) {
                     auto s = processor.getSlicerSafeSnapshot(step);
-                    // Load into knobs (6 knobs, not 8)
-                    if (editor->slicerKnobs[0]) editor->slicerKnobs[0]->setValue(s.slicer.pattern, juce::sendNotification);
-                    if (editor->slicerKnobs[1]) editor->slicerKnobs[1]->setValue(s.slicer.division, juce::sendNotification);
-                    if (editor->slicerKnobs[2]) editor->slicerKnobs[2]->setValue(s.slicer.offset, juce::sendNotification);
-                    if (editor->slicerKnobs[3]) editor->slicerKnobs[3]->setValue(s.slicer.shape, juce::sendNotification);
-                    if (editor->slicerKnobs[4]) editor->slicerKnobs[4]->setValue(s.slicer.releaseMs, juce::sendNotification);
-                    if (editor->slicerKnobs[5]) editor->slicerKnobs[5]->setValue(s.slicer.mix, juce::sendNotification);
+                    std::vector<juce::String> paramIds = {"slicerPattern", "slicerDivision", "slicerOffset", "slicerShape", 
+                                                          "slicerReleaseMs", "slicerMix"};
+                    safeSetParameterValue(apvts.getParameter(paramIds[0]), s.slicer.pattern);
+                    safeSetParameterValue(apvts.getParameter(paramIds[1]), s.slicer.division);
+                    safeSetParameterValue(apvts.getParameter(paramIds[2]), s.slicer.offset);
+                    safeSetParameterValue(apvts.getParameter(paramIds[3]), s.slicer.shape);
+                    safeSetParameterValue(apvts.getParameter(paramIds[4]), s.slicer.releaseMs);
+                    safeSetParameterValue(apvts.getParameter(paramIds[5]), s.slicer.mix);
                     DBG("[RAND]   Slicer step " + juce::String(step) + " reloaded");
                 }
                 break;
@@ -312,36 +408,94 @@ void RandomizationManager::applyParamChanges()
                 int step = editor->dubdelayUiSelectedStep;
                 if (step >= 0 && step < 16) {
                     auto s = processor.getDubDelaySafeSnapshot(step);
-                    // Load into knobs (8 knobs)
-                    if (editor->dubdelayKnobs[0]) editor->dubdelayKnobs[0]->setValue(s.dubdelay.timeMs, juce::sendNotification);
-                    if (editor->dubdelayKnobs[1]) editor->dubdelayKnobs[1]->setValue(s.dubdelay.feedback, juce::sendNotification);
-                    if (editor->dubdelayKnobs[2]) editor->dubdelayKnobs[2]->setValue(s.dubdelay.toneHz, juce::sendNotification);
-                    if (editor->dubdelayKnobs[3]) editor->dubdelayKnobs[3]->setValue(s.dubdelay.drive, juce::sendNotification);
+                    std::vector<juce::String> paramIds = {"dubTimeMs", "dubFeedback", "dubToneHz", "dubDrive", 
+                                                          "dubPingPong", "dubWowFlutter", "dubRegenDamp", "dubMix"};
+                    safeSetParameterValue(apvts.getParameter(paramIds[0]), s.dubdelay.timeMs);
+                    safeSetParameterValue(apvts.getParameter(paramIds[1]), s.dubdelay.feedback);
+                    safeSetParameterValue(apvts.getParameter(paramIds[2]), s.dubdelay.toneHz);
+                    safeSetParameterValue(apvts.getParameter(paramIds[3]), s.dubdelay.drive);
                     // Knob 4 is PingPong toggle - represented as 0 or 1
-                    if (editor->dubdelayKnobs[4]) editor->dubdelayKnobs[4]->setValue(s.dubdelay.pingPong ? 1.0f : 0.0f, juce::sendNotification);
-                    if (editor->dubdelayKnobs[5]) editor->dubdelayKnobs[5]->setValue(s.dubdelay.wowFlutter, juce::sendNotification);
-                    if (editor->dubdelayKnobs[6]) editor->dubdelayKnobs[6]->setValue(s.dubdelay.regenDamp, juce::sendNotification);
-                    if (editor->dubdelayKnobs[7]) editor->dubdelayKnobs[7]->setValue(s.dubdelay.mix, juce::sendNotification);
+                    safeSetParameterValue(apvts.getParameter(paramIds[4]), s.dubdelay.pingPong ? 1.0f : 0.0f);
+                    safeSetParameterValue(apvts.getParameter(paramIds[5]), s.dubdelay.wowFlutter);
+                    safeSetParameterValue(apvts.getParameter(paramIds[6]), s.dubdelay.regenDamp);
+                    safeSetParameterValue(apvts.getParameter(paramIds[7]), s.dubdelay.mix);
                     DBG("[RAND]   DubDelay step " + juce::String(step) + " reloaded");
                 }
                 break;
             }
             
-            case EffectID::Form2:
+            case EffectID::Formant:
             {
-                int step = editor->form2UiSelectedStep;
+                int step = editor->formantUiSelectedStep;
                 if (step >= 0 && step < 16) {
-                    auto s = processor.getForm2SafeSnapshot(step);
-                    // Load into knobs (8 knobs) - map to 0.0-1.0 range
-                    if (editor->form2Knobs[0]) editor->form2Knobs[0]->setValue(s.form2.rootNote / 12.0f, juce::sendNotification);
-                    if (editor->form2Knobs[1]) editor->form2Knobs[1]->setValue(s.form2.scale / 7.0f, juce::sendNotification);
-                    if (editor->form2Knobs[2]) editor->form2Knobs[2]->setValue((s.form2.chordSize - 1) / 7.0f, juce::sendNotification);
-                    if (editor->form2Knobs[3]) editor->form2Knobs[3]->setValue(s.form2.shift, juce::sendNotification);
-                    if (editor->form2Knobs[4]) editor->form2Knobs[4]->setValue(s.form2.color, juce::sendNotification);
-                    if (editor->form2Knobs[5]) editor->form2Knobs[5]->setValue(s.form2.motion, juce::sendNotification);
-                    if (editor->form2Knobs[6]) editor->form2Knobs[6]->setValue(s.form2.resynth, juce::sendNotification);
-                    if (editor->form2Knobs[7]) editor->form2Knobs[7]->setValue(s.form2.mix, juce::sendNotification);
-                    DBG("[RAND]   Form2 step " + juce::String(step) + " reloaded");
+                    auto s = processor.getFormantSafeSnapshot(step);
+                    // Formant has 4 snapshot parameters: vowel, resonance, intensity, mix
+                    // Note: Other params (formantShift, formantBrightness, formantMotion, formantAir) are regular APVTS params
+                    auto* vowelParam = apvts.getParameter("formantVowel");
+                    auto* resonanceParam = apvts.getParameter("formantResonance");
+                    auto* intensityParam = apvts.getParameter("formantIntensity");
+                    auto* mixParam = apvts.getParameter("formantMix");
+                    safeSetParameterValue(vowelParam, s.formant.vowel);
+                    safeSetParameterValue(resonanceParam, s.formant.resonance);
+                    safeSetParameterValue(intensityParam, s.formant.intensity);
+                    safeSetParameterValue(mixParam, s.formant.mix);
+                    DBG("[RAND]   Formant step " + juce::String(step) + " reloaded");
+                }
+                break;
+            }
+            
+            case EffectID::Saturate:
+            {
+                int step = editor->saturateUiSelectedStep;
+                if (step >= 0 && step < 16) {
+                    auto s = processor.getSaturateSafeSnapshot(step);
+                    std::vector<juce::String> paramIds = {"satType", "satDrive", "satColor", "satShape", 
+                                                          "satBias", "satOut", "satMix"};
+                    safeSetParameterValue(apvts.getParameter(paramIds[0]), s.saturate.type);
+                    safeSetParameterValue(apvts.getParameter(paramIds[1]), s.saturate.drive);
+                    safeSetParameterValue(apvts.getParameter(paramIds[2]), s.saturate.color);
+                    safeSetParameterValue(apvts.getParameter(paramIds[3]), s.saturate.shape);
+                    safeSetParameterValue(apvts.getParameter(paramIds[4]), s.saturate.bias);
+                    safeSetParameterValue(apvts.getParameter(paramIds[5]), s.saturate.output);
+                    safeSetParameterValue(apvts.getParameter(paramIds[6]), s.saturate.mix);
+                    DBG("[RAND]   Saturate step " + juce::String(step) + " reloaded");
+                }
+                break;
+            }
+            
+            case EffectID::Filter:
+            {
+                int step = editor->filterUiSelectedStep;
+                if (step >= 0 && step < 16) {
+                    auto s = processor.getFilterSafeSnapshot(step);
+                    // Filter uses special knobs: filterTypeKnob (0), filterKnobs[0-2] (Cutoff, Res, Drive), filterSlopeKnob (3), filterKnobs[3-4] (Key Track, Mix)
+                    // Parameter IDs: "fType", "cutoff", "res", "slope", "filterDrive", "keytrack", "filterMix"
+                    // Note: keytrack might not be a real parameter, it's stored in snapshot but may not have APVTS param
+                    auto* typeParam = apvts.getParameter("fType");
+                    auto* cutoffParam = apvts.getParameter("cutoff");
+                    auto* resParam = apvts.getParameter("res");
+                    auto* slopeParam = apvts.getParameter("slope");
+                    auto* driveParam = apvts.getParameter("filterDrive");
+                    auto* keytrackParam = apvts.getParameter("keytrack");
+                    auto* mixParam = apvts.getParameter("filterMix");
+                    
+                    // Type knob (special knob, not in filterKnobs array)
+                    safeSetParameterValue(typeParam, s.filter.type);
+                    // Cutoff (filterKnobs[0])
+                    safeSetParameterValue(cutoffParam, s.filter.cutoff);
+                    // Resonance (filterKnobs[1])
+                    safeSetParameterValue(resParam, s.filter.resonance);
+                    // Slope knob (special knob, not in filterKnobs array)
+                    safeSetParameterValue(slopeParam, s.filter.slope);
+                    // Drive (filterKnobs[2])
+                    safeSetParameterValue(driveParam, s.filter.drive);
+                    // Key Track (filterKnobs[3]) - only set if parameter exists
+                    if (keytrackParam) {
+                        safeSetParameterValue(keytrackParam, s.filter.keytrack);
+                    }
+                    // Mix (filterKnobs[4])
+                    safeSetParameterValue(mixParam, s.filter.mix);
+                    DBG("[RAND]   Filter step " + juce::String(step) + " reloaded");
                 }
                 break;
             }
@@ -490,18 +644,43 @@ void RandomizationManager::applyStepChanges()
                 break;
             }
             
-            case EffectID::Form2:
+            case EffectID::Formant:
             {
-                auto snapshot = processor.getForm2SafeSnapshot(target.stepIndex);
-                snapshot.form2.rootNote = static_cast<int>(rand01() * 12); // 0-11
-                snapshot.form2.scale = static_cast<int>(rand01() * 7); // 0-6
-                snapshot.form2.chordSize = 1 + static_cast<int>(rand01() * 8); // 1-8
-                snapshot.form2.shift = 0.5f + rand01() * 1.5f; // 0.5-2.0
-                snapshot.form2.color = -12.0f + rand01() * 24.0f; // -12 to +12
-                snapshot.form2.motion = rand01(); // 0-1
-                snapshot.form2.resynth = rand01(); // 0-1
-                snapshot.form2.mix = rand01(); // 0-1
-                processor.setForm2StepSnapshot(target.stepIndex, snapshot);
+                auto snapshot = processor.getFormantSafeSnapshot(target.stepIndex);
+                snapshot.formant.vowel = rand01() * 4.0f; // 0-4 (A=0, E=1, I=2, O=3, U=4)
+                snapshot.formant.resonance = 0.4f + rand01() * 17.6f; // 0.4-18
+                snapshot.formant.intensity = -6.0f + rand01() * 24.0f; // -6 to +18
+                snapshot.formant.mix = rand01(); // 0-1
+                processor.setFormantStepSnapshot(target.stepIndex, snapshot);
+                break;
+            }
+            
+            case EffectID::Saturate:
+            {
+                auto snapshot = processor.getSaturateSafeSnapshot(target.stepIndex);
+                snapshot.saturate.type = std::floor(rand01() * 8.0f); // 0-7
+                snapshot.saturate.drive = rand01() * 36.0f; // 0-36 dB
+                snapshot.saturate.color = rand01(); // 0-1 (dynamic based on model)
+                snapshot.saturate.shape = rand01(); // 0-1 (dynamic based on model)
+                snapshot.saturate.bias = -0.2f + rand01() * 0.4f; // -0.2 to 0.2
+                snapshot.saturate.output = -24.0f + rand01() * 36.0f; // -24 to +12 dB
+                snapshot.saturate.mix = rand01(); // 0-1
+                processor.setSaturateStepSnapshot(target.stepIndex, snapshot);
+                break;
+            }
+            
+            case EffectID::Filter:
+            {
+                auto snapshot = processor.getFilterSafeSnapshot(target.stepIndex);
+                snapshot.filter.type = std::floor(rand01() * 5.0f); // 0-4 (LP, HP, BP, Comb-, Comb+)
+                snapshot.filter.cutoff = 20.0f + rand01() * 19980.0f; // 20-20000 Hz
+                snapshot.filter.resonance = rand01(); // 0-1
+                snapshot.filter.slope = rand01(); // 0-1 (12dB to 24dB)
+                snapshot.filter.drive = rand01() * 36.0f; // 0-36 dB
+                snapshot.filter.spread = -50.0f + rand01() * 100.0f; // -50 to +50 cents
+                snapshot.filter.keytrack = rand01(); // 0-1
+                snapshot.filter.mix = rand01(); // 0-1
+                processor.setFilterStepSnapshot(target.stepIndex, snapshot);
                 break;
             }
             
@@ -602,10 +781,22 @@ void RandomizationManager::applySequencerChanges()
                 processor.setPhaseBloomDivisionIndex(divisionIndex);
                 break;
                 
-            case EffectID::Form2:
-                processor.setForm2SequencerEnabled(sequencerEnabled);
-                processor.setForm2StepsUsed(stepsUsed);
-                processor.setForm2DivisionIndex(divisionIndex);
+            case EffectID::Formant:
+                processor.setFormantSequencerEnabled(sequencerEnabled);
+                processor.setFormantStepsUsed(stepsUsed);
+                processor.setFormantDivisionIndex(divisionIndex);
+                break;
+                
+            case EffectID::Saturate:
+                processor.setSaturateSequencerEnabled(sequencerEnabled);
+                processor.setSaturateStepsUsed(stepsUsed);
+                processor.setSaturateDivisionIndex(divisionIndex);
+                break;
+                
+            case EffectID::Filter:
+                processor.setFilterSequencerEnabled(sequencerEnabled);
+                processor.setFilterStepsUsed(stepsUsed);
+                processor.setFilterDivisionIndex(divisionIndex);
                 break;
         }
         

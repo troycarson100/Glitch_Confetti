@@ -14,6 +14,16 @@ GumroadLicenseManager::GumroadLicenseManager(const juce::String& productId)
 
 GumroadLicenseManager::~GumroadLicenseManager()
 {
+    // Fix: Set shutdown flag FIRST to prevent new verifications and callbacks
+    isShuttingDown.store(true);
+    
+    // Clear any pending requests to prevent callbacks during shutdown
+    {
+        juce::ScopedLock lock(requestQueueLock);
+        requestQueue.clear();
+    }
+    
+    // Stop the thread
     signalThreadShouldExit();
     notify();
     waitForThreadToExit(5000);
@@ -23,7 +33,8 @@ void GumroadLicenseManager::verifyLicenseAsync(const juce::String& licenseKey,
                                                 bool incrementUses,
                                                 VerificationCallback callback)
 {
-    if (licenseKey.trim().isEmpty())
+    // Fix: Don't queue new verifications during shutdown
+    if (isShuttingDown.load() || licenseKey.trim().isEmpty())
         return;
     
     VerificationRequest request;
@@ -70,11 +81,16 @@ void GumroadLicenseManager::run()
             saveLicenseState();
             
             // Call callback on message thread if provided
-            if (request.callback)
+            // Fix: Only call async if MessageManager exists and we're not shutting down
+            if (request.callback && !isShuttingDown.load())
             {
-                juce::MessageManager::callAsync([callback = request.callback, result]() {
-                    callback(result);
-                });
+                auto* mm = juce::MessageManager::getInstanceWithoutCreating();
+                if (mm != nullptr && !threadShouldExit())
+                {
+                    mm->callAsync([callback = request.callback, result]() {
+                        callback(result);
+                    });
+                }
             }
             
             verificationInProgress.store(false);

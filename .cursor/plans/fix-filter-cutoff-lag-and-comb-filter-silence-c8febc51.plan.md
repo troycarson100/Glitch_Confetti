@@ -1,113 +1,183 @@
-<!-- c8febc51-1014-4a8f-821e-696510ed8bb7 6992dc92-2b7b-4937-af36-e6c3bbf38628 -->
-# Fix Comb Filter Progressive Channel Failure
+<!-- c8febc51-1014-4a8f-821e-696510ed8bb7 d4ed840c-9ef7-4ce0-bab2-adc314f87c84 -->
+# Fix Plugin Shutdown Crash
 
 ## Problem Analysis
 
-The comb filter is experiencing progressive channel failure:
+The crash occurs when closing Ableton with the plugin loaded. The crash log shows multiple "JUCE Timer" threads, indicating JUCE's shared timer thread is calling callbacks on components being destroyed. Key issues:
 
-1. Right channel goes silent first (returns `0.0f` on error instead of passing through)
-2. Left channel fails next
-3. Plugin stops processing entirely
+1. JUCE Timer callbacks can be queued and fire after `stopTimer()` is called
+2. MessageManager may be destroyed before components finish destruction
+3. Async operations (`callAsync`, `callAfterDelay`) may fire during shutdown
+4. Child component timers may fire after parent starts destruction
 
-Root causes identified:
+## Solution Strategy
 
-- Right channel returns `0.0f` instead of input when buffer is invalid (`processSampleR` line 459)
-- No state validation or recovery mechanism when buffers become corrupted
-- Recursive exception handling that tries to process again after errors
-- Write indices (`writeIndexL`, `writeIndexR`) can become corrupted without detection
-- No health check or re-initialization when buffers are invalid
+Implement a multi-layered shutdown safety system:
 
-## Implementation Plan
+1. **Global shutdown flag** checked by all async operations
+2. **MessageManager validity checks** before all UI operations
+3. **Timer stopping BEFORE destruction** using MessageManagerLock
+4. **SafePointer for all async callbacks**
+5. **Proper destruction order** ensuring children are stopped before parent
 
-### 1. Fix Right Channel Error Handling
+## Implementation Steps
 
-**File**: `source/dsp/FilterProcessor.h`
+### 1. Add Global Shutdown Flag to PluginProcessor
 
-- Change `processSampleR` to return `inputSample` instead of `0.0f` when buffer is invalid (line 459)
-- This ensures right channel passes through input instead of going silent
+**File**: `source/PluginProcessor.h`
 
-### 2. Add State Validation Before Processing
+- Add `static std::atomic<bool> globalShutdownFlag;` to track global shutdown state
+- Initialize to `false` in constructor
+- Set to `true` in `releaseResources()` and `editorBeingDeleted()`
 
-**File**: `source/dsp/FilterProcessor.h`
+### 2. Enhance PluginEditor Destructor
 
-- Add `bool isValidState()` method to `CombProc` that checks:
-- Buffer sizes are valid (> 0)
-- Buffers are not empty
-- Write indices are within bounds
-- Delay values are finite and in valid range
-- Call this validation in `process()` before processing each block
-- If invalid, re-prepare the filter and log a warning
+**File**: `source/PluginEditor.cpp`
 
-### 3. Add Write Index Validation and Recovery
+- Use `juce::MessageManagerLock` to prevent timer callbacks during destruction
+- Stop ALL timers (including child components) BEFORE any destruction begins
+- Clear all async operation queues
+- Set global shutdown flag
 
-**File**: `source/dsp/FilterProcessor.h`
+### 3. Add MessageManagerLock During Timer Stopping
 
-- Add validation in `processSampleL` and `processSampleR` before incrementing write indices:
-- Ensure `writeIndexL < bufferSizeL` before incrementing
-- Ensure `writeIndexR < bufferSizeR` before incrementing
-- If invalid, clamp to valid range: `writeIndexL = juce::jlimit(0, bufferSizeL - 1, writeIndexL)`
-- After incrementing, ensure indices wrap correctly
+**File**: `source/PluginEditor.cpp` in `~PluginEditor()`
 
-### 4. Add Recovery Mechanism
+- Wrap timer stopping in `MessageManagerLock` to prevent race conditions
+- Stop editor timer first
+- Iterate through all child components and stop their timers
+- Only then proceed with destruction
 
-**File**: `source/dsp/FilterProcessor.h`
+### 4. Enhance All Timer Callbacks
 
-- Add `void recover()` method to `CombProc` that:
-- Resets write indices to 0
-- Clears buffer state (fills with zeros)
-- Resets delay values to safe defaults
-- Resets damping state variables
-- Call `recover()` from `process()` if `isValidState()` returns false
-- Also call `recover()` from `prepare()` to ensure clean state
+**Files**:
 
-### 5. Fix Exception Handling to Prevent Recursion
+- `source/PluginEditor.h` (GainReductionMeter, SmallGainReductionMeter)
+- `source/ui/OutputSpectrumView.h`
+- `source/DualBarMeter.h`
+- `source/ui/PanManBar.h`
+- `source/ui/StepSequencer.h`
+
+- Check `PluginProcessor::globalShutdownFlag` at start of each `timerCallback()`
+- Check MessageManager validity
+- Check parent component validity
+- Early return if any check fails
+
+### 5. Enhance PluginEditor::timerCallback()
+
+**File**: `source/PluginEditor.cpp`
+
+- Check `globalShutdownFlag` at very start
+- Check MessageManager validity
+- Early return if shutdown detected
+
+### 6. Fix All callAsync and callAfterDelay Calls
+
+**Files**:
+
+- `source/PluginEditor.cpp` (checkLicenseOnStartup, showLicenseDialog)
+- `source/GumroadLicenseManager.cpp` (run method)
+- `source/dsp/SpectrumAnalyzer.h` (setFilterFrequencies)
+- `source/ui/StepSequencer.h` (reset button)
+- `source/ui/GumroadLicenseDialog.h` (validateAndClose)
+
+- Check `globalShutdownFlag` before posting async messages
+- Check MessageManager validity before `callAsync`
+- Use SafePointer for all callbacks
+- Check shutdown flag inside callback lambda
+
+### 7. Enhance AsyncUpdater Safety
+
+**File**: `source/RandomizationManager.cpp`
+
+- Check `globalShutdownFlag` in `handleAsyncUpdate()`
+- Check MessageManager validity
+- Early return if shutdown detected
+
+### 8. Add Timer Stopping Helper Function
+
+**File**: `source/PluginEditor.cpp`
+
+- Create `stopAllTimersSafely()` function that:
+  - Uses MessageManagerLock
+  - Stops editor timer
+  - Recursively stops all child component timers
+  - Handles exceptions gracefully
+
+### 9. Enhance editorBeingDeleted
 
 **File**: `source/PluginProcessor.cpp`
 
-- In the exception handler (lines 2287-2310), add a flag to prevent recursive processing:
-- Set `bool filterProcessingFailed = false;` before try block
-- If exception caught, set flag and skip recursive `process()` call
-- Instead, just pass through the buffer unchanged
-- This prevents infinite loops if the filter is in a bad state
+- Set `globalShutdownFlag` FIRST
+- Disable all async operations
+- Clear all sequencer states
+- Ensure no audio processing can access UI
 
-### 6. Add Per-Channel Error Detection
+### 10. Add Final Safety Check in Component Destructors
 
-**File**: `source/dsp/FilterProcessor.h`
+**Files**: All timer-using components
 
-- Modify `process()` to catch exceptions per-sample and handle gracefully:
-- Wrap `processSampleL()` and `processSampleR()` calls in try-catch
-- If exception, use input sample as fallback for that channel
-- Log which channel failed (if logging enabled)
+- In destructors, set a local `isDestroying` flag
+- Check this flag in `timerCallback()` if it exists
+- This provides defense-in-depth
 
-### 7. Add Health Check Before Each Block
+## Critical Code Changes
 
-**File**: `source/dsp/FilterProcessor.cpp`
+### PluginProcessor.h
 
-- In `FilterProcessor::process()`, before calling `cur->process()`:
-- If `cur` is a `CombProc`, cast and check `isValidState()`
-- If invalid, log warning and re-prepare the filter
-- This catches corruption before it causes channel failure
+```cpp
+static std::atomic<bool> globalShutdownFlag;
+```
 
-### 8. Ensure Proper Re-initialization on Type Change
+### PluginEditor.cpp ~PluginEditor()
 
-**File**: `source/dsp/FilterProcessor.cpp`
+```cpp
+// Use MessageManagerLock to prevent timer callbacks during destruction
+juce::MessageManagerLock mmLock;
+if (mmLock.lockWasGained()) {
+    stopAllTimersSafely();
+}
+```
 
-- In `FilterProcessor::process()` when switching filter types (lines 107-122):
-- If switching to/from comb filter, ensure `recover()` is called on the new filter
-- Reset crossfade ramp if recovery was needed
-- This prevents corrupted state from carrying over
+### All timerCallback() methods
 
-## Files to Modify
+```cpp
+void timerCallback() override {
+    if (PluginProcessor::globalShutdownFlag.load() || 
+        juce::MessageManager::getInstanceWithoutCreating() == nullptr ||
+        getParentComponent() == nullptr || !isVisible())
+        return;
+    // ... rest of callback
+}
+```
 
-1. `source/dsp/FilterProcessor.h` - Comb filter implementation with state validation and recovery
-2. `source/dsp/FilterProcessor.cpp` - Filter processor with health checks and re-initialization
-3. `source/PluginProcessor.cpp` - Exception handling fix to prevent recursion
+## Testing
 
-## Testing Considerations
+After implementation, test:
 
-- Test with comb filters on sequencer steps
-- Test rapid switching between filter types
-- Test with extreme parameter values (very high/low resonance, cutoff)
-- Test with randomized sequencer steps
-- Monitor for right channel failing first
-- Verify audio continues processing even when errors occur
+1. Load plugin in Ableton
+2. Close Ableton
+3. Verify no crash dialog appears
+4. Check console for any error messages
+5. Test with plugin playing audio
+6. Test with plugin UI open
+7. Test with sequencers running
+
+## Expected Outcome
+
+- No crash when closing Ableton with plugin loaded
+- Clean shutdown without error dialogs
+- All timers stopped before component destruction
+- All async operations cancelled before shutdown
+
+### To-dos
+
+- [ ] Add static globalShutdownFlag to PluginProcessor.h and initialize in constructor
+- [ ] Set globalShutdownFlag in PluginProcessor::releaseResources() and editorBeingDeleted()
+- [ ] Enhance PluginEditor destructor to use MessageManagerLock and stop all timers before destruction
+- [ ] Create stopAllTimersSafely() helper function in PluginEditor.cpp
+- [ ] Add globalShutdownFlag check to PluginEditor::timerCallback()
+- [ ] Add globalShutdownFlag checks to all child component timerCallback() methods
+- [ ] Add globalShutdownFlag checks to all callAsync and callAfterDelay calls
+- [ ] Add globalShutdownFlag check to RandomizationManager::handleAsyncUpdate()
+- [ ] Test plugin shutdown in Ableton to verify crash is fixed

@@ -23,6 +23,12 @@ public:
     // Optional: block re-entry
     bool isBusy() const noexcept { return busy.load(); }
     
+    // Fix: allow host to cancel AsyncUpdater events during shutdown
+    void cancelPendingUpdate() { AsyncUpdater::cancelPendingUpdate(); }
+    
+    // Fix: avoid dereferencing a destroyed editor once the host starts tearing down
+    void clearEditor() { editor = nullptr; }
+    
 private:
     void handleAsyncUpdate() override; // does the work on the message thread
     void randomizeAll();               // transactional randomization

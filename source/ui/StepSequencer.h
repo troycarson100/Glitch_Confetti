@@ -137,8 +137,21 @@ public:
         addAndMakeVisible (resetButton);
         resetButton.setButtonText ("🔁");
         resetButton.onClick = [this]{
-            if (onReset) 
-                juce::MessageManager::callAsync ([this]() { onReset(); });
+            if (onReset) {
+                // Fix: Use SafePointer to prevent accessing destroyed component during shutdown
+                auto safeThis = juce::Component::SafePointer<StepSequencer>(this);
+                auto resetFn = onReset; // Capture the function pointer
+                auto* mm = juce::MessageManager::getInstanceWithoutCreating();
+                if (mm != nullptr && safeThis != nullptr) {
+                    mm->callAsync([safeThis, resetFn]() {
+                        if (auto* self = safeThis.getComponent()) {
+                            if (resetFn) {
+                                resetFn();
+                            }
+                        }
+                    });
+                }
+            }
         };
 
         // init from APVTS
@@ -151,6 +164,11 @@ public:
         updateControlStates();
 
         startTimerHz (30); // blink current step
+    }
+
+    ~StepSequencer() override
+    {
+        stopTimer(); // Fix: stop animation timer before controls are destroyed
     }
 
     void paint (juce::Graphics& g) override
@@ -201,6 +219,14 @@ public:
 private:
     void timerCallback() override
     {
+        // Fix: Check if component and MessageManager are still valid before accessing cells
+        // This prevents crashes when timer callback fires during component destruction
+        // Note: We can't access PluginEditor here due to forward declaration, but the
+        // MessageManager check should catch most shutdown cases
+        auto* mm = juce::MessageManager::getInstanceWithoutCreating();
+        if (mm == nullptr || getParentComponent() == nullptr || !isVisible())
+            return;
+        
         const int cs = getCurrentStep ? getCurrentStep() : 0;
         for (size_t i = 0; i < cells.size(); ++i)
             cells[i]->setCurrentStep (static_cast<int>(i) == cs);

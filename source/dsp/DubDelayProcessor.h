@@ -52,8 +52,8 @@ private:
     bool isCrossfading = false;
     int crossfadeSamplesRemaining = 0;
     int crossfadeTotalSamples = 0;
-    float crossfadeReadPosA_L = 0.0f, crossfadeReadPosA_R = 0.0f;
-    float crossfadeReadPosB_L = 0.0f, crossfadeReadPosB_R = 0.0f;
+    float crossfadeDelaySampsA_L = 0.0f, crossfadeDelaySampsA_R = 0.0f; // Frozen delay times (in samples)
+    float crossfadeDelaySampsB_L = 0.0f, crossfadeDelaySampsB_R = 0.0f; // Frozen delay times (in samples)
     float previousTimeSec = 0.45f; // Track last time for jump detection
     
     // Ping-pong state

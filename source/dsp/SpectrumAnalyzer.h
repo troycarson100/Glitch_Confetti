@@ -3,6 +3,9 @@
 #include "../ui/OutputSpectrumView.h"
 #include <array>
 #include <cmath>
+#include <atomic> // Fix: track analyzer active state safely
+// Forward declaration for shutdown flag access
+class PluginEditor;
 
 /**
  * Real-time FFT spectrum analyzer for post-FX output
@@ -46,6 +49,12 @@ public:
         
         hopCounter = 0;
         accumulatorPos = 0;
+        isActive.store(true); // Fix: track whether analyzer should run
+    }
+    
+    ~SpectrumAnalyzer()
+    {
+        disable(); // Fix: guarantee async callbacks can't outlive this object
     }
     
     void prepare(double sampleRate)
@@ -78,13 +87,27 @@ public:
     
     void setFilterFrequencies(float lowCut, float highCut)
     {
+        if (!isActive.load()) return; // Fix: ignore updates once analyzer is torn down
+        
         lowCutFreq.store(lowCut);
         highCutFreq.store(highCut);
         
         // Update filter coefficients on message thread (safe)
-        juce::MessageManager::callAsync([this]() {
-            updateFilters();
-        });
+        // Only call async if MessageManager exists and object is still active
+        auto* mm = juce::MessageManager::getInstanceWithoutCreating();
+        if (mm != nullptr && isActive.load()) {
+            mm->callAsync([this]() {
+                if (isActive.load()) { // Double-check before executing
+                    updateFilters();
+                }
+            });
+        }
+    }
+    
+    void disable()
+    {
+        isActive.store(false);      // Fix: gate processBlock/setFilterFrequencies during shutdown
+        outputView = nullptr;       // Fix: drop UI pointer so no repaint occurs post-destruction
     }
     
     /**
@@ -93,7 +116,7 @@ public:
      */
     void processBlock(const float* const* channelData, int numChannels, int numSamples)
     {
-        if (outputView == nullptr || currentSampleRate <= 0.0)
+        if (!isActive.load() || outputView == nullptr || currentSampleRate <= 0.0)
             return;
         
         // Process samples for FFT (with optional filtering for visualization only)
@@ -345,6 +368,9 @@ private:
     // Filter frequencies (atomic for thread-safe UI control)
     std::atomic<float> lowCutFreq{20.0f};
     std::atomic<float> highCutFreq{20000.0f};
+    
+    // Active flag to prevent async callbacks during destruction
+    std::atomic<bool> isActive{true};
     
     // Biquad filter coefficients (for visualization filtering only)
     float hpB0 = 1.0f, hpB1 = 0.0f, hpB2 = 0.0f;

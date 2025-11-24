@@ -3,6 +3,7 @@
 #include <juce_dsp/juce_dsp.h>
 #include <array>
 #include <vector>
+// Forward declaration removed - not needed
 
 /**
  * Lock-free spectrum frame for audio→UI communication
@@ -134,6 +135,12 @@ public:
 private:
     void timerCallback() override
     {
+        // Fix: Check if component and MessageManager are still valid before repainting
+        // This prevents crashes when timer callback fires during component destruction
+        auto* mm = juce::MessageManager::getInstanceWithoutCreating();
+        if (mm == nullptr || getParentComponent() == nullptr || !isVisible())
+            return;
+        
         // Pull new frames from FIFO
         bool gotNewFrame = false;
         int readPos = readIndex.load(std::memory_order_relaxed);

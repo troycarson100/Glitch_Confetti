@@ -21,8 +21,8 @@ void DubDelayProcessor::prepare(double sampleRate, int maxBlockSize)
     delayBufferR.resize(bufferSize, 0.0f);
     writePos = 0;
     
-    // Initialize smoothed parameters (100ms ramp time for time to prevent scratchy sounds)
-    timeMsSmooth.reset(sampleRate, 0.300); // Much longer ramp for smooth time changes (300ms)
+    // Initialize smoothed parameters - very fast smoothing for responsive time changes
+    timeMsSmooth.reset(sampleRate, 0.020); // 20ms ramp for very fast, responsive time changes
     feedbackSmooth.reset(sampleRate, 0.015);
     toneCutoffSmooth.reset(sampleRate, 0.015);
     driveSmooth.reset(sampleRate, 0.015);
@@ -30,9 +30,9 @@ void DubDelayProcessor::prepare(double sampleRate, int maxBlockSize)
     regenDampSmooth.reset(sampleRate, 0.015);
     mixSmooth.reset(sampleRate, 0.015);
     
-    // More aggressive smoothing for delay samples to prevent read position jumps
-    delaySampsSmoothL.reset(sampleRate, 0.200); // 200ms smoothing for read position
-    delaySampsSmoothR.reset(sampleRate, 0.200); // 200ms smoothing for read position
+    // Smoothing for delay samples to prevent read position jumps (very fast for responsiveness)
+    delaySampsSmoothL.reset(sampleRate, 0.015); // 15ms smoothing for read position (faster)
+    delaySampsSmoothR.reset(sampleRate, 0.015); // 15ms smoothing for read position (faster)
     
     // Set initial values
     timeMsSmooth.setCurrentAndTargetValue(450.0f);
@@ -89,27 +89,27 @@ void DubDelayProcessor::setTargetDelaySec(float seconds)
     seconds = juce::jlimit(0.001f, 20.0f, seconds);
     float newTimeMs = seconds * 1000.0f;
     
-    // Detect big jump: if ratio > 2.0, trigger crossfade
+    // Detect big jump: if ratio > 1.2, trigger crossfade (lower threshold for smoother transitions)
     float currentTimeMs = timeMsSmooth.getTargetValue();
     float ratio = juce::jmax(newTimeMs, currentTimeMs) / juce::jmin(newTimeMs, currentTimeMs);
     
-    if (ratio > 2.0f && !isCrossfading)
+    if (ratio > 1.2f && !isCrossfading)
     {
-        // Start crossfade (10-20ms)
+        // Start crossfade (longer crossfade for smoother transitions)
         isCrossfading = true;
-        crossfadeTotalSamples = static_cast<int>(sr * 0.015); // 15ms crossfade
+        crossfadeTotalSamples = static_cast<int>(sr * 0.030); // 30ms crossfade (smoother)
         crossfadeSamplesRemaining = crossfadeTotalSamples;
         
-        // Store current read positions as "A"
+        // Store frozen delay times (in samples) for crossfade
         float currentDelayMs = timeMsSmooth.getCurrentValue();
-        float delaySamples = (currentDelayMs / 1000.0f) * static_cast<float>(sr);
-        crossfadeReadPosA_L = static_cast<float>(writePos) - delaySamples;
-        crossfadeReadPosA_R = static_cast<float>(writePos) - delaySamples;
+        float currentDelaySamps = (currentDelayMs / 1000.0f) * static_cast<float>(sr);
+        crossfadeDelaySampsA_L = currentDelaySamps;
+        crossfadeDelaySampsA_R = currentDelaySamps;
         
-        // Compute new read positions as "B"
-        float newDelaySamples = (newTimeMs / 1000.0f) * static_cast<float>(sr);
-        crossfadeReadPosB_L = static_cast<float>(writePos) - newDelaySamples;
-        crossfadeReadPosB_R = static_cast<float>(writePos) - newDelaySamples;
+        // Store new delay times (in samples) for crossfade
+        float newDelaySamps = (newTimeMs / 1000.0f) * static_cast<float>(sr);
+        crossfadeDelaySampsB_L = newDelaySamps;
+        crossfadeDelaySampsB_R = newDelaySamps;
     }
     
     // Always update the target
@@ -206,11 +206,44 @@ void DubDelayProcessor::process(juce::AudioBuffer<float>& buffer, int numSamples
         const float delaySampsR = delaySampsSmoothR.getNextValue();
         
         // Read from delay lines with fractional interpolation
-        const float readPosL = static_cast<float>(writePos) - delaySampsL;
-        const float readPosR = static_cast<float>(writePos) - delaySampsR;
+        float delayedL, delayedR;
         
-        float delayedL = lagrange3(delayBufferL, readPosL);
-        float delayedR = lagrange3(delayBufferR, readPosR);
+        if (isCrossfading && crossfadeSamplesRemaining > 0) {
+            // Crossfade between old and new delay times
+            float crossfadeProgress = 1.0f - (static_cast<float>(crossfadeSamplesRemaining) / static_cast<float>(crossfadeTotalSamples));
+            crossfadeProgress = juce::jlimit(0.0f, 1.0f, crossfadeProgress);
+            
+            // Equal-power crossfade
+            float gainA = std::cos(juce::MathConstants<float>::halfPi * crossfadeProgress);
+            float gainB = std::sin(juce::MathConstants<float>::halfPi * crossfadeProgress);
+            
+            // Calculate read positions from frozen delay times (they move with writePos)
+            float readPosA_L = static_cast<float>(writePos) - crossfadeDelaySampsA_L;
+            float readPosA_R = static_cast<float>(writePos) - crossfadeDelaySampsA_R;
+            float readPosB_L = static_cast<float>(writePos) - crossfadeDelaySampsB_L;
+            float readPosB_R = static_cast<float>(writePos) - crossfadeDelaySampsB_R;
+            
+            // Read from both positions
+            float delayedA_L = lagrange3(delayBufferL, readPosA_L);
+            float delayedA_R = lagrange3(delayBufferR, readPosA_R);
+            float delayedB_L = lagrange3(delayBufferL, readPosB_L);
+            float delayedB_R = lagrange3(delayBufferR, readPosB_R);
+            
+            // Blend
+            delayedL = gainA * delayedA_L + gainB * delayedB_L;
+            delayedR = gainA * delayedA_R + gainB * delayedB_R;
+            
+            crossfadeSamplesRemaining--;
+            if (crossfadeSamplesRemaining <= 0) {
+                isCrossfading = false;
+            }
+        } else {
+            // Normal read (no crossfade)
+            const float readPosL = static_cast<float>(writePos) - delaySampsL;
+            const float readPosR = static_cast<float>(writePos) - delaySampsR;
+            delayedL = lagrange3(delayBufferL, readPosL);
+            delayedR = lagrange3(delayBufferR, readPosR);
+        }
         
         // Input signal
         float inL = dataL[i];

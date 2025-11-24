@@ -219,61 +219,60 @@ private:
             }
             
             // Verify license (asynchronous)
-            licenseManager.verifyLicenseAsync(key, false, [this](const GumroadLicenseInfo& info) {
-                currentInfo = info;
+            auto safeThis = juce::Component::SafePointer<LicenseDialogContent>(this);
+            licenseManager.verifyLicenseAsync(key, false, [safeThis](const GumroadLicenseInfo& info) {
+                if (safeThis == nullptr)
+                    return; // Fix: dialog may have been closed during verification
+                
+                auto* self = safeThis.getComponent();
+                self->currentInfo = info;
                 
                 if (info.isValid())
                 {
-                    statusLabel.setText("License verified successfully!", juce::dontSendNotification);
-                    statusLabel.setColour(juce::Label::textColourId, juce::Colours::green);
+                    self->statusLabel.setText("License verified successfully!", juce::dontSendNotification);
+                    self->statusLabel.setColour(juce::Label::textColourId, juce::Colours::green);
                     
                     // Close after a brief delay
-                    juce::Timer::callAfterDelay(1000, [this] {
-                        // Don't call dismissed callback for valid license
-                        if (auto* dw = findParentComponentOfClass<juce::DialogWindow>())
-                            dw->exitModalState(1);
+                    juce::Timer::callAfterDelay(1000, [safeThis] {
+                        if (auto* selfPtr = safeThis.getComponent())
+                            if (auto* dw = selfPtr->findParentComponentOfClass<juce::DialogWindow>())
+                                dw->exitModalState(1);
                     });
                 }
                 else if (info.status == GumroadLicenseStatus::Refunded)
                 {
-                    statusLabel.setText("License was refunded", juce::dontSendNotification);
-                    statusLabel.setColour(juce::Label::textColourId, juce::Colours::red);
+                    self->statusLabel.setText("License was refunded", juce::dontSendNotification);
+                    self->statusLabel.setColour(juce::Label::textColourId, juce::Colours::red);
                 }
                 else if (info.status == GumroadLicenseStatus::Disputed)
                 {
-                    statusLabel.setText("License is disputed", juce::dontSendNotification);
-                    statusLabel.setColour(juce::Label::textColourId, juce::Colours::red);
+                    self->statusLabel.setText("License is disputed", juce::dontSendNotification);
+                    self->statusLabel.setColour(juce::Label::textColourId, juce::Colours::red);
                 }
                 else if (info.status == GumroadLicenseStatus::NetworkError)
                 {
-                    statusLabel.setText("Network error - please check your connection", juce::dontSendNotification);
-                    statusLabel.setColour(juce::Label::textColourId, juce::Colours::orange);
+                    self->statusLabel.setText("Network error - please check your connection", juce::dontSendNotification);
+                    self->statusLabel.setColour(juce::Label::textColourId, juce::Colours::orange);
                 }
                 else if (info.status == GumroadLicenseStatus::VerificationFailed)
                 {
                     juce::String errorMsg = "Verification failed";
-                    // If we have an error message from the API, show it
                     if (!info.email.isEmpty())
-                    {
-                        errorMsg = info.email; // We stored the error message here
-                    }
-                    statusLabel.setText(errorMsg, juce::dontSendNotification);
-                    statusLabel.setColour(juce::Label::textColourId, juce::Colours::orange);
+                        errorMsg = info.email;
+                    self->statusLabel.setText(errorMsg, juce::dontSendNotification);
+                    self->statusLabel.setColour(juce::Label::textColourId, juce::Colours::orange);
                 }
                 else
                 {
                     juce::String errorMsg = "Invalid license key";
-                    // If we have an error message from the API, show it
                     if (!info.email.isEmpty() && info.status == GumroadLicenseStatus::Invalid)
-                    {
-                        errorMsg = info.email; // We stored the error message here
-                    }
-                    statusLabel.setText(errorMsg, juce::dontSendNotification);
-                    statusLabel.setColour(juce::Label::textColourId, juce::Colours::red);
+                        errorMsg = info.email;
+                    self->statusLabel.setText(errorMsg, juce::dontSendNotification);
+                    self->statusLabel.setColour(juce::Label::textColourId, juce::Colours::red);
                 }
                 
-                updateStatusLabel();
-                repaint();
+                self->updateStatusLabel();
+                self->repaint();
             });
             
             // Show verifying status immediately

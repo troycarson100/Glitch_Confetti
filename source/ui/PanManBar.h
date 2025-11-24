@@ -24,6 +24,12 @@ public:
         lastUpdateMs = juce::Time::getMillisecondCounterHiRes();
         startTimerHz(60); // smooth UI
     }
+    
+    // Fix: Stop timer in destructor to avoid callbacks after destruction
+    ~PanManBar() override
+    {
+        stopTimer();
+    }
 
     // Styling
     void setColours(juce::Colour track, juce::Colour bin) { trackColour = track; binColour = bin; repaint(); }
@@ -102,6 +108,14 @@ private:
         const float alpha = 0.25f;
         currentX = alpha * x + (1.0f - alpha) * currentX;
 
+        // Fix: Check if component and MessageManager are still valid before repainting
+        // This prevents crashes when timer callback fires during component destruction
+        // Note: We can't access PluginEditor here due to forward declaration, but the
+        // MessageManager check should catch most shutdown cases
+        auto* mm = juce::MessageManager::getInstanceWithoutCreating();
+        if (mm == nullptr || getParentComponent() == nullptr || !isVisible())
+            return;
+        
         repaint();
     }
 

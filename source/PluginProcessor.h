@@ -111,7 +111,15 @@ struct SeqState {
 class PluginProcessor : public juce::AudioProcessor
 {
 public:
+    // Fix: Global shutdown flag to prevent async operations during shutdown
+    static std::atomic<bool> globalShutdownFlag;
+    
+    // Fix: Static method to check shutdown flag (for use in forward-declared contexts)
+    static bool isShuttingDown() noexcept { return globalShutdownFlag.load(); }
+    
     PluginProcessor();
+    // Fix: Default destructor - NO calls to getActiveEditor(), NO UI access, NO manual deletes of unique_ptrs
+    // All cleanup is done in releaseResources() and editorBeingDeleted()
     ~PluginProcessor() override = default;
 
     void prepareToPlay (double sampleRate, int samplesPerBlock) override;
@@ -123,6 +131,7 @@ public:
 
     juce::AudioProcessorEditor* createEditor() override;
     bool hasEditor() const override;
+    void editorBeingDeleted(juce::AudioProcessorEditor* editor); // Fix: allow host to notify us before UI destruction
 
     const juce::String getName() const override;
 

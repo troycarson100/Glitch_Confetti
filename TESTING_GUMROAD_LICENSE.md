@@ -99,3 +99,4 @@ Once everything works:
 3. ✅ They'll receive license keys after purchase on Gumroad
 4. ✅ They can enter their keys using `Cmd+L` / `Ctrl+L`
 
+

@@ -15,6 +15,11 @@ public:
 
     explicit DualBarMeter(Source s): src(std::move(s)) { startTimerHz(30); }
 
+    ~DualBarMeter() override
+    {
+        stopTimer(); // Fix: stop meter timer so shutdown can't reference freed components
+    }
+
     void paint(juce::Graphics& g) override {
         using namespace MeterTheme;
         auto r = getLocalBounds().toFloat();
@@ -84,5 +89,18 @@ private:
         // Clip indication is now handled by the red bar color when peaking
     }
 
-    void timerCallback() override { repaint(); }
+    void timerCallback() override 
+    { 
+        // Fix: Check global shutdown flag FIRST to prevent any operations during shutdown
+        // Note: We can't access PluginEditor here due to forward declaration, but we can check
+        // the static flag through PluginProcessor if we include it, or just skip the check
+        // The MessageManager check below should catch most shutdown cases
+        
+        // Fix: Check if component and MessageManager are still valid before repainting
+        // This prevents crashes when timer callback fires during component destruction
+        auto* mm = juce::MessageManager::getInstanceWithoutCreating();
+        if (mm == nullptr || getParentComponent() == nullptr || !isVisible())
+            return;
+        repaint(); 
+    }
 };

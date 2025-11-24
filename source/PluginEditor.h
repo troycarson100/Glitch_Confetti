@@ -3,6 +3,7 @@
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <array>
+#include <atomic>
 #include <memory>
 #include "StepSnapshot.h"
 #include "ui/Assets.h"
@@ -282,6 +283,9 @@ public:
     
     // Allow step amount TextEditors to receive keyboard input
     bool keyPressed(const juce::KeyPress& key) override;
+    
+    // Fix: Helper function to stop all timers safely during shutdown
+    void stopAllTimersSafely();
 
     private:
         PluginProcessor& processorRef;
@@ -301,6 +305,9 @@ public:
     juce::Time lastLicenseDialogShowTime;
     void checkLicenseOnStartup();
     void showLicenseDialog();
+    
+    // Shutdown safety flag
+    std::atomic<bool> isShuttingDown { false };
     
     // COMPRESS+ gain reduction meter with professional exponential ballistics
     class GainReductionMeter : public juce::Component, public juce::Timer
@@ -348,35 +355,7 @@ public:
             targetValue = juce::jlimit(0.0f, 30.0f, newDb);
         }
         
-        void timerCallback() override
-        {
-            // Apply asymmetric exponential smoothing (VU-style ballistics)
-            float coeff;
-            if (targetValue > currentDisplayValue) {
-                // Fast attack for rises
-                coeff = attackCoeff;
-            } else {
-                // Very slow release for smooth decay
-                coeff = releaseCoeff;
-            }
-            
-            // Exponential smoothing: y[n] = coeff * y[n-1] + (1-coeff) * x[n]
-            currentDisplayValue = coeff * currentDisplayValue + (1.0f - coeff) * targetValue;
-            
-            // Update peak hold with smooth decay
-            if (targetValue > peakValue) {
-                peakValue = targetValue;
-                peakHoldCounter = peakHoldTimeMs;
-            } else {
-                peakHoldCounter = juce::jmax(0.0f, peakHoldCounter - (1000.0f / 60.0f));
-                if (peakHoldCounter <= 0.0f) {
-                    // Smooth peak decay
-                    peakValue = juce::jmax(currentDisplayValue, peakValue * 0.98f);
-                }
-            }
-            
-            repaint();
-        }
+        void timerCallback() override;
         
     private:
         // Exponential ballistics for smooth movement
@@ -444,35 +423,7 @@ public:
             targetValue = juce::jlimit(0.0f, 30.0f, newDb);
         }
         
-        void timerCallback() override
-        {
-            // Apply asymmetric exponential smoothing (VU-style ballistics)
-            float coeff;
-            if (targetValue > currentDisplayValue) {
-                // Fast attack for rises
-                coeff = attackCoeff;
-            } else {
-                // Very slow release for smooth decay
-                coeff = releaseCoeff;
-            }
-            
-            // Exponential smoothing: y[n] = coeff * y[n-1] + (1-coeff) * x[n]
-            currentDisplayValue = coeff * currentDisplayValue + (1.0f - coeff) * targetValue;
-            
-            // Update peak hold with smooth decay
-            if (targetValue > peakValue) {
-                peakValue = targetValue;
-                peakHoldCounter = peakHoldTimeMs;
-            } else {
-                peakHoldCounter = juce::jmax(0.0f, peakHoldCounter - (1000.0f / 60.0f));
-                if (peakHoldCounter <= 0.0f) {
-                    // Smooth peak decay
-                    peakValue = juce::jmax(currentDisplayValue, peakValue * 0.98f);
-                }
-            }
-            
-            repaint();
-        }
+        void timerCallback() override;
         
     private:
         // Exponential ballistics for smooth movement
