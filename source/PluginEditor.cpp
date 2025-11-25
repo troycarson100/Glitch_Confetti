@@ -2446,8 +2446,8 @@ void PluginEditor::setupKnobs()
         auto effectArea = juce::Rectangle<int>(25, 54, 413, 296);
         const int knobSize = 80; // Increased from 60 to 80 (20px larger)
         const int knobSpacing = 20; // Reduced from 25 to 20 (5px less padding)
-        const int startX = effectArea.getX() + 15; // Moved 5px left from +20 to +15
-        const int startY = effectArea.getY() + effectArea.getHeight() - 210; // Adjusted for larger knobs
+        const int startX = effectArea.getX() + 16; // Moved left 2px from +18 to +16
+        const int startY = effectArea.getY() + effectArea.getHeight() - 216; // Moved down 2px from -218 to -216
     
     for (int i = 0; i < 8; ++i)
     {
@@ -5681,8 +5681,8 @@ void PluginEditor::setupAutoPanKnobs()
     auto effectArea = juce::Rectangle<int>(25, 54, 413, 296);
     const int knobSize = 80; // EXACT same as delay page
     const int knobSpacing = 20; // EXACT same as delay page
-    const int startX = effectArea.getX() + 15; // EXACT same as delay page
-    const int startY = effectArea.getY() + effectArea.getHeight() - 210; // EXACT same as delay page
+    const int startX = effectArea.getX() + 16; // Moved left 2px from +18 to +16
+    const int startY = effectArea.getY() + effectArea.getHeight() - 216; // Moved down 2px from -218 to -216
     
     for (int i = 0; i < 6; ++i) {
         // Create knob
@@ -6376,8 +6376,8 @@ void PluginEditor::setupDirtKnobs()
     auto effectArea = juce::Rectangle<int>(25, 54, 413, 296);
     const int knobSize = 80; // EXACT same as delay page
     const int knobSpacing = 20; // EXACT same as delay page
-    const int startX = effectArea.getX() + 15; // EXACT same as delay page
-    const int startY = effectArea.getY() + effectArea.getHeight() - 210; // EXACT same as delay page
+    const int startX = effectArea.getX() + 16; // Moved left 2px from +18 to +16
+    const int startY = effectArea.getY() + effectArea.getHeight() - 216; // Moved down 2px from -218 to -216
     
     for (int i = 0; i < 8; ++i) {
         // Create knob
@@ -7217,8 +7217,8 @@ void PluginEditor::setupChorusKnobs()
     auto effectArea = juce::Rectangle<int>(25, 54, 413, 296);
     const int knobSize = 80;
     const int knobSpacing = 20;
-    const int startX = effectArea.getX() + 15;
-    const int startY = effectArea.getY() + effectArea.getHeight() - 210;
+    const int startX = effectArea.getX() + 16; // Moved left 2px from +18 to +16
+    const int startY = effectArea.getY() + effectArea.getHeight() - 216; // Moved down 2px from -218 to -216
 
     for (int i = 0; i < 8; ++i)
     {
@@ -7880,8 +7880,8 @@ void PluginEditor::setupReverbKnobs()
     auto effectArea = juce::Rectangle<int>(25, 54, 413, 296);
     const int knobSize = 80;
     const int knobSpacing = 20;
-    const int startX = effectArea.getX() + 15;
-    const int startY = effectArea.getY() + effectArea.getHeight() - 210;
+    const int startX = effectArea.getX() + 16; // Moved left 2px from +18 to +16
+    const int startY = effectArea.getY() + effectArea.getHeight() - 216; // Moved down 2px from -218 to -216
 
     for (int i = 0; i < 8; ++i)
     {
@@ -9137,8 +9137,8 @@ void PluginEditor::setupGranularKnobs()
     auto effectArea = juce::Rectangle<int>(25, 54, 413, 296);
     const int knobSize = 80;
     const int knobSpacing = 20;
-    const int startX = effectArea.getX() + 15;
-    const int startY = effectArea.getY() + effectArea.getHeight() - 210;
+    const int startX = effectArea.getX() + 16; // Moved left 2px from +18 to +16
+    const int startY = effectArea.getY() + effectArea.getHeight() - 216; // Moved down 2px from -218 to -216
 
     for (int i = 0; i < 8; ++i)
     {
@@ -9950,8 +9950,8 @@ void PluginEditor::setupSlicerKnobs()
     auto effectArea = juce::Rectangle<int>(25, 54, 413, 296);
     const int knobSize = 80;
     const int knobSpacing = 20;
-    const int startX = effectArea.getX() + 15;
-    const int startY = effectArea.getY() + effectArea.getHeight() - 210;
+    const int startX = effectArea.getX() + 16; // Moved left 2px from +18 to +16
+    const int startY = effectArea.getY() + effectArea.getHeight() - 216; // Moved down 2px from -218 to -216
 
     for (int i = 0; i < 6; ++i)
     {
@@ -10705,8 +10705,8 @@ void PluginEditor::setupDubDelayKnobs()
     auto effectArea = juce::Rectangle<int>(25, 54, 413, 296);
     const int knobSize = 80;
     const int knobSpacing = 20;
-    const int startX = effectArea.getX() + 15;
-    const int startY = effectArea.getY() + effectArea.getHeight() - 210;
+    const int startX = effectArea.getX() + 16; // Moved left 2px from +18 to +16
+    const int startY = effectArea.getY() + effectArea.getHeight() - 216; // Moved down 2px from -218 to -216
 
     for (int i = 0; i < 8; ++i)
     {
@@ -11612,8 +11612,8 @@ void PluginEditor::setupFormantKnobs()
     auto effectArea = juce::Rectangle<int>(25, 54, 413, 296);
     const int knobSize = 80;
     const int knobSpacing = 20;
-    const int startX = effectArea.getX() + 15;
-    const int startY = effectArea.getY() + effectArea.getHeight() - 210;
+    const int startX = effectArea.getX() + 16; // Moved left 2px from +18 to +16
+    const int startY = effectArea.getY() + effectArea.getHeight() - 216; // Moved down 2px from -218 to -216
 
     // Create and setup knobs - 8 knobs
     for (int i = 0; i < 8; ++i)
@@ -12165,8 +12165,8 @@ void PluginEditor::setupFilterKnobs()
     auto effectArea = juce::Rectangle<int>(25, 54, 413, 296);
     const int knobSize = 80;
     const int knobSpacing = 20;
-    const int startX = effectArea.getX() + 15;
-    const int startY = effectArea.getY() + effectArea.getHeight() - 210;
+    const int startX = effectArea.getX() + 16; // Moved left 2px from +18 to +16
+    const int startY = effectArea.getY() + effectArea.getHeight() - 216; // Moved down 2px from -218 to -216
     
     // Parameter IDs for 7 knobs (Type, Cutoff, Res, Slope, Drive, Key Track, Mix) - Spread removed
     std::vector<juce::String> filterParamIds = {
@@ -13571,8 +13571,8 @@ void PluginEditor::setupSaturateKnobs()
     auto effectArea = juce::Rectangle<int>(25, 54, 413, 296);
     const int knobSize = 80;
     const int knobSpacing = 20;
-    const int startX = effectArea.getX() + 15;
-    const int startY = effectArea.getY() + effectArea.getHeight() - 210;
+    const int startX = effectArea.getX() + 16; // Moved left 2px from +18 to +16
+    const int startY = effectArea.getY() + effectArea.getHeight() - 216; // Moved down 2px from -218 to -216
     
     // Set oversample to max (3 = 8×) in APVTS and snapshots
     auto* osParam = processorRef.getAPVTS().getParameter("satOsMode");
@@ -14373,8 +14373,8 @@ void PluginEditor::setupForm2Knobs()
     auto effectArea = juce::Rectangle<int>(25, 54, 413, 296);
     const int knobSize = 80;
     const int knobSpacing = 20;
-    const int startX = effectArea.getX() + 15;
-    const int startY = effectArea.getY() + effectArea.getHeight() - 210;
+    const int startX = effectArea.getX() + 16; // Moved left 2px from +18 to +16
+    const int startY = effectArea.getY() + effectArea.getHeight() - 216; // Moved down 2px from -218 to -216
 
     // Create and setup 8 knobs
     for (int i = 0; i < 8; ++i)
@@ -15121,8 +15121,8 @@ void PluginEditor::setupReduxKnobs()
     auto effectArea = juce::Rectangle<int>(25, 54, 413, 296);
     const int knobSize = 80;
     const int knobSpacing = 20;
-    const int startX = effectArea.getX() + 15;
-    const int startY = effectArea.getY() + effectArea.getHeight() - 210;
+    const int startX = effectArea.getX() + 16; // Moved left 2px from +18 to +16
+    const int startY = effectArea.getY() + effectArea.getHeight() - 216; // Moved down 2px from -218 to -216
 
     // Create and setup knobs
     for (int i = 0; i < 8; ++i)
@@ -16151,8 +16151,8 @@ void PluginEditor::setupPhaseBloomKnobs()
     auto effectArea = juce::Rectangle<int>(25, 54, 413, 296);
     const int knobSize = 80;
     const int knobSpacing = 20;
-    const int startX = effectArea.getX() + 15;
-    const int startY = effectArea.getY() + effectArea.getHeight() - 210;
+    const int startX = effectArea.getX() + 16; // Moved left 2px from +18 to +16
+    const int startY = effectArea.getY() + effectArea.getHeight() - 216; // Moved down 2px from -218 to -216
 
     // Create and setup knobs
     for (int i = 0; i < 8; ++i)
