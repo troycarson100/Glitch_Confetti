@@ -14,6 +14,7 @@
 #include "EffectRouter.h"
 #include "ui/OutputSpectrumView.h"
 #include "ui/SpectrumFilterSlider.h"
+#include "FontManager.h"
 
 // Forward declarations
 struct RandomizationManager;
@@ -104,6 +105,20 @@ private:
     std::unique_ptr<juce::Drawable> diceImage;
     
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (CustomDiceButton)
+};
+
+//==============================================================================
+// RateComboLookAndFeel - Custom LookAndFeel for rate dropdowns
+//==============================================================================
+class RateComboLookAndFeel : public juce::LookAndFeel_V4
+{
+public:
+    RateComboLookAndFeel() {}
+    
+    juce::Font getComboBoxFont(juce::ComboBox&) override
+    {
+        return FontManager::getInstance().getFont("AlteHaasGroteskBold", 12.0f, juce::Font::bold);
+    }
 };
 
 //==============================================================================
@@ -579,6 +594,7 @@ public:
     std::unique_ptr<juce::ComboBox> effectTypeDropdown;
     std::unique_ptr<BigComboWithSvgLNF> fxComboLNF;
     std::unique_ptr<class RouterComboLookAndFeel> routerComboLNF;
+    std::unique_ptr<class RateComboLookAndFeel> rateComboLNF;
     std::unique_ptr<CustomDiceButton> diceButton;
     std::unique_ptr<juce::Button> timeSyncToggle; // S circle toggle
     bool timeSyncEnabled = false;

@@ -205,6 +205,7 @@ public:
     const SeqState& getPhaseBloomSeqState() const { return phaseBloomSeq; }
     int getPhaseBloomPlayingStep() const noexcept { return phaseBloomSeq.playingStep.load(); }
     int getPhaseBloomCurrentStep() const noexcept { return phaseBloomSeq.currentStep.load(); }
+    void setPhaseBloomStdMode(int mode) noexcept { phaseBloomSeq.stdMode.store(juce::jlimit(0, 2, mode)); }
     
     // Formant sequencer accessors
     void setFormantSelectedStep(int step) noexcept { formantUiSelectedStep.store(step); }
@@ -345,6 +346,7 @@ public:
     }
     void setSlicerStepsUsed(int steps) noexcept { slicerSeq.stepsUsed.store(juce::jlimit(1, 16, steps)); }
     void setSlicerDivisionIndex(int idx) noexcept { slicerSeq.divisionIndex.store(juce::jlimit(0, 7, idx)); }
+    void setSlicerStdMode(int mode) noexcept { slicerSeq.stdMode.store(juce::jlimit(0, 2, mode)); }
     
     // Dub Delay sequencer accessors
     const SeqState& getDubDelaySeqState() const { return dubdelaySeq; }
@@ -361,6 +363,7 @@ public:
     }
     void setDubDelayStepsUsed(int steps) noexcept { dubdelaySeq.stepsUsed.store(juce::jlimit(1, 16, steps)); }
     void setDubDelayDivisionIndex(int idx) noexcept { dubdelaySeq.divisionIndex.store(juce::jlimit(0, 7, idx)); }
+    void setDubDelayStdMode(int mode) noexcept { dubdelaySeq.stdMode.store(juce::jlimit(0, 2, mode)); }
     
     // Space Delay sequencer accessors
     const SeqState& getSpaceDelaySeqState() const { return spacedelaySeq; }
@@ -601,6 +604,7 @@ public:
     void setSaturateSequencerEnabled(bool enabled) noexcept { saturateSeq.enabled.store(enabled); }
     void setSaturateStepsUsed(int steps) noexcept { saturateSeq.stepsUsed.store(juce::jlimit(1, 16, steps)); }
     void setSaturateDivisionIndex(int idx) noexcept { saturateSeq.divisionIndex.store(juce::jlimit(0, 7, idx)); }
+    void setSaturateStdMode(int mode) noexcept { saturateSeq.stdMode.store(juce::jlimit(0, 2, mode)); }
     
     // Saturate snapshot accessors
     StepSnapshot getSaturateSafeSnapshot(int step) const;

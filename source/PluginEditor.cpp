@@ -3863,6 +3863,9 @@ void PluginEditor::setupSpaceDelayUI()
     // Don't add to UI - replaced by new router effect selectors
     // addAndMakeVisible(effectTypeDropdown.get());
     
+    // Create LookAndFeel for rate dropdowns (uses same font as knob titles)
+    rateComboLNF = std::make_unique<RateComboLookAndFeel>();
+    
     // Create and configure BigComboWithSvgLNF for larger popup menus with SVG caret
     fxComboLNF = std::make_unique<BigComboWithSvgLNF>();
     fxComboLNF->popupFontPx   = 18.0f;  // Larger font
@@ -4257,7 +4260,7 @@ void PluginEditor::setupSequencerArea()
     // Create step buttons (2 rows of 8)
     const int buttonSize = 40;
     const int buttonSpacing = 8;
-    const int startX = stepArea.getX() + 15; // Moved left 5px total
+    const int startX = stepArea.getX() + 17; // Moved right 2px from +15 to +17
     const int startY = stepArea.getY() + 35; // Moved up 5px from +40 to +35
     
     for (int i = 0; i < 16; ++i) {
@@ -4287,7 +4290,7 @@ void PluginEditor::setupSequencerArea()
     // Force to 16 by default, then sync with processor state
     processorRef.setSpaceDelayStepsUsed(16);
     stepAmountLabel->setText("16", juce::dontSendNotification);
-    stepAmountLabel->setFont(juce::Font(16.0f, juce::Font::bold));
+    stepAmountLabel->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 12.0f, juce::Font::bold));
     stepAmountLabel->setColour(juce::Label::textColourId, juce::Colours::white);
     stepAmountLabel->setColour(juce::Label::backgroundColourId, juce::Colours::transparentBlack);
     stepAmountLabel->setColour(juce::Label::outlineColourId, juce::Colours::white);
@@ -4327,6 +4330,7 @@ void PluginEditor::setupSequencerArea()
     rateDropdown->setColour(juce::ComboBox::buttonColourId, juce::Colours::transparentBlack);
     rateDropdown->setColour(juce::ComboBox::textColourId, juce::Colours::white);
     rateDropdown->setColour(juce::ComboBox::arrowColourId, juce::Colours::white);
+    rateDropdown->setLookAndFeel(rateComboLNF.get());
     addAndMakeVisible(rateDropdown.get());
     // Move rate left by 80px and widen to avoid arrow overlapping long items
     rateDropdown->setBounds(stepArea.getX() + 220, stepArea.getY() - 10, 74, 25);
@@ -5373,6 +5377,17 @@ void PluginEditor::showPage(FxPageID id)
                     int divisionIndex = processorRef.getSlicerSeqState().divisionIndex.load();
                     slicerRateDropdown->setSelectedId(divisionIndex + 1, juce::dontSendNotification);
                 }
+                
+                // Restore STD toggle state
+                if (slicerStdToggle) {
+                    slicerStdToggle->setEnabled(true); // Ensure it's enabled
+                    int stdMode = processorRef.getSlicerSeqState().stdMode.load();
+                    switch (stdMode) {
+                        case 0: slicerStdToggle->setButtonText("-"); break;
+                        case 1: slicerStdToggle->setButtonText("t"); break;
+                        case 2: slicerStdToggle->setButtonText("."); break;
+                    }
+                }
 
                 updateSlicerFxAreaVisibility();
                 updateSlicerStepAreaVisibility();
@@ -5401,6 +5416,17 @@ void PluginEditor::showPage(FxPageID id)
                 dubdelayStepAreaEnabled = processorRef.getDubDelaySeqState().enabled.load();
                 if (dubdelayStepPowerButton) {
                     dubdelayStepPowerButton->setToggleState(dubdelayStepAreaEnabled, juce::dontSendNotification);
+                }
+                
+                // Restore STD toggle state
+                if (dubdelayStdToggle) {
+                    dubdelayStdToggle->setEnabled(true); // Ensure it's enabled
+                    int stdMode = processorRef.getDubDelaySeqState().stdMode.load();
+                    switch (stdMode) {
+                        case 0: dubdelayStdToggle->setButtonText("-"); break;
+                        case 1: dubdelayStdToggle->setButtonText("t"); break;
+                        case 2: dubdelayStdToggle->setButtonText("."); break;
+                    }
                 }
                 
                 updateDubDelayFxAreaVisibility();
@@ -5476,6 +5502,17 @@ void PluginEditor::showPage(FxPageID id)
                 phaseBloomStepAreaEnabled = processorRef.getPhaseBloomSeqState().enabled.load();
                 if (phaseBloomStepPowerButton) {
                     phaseBloomStepPowerButton->setToggleState(phaseBloomStepAreaEnabled, juce::dontSendNotification);
+                }
+                
+                // Restore STD toggle state
+                if (phaseBloomStdToggle) {
+                    phaseBloomStdToggle->setEnabled(true); // Ensure it's enabled
+                    int stdMode = processorRef.getPhaseBloomSeqState().stdMode.load();
+                    switch (stdMode) {
+                        case 0: phaseBloomStdToggle->setButtonText("-"); break;
+                        case 1: phaseBloomStdToggle->setButtonText("t"); break;
+                        case 2: phaseBloomStdToggle->setButtonText("."); break;
+                    }
                 }
                 
                 updatePhaseBloomFxAreaVisibility();
@@ -5561,6 +5598,17 @@ void PluginEditor::showPage(FxPageID id)
                     saturateStepPowerButton->setToggleState(saturateStepAreaEnabled, juce::dontSendNotification);
                 }
                 
+                // Restore STD toggle state
+                if (saturateStdToggle) {
+                    saturateStdToggle->setEnabled(true); // Ensure it's enabled
+                    int stdMode = processorRef.getSaturateSeqState().stdMode.load();
+                    switch (stdMode) {
+                        case 0: saturateStdToggle->setButtonText("-"); break;
+                        case 1: saturateStdToggle->setButtonText("t"); break;
+                        case 2: saturateStdToggle->setButtonText("."); break;
+                    }
+                }
+                
                 updateSaturateFxAreaVisibility();
                 updateSaturateStepAreaVisibility();
             }
@@ -5607,6 +5655,17 @@ void PluginEditor::showPage(FxPageID id)
                 filterStepAreaEnabled = processorRef.getFilterSeqState().enabled.load();
                 if (filterStepPowerButton) {
                     filterStepPowerButton->setToggleState(filterStepAreaEnabled, juce::dontSendNotification);
+                }
+                
+                // Restore STD toggle state
+                if (filterStdToggle) {
+                    filterStdToggle->setEnabled(true); // Ensure it's enabled
+                    int stdMode = processorRef.getFilterSeqState().stdMode.load();
+                    switch (stdMode) {
+                        case 0: filterStdToggle->setButtonText("-"); break;
+                        case 1: filterStdToggle->setButtonText("t"); break;
+                        case 2: filterStdToggle->setButtonText("."); break;
+                    }
                 }
                 
                 updateFilterFxAreaVisibility();
@@ -6018,7 +6077,7 @@ void PluginEditor::setupAutoPanSequencerArea()
     // Create step buttons (2 rows of 8, EXACT same layout as delay page)
     const int buttonSize = 40;
     const int buttonSpacing = 8;
-    const int startX = sequencerArea.getX() + 15; // Moved left 5px total
+    const int startX = sequencerArea.getX() + 17; // Moved right 2px from +15 to +17
     const int startY = sequencerArea.getY() + 35; // Same as delay page
     
     for (int i = 0; i < 16; ++i) {
@@ -6059,7 +6118,7 @@ void PluginEditor::setupAutoPanSequencerArea()
     // Force to 16 by default, then sync with processor state
     processorRef.setAutoPanStepsUsed(16);
     autopanStepAmountLabel->setText("16");
-    autopanStepAmountLabel->setFont(juce::Font(16.0f, juce::Font::bold));
+    autopanStepAmountLabel->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 12.0f, juce::Font::bold));
     autopanStepAmountLabel->setColour(juce::TextEditor::textColourId, juce::Colours::white);
     autopanStepAmountLabel->setColour(juce::TextEditor::backgroundColourId, juce::Colours::transparentBlack);
     autopanStepAmountLabel->setColour(juce::TextEditor::outlineColourId, juce::Colours::white);
@@ -6126,6 +6185,7 @@ void PluginEditor::setupAutoPanSequencerArea()
     autopanRateDropdown->setColour(juce::ComboBox::buttonColourId, juce::Colours::transparentBlack);
     autopanRateDropdown->setColour(juce::ComboBox::textColourId, juce::Colours::white);
     autopanRateDropdown->setColour(juce::ComboBox::arrowColourId, juce::Colours::white);
+    autopanRateDropdown->setLookAndFeel(rateComboLNF.get());
     autopanRateDropdown->onChange = [this]() {
         if (autopanRateDropdown != nullptr) {
             const int selected = autopanRateDropdown->getSelectedId();
@@ -6625,7 +6685,7 @@ void PluginEditor::setupDirtSequencerArea()
     // Create step buttons (2 rows of 8, EXACT same layout as AutoPan page)
     const int buttonSize = 40;
     const int buttonSpacing = 8;
-    const int startX = sequencerArea.getX() + 15; // Moved left 5px total
+    const int startX = sequencerArea.getX() + 17; // Moved right 2px from +15 to +17
     const int startY = sequencerArea.getY() + 35;
     
     for (int i = 0; i < 16; ++i) {
@@ -6665,7 +6725,7 @@ void PluginEditor::setupDirtSequencerArea()
     // Force to 16 by default, then sync with processor state
     processorRef.setDirtStepsUsed(16);
     dirtStepAmountLabel->setText("16");
-    dirtStepAmountLabel->setFont(juce::Font(16.0f, juce::Font::bold));
+    dirtStepAmountLabel->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 12.0f, juce::Font::bold));
     dirtStepAmountLabel->setColour(juce::TextEditor::textColourId, juce::Colours::white);
     dirtStepAmountLabel->setColour(juce::TextEditor::backgroundColourId, juce::Colours::transparentBlack);
     dirtStepAmountLabel->setColour(juce::TextEditor::outlineColourId, juce::Colours::white);
@@ -6731,6 +6791,7 @@ void PluginEditor::setupDirtSequencerArea()
     dirtRateDropdown->setColour(juce::ComboBox::buttonColourId, juce::Colours::transparentBlack);
     dirtRateDropdown->setColour(juce::ComboBox::textColourId, juce::Colours::white);
     dirtRateDropdown->setColour(juce::ComboBox::arrowColourId, juce::Colours::white);
+    dirtRateDropdown->setLookAndFeel(rateComboLNF.get());
     dirtRateDropdown->onChange = [this]() {
         if (dirtRateDropdown != nullptr) {
             const int selected = dirtRateDropdown->getSelectedId();
@@ -7464,7 +7525,7 @@ void PluginEditor::setupChorusSequencerArea()
     // Create step buttons (2 rows of 8)
     const int buttonSize = 40;
     const int buttonSpacing = 8;
-    const int startX = sequencerArea.getX() + 15; // Moved left 5px total
+    const int startX = sequencerArea.getX() + 17; // Moved right 2px from +15 to +17
     const int startY = sequencerArea.getY() + 35;
     
     for (int i = 0; i < 16; ++i) {
@@ -7502,7 +7563,7 @@ void PluginEditor::setupChorusSequencerArea()
     // Force to 16 by default, then sync with processor state
     processorRef.setChorusStepsUsed(16);
     chorusStepAmountLabel->setText("16");
-    chorusStepAmountLabel->setFont(juce::Font(16.0f, juce::Font::bold));
+    chorusStepAmountLabel->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 12.0f, juce::Font::bold));
     chorusStepAmountLabel->setColour(juce::TextEditor::textColourId, juce::Colours::white);
     chorusStepAmountLabel->setColour(juce::TextEditor::backgroundColourId, juce::Colours::transparentBlack);
     chorusStepAmountLabel->setColour(juce::TextEditor::outlineColourId, juce::Colours::white);
@@ -7566,6 +7627,7 @@ void PluginEditor::setupChorusSequencerArea()
     chorusRateDropdown->setColour(juce::ComboBox::buttonColourId, juce::Colours::transparentBlack);
     chorusRateDropdown->setColour(juce::ComboBox::textColourId, juce::Colours::white);
     chorusRateDropdown->setColour(juce::ComboBox::arrowColourId, juce::Colours::white);
+    chorusRateDropdown->setLookAndFeel(rateComboLNF.get());
     chorusRateDropdown->onChange = [this]() {
         if (chorusRateDropdown != nullptr) {
             const int selected = chorusRateDropdown->getSelectedId();
@@ -8135,7 +8197,7 @@ void PluginEditor::setupReverbSequencerArea()
     // Create step buttons (2 rows of 8)
     const int buttonSize = 40;
     const int buttonSpacing = 8;
-    const int startX = sequencerArea.getX() + 15; // Moved left 5px total
+    const int startX = sequencerArea.getX() + 17; // Moved right 2px from +15 to +17
     const int startY = sequencerArea.getY() + 35;
     
     for (int i = 0; i < 16; ++i)
@@ -8165,7 +8227,7 @@ void PluginEditor::setupReverbSequencerArea()
     // Force to 16 by default, then sync with processor state
     processorRef.setReverbStepsUsed(16);
     reverbStepAmountLabel->setText("16");
-    reverbStepAmountLabel->setFont(juce::Font(16.0f, juce::Font::bold));
+    reverbStepAmountLabel->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 12.0f, juce::Font::bold));
     reverbStepAmountLabel->setColour(juce::TextEditor::textColourId, juce::Colours::white);
     reverbStepAmountLabel->setColour(juce::TextEditor::backgroundColourId, juce::Colours::transparentBlack);
     reverbStepAmountLabel->setColour(juce::TextEditor::outlineColourId, juce::Colours::white);
@@ -8221,6 +8283,7 @@ void PluginEditor::setupReverbSequencerArea()
     reverbRateDropdown->addItem("1/32", 8);
     
     reverbRateDropdown->setSelectedId(6);
+    reverbRateDropdown->setLookAndFeel(rateComboLNF.get());
     reverbRateDropdown->onChange = [this]() {
         int selectedIndex = reverbRateDropdown->getSelectedId() - 1;
         processorRef.setReverbDivisionIndex(selectedIndex);
@@ -9590,7 +9653,7 @@ void PluginEditor::setupGranularSequencerArea()
     // Create step buttons (2 rows of 8) - EXACT same as Reverb
     const int buttonSize = 40;
     const int buttonSpacing = 8;
-    const int startX = sequencerArea.getX() + 15; // Moved left 5px total
+    const int startX = sequencerArea.getX() + 17; // Moved right 2px from +15 to +17
     const int startY = sequencerArea.getY() + 35;
     
     for (int i = 0; i < 16; ++i)
@@ -9620,7 +9683,7 @@ void PluginEditor::setupGranularSequencerArea()
     // Force to 16 by default, then sync with processor state
     processorRef.setGranularStepsUsed(16);
     granularStepAmountLabel->setText("16");
-    granularStepAmountLabel->setFont(juce::Font(16.0f, juce::Font::bold));
+    granularStepAmountLabel->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 12.0f, juce::Font::bold));
     granularStepAmountLabel->setColour(juce::TextEditor::textColourId, juce::Colours::white);
     granularStepAmountLabel->setColour(juce::TextEditor::backgroundColourId, juce::Colours::transparentBlack);
     granularStepAmountLabel->setColour(juce::TextEditor::outlineColourId, juce::Colours::white);
@@ -9686,6 +9749,9 @@ void PluginEditor::setupGranularSequencerArea()
     granularRateDropdown->setColour(juce::ComboBox::backgroundColourId, juce::Colours::transparentBlack);
     granularRateDropdown->setColour(juce::ComboBox::outlineColourId, juce::Colours::transparentBlack);
     granularRateDropdown->setColour(juce::ComboBox::buttonColourId, juce::Colours::transparentBlack);
+    granularRateDropdown->setColour(juce::ComboBox::textColourId, juce::Colours::white);
+    granularRateDropdown->setColour(juce::ComboBox::arrowColourId, juce::Colours::white);
+    granularRateDropdown->setLookAndFeel(rateComboLNF.get());
     
     addAndMakeVisible(granularRateDropdown.get());
     granularRateDropdown->setVisible(false);
@@ -10275,7 +10341,7 @@ void PluginEditor::updateSlicerStepAreaVisibility()
     }
     if (slicerStdToggle) {
         slicerStdToggle->setAlpha(alpha);
-        slicerStdToggle->setEnabled(slicerStepAreaEnabled);
+        slicerStdToggle->setEnabled(true); // Always enabled so it can be clicked
     }
     if (slicerStepTitle) slicerStepTitle->setAlpha(alpha);
     if (slicerStepDiceButton) {
@@ -10468,7 +10534,7 @@ void PluginEditor::setupSlicerSequencerArea()
     // Create step buttons (2 rows of 8)
     const int buttonSize = 40;
     const int buttonSpacing = 8;
-    const int startX = sequencerArea.getX() + 15; // Moved left 5px total
+    const int startX = sequencerArea.getX() + 17; // Moved right 2px from +15 to +17
     const int startY = sequencerArea.getY() + 35;
     
     for (int i = 0; i < 16; ++i) {
@@ -10499,7 +10565,7 @@ void PluginEditor::setupSlicerSequencerArea()
     // Force to 16 by default, then sync with processor state
     processorRef.setSlicerStepsUsed(16);
     slicerStepAmountLabel->setText("16");
-    slicerStepAmountLabel->setFont(juce::Font(16.0f, juce::Font::bold));
+    slicerStepAmountLabel->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 12.0f, juce::Font::bold));
     slicerStepAmountLabel->setColour(juce::TextEditor::textColourId, juce::Colours::white);
     slicerStepAmountLabel->setColour(juce::TextEditor::backgroundColourId, juce::Colours::transparentBlack);
     slicerStepAmountLabel->setColour(juce::TextEditor::outlineColourId, juce::Colours::white);
@@ -10529,6 +10595,7 @@ void PluginEditor::setupSlicerSequencerArea()
     slicerRateDropdown->setColour(juce::ComboBox::buttonColourId, juce::Colours::transparentBlack);
     slicerRateDropdown->setColour(juce::ComboBox::textColourId, juce::Colours::white);
     slicerRateDropdown->setColour(juce::ComboBox::arrowColourId, juce::Colours::white);
+    slicerRateDropdown->setLookAndFeel(rateComboLNF.get());
     slicerRateDropdown->onChange = [this]() {
         if (slicerRateDropdown) {
             const int selected = slicerRateDropdown->getSelectedId();
@@ -10555,7 +10622,24 @@ void PluginEditor::setupSlicerSequencerArea()
     addAndMakeVisible(slicerStdToggle.get());
     slicerStdToggle->setVisible(false);
     slicerStdToggle->setBounds(sequencerArea.getX() + 288, sequencerArea.getY() - 14, 30, 30);
-    // STD toggle is visual only for Slicer (no functionality needed)
+    slicerStdToggle->setEnabled(true);
+    
+    slicerStdToggle->onClick = [this]() {
+        DBG("[UI] Slicer STD toggle clicked!");
+        // Cycle through -/t/. states
+        int currentState = processorRef.getSlicerSeqState().stdMode.load();
+        int nextState = (currentState + 1) % 3;
+        
+        switch (nextState) {
+            case 0: slicerStdToggle->setButtonText("-"); break;
+            case 1: slicerStdToggle->setButtonText("t"); break;
+            case 2: slicerStdToggle->setButtonText("."); break;
+        }
+        
+        processorRef.setSlicerStdMode(nextState);
+        slicerStdToggle->repaint();
+        DBG("[UI] Slicer STD mode: " << nextState);
+    };
     
     // Create step dice button (EXACT same as AutoPan page)
     slicerStepDiceButton = std::make_unique<CustomDiceButton>();
@@ -11130,7 +11214,7 @@ void PluginEditor::setupDubDelaySequencerArea()
     // Step buttons (2x8 grid)
     const int buttonSize = 40;
     const int buttonSpacing = 8;
-    const int startX = sequencerArea.getX() + 15; // Moved left 5px total
+    const int startX = sequencerArea.getX() + 17; // Moved right 2px from +15 to +17
     const int startY = sequencerArea.getY() + 35;
     
     for (int i = 0; i < 16; ++i)
@@ -11162,7 +11246,7 @@ void PluginEditor::setupDubDelaySequencerArea()
     // Force to 16 by default, then sync with processor state
     processorRef.setDubDelayStepsUsed(16);
     dubdelayStepAmountLabel->setText("16");
-    dubdelayStepAmountLabel->setFont(juce::Font(16.0f, juce::Font::bold));
+    dubdelayStepAmountLabel->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 12.0f, juce::Font::bold));
     dubdelayStepAmountLabel->setColour(juce::TextEditor::textColourId, juce::Colours::white);
     dubdelayStepAmountLabel->setColour(juce::TextEditor::backgroundColourId, juce::Colours::transparentBlack);
     dubdelayStepAmountLabel->setColour(juce::TextEditor::outlineColourId, juce::Colours::white);
@@ -11197,6 +11281,7 @@ void PluginEditor::setupDubDelaySequencerArea()
     dubdelayRateDropdown->setColour(juce::ComboBox::buttonColourId, juce::Colours::transparentBlack);
     dubdelayRateDropdown->setColour(juce::ComboBox::textColourId, juce::Colours::white);
     dubdelayRateDropdown->setColour(juce::ComboBox::arrowColourId, juce::Colours::white);
+    dubdelayRateDropdown->setLookAndFeel(rateComboLNF.get());
     
     int divIdx = processorRef.getDubDelaySeqState().divisionIndex.load();
     dubdelayRateDropdown->setSelectedId(divIdx + 1, juce::dontSendNotification);
@@ -11219,6 +11304,24 @@ void PluginEditor::setupDubDelaySequencerArea()
     addAndMakeVisible(dubdelayStdToggle.get());
     dubdelayStdToggle->setVisible(false);
     dubdelayStdToggle->setBounds(sequencerArea.getX() + 288, sequencerArea.getY() - 14, 30, 30);
+    dubdelayStdToggle->setEnabled(true);
+    
+    dubdelayStdToggle->onClick = [this]() {
+        DBG("[UI] Dub Delay STD toggle clicked!");
+        // Cycle through -/t/. states
+        int currentState = processorRef.getDubDelaySeqState().stdMode.load();
+        int nextState = (currentState + 1) % 3;
+        
+        switch (nextState) {
+            case 0: dubdelayStdToggle->setButtonText("-"); break;
+            case 1: dubdelayStdToggle->setButtonText("t"); break;
+            case 2: dubdelayStdToggle->setButtonText("."); break;
+        }
+        
+        processorRef.setDubDelayStdMode(nextState);
+        dubdelayStdToggle->repaint();
+        DBG("[UI] Dub Delay STD mode: " << nextState);
+    };
     
     // Step dice button (CRITICAL: CustomDiceButton, NOT DrawableButton! 30% smaller = ~24px)
     dubdelayStepDiceButton = std::make_unique<CustomDiceButton>();
@@ -11439,7 +11542,7 @@ void PluginEditor::updateDubDelayStepAreaVisibility()
     }
     if (dubdelayStdToggle) {
         dubdelayStdToggle->setAlpha(alpha);
-        dubdelayStdToggle->setEnabled(dubdelayStepAreaEnabled);
+        dubdelayStdToggle->setEnabled(true); // Always enabled so it can be clicked
     }
     if (dubdelayStepTitle) dubdelayStepTitle->setAlpha(alpha);
     if (dubdelayStepDiceButton) {
@@ -11895,7 +11998,7 @@ void PluginEditor::setupFormantSequencerArea()
     // Force to 16 by default, then sync with processor state
     processorRef.setFormantStepsUsed(16);
     formantStepAmountLabel->setText("16", juce::dontSendNotification);
-    formantStepAmountLabel->setFont(juce::Font(16.0f, juce::Font::bold));
+    formantStepAmountLabel->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 12.0f, juce::Font::bold));
     formantStepAmountLabel->setColour(juce::TextEditor::textColourId, juce::Colours::white);
     formantStepAmountLabel->setColour(juce::TextEditor::backgroundColourId, juce::Colours::transparentBlack);
     formantStepAmountLabel->setColour(juce::TextEditor::outlineColourId, juce::Colours::white);
@@ -11946,6 +12049,7 @@ void PluginEditor::setupFormantSequencerArea()
     formantRateDropdown->setColour(juce::ComboBox::buttonColourId, juce::Colours::transparentBlack);
     formantRateDropdown->setColour(juce::ComboBox::textColourId, juce::Colours::white);
     formantRateDropdown->setColour(juce::ComboBox::arrowColourId, juce::Colours::white);
+    formantRateDropdown->setLookAndFeel(rateComboLNF.get());
     addAndMakeVisible(formantRateDropdown.get());
     formantRateDropdown->setVisible(false);
     formantRateDropdown->setBounds(stepArea.getX() + 220, stepArea.getY() - 10, 74, 25); // EXACT same as Space Delay
@@ -11984,7 +12088,7 @@ void PluginEditor::setupFormantSequencerArea()
     // Create step buttons (EXACT same as Space Delay page)
     const int buttonSize = 40;
     const int buttonSpacing = 8;
-    const int startX = stepArea.getX() + 15; // Moved left 5px total
+    const int startX = stepArea.getX() + 17; // Moved right 2px from +15 to +17
     const int startY = stepArea.getY() + 35;
     
     for (int i = 0; i < 16; ++i) {
@@ -12818,7 +12922,7 @@ void PluginEditor::setupFilterSequencerArea()
     // Create step buttons (16 steps)
     const int buttonSize = 40;
     const int buttonSpacing = 8;
-    const int startX = sequencerArea.getX() + 15; // Moved left 5px total
+    const int startX = sequencerArea.getX() + 17; // Moved right 2px from +15 to +17
     const int startY = sequencerArea.getY() + 35;
     
     for (int i = 0; i < 16; ++i) {
@@ -12849,7 +12953,7 @@ void PluginEditor::setupFilterSequencerArea()
     // Force to 16 by default, then sync with processor state
     processorRef.setFilterStepsUsed(16);
     filterStepAmountLabel->setText("16");
-    filterStepAmountLabel->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 16.0f, juce::Font::bold));
+    filterStepAmountLabel->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 12.0f, juce::Font::bold));
     filterStepAmountLabel->setColour(juce::TextEditor::textColourId, juce::Colours::white);
     filterStepAmountLabel->setColour(juce::TextEditor::backgroundColourId, juce::Colours::transparentBlack);
     filterStepAmountLabel->setColour(juce::TextEditor::outlineColourId, juce::Colours::white);
@@ -12887,6 +12991,7 @@ void PluginEditor::setupFilterSequencerArea()
     filterRateDropdown->setColour(juce::ComboBox::buttonColourId, juce::Colours::transparentBlack);
     filterRateDropdown->setColour(juce::ComboBox::textColourId, juce::Colours::white);
     filterRateDropdown->setColour(juce::ComboBox::arrowColourId, juce::Colours::white);
+    filterRateDropdown->setLookAndFeel(rateComboLNF.get());
     // Set selected ID from processor state (like Saturate)
     int divIdx = processorRef.getFilterSeqState().divisionIndex.load();
     filterRateDropdown->setSelectedId(divIdx + 1, juce::dontSendNotification);
@@ -12910,6 +13015,24 @@ void PluginEditor::setupFilterSequencerArea()
     addAndMakeVisible(filterStdToggle.get());
     filterStdToggle->setVisible(false);
     filterStdToggle->setBounds(sequencerArea.getX() + 288, sequencerArea.getY() - 14, 30, 30);
+    filterStdToggle->setEnabled(true);
+    
+    filterStdToggle->onClick = [this]() {
+        DBG("[UI] Filter STD toggle clicked!");
+        // Cycle through -/t/. states
+        int currentState = processorRef.getFilterSeqState().stdMode.load();
+        int nextState = (currentState + 1) % 3;
+        
+        switch (nextState) {
+            case 0: filterStdToggle->setButtonText("-"); break;
+            case 1: filterStdToggle->setButtonText("t"); break;
+            case 2: filterStdToggle->setButtonText("."); break;
+        }
+        
+        processorRef.setFilterStdMode(nextState);
+        filterStdToggle->repaint();
+        DBG("[UI] Filter STD mode: " << nextState);
+    };
     
     // Create step power button
     filterStepPowerButton = std::make_unique<juce::DrawableButton>("filterStepPower", juce::DrawableButton::ButtonStyle::ImageFitted);
@@ -13098,7 +13221,7 @@ void PluginEditor::updateFilterStepAreaVisibility()
     }
     if (filterStdToggle) {
         filterStdToggle->setAlpha(alpha);
-        filterStdToggle->setEnabled(filterStepAreaEnabled);
+        filterStdToggle->setEnabled(true); // Always enabled so it can be clicked
     }
     if (filterStepTitle) filterStepTitle->setAlpha(alpha);
     if (filterStepDiceButton) {
@@ -13892,7 +14015,7 @@ void PluginEditor::setupSaturateSequencerArea()
     // Step buttons (2x8 grid)
     const int buttonSize = 40;
     const int buttonSpacing = 8;
-    const int startX = sequencerArea.getX() + 15; // Moved left 5px total
+    const int startX = sequencerArea.getX() + 17; // Moved right 2px from +15 to +17
     const int startY = sequencerArea.getY() + 35;
     
     for (int i = 0; i < 16; ++i)
@@ -13924,7 +14047,7 @@ void PluginEditor::setupSaturateSequencerArea()
     // Force to 16 by default, then sync with processor state
     processorRef.setSaturateStepsUsed(16);
     saturateStepAmountLabel->setText("16");
-    saturateStepAmountLabel->setFont(juce::Font(16.0f, juce::Font::bold));
+    saturateStepAmountLabel->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 12.0f, juce::Font::bold));
     saturateStepAmountLabel->setColour(juce::TextEditor::textColourId, juce::Colours::white);
     saturateStepAmountLabel->setColour(juce::TextEditor::backgroundColourId, juce::Colours::transparentBlack);
     saturateStepAmountLabel->setColour(juce::TextEditor::outlineColourId, juce::Colours::white);
@@ -13952,6 +14075,7 @@ void PluginEditor::setupSaturateSequencerArea()
     saturateRateDropdown->setColour(juce::ComboBox::buttonColourId, juce::Colours::transparentBlack);
     saturateRateDropdown->setColour(juce::ComboBox::textColourId, juce::Colours::white);
     saturateRateDropdown->setColour(juce::ComboBox::arrowColourId, juce::Colours::white);
+    saturateRateDropdown->setLookAndFeel(rateComboLNF.get());
     
     // Set selected ID from processor state (like Dub Delay)
     int divIdx = processorRef.getSaturateSeqState().divisionIndex.load();
@@ -13976,6 +14100,24 @@ void PluginEditor::setupSaturateSequencerArea()
     addAndMakeVisible(saturateStdToggle.get());
     saturateStdToggle->setVisible(false);
     saturateStdToggle->setBounds(sequencerArea.getX() + 288, sequencerArea.getY() - 14, 30, 30);
+    saturateStdToggle->setEnabled(true);
+    
+    saturateStdToggle->onClick = [this]() {
+        DBG("[UI] Saturate STD toggle clicked!");
+        // Cycle through -/t/. states
+        int currentState = processorRef.getSaturateSeqState().stdMode.load();
+        int nextState = (currentState + 1) % 3;
+        
+        switch (nextState) {
+            case 0: saturateStdToggle->setButtonText("-"); break;
+            case 1: saturateStdToggle->setButtonText("t"); break;
+            case 2: saturateStdToggle->setButtonText("."); break;
+        }
+        
+        processorRef.setSaturateStdMode(nextState);
+        saturateStdToggle->repaint();
+        DBG("[UI] Saturate STD mode: " << nextState);
+    };
     
     // Step dice button
     saturateStepDiceButton = std::make_unique<CustomDiceButton>();
@@ -14167,7 +14309,7 @@ void PluginEditor::updateSaturateStepAreaVisibility()
     }
     if (saturateStdToggle) {
         saturateStdToggle->setAlpha(alpha);
-        saturateStdToggle->setEnabled(saturateStepAreaEnabled);
+        saturateStdToggle->setEnabled(true); // Always enabled so it can be clicked
     }
     if (saturateStepDiceButton) {
         saturateStepDiceButton->setAlpha(alpha);
@@ -14705,7 +14847,7 @@ void PluginEditor::setupForm2SequencerArea()
     // Create step buttons (2x8 grid)
     const int buttonSize = 40;
     const int buttonSpacing = 8;
-    const int startX = sequencerArea.getX() + 15; // Moved left 5px total
+    const int startX = sequencerArea.getX() + 17; // Moved right 2px from +15 to +17
     const int startY = sequencerArea.getY() + 35;
     
     for (int i = 0; i < 16; ++i) {
@@ -14729,7 +14871,7 @@ void PluginEditor::setupForm2SequencerArea()
     // Create step amount label (TextEditor)
     form2StepAmountLabel = std::make_unique<juce::TextEditor>();
     form2StepAmountLabel->setText("16");
-    form2StepAmountLabel->setFont(juce::Font(16.0f, juce::Font::bold));
+    form2StepAmountLabel->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 12.0f, juce::Font::bold));
     form2StepAmountLabel->setColour(juce::TextEditor::textColourId, juce::Colours::white);
     form2StepAmountLabel->setColour(juce::TextEditor::backgroundColourId, juce::Colours::transparentBlack);
     form2StepAmountLabel->setColour(juce::TextEditor::outlineColourId, juce::Colours::white);
@@ -14766,6 +14908,7 @@ void PluginEditor::setupForm2SequencerArea()
     form2RateDropdown->setColour(juce::ComboBox::buttonColourId, juce::Colours::transparentBlack);
     form2RateDropdown->setColour(juce::ComboBox::textColourId, juce::Colours::white);
     form2RateDropdown->setColour(juce::ComboBox::arrowColourId, juce::Colours::white);
+    form2RateDropdown->setLookAndFeel(rateComboLNF.get());
     form2RateDropdown->setBounds(sequencerArea.getX() + 220, sequencerArea.getY() - 10, 74, 25);
     addAndMakeVisible(form2RateDropdown.get());
     form2RateDropdown->setVisible(false);
@@ -15677,7 +15820,7 @@ void PluginEditor::setupReduxSequencerArea()
     // Create step buttons (2 rows of 8)
     const int buttonSize = 40;
     const int buttonSpacing = 8;
-    const int startX = sequencerArea.getX() + 15; // Moved left 5px total
+    const int startX = sequencerArea.getX() + 17; // Moved right 2px from +15 to +17
     const int startY = sequencerArea.getY() + 35;
     
     for (int i = 0; i < 16; ++i) {
@@ -15708,7 +15851,7 @@ void PluginEditor::setupReduxSequencerArea()
     // Force to 16 by default, then sync with processor state
     processorRef.setReduxStepsUsed(16);
     reduxStepAmountLabel->setText("16");
-    reduxStepAmountLabel->setFont(juce::Font(16.0f, juce::Font::bold));
+    reduxStepAmountLabel->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 12.0f, juce::Font::bold));
     reduxStepAmountLabel->setColour(juce::TextEditor::textColourId, juce::Colours::white);
     reduxStepAmountLabel->setColour(juce::TextEditor::backgroundColourId, juce::Colours::transparentBlack);
     reduxStepAmountLabel->setColour(juce::TextEditor::outlineColourId, juce::Colours::white);
@@ -15759,7 +15902,7 @@ void PluginEditor::setupReduxSequencerArea()
     reduxRateDropdown->setColour(juce::ComboBox::buttonColourId, juce::Colours::transparentBlack);
     reduxRateDropdown->setColour(juce::ComboBox::textColourId, juce::Colours::white);
     reduxRateDropdown->setColour(juce::ComboBox::arrowColourId, juce::Colours::white);
-    // Note: ComboBox font is set via LookAndFeel, not directly
+    reduxRateDropdown->setLookAndFeel(rateComboLNF.get());
     reduxRateDropdown->onChange = [this]() {
         if (reduxRateDropdown) {
             int selectedId = reduxRateDropdown->getSelectedId();
@@ -16465,7 +16608,7 @@ void PluginEditor::setupPhaseBloomSequencerArea()
     // Create step buttons (2x8 grid)
     const int buttonSize = 40;
     const int buttonSpacing = 8;
-    const int startX = sequencerArea.getX() + 15; // Moved left 5px total
+    const int startX = sequencerArea.getX() + 17; // Moved right 2px from +15 to +17
     const int startY = sequencerArea.getY() + 35;
     
     for (int i = 0; i < 16; ++i) {
@@ -16491,7 +16634,7 @@ void PluginEditor::setupPhaseBloomSequencerArea()
     // Force to 16 by default, then sync with processor state
     processorRef.setPhaseBloomStepsUsed(16);
     phaseBloomStepAmountLabel->setText("16");
-    phaseBloomStepAmountLabel->setFont(juce::Font(16.0f, juce::Font::bold));
+    phaseBloomStepAmountLabel->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 12.0f, juce::Font::bold));
     phaseBloomStepAmountLabel->setColour(juce::TextEditor::textColourId, juce::Colours::white);
     phaseBloomStepAmountLabel->setColour(juce::TextEditor::backgroundColourId, juce::Colours::transparentBlack);
     phaseBloomStepAmountLabel->setColour(juce::TextEditor::outlineColourId, juce::Colours::white);
@@ -16528,6 +16671,7 @@ void PluginEditor::setupPhaseBloomSequencerArea()
     phaseBloomRateDropdown->setColour(juce::ComboBox::buttonColourId, juce::Colours::transparentBlack);
     phaseBloomRateDropdown->setColour(juce::ComboBox::textColourId, juce::Colours::white);
     phaseBloomRateDropdown->setColour(juce::ComboBox::arrowColourId, juce::Colours::white);
+    phaseBloomRateDropdown->setLookAndFeel(rateComboLNF.get());
     phaseBloomRateDropdown->setBounds(sequencerArea.getX() + 220, sequencerArea.getY() - 10, 74, 25);
     addAndMakeVisible(phaseBloomRateDropdown.get());
     phaseBloomRateDropdown->setVisible(false);
@@ -16545,6 +16689,24 @@ void PluginEditor::setupPhaseBloomSequencerArea()
     phaseBloomStdToggle->setBounds(sequencerArea.getX() + 288, sequencerArea.getY() - 14, 30, 30);
     addAndMakeVisible(phaseBloomStdToggle.get());
     phaseBloomStdToggle->setVisible(false);
+    phaseBloomStdToggle->setEnabled(true);
+    
+    phaseBloomStdToggle->onClick = [this]() {
+        DBG("[UI] Phase Bloom STD toggle clicked!");
+        // Cycle through -/t/. states
+        int currentState = processorRef.getPhaseBloomSeqState().stdMode.load();
+        int nextState = (currentState + 1) % 3;
+        
+        switch (nextState) {
+            case 0: phaseBloomStdToggle->setButtonText("-"); break;
+            case 1: phaseBloomStdToggle->setButtonText("t"); break;
+            case 2: phaseBloomStdToggle->setButtonText("."); break;
+        }
+        
+        processorRef.setPhaseBloomStdMode(nextState);
+        phaseBloomStdToggle->repaint();
+        DBG("[UI] Phase Bloom STD mode: " << nextState);
+    };
     
     // Create step dice button
     phaseBloomStepDiceButton = std::make_unique<CustomDiceButton>();
@@ -16726,7 +16888,7 @@ void PluginEditor::updatePhaseBloomStepAreaVisibility()
     }
     if (phaseBloomStdToggle) {
         phaseBloomStdToggle->setAlpha(alpha);
-        phaseBloomStdToggle->setEnabled(phaseBloomStepAreaEnabled);
+        phaseBloomStdToggle->setEnabled(true); // Always enabled so it can be clicked
     }
     if (phaseBloomStepTitle) phaseBloomStepTitle->setAlpha(alpha);
     if (phaseBloomStepDiceButton) {
