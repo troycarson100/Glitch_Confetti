@@ -243,8 +243,8 @@ struct CombProc : IFilter {
     static constexpr float MAX_FB_MINUS = -0.97f; // Comb- max feedback (more negative = deeper notches)
     static constexpr float INPUT_GAIN_PLUS = 0.4f;  // Comb+ input gain (lower = more headroom, less clipping)
     static constexpr float INPUT_GAIN_MINUS = 0.4f; // Comb- input gain (same for consistency)
-    static constexpr float WET_GAIN_PLUS = 1.0f;    // Comb+ wet gain (1.0 = unity, lower = quieter)
-    static constexpr float WET_GAIN_MINUS = 1.4f;   // Comb- wet gain (higher = more prominent/obvious)
+    static constexpr float WET_GAIN_PLUS = 1.5f;    // Comb+ wet gain (increased for more prominence)
+    static constexpr float WET_GAIN_MINUS = 2.0f;   // Comb- wet gain (increased for more prominence at higher frequencies)
     static constexpr float DAMPING_PLUS = 0.1f;     // Comb+ damping (lower = brighter, more resonant)
     static constexpr float DAMPING_MINUS = 0.15f;   // Comb- damping (slightly higher for stability, but still sharp)
     
@@ -311,6 +311,19 @@ struct CombProc : IFilter {
         // slopeOrDepth becomes Depth (feed-forward tap) - not used in this design
         // We use wetGain instead for output level control
         depth = juce::jlimit(0.0f, 1.0f, slopeOrDepth);
+        
+        // Make wet gain frequency-dependent: higher gain at higher frequencies for more prominence
+        // At 25% cutoff (~2000Hz), use base gain. At 100% (8000Hz), use 2x gain
+        // Map 40-8000Hz to 0-1, then scale gain from 1.0 to 2.0
+        float freqNormalized = (tuneHz - 40.0f) / (8000.0f - 40.0f);
+        freqNormalized = juce::jlimit(0.0f, 1.0f, freqNormalized);
+        float freqGainMultiplier = 1.0f + freqNormalized; // 1.0 at low freq, 2.0 at high freq
+        
+        if (isNegative) {
+            wetGain = WET_GAIN_MINUS * freqGainMultiplier;
+        } else {
+            wetGain = WET_GAIN_PLUS * freqGainMultiplier;
+        }
         
         // Calculate delay length: L = fs / TuneHz
         float delaySamples = static_cast<float>(fs) / tuneHz;

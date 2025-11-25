@@ -3726,7 +3726,7 @@ void PluginProcessor::setPhaseBloomStepsUsed(int stepsUsed)
 
 void PluginProcessor::setPhaseBloomDivisionIndex(int divisionIndex)
 {
-    phaseBloomSeq.divisionIndex.store(juce::jlimit(0, 8, divisionIndex));
+    phaseBloomSeq.divisionIndex.store(juce::jlimit(0, 7, divisionIndex));
 }
 
 // Formant snapshot methods
@@ -4795,7 +4795,7 @@ void PluginProcessor::forceSequencerLockIn(EffectID effect) noexcept
             const bool ppqValid = pos->getPpqPosition().hasValue();
             const double ppq = ppqValid ? *pos->getPpqPosition() : -1.0;
             
-            // Only lock in if transport is playing and PPQ is valid
+            // If transport is playing and PPQ is valid, lock in immediately
             if (isPlaying && ppqValid)
             {
                 switch (effect)
@@ -4922,9 +4922,391 @@ void PluginProcessor::forceSequencerLockIn(EffectID effect) noexcept
                         break;
                 }
             }
+            else
+            {
+                // Transport not playing or PPQ not valid - still activate sequencer if enabled
+                // This ensures it will start running as soon as transport starts
+                // Reset phase and step to 0 so it starts from the beginning
+                switch (effect)
+                {
+                    case EffectID::SpaceDelay:
+                        if (spacedelaySeq.enabled.load()) {
+                            spacedelaySeq.active.store(true);
+                            spacedelaySeq.resetPhase();
+                            spacedelaySeq.currentStep.store(0);
+                            spacedelaySeq.playingStep.store(0);
+                        }
+                        break;
+                        
+                    case EffectID::AutoPan:
+                        if (autopanSeq.enabled.load()) {
+                            autopanSeq.active.store(true);
+                            autopanSeq.resetPhase();
+                            autopanSeq.currentStep.store(0);
+                            autopanSeq.playingStep.store(0);
+                        }
+                        break;
+                        
+                    case EffectID::Dirt:
+                        if (dirtSeq.enabled.load()) {
+                            dirtSeq.active.store(true);
+                            dirtSeq.resetPhase();
+                            dirtSeq.currentStep.store(0);
+                            dirtSeq.playingStep.store(0);
+                        }
+                        break;
+                        
+                    case EffectID::Chorus:
+                        if (chorusSeq.enabled.load()) {
+                            chorusSeq.active.store(true);
+                            chorusSeq.resetPhase();
+                            chorusSeq.currentStep.store(0);
+                            chorusSeq.playingStep.store(0);
+                        }
+                        break;
+                        
+                    case EffectID::Reverb:
+                        if (reverbSeq.enabled.load()) {
+                            reverbSeq.active.store(true);
+                            reverbSeq.resetPhase();
+                            reverbSeq.currentStep.store(0);
+                            reverbSeq.playingStep.store(0);
+                        }
+                        break;
+                        
+                    case EffectID::Granular:
+                        if (granularSeq.enabled.load()) {
+                            granularSeq.active.store(true);
+                            granularSeq.resetPhase();
+                            granularSeq.currentStep.store(0);
+                            granularSeq.playingStep.store(0);
+                        }
+                        break;
+                        
+                    case EffectID::Slicer:
+                        if (slicerSeq.enabled.load()) {
+                            slicerSeq.active.store(true);
+                            slicerSeq.resetPhase();
+                            slicerSeq.currentStep.store(0);
+                            slicerSeq.playingStep.store(0);
+                        }
+                        break;
+                        
+                    case EffectID::DubDelay:
+                        if (dubdelaySeq.enabled.load()) {
+                            dubdelaySeq.active.store(true);
+                            dubdelaySeq.resetPhase();
+                            dubdelaySeq.currentStep.store(0);
+                            dubdelaySeq.playingStep.store(0);
+                        }
+                        break;
+                        
+                    case EffectID::Redux:
+                        if (reduxSeq.enabled.load()) {
+                            reduxSeq.active.store(true);
+                            reduxSeq.resetPhase();
+                            reduxSeq.currentStep.store(0);
+                            reduxSeq.playingStep.store(0);
+                        }
+                        break;
+                        
+                    case EffectID::PhaseBloom:
+                        if (phaseBloomSeq.enabled.load()) {
+                            phaseBloomSeq.active.store(true);
+                            phaseBloomSeq.resetPhase();
+                            phaseBloomSeq.currentStep.store(0);
+                            phaseBloomSeq.playingStep.store(0);
+                        }
+                        break;
+                        
+                    case EffectID::Formant:
+                        if (formantSeq.enabled.load()) {
+                            formantSeq.active.store(true);
+                            formantSeq.resetPhase();
+                            formantSeq.currentStep.store(0);
+                            formantSeq.playingStep.store(0);
+                        }
+                        break;
+                        
+                    case EffectID::Saturate:
+                        if (saturateSeq.enabled.load()) {
+                            saturateSeq.active.store(true);
+                            saturateSeq.resetPhase();
+                            saturateSeq.currentStep.store(0);
+                            saturateSeq.playingStep.store(0);
+                        }
+                        break;
+                        
+                    case EffectID::Filter:
+                        if (filterSeq.enabled.load()) {
+                            filterSeq.active.store(true);
+                            filterSeq.resetPhase();
+                            filterSeq.currentStep.store(0);
+                            filterSeq.playingStep.store(0);
+                        }
+                        break;
+                        
+                    default:
+                        break;
+                }
+            }
+        }
+        else
+        {
+            // Position doesn't have value - still activate sequencer if enabled
+            // Reset phase and step to 0 so it starts from the beginning
+            switch (effect)
+                {
+                    case EffectID::SpaceDelay:
+                        if (spacedelaySeq.enabled.load()) {
+                            spacedelaySeq.active.store(true);
+                            spacedelaySeq.resetPhase();
+                            spacedelaySeq.currentStep.store(0);
+                            spacedelaySeq.playingStep.store(0);
+                        }
+                        break;
+                        
+                    case EffectID::AutoPan:
+                        if (autopanSeq.enabled.load()) {
+                            autopanSeq.active.store(true);
+                            autopanSeq.resetPhase();
+                            autopanSeq.currentStep.store(0);
+                            autopanSeq.playingStep.store(0);
+                        }
+                        break;
+                        
+                    case EffectID::Dirt:
+                        if (dirtSeq.enabled.load()) {
+                            dirtSeq.active.store(true);
+                            dirtSeq.resetPhase();
+                            dirtSeq.currentStep.store(0);
+                            dirtSeq.playingStep.store(0);
+                        }
+                        break;
+                        
+                    case EffectID::Chorus:
+                        if (chorusSeq.enabled.load()) {
+                            chorusSeq.active.store(true);
+                            chorusSeq.resetPhase();
+                            chorusSeq.currentStep.store(0);
+                            chorusSeq.playingStep.store(0);
+                        }
+                        break;
+                        
+                    case EffectID::Reverb:
+                        if (reverbSeq.enabled.load()) {
+                            reverbSeq.active.store(true);
+                            reverbSeq.resetPhase();
+                            reverbSeq.currentStep.store(0);
+                            reverbSeq.playingStep.store(0);
+                        }
+                        break;
+                        
+                    case EffectID::Granular:
+                        if (granularSeq.enabled.load()) {
+                            granularSeq.active.store(true);
+                            granularSeq.resetPhase();
+                            granularSeq.currentStep.store(0);
+                            granularSeq.playingStep.store(0);
+                        }
+                        break;
+                        
+                    case EffectID::Slicer:
+                        if (slicerSeq.enabled.load()) {
+                            slicerSeq.active.store(true);
+                            slicerSeq.resetPhase();
+                            slicerSeq.currentStep.store(0);
+                            slicerSeq.playingStep.store(0);
+                        }
+                        break;
+                        
+                    case EffectID::DubDelay:
+                        if (dubdelaySeq.enabled.load()) {
+                            dubdelaySeq.active.store(true);
+                            dubdelaySeq.resetPhase();
+                            dubdelaySeq.currentStep.store(0);
+                            dubdelaySeq.playingStep.store(0);
+                        }
+                        break;
+                        
+                    case EffectID::Redux:
+                        if (reduxSeq.enabled.load()) {
+                            reduxSeq.active.store(true);
+                            reduxSeq.resetPhase();
+                            reduxSeq.currentStep.store(0);
+                            reduxSeq.playingStep.store(0);
+                        }
+                        break;
+                        
+                    case EffectID::PhaseBloom:
+                        if (phaseBloomSeq.enabled.load()) {
+                            phaseBloomSeq.active.store(true);
+                            phaseBloomSeq.resetPhase();
+                            phaseBloomSeq.currentStep.store(0);
+                            phaseBloomSeq.playingStep.store(0);
+                        }
+                        break;
+                        
+                    case EffectID::Formant:
+                        if (formantSeq.enabled.load()) {
+                            formantSeq.active.store(true);
+                            formantSeq.resetPhase();
+                            formantSeq.currentStep.store(0);
+                            formantSeq.playingStep.store(0);
+                        }
+                        break;
+                        
+                    case EffectID::Saturate:
+                        if (saturateSeq.enabled.load()) {
+                            saturateSeq.active.store(true);
+                            saturateSeq.resetPhase();
+                            saturateSeq.currentStep.store(0);
+                            saturateSeq.playingStep.store(0);
+                        }
+                        break;
+                        
+                    case EffectID::Filter:
+                        if (filterSeq.enabled.load()) {
+                            filterSeq.active.store(true);
+                            filterSeq.resetPhase();
+                            filterSeq.currentStep.store(0);
+                            filterSeq.playingStep.store(0);
+                        }
+                        break;
+                        
+                    default:
+                        break;
+                }
+            }
+        }
+        else
+        {
+            // No playhead available - still activate sequencer if enabled
+            // Reset phase and step to 0 so it starts from the beginning
+            switch (effect)
+            {
+                case EffectID::SpaceDelay:
+                    if (spacedelaySeq.enabled.load()) {
+                        spacedelaySeq.active.store(true);
+                        spacedelaySeq.resetPhase();
+                        spacedelaySeq.currentStep.store(0);
+                        spacedelaySeq.playingStep.store(0);
+                    }
+                    break;
+                    
+                case EffectID::AutoPan:
+                    if (autopanSeq.enabled.load()) {
+                        autopanSeq.active.store(true);
+                        autopanSeq.resetPhase();
+                        autopanSeq.currentStep.store(0);
+                        autopanSeq.playingStep.store(0);
+                    }
+                    break;
+                    
+                case EffectID::Dirt:
+                    if (dirtSeq.enabled.load()) {
+                        dirtSeq.active.store(true);
+                        dirtSeq.resetPhase();
+                        dirtSeq.currentStep.store(0);
+                        dirtSeq.playingStep.store(0);
+                    }
+                    break;
+                    
+                case EffectID::Chorus:
+                    if (chorusSeq.enabled.load()) {
+                        chorusSeq.active.store(true);
+                        chorusSeq.resetPhase();
+                        chorusSeq.currentStep.store(0);
+                        chorusSeq.playingStep.store(0);
+                    }
+                    break;
+                    
+                case EffectID::Reverb:
+                    if (reverbSeq.enabled.load()) {
+                        reverbSeq.active.store(true);
+                        reverbSeq.resetPhase();
+                        reverbSeq.currentStep.store(0);
+                        reverbSeq.playingStep.store(0);
+                    }
+                    break;
+                    
+                case EffectID::Granular:
+                    if (granularSeq.enabled.load()) {
+                        granularSeq.active.store(true);
+                        granularSeq.resetPhase();
+                        granularSeq.currentStep.store(0);
+                        granularSeq.playingStep.store(0);
+                    }
+                    break;
+                    
+                case EffectID::Slicer:
+                    if (slicerSeq.enabled.load()) {
+                        slicerSeq.active.store(true);
+                        slicerSeq.resetPhase();
+                        slicerSeq.currentStep.store(0);
+                        slicerSeq.playingStep.store(0);
+                    }
+                    break;
+                    
+                case EffectID::DubDelay:
+                    if (dubdelaySeq.enabled.load()) {
+                        dubdelaySeq.active.store(true);
+                        dubdelaySeq.resetPhase();
+                        dubdelaySeq.currentStep.store(0);
+                        dubdelaySeq.playingStep.store(0);
+                    }
+                    break;
+                    
+                case EffectID::Redux:
+                    if (reduxSeq.enabled.load()) {
+                        reduxSeq.active.store(true);
+                        reduxSeq.resetPhase();
+                        reduxSeq.currentStep.store(0);
+                        reduxSeq.playingStep.store(0);
+                    }
+                    break;
+                    
+                case EffectID::PhaseBloom:
+                    if (phaseBloomSeq.enabled.load()) {
+                        phaseBloomSeq.active.store(true);
+                        phaseBloomSeq.resetPhase();
+                        phaseBloomSeq.currentStep.store(0);
+                        phaseBloomSeq.playingStep.store(0);
+                    }
+                    break;
+                    
+                case EffectID::Formant:
+                    if (formantSeq.enabled.load()) {
+                        formantSeq.active.store(true);
+                        formantSeq.resetPhase();
+                        formantSeq.currentStep.store(0);
+                        formantSeq.playingStep.store(0);
+                    }
+                    break;
+                    
+                case EffectID::Saturate:
+                    if (saturateSeq.enabled.load()) {
+                        saturateSeq.active.store(true);
+                        saturateSeq.resetPhase();
+                        saturateSeq.currentStep.store(0);
+                        saturateSeq.playingStep.store(0);
+                    }
+                    break;
+                    
+                case EffectID::Filter:
+                    if (filterSeq.enabled.load()) {
+                        filterSeq.active.store(true);
+                        filterSeq.resetPhase();
+                        filterSeq.currentStep.store(0);
+                        filterSeq.playingStep.store(0);
+                    }
+                    break;
+                    
+                default:
+                    break;
+            }
         }
     }
-}
 
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
 {

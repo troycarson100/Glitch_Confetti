@@ -117,7 +117,21 @@ public:
     
     juce::Font getComboBoxFont(juce::ComboBox&) override
     {
-        return FontManager::getInstance().getFont("AlteHaasGroteskBold", 12.0f, juce::Font::bold);
+        return FontManager::getInstance().getFont("AlteHaasGroteskBold", 16.0f, juce::Font::bold);
+    }
+};
+
+// StepAmountLabelLookAndFeel - Custom LookAndFeel for step amount labels
+//==============================================================================
+class StepAmountLabelLookAndFeel : public juce::LookAndFeel_V4
+{
+public:
+    StepAmountLabelLookAndFeel() {}
+    
+    juce::Font getLabelFont(juce::Label& label) override
+    {
+        // Always return bold font for step amount labels
+        return FontManager::getInstance().getFont("AlteHaasGroteskBold", 16.0f, juce::Font::bold);
     }
 };
 
@@ -595,6 +609,7 @@ public:
     std::unique_ptr<BigComboWithSvgLNF> fxComboLNF;
     std::unique_ptr<class RouterComboLookAndFeel> routerComboLNF;
     std::unique_ptr<class RateComboLookAndFeel> rateComboLNF;
+    std::unique_ptr<class StepAmountLabelLookAndFeel> stepAmountLabelLNF;
     std::unique_ptr<CustomDiceButton> diceButton;
     std::unique_ptr<juce::Button> timeSyncToggle; // S circle toggle
     bool timeSyncEnabled = false;

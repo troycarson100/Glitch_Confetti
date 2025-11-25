@@ -2478,8 +2478,8 @@ void PluginEditor::setupKnobs()
                     knobs[i]->setValue(5.0, juce::dontSendNotification); // Default to 1/4 (index 5)
                 }
             } else if (i == 0) {
-                // Time knob in non-sync mode: 1-2000ms
-                knobs[i]->setRange(1.0, 2000.0, 1.0);
+                // Time knob in non-sync mode: 10-2000ms (matches parameter range)
+                knobs[i]->setRange(10.0, 2000.0, 1.0);
                 if (auto* floatParam = dynamic_cast<juce::AudioParameterFloat*>(param))
                 {
                     knobs[i]->setValue(floatParam->convertFrom0to1(param->getValue()), juce::dontSendNotification);
@@ -3830,12 +3830,15 @@ void PluginEditor::setupMasterKnobs()
                 knobs[0]->setValue(5.0, juce::dontSendNotification); // Start at 1/4 (index 5)
             }
         } else if (knobs[0] != nullptr) {
-            // Switch to 1-2000ms range for non-sync mode
-            knobs[0]->setRange(1.0, 2000.0, 1.0);
-            // Read current time from parameter
-            auto* timeParam = processorRef.getAPVTS().getRawParameterValue("timeMs");
+            // Switch to 10-2000ms range for non-sync mode (matches parameter range)
+            knobs[0]->setRange(10.0, 2000.0, 1.0);
+            // Read current time from parameter (convert from normalized to actual value)
+            auto* timeParam = dynamic_cast<juce::AudioParameterFloat*>(processorRef.getAPVTS().getParameter("timeMs"));
             if (timeParam) {
-                knobs[0]->setValue(timeParam->load(), juce::dontSendNotification);
+                auto* rawParam = processorRef.getAPVTS().getRawParameterValue("timeMs");
+                float normalizedValue = rawParam ? rawParam->load() : 0.5f;
+                float actualValue = timeParam->convertFrom0to1(normalizedValue);
+                knobs[0]->setValue(actualValue, juce::dontSendNotification);
             } else {
                 knobs[0]->setValue(250.0, juce::dontSendNotification); // Start at 250ms
             }
@@ -3865,6 +3868,7 @@ void PluginEditor::setupSpaceDelayUI()
     
     // Create LookAndFeel for rate dropdowns (uses same font as knob titles)
     rateComboLNF = std::make_unique<RateComboLookAndFeel>();
+    stepAmountLabelLNF = std::make_unique<StepAmountLabelLookAndFeel>();
     
     // Create and configure BigComboWithSvgLNF for larger popup menus with SVG caret
     fxComboLNF = std::make_unique<BigComboWithSvgLNF>();
@@ -4290,7 +4294,9 @@ void PluginEditor::setupSequencerArea()
     // Force to 16 by default, then sync with processor state
     processorRef.setSpaceDelayStepsUsed(16);
     stepAmountLabel->setText("16", juce::dontSendNotification);
-    stepAmountLabel->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 12.0f, juce::Font::bold));
+    juce::Font stepAmountFont = FontManager::getInstance().getFont("AlteHaasGroteskBold", 16.0f, juce::Font::bold);
+    stepAmountLabel->setFont(stepAmountFont);
+    stepAmountLabel->setLookAndFeel(stepAmountLabelLNF.get()); // Use custom LookAndFeel to ensure bold font
     stepAmountLabel->setColour(juce::Label::textColourId, juce::Colours::white);
     stepAmountLabel->setColour(juce::Label::backgroundColourId, juce::Colours::transparentBlack);
     stepAmountLabel->setColour(juce::Label::outlineColourId, juce::Colours::white);
@@ -4298,13 +4304,24 @@ void PluginEditor::setupSequencerArea()
     stepAmountLabel->setBorderSize(juce::BorderSize<int>(2));
     // Allow direct editing for step count (1..16)
     stepAmountLabel->setEditable(true, true, false);
-    stepAmountLabel->onEditorHide = [this]() {
+    stepAmountLabel->onEditorShow = [this]() {
+        if (stepAmountLabel != nullptr) {
+            auto* editor = stepAmountLabel->getCurrentTextEditor();
+            if (editor != nullptr) {
+                editor->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 16.0f, juce::Font::bold));
+            }
+        }
+    };
+    stepAmountLabel->onEditorHide = [this, stepAmountFont]() {
         if (stepAmountLabel != nullptr)
         {
             int value = stepAmountLabel->getText().getIntValue();
             value = juce::jlimit(1, 16, value);
             processorRef.setSpaceDelayStepsUsed(value);
             stepAmountLabel->setText(juce::String(value), juce::dontSendNotification);
+            // Ensure font is still bold after editing
+            stepAmountLabel->setFont(stepAmountFont);
+            stepAmountLabel->repaint();
             updateSequencerUI();
         }
     };
@@ -4531,7 +4548,7 @@ void PluginEditor::updateParameterFromKnob(int knobIndex)
         float actualValue = knobValue;
         
         if (knobIndex == 0 && !timeSyncEnabled) {
-            // Knob is in ms range (1-2000), parameter range is 10-2000
+            // Knob is in ms range (10-2000), parameter range is 10-2000
             // Clamp to parameter range and convert to normalized
             if (auto* floatParam = dynamic_cast<juce::AudioParameterFloat*>(param)) {
                 actualValue = juce::jlimit(10.0f, 2000.0f, knobValue);
@@ -5529,6 +5546,12 @@ void PluginEditor::showPage(FxPageID id)
                     }
                 }
                 
+                // Restore rate dropdown
+                if (phaseBloomRateDropdown) {
+                    int divIdx = processorRef.getPhaseBloomSeqState().divisionIndex.load();
+                    phaseBloomRateDropdown->setSelectedId(divIdx + 1, juce::dontSendNotification);
+                }
+                
                 updatePhaseBloomFxAreaVisibility();
                 updatePhaseBloomStepAreaVisibility();
             }
@@ -6132,7 +6155,7 @@ void PluginEditor::setupAutoPanSequencerArea()
     // Force to 16 by default, then sync with processor state
     processorRef.setAutoPanStepsUsed(16);
     autopanStepAmountLabel->setText("16");
-    autopanStepAmountLabel->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 12.0f, juce::Font::bold));
+    autopanStepAmountLabel->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 16.0f, juce::Font::bold));
     autopanStepAmountLabel->setColour(juce::TextEditor::textColourId, juce::Colours::white);
     autopanStepAmountLabel->setColour(juce::TextEditor::backgroundColourId, juce::Colours::transparentBlack);
     autopanStepAmountLabel->setColour(juce::TextEditor::outlineColourId, juce::Colours::white);
@@ -6739,7 +6762,7 @@ void PluginEditor::setupDirtSequencerArea()
     // Force to 16 by default, then sync with processor state
     processorRef.setDirtStepsUsed(16);
     dirtStepAmountLabel->setText("16");
-    dirtStepAmountLabel->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 12.0f, juce::Font::bold));
+    dirtStepAmountLabel->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 16.0f, juce::Font::bold));
     dirtStepAmountLabel->setColour(juce::TextEditor::textColourId, juce::Colours::white);
     dirtStepAmountLabel->setColour(juce::TextEditor::backgroundColourId, juce::Colours::transparentBlack);
     dirtStepAmountLabel->setColour(juce::TextEditor::outlineColourId, juce::Colours::white);
@@ -7577,7 +7600,7 @@ void PluginEditor::setupChorusSequencerArea()
     // Force to 16 by default, then sync with processor state
     processorRef.setChorusStepsUsed(16);
     chorusStepAmountLabel->setText("16");
-    chorusStepAmountLabel->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 12.0f, juce::Font::bold));
+    chorusStepAmountLabel->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 16.0f, juce::Font::bold));
     chorusStepAmountLabel->setColour(juce::TextEditor::textColourId, juce::Colours::white);
     chorusStepAmountLabel->setColour(juce::TextEditor::backgroundColourId, juce::Colours::transparentBlack);
     chorusStepAmountLabel->setColour(juce::TextEditor::outlineColourId, juce::Colours::white);
@@ -8241,7 +8264,7 @@ void PluginEditor::setupReverbSequencerArea()
     // Force to 16 by default, then sync with processor state
     processorRef.setReverbStepsUsed(16);
     reverbStepAmountLabel->setText("16");
-    reverbStepAmountLabel->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 12.0f, juce::Font::bold));
+    reverbStepAmountLabel->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 16.0f, juce::Font::bold));
     reverbStepAmountLabel->setColour(juce::TextEditor::textColourId, juce::Colours::white);
     reverbStepAmountLabel->setColour(juce::TextEditor::backgroundColourId, juce::Colours::transparentBlack);
     reverbStepAmountLabel->setColour(juce::TextEditor::outlineColourId, juce::Colours::white);
@@ -9697,7 +9720,7 @@ void PluginEditor::setupGranularSequencerArea()
     // Force to 16 by default, then sync with processor state
     processorRef.setGranularStepsUsed(16);
     granularStepAmountLabel->setText("16");
-    granularStepAmountLabel->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 12.0f, juce::Font::bold));
+    granularStepAmountLabel->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 16.0f, juce::Font::bold));
     granularStepAmountLabel->setColour(juce::TextEditor::textColourId, juce::Colours::white);
     granularStepAmountLabel->setColour(juce::TextEditor::backgroundColourId, juce::Colours::transparentBlack);
     granularStepAmountLabel->setColour(juce::TextEditor::outlineColourId, juce::Colours::white);
@@ -10579,7 +10602,7 @@ void PluginEditor::setupSlicerSequencerArea()
     // Force to 16 by default, then sync with processor state
     processorRef.setSlicerStepsUsed(16);
     slicerStepAmountLabel->setText("16");
-    slicerStepAmountLabel->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 12.0f, juce::Font::bold));
+    slicerStepAmountLabel->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 16.0f, juce::Font::bold));
     slicerStepAmountLabel->setColour(juce::TextEditor::textColourId, juce::Colours::white);
     slicerStepAmountLabel->setColour(juce::TextEditor::backgroundColourId, juce::Colours::transparentBlack);
     slicerStepAmountLabel->setColour(juce::TextEditor::outlineColourId, juce::Colours::white);
@@ -11260,7 +11283,7 @@ void PluginEditor::setupDubDelaySequencerArea()
     // Force to 16 by default, then sync with processor state
     processorRef.setDubDelayStepsUsed(16);
     dubdelayStepAmountLabel->setText("16");
-    dubdelayStepAmountLabel->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 12.0f, juce::Font::bold));
+    dubdelayStepAmountLabel->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 16.0f, juce::Font::bold));
     dubdelayStepAmountLabel->setColour(juce::TextEditor::textColourId, juce::Colours::white);
     dubdelayStepAmountLabel->setColour(juce::TextEditor::backgroundColourId, juce::Colours::transparentBlack);
     dubdelayStepAmountLabel->setColour(juce::TextEditor::outlineColourId, juce::Colours::white);
@@ -12012,7 +12035,7 @@ void PluginEditor::setupFormantSequencerArea()
     // Force to 16 by default, then sync with processor state
     processorRef.setFormantStepsUsed(16);
     formantStepAmountLabel->setText("16", juce::dontSendNotification);
-    formantStepAmountLabel->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 12.0f, juce::Font::bold));
+    formantStepAmountLabel->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 16.0f, juce::Font::bold));
     formantStepAmountLabel->setColour(juce::TextEditor::textColourId, juce::Colours::white);
     formantStepAmountLabel->setColour(juce::TextEditor::backgroundColourId, juce::Colours::transparentBlack);
     formantStepAmountLabel->setColour(juce::TextEditor::outlineColourId, juce::Colours::white);
@@ -12700,7 +12723,12 @@ void PluginEditor::setupFilterKnobs()
                         text = juce::String(static_cast<int>(freq)) + " Hz";
                         break;
                     }
-                    case 1: text = juce::String(static_cast<int>(value * 100)) + "%"; break;
+                    case 1: {
+                        // Resonance parameter range is 0-0.95, scale to 0-100% for display
+                        float percent = (value / 0.95f) * 100.0f;
+                        text = juce::String(static_cast<int>(percent)) + "%";
+                        break;
+                    }
                     case 2: {
                         // Drive: display 0-100% where 100% = 18 dB (50% of 36 dB)
                         // Read the actual parameter value instead of knob value (SliderAttachment may normalize it)
@@ -12992,7 +13020,7 @@ void PluginEditor::setupFilterSequencerArea()
     // Force to 16 by default, then sync with processor state
     processorRef.setFilterStepsUsed(16);
     filterStepAmountLabel->setText("16");
-    filterStepAmountLabel->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 12.0f, juce::Font::bold));
+    filterStepAmountLabel->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 16.0f, juce::Font::bold));
     filterStepAmountLabel->setColour(juce::TextEditor::textColourId, juce::Colours::white);
     filterStepAmountLabel->setColour(juce::TextEditor::backgroundColourId, juce::Colours::transparentBlack);
     filterStepAmountLabel->setColour(juce::TextEditor::outlineColourId, juce::Colours::white);
@@ -14101,7 +14129,7 @@ void PluginEditor::setupSaturateSequencerArea()
     // Force to 16 by default, then sync with processor state
     processorRef.setSaturateStepsUsed(16);
     saturateStepAmountLabel->setText("16");
-    saturateStepAmountLabel->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 12.0f, juce::Font::bold));
+    saturateStepAmountLabel->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 16.0f, juce::Font::bold));
     saturateStepAmountLabel->setColour(juce::TextEditor::textColourId, juce::Colours::white);
     saturateStepAmountLabel->setColour(juce::TextEditor::backgroundColourId, juce::Colours::transparentBlack);
     saturateStepAmountLabel->setColour(juce::TextEditor::outlineColourId, juce::Colours::white);
@@ -14925,7 +14953,7 @@ void PluginEditor::setupForm2SequencerArea()
     // Create step amount label (TextEditor)
     form2StepAmountLabel = std::make_unique<juce::TextEditor>();
     form2StepAmountLabel->setText("16");
-    form2StepAmountLabel->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 12.0f, juce::Font::bold));
+    form2StepAmountLabel->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 16.0f, juce::Font::bold));
     form2StepAmountLabel->setColour(juce::TextEditor::textColourId, juce::Colours::white);
     form2StepAmountLabel->setColour(juce::TextEditor::backgroundColourId, juce::Colours::transparentBlack);
     form2StepAmountLabel->setColour(juce::TextEditor::outlineColourId, juce::Colours::white);
@@ -15905,7 +15933,7 @@ void PluginEditor::setupReduxSequencerArea()
     // Force to 16 by default, then sync with processor state
     processorRef.setReduxStepsUsed(16);
     reduxStepAmountLabel->setText("16");
-    reduxStepAmountLabel->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 12.0f, juce::Font::bold));
+    reduxStepAmountLabel->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 16.0f, juce::Font::bold));
     reduxStepAmountLabel->setColour(juce::TextEditor::textColourId, juce::Colours::white);
     reduxStepAmountLabel->setColour(juce::TextEditor::backgroundColourId, juce::Colours::transparentBlack);
     reduxStepAmountLabel->setColour(juce::TextEditor::outlineColourId, juce::Colours::white);
@@ -16688,7 +16716,7 @@ void PluginEditor::setupPhaseBloomSequencerArea()
     // Force to 16 by default, then sync with processor state
     processorRef.setPhaseBloomStepsUsed(16);
     phaseBloomStepAmountLabel->setText("16");
-    phaseBloomStepAmountLabel->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 12.0f, juce::Font::bold));
+    phaseBloomStepAmountLabel->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 16.0f, juce::Font::bold));
     phaseBloomStepAmountLabel->setColour(juce::TextEditor::textColourId, juce::Colours::white);
     phaseBloomStepAmountLabel->setColour(juce::TextEditor::backgroundColourId, juce::Colours::transparentBlack);
     phaseBloomStepAmountLabel->setColour(juce::TextEditor::outlineColourId, juce::Colours::white);
