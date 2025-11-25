@@ -4257,7 +4257,7 @@ void PluginEditor::setupSequencerArea()
     // Create step buttons (2 rows of 8)
     const int buttonSize = 40;
     const int buttonSpacing = 8;
-    const int startX = stepArea.getX() + 20;
+    const int startX = stepArea.getX() + 15; // Moved left 5px total
     const int startY = stepArea.getY() + 35; // Moved up 5px from +40 to +35
     
     for (int i = 0; i < 16; ++i) {
@@ -6018,7 +6018,7 @@ void PluginEditor::setupAutoPanSequencerArea()
     // Create step buttons (2 rows of 8, EXACT same layout as delay page)
     const int buttonSize = 40;
     const int buttonSpacing = 8;
-    const int startX = sequencerArea.getX() + 20;
+    const int startX = sequencerArea.getX() + 15; // Moved left 5px total
     const int startY = sequencerArea.getY() + 35; // Same as delay page
     
     for (int i = 0; i < 16; ++i) {
@@ -6625,7 +6625,7 @@ void PluginEditor::setupDirtSequencerArea()
     // Create step buttons (2 rows of 8, EXACT same layout as AutoPan page)
     const int buttonSize = 40;
     const int buttonSpacing = 8;
-    const int startX = sequencerArea.getX() + 20;
+    const int startX = sequencerArea.getX() + 15; // Moved left 5px total
     const int startY = sequencerArea.getY() + 35;
     
     for (int i = 0; i < 16; ++i) {
@@ -7464,7 +7464,7 @@ void PluginEditor::setupChorusSequencerArea()
     // Create step buttons (2 rows of 8)
     const int buttonSize = 40;
     const int buttonSpacing = 8;
-    const int startX = sequencerArea.getX() + 20;
+    const int startX = sequencerArea.getX() + 15; // Moved left 5px total
     const int startY = sequencerArea.getY() + 35;
     
     for (int i = 0; i < 16; ++i) {
@@ -8135,7 +8135,7 @@ void PluginEditor::setupReverbSequencerArea()
     // Create step buttons (2 rows of 8)
     const int buttonSize = 40;
     const int buttonSpacing = 8;
-    const int startX = sequencerArea.getX() + 20;
+    const int startX = sequencerArea.getX() + 15; // Moved left 5px total
     const int startY = sequencerArea.getY() + 35;
     
     for (int i = 0; i < 16; ++i)
@@ -9590,7 +9590,7 @@ void PluginEditor::setupGranularSequencerArea()
     // Create step buttons (2 rows of 8) - EXACT same as Reverb
     const int buttonSize = 40;
     const int buttonSpacing = 8;
-    const int startX = sequencerArea.getX() + 20;
+    const int startX = sequencerArea.getX() + 15; // Moved left 5px total
     const int startY = sequencerArea.getY() + 35;
     
     for (int i = 0; i < 16; ++i)
@@ -10468,7 +10468,7 @@ void PluginEditor::setupSlicerSequencerArea()
     // Create step buttons (2 rows of 8)
     const int buttonSize = 40;
     const int buttonSpacing = 8;
-    const int startX = sequencerArea.getX() + 20;
+    const int startX = sequencerArea.getX() + 15; // Moved left 5px total
     const int startY = sequencerArea.getY() + 35;
     
     for (int i = 0; i < 16; ++i) {
@@ -11130,7 +11130,7 @@ void PluginEditor::setupDubDelaySequencerArea()
     // Step buttons (2x8 grid)
     const int buttonSize = 40;
     const int buttonSpacing = 8;
-    const int startX = sequencerArea.getX() + 20;
+    const int startX = sequencerArea.getX() + 15; // Moved left 5px total
     const int startY = sequencerArea.getY() + 35;
     
     for (int i = 0; i < 16; ++i)
@@ -11984,7 +11984,7 @@ void PluginEditor::setupFormantSequencerArea()
     // Create step buttons (EXACT same as Space Delay page)
     const int buttonSize = 40;
     const int buttonSpacing = 8;
-    const int startX = stepArea.getX() + 20;
+    const int startX = stepArea.getX() + 15; // Moved left 5px total
     const int startY = stepArea.getY() + 35;
     
     for (int i = 0; i < 16; ++i) {
@@ -12818,7 +12818,7 @@ void PluginEditor::setupFilterSequencerArea()
     // Create step buttons (16 steps)
     const int buttonSize = 40;
     const int buttonSpacing = 8;
-    const int startX = sequencerArea.getX() + 20;
+    const int startX = sequencerArea.getX() + 15; // Moved left 5px total
     const int startY = sequencerArea.getY() + 35;
     
     for (int i = 0; i < 16; ++i) {
@@ -13892,7 +13892,7 @@ void PluginEditor::setupSaturateSequencerArea()
     // Step buttons (2x8 grid)
     const int buttonSize = 40;
     const int buttonSpacing = 8;
-    const int startX = sequencerArea.getX() + 20;
+    const int startX = sequencerArea.getX() + 15; // Moved left 5px total
     const int startY = sequencerArea.getY() + 35;
     
     for (int i = 0; i < 16; ++i)
@@ -14705,7 +14705,7 @@ void PluginEditor::setupForm2SequencerArea()
     // Create step buttons (2x8 grid)
     const int buttonSize = 40;
     const int buttonSpacing = 8;
-    const int startX = sequencerArea.getX() + 20;
+    const int startX = sequencerArea.getX() + 15; // Moved left 5px total
     const int startY = sequencerArea.getY() + 35;
     
     for (int i = 0; i < 16; ++i) {
@@ -15677,7 +15677,7 @@ void PluginEditor::setupReduxSequencerArea()
     // Create step buttons (2 rows of 8)
     const int buttonSize = 40;
     const int buttonSpacing = 8;
-    const int startX = sequencerArea.getX() + 20;
+    const int startX = sequencerArea.getX() + 15; // Moved left 5px total
     const int startY = sequencerArea.getY() + 35;
     
     for (int i = 0; i < 16; ++i) {
@@ -16465,7 +16465,7 @@ void PluginEditor::setupPhaseBloomSequencerArea()
     // Create step buttons (2x8 grid)
     const int buttonSize = 40;
     const int buttonSpacing = 8;
-    const int startX = sequencerArea.getX() + 20;
+    const int startX = sequencerArea.getX() + 15; // Moved left 5px total
     const int startY = sequencerArea.getY() + 35;
     
     for (int i = 0; i < 16; ++i) {
