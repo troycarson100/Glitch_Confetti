@@ -4525,16 +4525,30 @@ void PluginEditor::updateParameterFromKnob(int knobIndex)
         auto* param = processorRef.getParameters().getUnchecked(knobIndex);
         float knobValue = knobs[knobIndex]->getValue();
         
-        // Knob value is already normalized (0-1), so directly set parameter
-        param->setValueNotifyingHost(knobValue);
+        // Special handling for time knob (index 0) when sync is off
+        // The knob has range 1.0-2000.0, but parameter expects normalized 0-1
+        float normalizedValue = knobValue;
+        float actualValue = knobValue;
         
-        // Update the current step snapshot with the new value
-        // Convert normalized value back to actual parameter value
-        float actualValue = 0.0f;
-        if (auto* floatParam = dynamic_cast<juce::AudioParameterFloat*>(param))
-        {
-            actualValue = floatParam->convertFrom0to1(knobValue);
+        if (knobIndex == 0 && !timeSyncEnabled) {
+            // Knob is in ms range (1-2000), parameter range is 10-2000
+            // Clamp to parameter range and convert to normalized
+            if (auto* floatParam = dynamic_cast<juce::AudioParameterFloat*>(param)) {
+                actualValue = juce::jlimit(10.0f, 2000.0f, knobValue);
+                normalizedValue = floatParam->convertTo0to1(actualValue);
+            }
+        } else {
+            // For other knobs, knob value is already normalized (0-1)
+            normalizedValue = knobValue;
+            // Convert normalized value back to actual parameter value
+            if (auto* floatParam = dynamic_cast<juce::AudioParameterFloat*>(param))
+            {
+                actualValue = floatParam->convertFrom0to1(knobValue);
+            }
         }
+        
+        // Set parameter with normalized value
+        param->setValueNotifyingHost(normalizedValue);
         
         // Update the snapshot for the currently selected step
         // Check if we're on Space Delay page and use dedicated sequencer
@@ -12273,8 +12287,9 @@ void PluginEditor::setupFilterKnobs()
     const int startY = effectArea.getY() + effectArea.getHeight() - 216; // Moved down 2px from -218 to -216
     
     // Parameter IDs for 7 knobs (Type, Cutoff, Res, Slope, Drive, Key Track, Mix) - Spread removed
+    // Note: keytrack is not an APVTS parameter, it's only stored in snapshots
     std::vector<juce::String> filterParamIds = {
-        "fType", "cutoff", "res", "slope", "filterDrive", "keytrack", "filterMix"
+        "filterType", "filterHighCut", "filterResonance", "filterSlope", "filterDrive", "", "filterMix"
     };
     
     // Knob names for 7 knobs (Spread removed)
@@ -12351,10 +12366,13 @@ void PluginEditor::setupFilterKnobs()
             addAndMakeVisible(filterKnobs[regularKnobIdx].get());
             filterKnobs[regularKnobIdx]->setVisible(false);
             
-            // Create attachment - Map knobIdx to filterParamIds index: 5→5 (Key Track), 6→6 (Mix)
-            int paramIdsIdx = (knobIdx == 5) ? 5 : 6;
-            filterAttachments[regularKnobIdx] = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
-                processorRef.getAPVTS(), filterParamIds[paramIdsIdx], *filterKnobs[regularKnobIdx]);
+            // Create attachment - Map knobIdx to filterParamIds index: 5→5 (Key Track - no APVTS param), 6→6 (Mix)
+            if (knobIdx == 6) { // Mix knob - has APVTS parameter
+                int paramIdsIdx = 6;
+                filterAttachments[regularKnobIdx] = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+                    processorRef.getAPVTS(), filterParamIds[paramIdsIdx], *filterKnobs[regularKnobIdx]);
+            }
+            // Key Track (knobIdx 5) has no APVTS parameter - it only updates snapshots directly
         } else if (knobIdx == 1 || knobIdx == 2 || knobIdx == 4) {
             // Regular knobs (Cutoff, Res, Drive) - Skip Type (0), Slope (3), and empty position 7
             // Map: knobIdx 1→0 (Cutoff), 2→1 (Res), 4→2 (Drive)
@@ -12366,10 +12384,10 @@ void PluginEditor::setupFilterKnobs()
             
             // Set parameter ranges
             switch (regularKnobIdx) {
-                case 0: // Cutoff - linear rotation (0-1), custom frequency mapping in processor
-                    // Knob rotates linearly 0-1, processor converts to frequency: 0-0.75 → 20-5000Hz, 0.75-1.0 → 5000-20000Hz
-                    filterKnobs[regularKnobIdx]->setRange(0.0, 1.0, 0.001);
-                    filterKnobs[regularKnobIdx]->setValue(0.18, juce::dontSendNotification); // ~0.18 = 1200Hz
+                case 0: // Cutoff - use parameter's range (20-20000Hz) to match filterHighCut parameter
+                    // The parameter uses NormalisableRange(20.0f, 20000.0f, 1.0f, 0.5f) with logarithmic skew
+                    filterKnobs[regularKnobIdx]->setRange(20.0, 20000.0, 1.0);
+                    filterKnobs[regularKnobIdx]->setValue(1200.0, juce::dontSendNotification); // 1200Hz default
                     break;
                 case 1: // Res
                     filterKnobs[regularKnobIdx]->setRange(0.0, 1.0, 0.01);
@@ -12580,9 +12598,9 @@ void PluginEditor::setupFilterKnobs()
     
     // Create attachments for Type and Slope
     filterTypeAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
-        processorRef.getAPVTS(), "fType", *filterTypeKnob);
+        processorRef.getAPVTS(), "filterType", *filterTypeKnob);
     filterSlopeAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
-        processorRef.getAPVTS(), "slope", *filterSlopeKnob);
+        processorRef.getAPVTS(), "filterSlope", *filterSlopeKnob);
     
     // Setup value change callbacks for all knobs
     filterTypeKnob->onValueChange = [this]() {
@@ -12593,7 +12611,7 @@ void PluginEditor::setupFilterKnobs()
         // Respect lock state - if locked, restore previous value
         if (filterKnobLocked[0]) {
             // Restore to previous value
-            auto* typeParam = processorRef.getAPVTS().getParameter("fType");
+            auto* typeParam = processorRef.getAPVTS().getParameter("filterType");
             if (typeParam) {
                 float prevValue = typeParam->getValue() * 4.0f; // Convert from normalized to 0-4
                 filterTypeKnob->setValue(prevValue, juce::dontSendNotification);
@@ -12633,7 +12651,7 @@ void PluginEditor::setupFilterKnobs()
         // Respect lock state - if locked, restore previous value
         if (filterKnobLocked[3]) {
             // Restore to previous value
-            auto* slopeParam = processorRef.getAPVTS().getParameter("slope");
+            auto* slopeParam = processorRef.getAPVTS().getParameter("filterSlope");
             if (slopeParam) {
                 float prevValue = slopeParam->getValue(); // 0-1 normalized
                 filterSlopeKnob->setValue(prevValue, juce::dontSendNotification);
@@ -12677,10 +12695,8 @@ void PluginEditor::setupFilterKnobs()
                 
                 switch (i) {
                     case 0: {
-                        // Convert normalized value (0-1) to frequency for display
-                        float freq = value <= 0.75f 
-                            ? 20.0f + (5000.0f - 20.0f) * (value / 0.75f)
-                            : 5000.0f * std::pow(4.0f, (value - 0.75f) / 0.25f);
+                        // Value is already in Hz (20-20000) from the knob range
+                        float freq = juce::jlimit(20.0f, 20000.0f, value);
                         text = juce::String(static_cast<int>(freq)) + " Hz";
                         break;
                     }
@@ -12717,13 +12733,40 @@ void PluginEditor::setupFilterKnobs()
                 if (filterIndicatorBars[knobLabelIdx]) {
                     float norm = 0.0f;
                     switch (i) {
-                        case 0: norm = value; break; // Cutoff - already normalized 0-1
+                        case 0: norm = (value - 20.0f) / (20000.0f - 20.0f); break; // Cutoff - normalize 20-20000Hz to 0-1
                         case 1: norm = value; break; // Res - already normalized 0-1
                         case 2: norm = value / 36.0f; break; // Drive - normalize 0-36 to 0-1
                         case 3: norm = value; break; // Key Track - already normalized 0-1
                         case 4: norm = value; break; // Mix - already normalized 0-1
                     }
                     filterIndicatorBars[knobLabelIdx]->setValue(norm);
+                }
+                
+                // For cutoff knob (i == 0), also update filterLowCut if filter type is HP/BP/Comb
+                if (i == 0) {
+                    // Get current filter type
+                    auto* typeParam = processorRef.getAPVTS().getParameter("filterType");
+                    if (typeParam) {
+                        auto* typeChoice = dynamic_cast<juce::AudioParameterChoice*>(typeParam);
+                        if (typeChoice) {
+                            int filterType = typeChoice->getIndex();
+                            // If filter type is HP (1), BP (2), or Comb (3/4), also update filterLowCut
+                            if (filterType >= 1) {
+                                auto* lowCutParam = processorRef.getAPVTS().getParameter("filterLowCut");
+                                if (lowCutParam) {
+                                    auto* lowCutFloatParam = dynamic_cast<juce::AudioParameterFloat*>(lowCutParam);
+                                    if (lowCutFloatParam) {
+                                        // Value is already in Hz (20-20000) from the knob range
+                                        float freq = juce::jlimit(20.0f, 20000.0f, value);
+                                        
+                                        // Convert frequency to normalized value for filterLowCut parameter
+                                        float normalized = lowCutFloatParam->convertTo0to1(freq);
+                                        lowCutParam->setValueNotifyingHost(normalized);
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
                 
                 // Save to snapshot (Mix knob at index 4 is global, not saved per step)
@@ -12739,12 +12782,8 @@ void PluginEditor::setupFilterKnobs()
                             if (step != currentStep) {
                                 auto snapshot = processorRef.getFilterSafeSnapshot(step);
                                 switch (i) {
-                                    case 0: { // Cutoff - convert normalized value to frequency
-                                        // Use the same conversion logic as in processor
-                                        float freq = value <= 0.75f 
-                                            ? 20.0f + (5000.0f - 20.0f) * (value / 0.75f)
-                                            : 5000.0f * std::pow(4.0f, (value - 0.75f) / 0.25f);
-                                        snapshot.filter.cutoff = juce::jlimit(20.0f, 20000.0f, freq);
+                                    case 0: { // Cutoff - value is already in Hz (20-20000)
+                                        snapshot.filter.cutoff = juce::jlimit(20.0f, 20000.0f, value);
                                         break;
                                     }
                                     case 1: // Resonance
@@ -13357,12 +13396,8 @@ void PluginEditor::updateFilterParameterFromKnob(int knobIndex)
     } else if (knobIndex == -2) {
         value = filterSlopeKnob->getValue();
     } else if (knobIndex >= 0 && knobIndex < 5) {
-        if (knobIndex == 0) { // Cutoff - convert normalized value to frequency
-            float normalized = filterKnobs[0]->getValue();
-            float freq = normalized <= 0.75f 
-                ? 20.0f + (5000.0f - 20.0f) * (normalized / 0.75f)
-                : 5000.0f * std::pow(4.0f, (normalized - 0.75f) / 0.25f);
-            value = juce::jlimit(20.0f, 20000.0f, freq);
+        if (knobIndex == 0) { // Cutoff - value is already in Hz (20-20000)
+            value = juce::jlimit(20.0f, 20000.0f, static_cast<float>(filterKnobs[0]->getValue()));
         } else {
             value = filterKnobs[knobIndex]->getValue();
         }
@@ -13401,11 +13436,9 @@ void PluginEditor::updateFilterSequencerUI()
             
             // Update Cutoff indicator bar (index 1)
             if (filterIndicatorBars[1] && filterKnobs[0]) {
-                // Convert frequency to normalized value
+                // Convert frequency to normalized value (20-20000Hz to 0-1)
                 float freq = juce::jlimit(20.0f, 20000.0f, snapshot.filter.cutoff);
-                float normalized = freq <= 5000.0f 
-                    ? 0.75f * (freq - 20.0f) / (5000.0f - 20.0f)
-                    : 0.75f + 0.25f * (std::log(freq / 5000.0f) / std::log(4.0f));
+                float normalized = (freq - 20.0f) / (20000.0f - 20.0f);
                 normalized = juce::jlimit(0.0f, 1.0f, normalized);
                 filterIndicatorBars[1]->setValue(normalized);
             }
@@ -13470,14 +13503,10 @@ void PluginEditor::onFilterStepButtonClicked(int stepIndex)
             filterTypeKnob->setValue(snapshot.filter.type, juce::dontSendNotification);
         }
         
-        // Cutoff knob (convert frequency to normalized)
+        // Cutoff knob - value is already in Hz (20-20000)
         if (filterKnobs[0]) {
-            float freq = snapshot.filter.cutoff;
-            float normalized = freq <= 5000.0f 
-                ? 0.75f * (freq - 20.0f) / (5000.0f - 20.0f)
-                : 0.75f + 0.25f * (std::log(freq / 5000.0f) / std::log(4.0f));
-            normalized = juce::jlimit(0.0f, 1.0f, normalized);
-            filterKnobs[0]->setValue(normalized, juce::dontSendNotification);
+            float freq = juce::jlimit(20.0f, 20000.0f, snapshot.filter.cutoff);
+            filterKnobs[0]->setValue(freq, juce::dontSendNotification);
         }
         
         // Resonance knob
@@ -13508,46 +13537,71 @@ void PluginEditor::onFilterStepButtonClicked(int stepIndex)
         
         // Now update APVTS parameters to match (without notifying host to avoid attachment conflicts)
         // Type parameter
-        auto* typeParam = processorRef.getAPVTS().getParameter("fType");
+        auto* typeParam = processorRef.getAPVTS().getParameter("filterType");
         if (typeParam) {
-            float normalizedType = typeParam->convertTo0to1(snapshot.filter.type);
-            typeParam->setValue(normalizedType); // Use setValue instead of setValueNotifyingHost
+            auto* typeChoice = dynamic_cast<juce::AudioParameterChoice*>(typeParam);
+            if (typeChoice) {
+                int typeIndex = static_cast<int>(snapshot.filter.type);
+                typeChoice->setValueNotifyingHost(typeIndex); // Use setValueNotifyingHost for Choice parameters
+            }
         }
         
-        // Cutoff parameter
-        auto* cutoffParam = processorRef.getAPVTS().getParameter("cutoff");
-        if (cutoffParam && filterKnobs[0]) {
-            float normalized = filterKnobs[0]->getValue(); // Get the value we just set
-            cutoffParam->setValue(normalized);
+        // Cutoff parameter - update both filterHighCut and filterLowCut based on filter type
+        int filterType = static_cast<int>(snapshot.filter.type);
+        float freq = snapshot.filter.cutoff;
+        
+        // Update filterHighCut (used for LP)
+        auto* highCutParam = processorRef.getAPVTS().getParameter("filterHighCut");
+        if (highCutParam && filterKnobs[0]) {
+            auto* highCutFloatParam = dynamic_cast<juce::AudioParameterFloat*>(highCutParam);
+            if (highCutFloatParam) {
+                float normalized = highCutFloatParam->convertTo0to1(freq);
+                highCutParam->setValue(normalized);
+            }
+        }
+        
+        // Update filterLowCut (used for HP/BP/Comb)
+        auto* lowCutParam = processorRef.getAPVTS().getParameter("filterLowCut");
+        if (lowCutParam && (filterType >= 1)) { // HP, BP, or Comb
+            auto* lowCutFloatParam = dynamic_cast<juce::AudioParameterFloat*>(lowCutParam);
+            if (lowCutFloatParam) {
+                float normalized = lowCutFloatParam->convertTo0to1(freq);
+                lowCutParam->setValue(normalized);
+            }
         }
         
         // Resonance parameter
-        auto* resParam = processorRef.getAPVTS().getParameter("res");
+        auto* resParam = processorRef.getAPVTS().getParameter("filterResonance");
         if (resParam && filterKnobs[1]) {
-            float normalizedRes = resParam->convertTo0to1(snapshot.filter.resonance);
-            resParam->setValue(normalizedRes);
+            auto* resFloatParam = dynamic_cast<juce::AudioParameterFloat*>(resParam);
+            if (resFloatParam) {
+                float normalizedRes = resFloatParam->convertTo0to1(snapshot.filter.resonance);
+                resParam->setValue(normalizedRes);
+            }
         }
         
         // Slope parameter
-        auto* slopeParam = processorRef.getAPVTS().getParameter("slope");
+        auto* slopeParam = processorRef.getAPVTS().getParameter("filterSlope");
         if (slopeParam) {
-            float normalizedSlope = slopeParam->convertTo0to1(snapshot.filter.slope);
-            slopeParam->setValue(normalizedSlope);
+            auto* slopeChoice = dynamic_cast<juce::AudioParameterChoice*>(slopeParam);
+            if (slopeChoice) {
+                int slopeIndex = static_cast<int>(snapshot.filter.slope);
+                slopeChoice->setValueNotifyingHost(slopeIndex);
+            }
         }
         
         // Drive parameter
         auto* driveParam = processorRef.getAPVTS().getParameter("filterDrive");
         if (driveParam && filterKnobs[2]) {
-            float driveDb = juce::jlimit(0.0f, 18.0f, snapshot.filter.drive);
-            float normalizedDrive = driveParam->convertTo0to1(driveDb);
-            driveParam->setValue(normalizedDrive);
+            auto* driveFloatParam = dynamic_cast<juce::AudioParameterFloat*>(driveParam);
+            if (driveFloatParam) {
+                float driveDb = juce::jlimit(0.0f, 18.0f, snapshot.filter.drive);
+                float normalizedDrive = driveFloatParam->convertTo0to1(driveDb);
+                driveParam->setValue(normalizedDrive);
+            }
         }
         
-        // Key Track parameter
-        auto* keytrackParam = processorRef.getAPVTS().getParameter("keytrack");
-        if (keytrackParam) {
-            keytrackParam->setValue(snapshot.filter.keytrack);
-        }
+        // Key Track has no APVTS parameter - it's only stored in snapshots
         
         // Mix parameter
         auto* mixParam = processorRef.getAPVTS().getParameter("filterMix");

@@ -785,24 +785,40 @@ void RandomizationManager::applySequencerChanges()
                 processor.setSpaceDelaySequencerEnabled(sequencerEnabled);
                 processor.setSpaceDelayStepsUsed(stepsUsed);
                 processor.setSpaceDelayDivisionIndex(divisionIndex);
+                // Update UI dropdown to match (dropdown IDs are 1-8, so add 1 to index)
+                if (editor && editor->rateDropdown) {
+                    editor->rateDropdown->setSelectedId(divisionIndex + 1, juce::dontSendNotification);
+                }
                 break;
                 
             case EffectID::AutoPan:
                 processor.setAutoPanSequencerEnabled(sequencerEnabled);
                 processor.setAutoPanStepsUsed(stepsUsed);
                 processor.setAutoPanDivisionIndex(divisionIndex);
+                // Update UI dropdown to match (dropdown IDs are 1-8, so add 1 to index)
+                if (editor && editor->autopanRateDropdown) {
+                    editor->autopanRateDropdown->setSelectedId(divisionIndex + 1, juce::dontSendNotification);
+                }
                 break;
                 
             case EffectID::Dirt:
                 processor.setDirtSequencerEnabled(sequencerEnabled);
                 processor.setDirtStepsUsed(stepsUsed);
                 processor.setDirtDivisionIndex(divisionIndex);
+                // Update UI dropdown to match (dropdown IDs are 1-8, so add 1 to index)
+                if (editor && editor->dirtRateDropdown) {
+                    editor->dirtRateDropdown->setSelectedId(divisionIndex + 1, juce::dontSendNotification);
+                }
                 break;
                 
             case EffectID::Chorus:
                 processor.setChorusSequencerEnabled(sequencerEnabled);
                 processor.setChorusStepsUsed(stepsUsed);
                 processor.setChorusDivisionIndex(divisionIndex);
+                // Update UI dropdown to match (dropdown IDs are 1-8, so add 1 to index)
+                if (editor && editor->chorusRateDropdown) {
+                    editor->chorusRateDropdown->setSelectedId(divisionIndex + 1, juce::dontSendNotification);
+                }
                 break;
                 
             case EffectID::Reverb:
@@ -839,18 +855,30 @@ void RandomizationManager::applySequencerChanges()
                 processor.setDubDelaySequencerEnabled(sequencerEnabled);
                 processor.setDubDelayStepsUsed(stepsUsed);
                 processor.setDubDelayDivisionIndex(divisionIndex);
+                // Update UI dropdown to match (dropdown IDs are 1-8, so add 1 to index)
+                if (editor && editor->dubdelayRateDropdown) {
+                    editor->dubdelayRateDropdown->setSelectedId(divisionIndex + 1, juce::dontSendNotification);
+                }
                 break;
                 
             case EffectID::Redux:
                 processor.setReduxSequencerEnabled(sequencerEnabled);
                 processor.setReduxStepsUsed(stepsUsed);
                 processor.setReduxDivisionIndex(divisionIndex);
+                // Update UI dropdown to match (dropdown IDs are 1-8, so add 1 to index)
+                if (editor && editor->reduxRateDropdown) {
+                    editor->reduxRateDropdown->setSelectedId(divisionIndex + 1, juce::dontSendNotification);
+                }
                 break;
                 
             case EffectID::PhaseBloom:
                 processor.setPhaseBloomSequencerEnabled(sequencerEnabled);
                 processor.setPhaseBloomStepsUsed(stepsUsed);
                 processor.setPhaseBloomDivisionIndex(divisionIndex);
+                // Update UI dropdown to match (dropdown IDs are 1-8, so add 1 to index)
+                if (editor && editor->phaseBloomRateDropdown) {
+                    editor->phaseBloomRateDropdown->setSelectedId(divisionIndex + 1, juce::dontSendNotification);
+                }
                 break;
                 
             case EffectID::Formant:
@@ -870,12 +898,20 @@ void RandomizationManager::applySequencerChanges()
                 processor.setSaturateSequencerEnabled(sequencerEnabled);
                 processor.setSaturateStepsUsed(stepsUsed);
                 processor.setSaturateDivisionIndex(divisionIndex);
+                // Update UI dropdown to match (dropdown IDs are 1-8, so add 1 to index)
+                if (editor && editor->saturateRateDropdown) {
+                    editor->saturateRateDropdown->setSelectedId(divisionIndex + 1, juce::dontSendNotification);
+                }
                 break;
                 
             case EffectID::Filter:
                 processor.setFilterSequencerEnabled(sequencerEnabled);
                 processor.setFilterStepsUsed(stepsUsed);
                 processor.setFilterDivisionIndex(divisionIndex);
+                // Update UI dropdown to match (dropdown IDs are 1-8, so add 1 to index)
+                if (editor && editor->filterRateDropdown) {
+                    editor->filterRateDropdown->setSelectedId(divisionIndex + 1, juce::dontSendNotification);
+                }
                 break;
         }
         

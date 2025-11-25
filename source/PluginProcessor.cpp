@@ -1889,35 +1889,35 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                 else
                 {
                     // Sequencer disabled - use APVTS parameters
-                    auto* bitDepthParam = valueTreeState.getRawParameterValue("reduxBitDepth");
-                    auto* sampleRateReductionParam = valueTreeState.getRawParameterValue("reduxSampleRateReduction");
-                    auto* jitterParam = valueTreeState.getRawParameterValue("reduxJitter");
-                    auto* preFilterParam = valueTreeState.getRawParameterValue("reduxPreFilter");
-                    auto* postFilterParam = valueTreeState.getRawParameterValue("reduxPostFilter");
-                    auto* driveParam = valueTreeState.getRawParameterValue("reduxDrive");
-                    auto* emphasisParam = valueTreeState.getRawParameterValue("reduxEmphasis");
-                    auto* mixParam = valueTreeState.getRawParameterValue("reduxMix");
+                auto* bitDepthParam = valueTreeState.getRawParameterValue("reduxBitDepth");
+                auto* sampleRateReductionParam = valueTreeState.getRawParameterValue("reduxSampleRateReduction");
+                auto* jitterParam = valueTreeState.getRawParameterValue("reduxJitter");
+                auto* preFilterParam = valueTreeState.getRawParameterValue("reduxPreFilter");
+                auto* postFilterParam = valueTreeState.getRawParameterValue("reduxPostFilter");
+                auto* driveParam = valueTreeState.getRawParameterValue("reduxDrive");
+                auto* emphasisParam = valueTreeState.getRawParameterValue("reduxEmphasis");
+                auto* mixParam = valueTreeState.getRawParameterValue("reduxMix");
+                
+                if (mixParam && bitDepthParam && sampleRateReductionParam && jitterParam &&
+                    preFilterParam && postFilterParam && driveParam && emphasisParam)
+                {
+                    // Set Redux parameters (in order: mix, bitDepth, sampleRateReduction, jitter, preFilter, postFilter, drive, emphasis)
+                    // Convert UI bit depth (1-12) to internal bit depth (4-16)
+                    int internalBitDepth = static_cast<int>(bitDepthParam->load()) + 3;
+                    reduxBank.setParams(
+                        mixParam->load(),
+                        internalBitDepth,
+                        static_cast<int>(sampleRateReductionParam->load()),
+                        jitterParam->load(),
+                        preFilterParam->load(),
+                        postFilterParam->load(),
+                        driveParam->load(),
+                        emphasisParam->load()
+                    );
                     
-                    if (mixParam && bitDepthParam && sampleRateReductionParam && jitterParam &&
-                        preFilterParam && postFilterParam && driveParam && emphasisParam)
-                    {
-                        // Set Redux parameters (in order: mix, bitDepth, sampleRateReduction, jitter, preFilter, postFilter, drive, emphasis)
-                        // Convert UI bit depth (1-12) to internal bit depth (4-16)
-                        int internalBitDepth = static_cast<int>(bitDepthParam->load()) + 3;
-                        reduxBank.setParams(
-                            mixParam->load(),
-                            internalBitDepth,
-                            static_cast<int>(sampleRateReductionParam->load()),
-                            jitterParam->load(),
-                            preFilterParam->load(),
-                            postFilterParam->load(),
-                            driveParam->load(),
-                            emphasisParam->load()
-                        );
-                        
-                        // Process Redux effect
-                        juce::dsp::AudioBlock<float> audioBlock(buffer);
-                        reduxBank.process(audioBlock);
+                    // Process Redux effect
+                    juce::dsp::AudioBlock<float> audioBlock(buffer);
+                    reduxBank.process(audioBlock);
                     }
                 }
                 break;
@@ -2045,27 +2045,27 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                         int currentStep = formantSeq.currentStep.load();
                         if (currentStep >= 0 && currentStep < 16)
                         {
-                            StepSnapshot snapshot = getFormantSafeSnapshot(currentStep);
-                            
-                            // Safety check for parameter values
-                            snapshot.formant.vowel = juce::jlimit(0.0f, 4.0f, snapshot.formant.vowel);
-                            snapshot.formant.resonance = juce::jlimit(0.4f, 18.0f, snapshot.formant.resonance);
-                            snapshot.formant.intensity = juce::jlimit(-6.0f, 18.0f, snapshot.formant.intensity);
-                            snapshot.formant.mix = juce::jlimit(0.0f, 1.0f, snapshot.formant.mix);
-                            
-                            // Set snapshot values into APVTS for processing
-                            auto* vowelParam = valueTreeState.getRawParameterValue("vowel");
-                            auto* resonanceParam = valueTreeState.getRawParameterValue("resonance");
-                            auto* intensityParam = valueTreeState.getRawParameterValue("intensity");
-                            auto* mixParam = valueTreeState.getRawParameterValue("mix");
-                            
-                            if (vowelParam) *vowelParam = snapshot.formant.vowel;
-                            if (resonanceParam) *resonanceParam = snapshot.formant.resonance;
-                            if (intensityParam) *intensityParam = snapshot.formant.intensity;
-                            if (mixParam) *mixParam = snapshot.formant.mix;
-                            
-                            // Only process if mix > 0
-                            if (snapshot.formant.mix > 0.0f)
+                        StepSnapshot snapshot = getFormantSafeSnapshot(currentStep);
+                        
+                        // Safety check for parameter values
+                        snapshot.formant.vowel = juce::jlimit(0.0f, 4.0f, snapshot.formant.vowel);
+                        snapshot.formant.resonance = juce::jlimit(0.4f, 18.0f, snapshot.formant.resonance);
+                        snapshot.formant.intensity = juce::jlimit(-6.0f, 18.0f, snapshot.formant.intensity);
+                        snapshot.formant.mix = juce::jlimit(0.0f, 1.0f, snapshot.formant.mix);
+                        
+                        // Set snapshot values into APVTS for processing
+                        auto* vowelParam = valueTreeState.getRawParameterValue("vowel");
+                        auto* resonanceParam = valueTreeState.getRawParameterValue("resonance");
+                        auto* intensityParam = valueTreeState.getRawParameterValue("intensity");
+                        auto* mixParam = valueTreeState.getRawParameterValue("mix");
+                        
+                        if (vowelParam) *vowelParam = snapshot.formant.vowel;
+                        if (resonanceParam) *resonanceParam = snapshot.formant.resonance;
+                        if (intensityParam) *intensityParam = snapshot.formant.intensity;
+                        if (mixParam) *mixParam = snapshot.formant.mix;
+                        
+                        // Only process if mix > 0
+                        if (snapshot.formant.mix > 0.0f)
                             {
                                 // Process Formant effect
                                 formantProcessor.process(buffer, buffer.getNumSamples(), valueTreeState);
@@ -2259,7 +2259,10 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                     };
                     
                     // Safety check: ensure sequencer state is valid before accessing
-                    if (seqState.enabled.load(std::memory_order_acquire) && seqState.active.load(std::memory_order_acquire))
+                    // Only use sequencer if BOTH enabled AND active are true
+                    bool useSequencer = seqState.enabled.load(std::memory_order_acquire) && seqState.active.load(std::memory_order_acquire);
+                    
+                    if (useSequencer)
                     {
                         // Get playing step snapshot (the step that's actually playing during sequencer playback)
                         int playingStep = seqState.playingStep.load(std::memory_order_acquire);
@@ -2302,129 +2305,131 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                         else
                         {
                             // Fallback to APVTS if step invalid
-                            auto* typeParam = valueTreeState.getRawParameterValue("filterType");
-                            auto* lowCutParam = valueTreeState.getRawParameterValue("filterLowCut");
-                            auto* highCutParam = valueTreeState.getRawParameterValue("filterHighCut");
-                            auto* resParam = valueTreeState.getRawParameterValue("filterResonance");
-                            auto* slopeParam = valueTreeState.getRawParameterValue("filterSlope");
-                            auto* driveParam = valueTreeState.getRawParameterValue("filterDrive");
-                            // Keytrack is stored in snapshot but not as separate APVTS parameter - use 0.0f
-                            auto* mixParam = valueTreeState.getRawParameterValue("filterMix");
-                            
-                            if (typeParam && lowCutParam && highCutParam && resParam && slopeParam && 
-                                driveParam && mixParam)
-                            {
-                                // Type and slope are Choice parameters
-                                auto* typeChoiceParam = dynamic_cast<juce::AudioParameterChoice*>(valueTreeState.getParameter("filterType"));
-                                auto* slopeChoiceParam = dynamic_cast<juce::AudioParameterChoice*>(valueTreeState.getParameter("filterSlope"));
-                                targets.type = typeChoiceParam ? typeChoiceParam->getIndex() : 0;
-                                targets.slope = slopeChoiceParam ? slopeChoiceParam->getIndex() : 1;
-                                
-                                float lowCut = lowCutParam->load();
-                                float highCut = highCutParam->load();
-                                
-                                // Use appropriate cutoff based on filter type
-                                if (targets.type == 0) {
-                                    targets.cutoff = highCut;
-                                } else if (targets.type == 1) {
-                                    targets.cutoff = lowCut;
-                                } else if (targets.type == 2) {
-                                    targets.cutoff = (lowCut + highCut) * 0.5f;
-                                } else {
-                                    targets.cutoff = juce::jlimit(40.0f, 8000.0f, lowCut);
-                                }
-                                
-                                // NEVER let frequency be zero or negative
-                                if (targets.cutoff <= 0.0f || !std::isfinite(targets.cutoff)) {
-                                    targets.cutoff = (targets.type >= 3) ? 40.0f : 20.0f; // Safe default
-                                }
-                                
-                                // Clamp resonance strictly to 0-1 - values > 1 can cause feedback > 1
-                                targets.res = juce::jlimit(0.0f, 1.0f, resParam->load());
-                                if (!std::isfinite(targets.res)) {
-                                    targets.res = 0.35f; // Safe default
-                                }
-                                targets.drive = juce::jlimit(0.0f, 36.0f, driveParam->load());
-                                targets.spread = 0.0f; // Spread removed - always 0
-                                targets.keytrack = 0.0f; // Keytrack not in APVTS - use default
-                                targets.mix = juce::jlimit(0.0f, 1.0f, mixParam->load());
-                            }
-                            else
-                            {
-                                // Use defaults if parameters missing
+                            useSequencer = false; // Force APVTS read
+                        }
+                    }
+                    
+                    // If sequencer is not active, read from APVTS
+                    if (!useSequencer)
+                    {
+                        // Sequencer not active - read from APVTS
+                        // Use getParameter() to get full parameter objects for proper conversion
+                        auto* typeParam = valueTreeState.getParameter("filterType");
+                        auto* lowCutParam = valueTreeState.getParameter("filterLowCut");
+                        auto* highCutParam = valueTreeState.getParameter("filterHighCut");
+                        auto* resParam = valueTreeState.getParameter("filterResonance");
+                        auto* slopeParam = valueTreeState.getParameter("filterSlope");
+                        auto* driveParam = valueTreeState.getParameter("filterDrive");
+                        auto* mixParam = valueTreeState.getParameter("filterMix");
+                        
+                        // Debug: Check if parameters exist
+                        static int paramCheckCounter = 0;
+                        if ((paramCheckCounter++ % 2000) == 0) {
+                            DBG("[FILTER PARAMS] typeParam=" << (typeParam ? "OK" : "NULL") 
+                                << " lowCutParam=" << (lowCutParam ? "OK" : "NULL")
+                                << " highCutParam=" << (highCutParam ? "OK" : "NULL")
+                                << " resParam=" << (resParam ? "OK" : "NULL"));
+                        }
+                        
+                        // Initialize with safe defaults
                                 targets.type = 0;
                                 targets.cutoff = 1200.0f;
                                 targets.res = 0.35f;
                                 targets.slope = 1;
                                 targets.drive = 6.0f;
-                                targets.spread = 0.0f; // Spread removed
+                        targets.spread = 0.0f;
                                 targets.keytrack = 0.0f;
                                 targets.mix = 1.0f;
+                        
+                        // Read filter type (Choice parameter)
+                        if (typeParam) {
+                            auto* typeChoice = dynamic_cast<juce::AudioParameterChoice*>(typeParam);
+                            if (typeChoice) {
+                                targets.type = typeChoice->getIndex();
                             }
                         }
-                    }
-                    else
-                    {
-                        // Sequencer not active - read from APVTS
-                        auto* typeParam = valueTreeState.getRawParameterValue("filterType");
-                        auto* lowCutParam = valueTreeState.getRawParameterValue("filterLowCut");
-                        auto* highCutParam = valueTreeState.getRawParameterValue("filterHighCut");
-                        auto* resParam = valueTreeState.getRawParameterValue("filterResonance");
-                        auto* slopeParam = valueTreeState.getRawParameterValue("filterSlope");
-                        auto* driveParam = valueTreeState.getRawParameterValue("filterDrive");
-                        // Keytrack is stored in snapshot but not as separate APVTS parameter - use 0.0f
-                        auto* mixParam = valueTreeState.getRawParameterValue("filterMix");
                         
-                        if (typeParam && lowCutParam && highCutParam && resParam && slopeParam && 
-                            driveParam && mixParam)
-                        {
-                            // Type and slope are Choice parameters
-                            auto* typeChoiceParam = dynamic_cast<juce::AudioParameterChoice*>(valueTreeState.getParameter("filterType"));
-                            auto* slopeChoiceParam = dynamic_cast<juce::AudioParameterChoice*>(valueTreeState.getParameter("filterSlope"));
-                            targets.type = typeChoiceParam ? typeChoiceParam->getIndex() : 0;
-                            targets.slope = slopeChoiceParam ? slopeChoiceParam->getIndex() : 1;
-                            
-                            float lowCut = lowCutParam->load();
-                            float highCut = highCutParam->load();
-                            
-                            // Use appropriate cutoff based on filter type
+                        // Read slope (Choice parameter)
+                        if (slopeParam) {
+                            auto* slopeChoice = dynamic_cast<juce::AudioParameterChoice*>(slopeParam);
+                            if (slopeChoice) {
+                                targets.slope = slopeChoice->getIndex();
+                            }
+                        }
+                        
+                        // Read lowCut and highCut (Float parameters with NormalisableRange)
+                        float lowCut = 20.0f;
+                        float highCut = 20000.0f;
+                        
+                        if (lowCutParam) {
+                            auto* lowCutFloat = dynamic_cast<juce::AudioParameterFloat*>(lowCutParam);
+                            if (lowCutFloat) {
+                                // getValue() returns normalized (0-1), convertFrom0to1() converts to actual value
+                                float normalized = lowCutParam->getValue();
+                                lowCut = lowCutFloat->convertFrom0to1(normalized);
+                                lowCut = juce::jlimit(20.0f, 20000.0f, lowCut);
+                            }
+                        }
+                        
+                        if (highCutParam) {
+                            auto* highCutFloat = dynamic_cast<juce::AudioParameterFloat*>(highCutParam);
+                            if (highCutFloat) {
+                                // getValue() returns normalized (0-1), convertFrom0to1() converts to actual value
+                                float normalized = highCutParam->getValue();
+                                highCut = highCutFloat->convertFrom0to1(normalized);
+                                highCut = juce::jlimit(20.0f, 20000.0f, highCut);
+                            }
+                        }
+                        
+                        // Determine cutoff based on filter type
                             if (targets.type == 0) {
+                            // Low-pass: use highCut as cutoff frequency
                                 targets.cutoff = highCut;
                             } else if (targets.type == 1) {
+                            // High-pass: use lowCut as cutoff frequency
                                 targets.cutoff = lowCut;
                             } else if (targets.type == 2) {
+                            // Band-pass: use average of low and high
                                 targets.cutoff = (lowCut + highCut) * 0.5f;
                             } else {
+                            // Comb filters: use lowCut clamped to comb range
                                 targets.cutoff = juce::jlimit(40.0f, 8000.0f, lowCut);
                             }
                             
-                            // NEVER let frequency be zero or negative
+                        // Safety check for cutoff
                             if (targets.cutoff <= 0.0f || !std::isfinite(targets.cutoff)) {
-                                targets.cutoff = (targets.type >= 3) ? 40.0f : 20.0f; // Safe default
-                            }
-                            
-                            // Clamp resonance strictly to 0-1 - values > 1 can cause feedback > 1
-                            targets.res = juce::jlimit(0.0f, 1.0f, resParam->load());
-                            if (!std::isfinite(targets.res)) {
-                                targets.res = 0.35f; // Safe default
-                            }
-                            
-                            targets.drive = juce::jlimit(0.0f, 36.0f, driveParam->load());
-                            targets.spread = 0.0f; // Spread removed - always 0
-                            targets.keytrack = 0.0f; // Keytrack not in APVTS - use default
-                            targets.mix = juce::jlimit(0.0f, 1.0f, mixParam->load());
+                            targets.cutoff = (targets.type >= 3) ? 40.0f : 1200.0f; // Use 1200 Hz default for LP/HP/BP
                         }
-                        else
-                        {
-                            // Use defaults if parameters missing
-                            targets.type = 0;
-                            targets.cutoff = 1200.0f;
+                        
+                        // Read resonance (Float parameter with NormalisableRange 0-0.95)
+                        if (resParam) {
+                            auto* resFloat = dynamic_cast<juce::AudioParameterFloat*>(resParam);
+                            if (resFloat) {
+                                float normalized = resParam->getValue();
+                                targets.res = resFloat->convertFrom0to1(normalized);
+                                targets.res = juce::jlimit(0.0f, 0.95f, targets.res);
+                            }
+                        }
+                        if (!std::isfinite(targets.res) || targets.res < 0.0f) {
                             targets.res = 0.35f;
-                            targets.slope = 1;
+                        }
+                        
+                        // Read drive (Float parameter with NormalisableRange 0-18 dB)
+                        if (driveParam) {
+                            auto* driveFloat = dynamic_cast<juce::AudioParameterFloat*>(driveParam);
+                            if (driveFloat) {
+                                float normalized = driveParam->getValue();
+                                targets.drive = driveFloat->convertFrom0to1(normalized);
+                                targets.drive = juce::jlimit(0.0f, 18.0f, targets.drive);
+                            }
+                        }
+                        if (!std::isfinite(targets.drive)) {
                             targets.drive = 6.0f;
-                            targets.spread = 0.0f; // Spread removed
-                            targets.keytrack = 0.0f;
-                            targets.mix = 1.0f;
+                        }
+                        
+                        // Read mix (Float parameter, already normalized 0-1)
+                        if (mixParam) {
+                            targets.mix = juce::jlimit(0.0f, 1.0f, mixParam->getValue());
                         }
                     }
                     
@@ -2451,6 +2456,14 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                     targets.mix = juce::jlimit(0.0f, 1.0f, targets.mix);
                     if (!std::isfinite(targets.mix)) {
                         targets.mix = 1.0f;
+                    }
+                    
+                    // Debug: Log filter parameters when sequencer is off
+                    static int debugCounter = 0;
+                    if (!useSequencer && (debugCounter++ % 1000) == 0) {
+                        DBG("[FILTER NO SEQ] type=" << targets.type << " cutoff=" << targets.cutoff 
+                            << " res=" << targets.res << " drive=" << targets.drive 
+                            << " mix=" << targets.mix << " slope=" << targets.slope);
                     }
                     
                     // Set filter targets (key tracking is handled internally by FilterProcessor)

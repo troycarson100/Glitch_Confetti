@@ -21,8 +21,8 @@ void DubDelayProcessor::prepare(double sampleRate, int maxBlockSize)
     delayBufferR.resize(bufferSize, 0.0f);
     writePos = 0;
     
-    // Initialize smoothed parameters - fast smoothing for responsive time changes
-    timeMsSmooth.reset(sampleRate, 0.020); // 20ms ramp for responsive time changes
+    // Initialize smoothed parameters - longer smoothing to prevent scratchiness on rate changes
+    timeMsSmooth.reset(sampleRate, 0.400); // 400ms ramp for smooth time changes (prevents scratchiness)
     feedbackSmooth.reset(sampleRate, 0.015);
     toneCutoffSmooth.reset(sampleRate, 0.015);
     driveSmooth.reset(sampleRate, 0.015);
@@ -30,9 +30,9 @@ void DubDelayProcessor::prepare(double sampleRate, int maxBlockSize)
     regenDampSmooth.reset(sampleRate, 0.015);
     mixSmooth.reset(sampleRate, 0.015);
     
-    // Smoothing for delay samples to prevent read position jumps (slower for smoother pitch transitions)
-    delaySampsSmoothL.reset(sampleRate, 0.080); // 80ms smoothing for read position (smoother pitch transitions)
-    delaySampsSmoothR.reset(sampleRate, 0.080); // 80ms smoothing for read position (smoother pitch transitions)
+    // Smoothing for delay samples to prevent read position jumps (longer for smoother pitch transitions)
+    delaySampsSmoothL.reset(sampleRate, 0.400); // 400ms smoothing for read position (prevents scratchiness during knob changes)
+    delaySampsSmoothR.reset(sampleRate, 0.400); // 400ms smoothing for read position (prevents scratchiness during knob changes)
     
     // Set initial values
     timeMsSmooth.setCurrentAndTargetValue(450.0f);
@@ -89,15 +89,15 @@ void DubDelayProcessor::setTargetDelaySec(float seconds)
     seconds = juce::jlimit(0.001f, 20.0f, seconds);
     float newTimeMs = seconds * 1000.0f;
     
-    // Detect big jump: if ratio > 1.05, trigger crossfade (lower threshold for smoother transitions)
+    // Detect big jump: if ratio > 1.005, trigger crossfade (very low threshold for smooth knob changes during playback)
     float currentTimeMs = timeMsSmooth.getTargetValue();
     float ratio = juce::jmax(newTimeMs, currentTimeMs) / juce::jmin(newTimeMs, currentTimeMs);
     
-    if (ratio > 1.05f && !isCrossfading)
+    if (ratio > 1.005f && !isCrossfading)
     {
         // Start crossfade (longer crossfade for smoother transitions)
         isCrossfading = true;
-        crossfadeTotalSamples = static_cast<int>(sr * 0.050); // 50ms crossfade (smoother pitch transitions)
+        crossfadeTotalSamples = static_cast<int>(sr * 0.150); // 150ms crossfade (smoother pitch transitions during knob changes)
         crossfadeSamplesRemaining = crossfadeTotalSamples;
         
         // Store frozen delay times (in samples) for crossfade
