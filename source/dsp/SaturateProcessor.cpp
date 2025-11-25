@@ -254,11 +254,15 @@ void SaturateProcessor::prepare(double fs, int blockSize)
     outputSmooth.reset(sampleRate, smoothTime);
     mixSmooth.reset(sampleRate, smoothTime);
     
+    // Initialize per-sample bias smoother for oversampled domain (150ms for smoother transitions)
+    biasSmoothOS.reset(osSampleRate, 0.150);
+    
     // Set initial values
     driveSmooth.setCurrentAndTargetValue(12.0f);
     colorSmooth.setCurrentAndTargetValue(0.5f);
     shapeSmooth.setCurrentAndTargetValue(0.5f);
     biasSmooth.setCurrentAndTargetValue(0.0f);
+    biasSmoothOS.setCurrentAndTargetValue(0.0f);
     outputSmooth.setCurrentAndTargetValue(0.0f);
     mixSmooth.setCurrentAndTargetValue(1.0f);
 
@@ -269,6 +273,12 @@ void SaturateProcessor::reset()
 {
     if (oversamplerPrimary) oversamplerPrimary->reset();
     if (oversamplerDry) oversamplerDry->reset();
+    
+    // Reset bias smoother to current value to prevent jumps
+    if (sampleRate > 0.0)
+    {
+        biasSmoothOS.setCurrentAndTargetValue(biasSmooth.getCurrentValue());
+    }
 
         runtime.reset();
 
@@ -478,12 +488,67 @@ void SaturateProcessor::processWithSnapshot(juce::AudioBuffer<float>& buffer,
     if (!oversamplerPrimary || !oversamplerDry || sampleRate <= 0.0 || maxBlockSize <= 0)
         return;
 
-    ParameterSet params = mapParameters(drive,
-                                        color,
-                                        shape,
-                                        bias,
-                                        output,
-                                        mix);
+    // Calculate input level to check if audio is silent
+    float inputLevel = 0.0f;
+    for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
+    {
+        const float* data = buffer.getReadPointer(ch);
+        for (int i = 0; i < numSamples; ++i)
+        {
+            inputLevel += std::abs(data[i]);
+        }
+    }
+    inputLevel /= (numSamples * buffer.getNumChannels());
+    
+    // If input is essentially silent, skip processing to avoid noise
+    if (inputLevel < 1.0e-6f)
+    {
+        // Still update smoothers to prevent jumps when audio returns
+        for (int n = 0; n < numSamples; ++n)
+        {
+            driveSmooth.skip(1);
+            colorSmooth.skip(1);
+            shapeSmooth.skip(1);
+            biasSmooth.skip(1);
+            outputSmooth.skip(1);
+            mixSmooth.skip(1);
+        }
+        return;
+    }
+
+    // Set target values for smoothing (prevents clicks when sequencer changes steps)
+    driveSmooth.setTargetValue(drive);
+    colorSmooth.setTargetValue(color);
+    shapeSmooth.setTargetValue(shape);
+    biasSmooth.setTargetValue(bias);
+    outputSmooth.setTargetValue(output);
+    mixSmooth.setTargetValue(mix);
+    
+    // Get smoothed values (smoothing prevents clicks when steps change)
+    const float smoothedDrive = driveSmooth.getNextValue();
+    const float smoothedColor = colorSmooth.getNextValue();
+    const float smoothedShape = shapeSmooth.getNextValue();
+    const float smoothedBias = biasSmooth.getNextValue();
+    const float smoothedOutput = outputSmooth.getNextValue();
+    const float smoothedMix = mixSmooth.getNextValue();
+    
+    // Skip remaining samples to keep smoothers in sync
+    for (int i = 1; i < numSamples; ++i)
+    {
+        driveSmooth.skip(1);
+        colorSmooth.skip(1);
+        shapeSmooth.skip(1);
+        biasSmooth.skip(1);
+        outputSmooth.skip(1);
+        mixSmooth.skip(1);
+    }
+
+    ParameterSet params = mapParameters(smoothedDrive,
+                                        smoothedColor,
+                                        smoothedShape,
+                                        smoothedBias,
+                                        smoothedOutput,
+                                        smoothedMix);
 
     processInternal(buffer, numSamples, params, stepChanged);
 }
@@ -645,9 +710,12 @@ void SaturateProcessor::processOversampledBlock(ModelRuntime& runtime,
     runtime.rmsCount = osSamples;
 
     const float driveBlendGlobal = juce::jlimit(0.0f, 1.0f, params.driveDb / 36.0f);
+    
+    // Set target for per-sample bias smoother (prevents clicks when bias changes)
+    biasSmoothOS.setTargetValue(params.bias);
 
     // Aggressive, colorful saturation with frequency-dependent processing
-    auto processAggressiveSaturation = [&](float& sample, ModelChannelState& state)
+    auto processAggressiveSaturation = [&](float& sample, ModelChannelState& state, float smoothedBias)
     {
         if (driveBlendGlobal <= 0.0001f)
         {
@@ -664,9 +732,9 @@ void SaturateProcessor::processOversampledBlock(ModelRuntime& runtime,
         // Stage 2: Frequency-dependent drive (Color emphasizes highs/lows via pre-tilt)
         float preEmphasis = state.preTilt.process(sample);
         
-        // Apply drive with bias for asymmetry
+        // Apply drive with per-sample smoothed bias for asymmetry (prevents clicks)
         const float driveLin = params.driveLin;
-        float driven = preEmphasis * driveLin + params.bias;
+        float driven = preEmphasis * driveLin + smoothedBias;
         
         // Clamp to prevent excessive values
         driven = juce::jlimit(-3.0f, 3.0f, driven);
@@ -705,13 +773,16 @@ void SaturateProcessor::processOversampledBlock(ModelRuntime& runtime,
 
     for (int i = 0; i < osSamples; ++i)
     {
+        // Get per-sample smoothed bias value (prevents clicks when bias changes)
+        const float smoothedBias = biasSmoothOS.getNextValue();
+        
         float l = left[i];
         float r = right[i];
 
         runtime.rmsInAccum += 0.5f * (l * l + r * r);
 
-        processAggressiveSaturation(l, leftState);
-        processAggressiveSaturation(r, rightState);
+        processAggressiveSaturation(l, leftState, smoothedBias);
+        processAggressiveSaturation(r, rightState, smoothedBias);
 
         left[i] = juce::jlimit(-1.0f, 1.0f, l);
         right[i] = juce::jlimit(-1.0f, 1.0f, r);

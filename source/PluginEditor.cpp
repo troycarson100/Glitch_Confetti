@@ -742,15 +742,16 @@ void PluginEditor::paint (juce::Graphics& g)
                     continue; // Skip invalid slots
             }
             
-            // Use natural icon size (250x70 from SVG viewBox) reduced by 60%, then 22% smaller, then 10% smaller
-            float iconWidth = 250.0f * 0.4f * 0.78f * 0.9f;  // 60% reduction, then 22% smaller, then 10% smaller = 70.2px
-            float iconHeight = 70.0f * 0.4f * 0.78f * 0.9f;  // 60% reduction, then 22% smaller, then 10% smaller = 19.66px
+            // Use fixed size for all icons to ensure they're all the same size
+            // All icons have viewBox="0 0 250 70", so we use a consistent size
+            const float iconWidth = 65.0f;   // Fixed width for all icons (reduced from 70.2f)
+            const float iconHeight = 18.2f;  // Fixed height for all icons (reduced from 19.66f)
             float iconX = tabIconX + (tabW - iconWidth) / 2.0f - 16.0f; // Center horizontally, then move left 16px
             float iconY = 12.0f - 32.0f - 10.0f + 20.0f - 5.0f + 25.0f - 4.0f + 3.0f; // Move up 32px + 10px more, then down 20px, then up 5px, then down 25px, then up 4px, then down 3px
             
-            // Create bounds at reduced size
+            // Create bounds at fixed size - use fillDestination to ensure all icons fill the same space
             auto iconBounds = juce::Rectangle<float>(iconX, iconY, iconWidth, iconHeight);
-            icon->drawWithin(g, iconBounds, juce::RectanglePlacement::centred, 1.0f);
+            icon->drawWithin(g, iconBounds, juce::RectanglePlacement::fillDestination, 1.0f);
         }
     }
     

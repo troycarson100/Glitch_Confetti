@@ -201,6 +201,9 @@ private:
     juce::LinearSmoothedValue<float> outputSmooth;
     juce::LinearSmoothedValue<float> mixSmooth;
     
+    // Per-sample bias smoother for oversampled domain (prevents clicks when bias changes)
+    juce::LinearSmoothedValue<float> biasSmoothOS;
+    
     // Track previous filter values to prevent clicks
     float prevPreTiltDb = 0.0f;
     float prevPostTiltDb = 0.0f;
