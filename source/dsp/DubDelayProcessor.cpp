@@ -21,8 +21,8 @@ void DubDelayProcessor::prepare(double sampleRate, int maxBlockSize)
     delayBufferR.resize(bufferSize, 0.0f);
     writePos = 0;
     
-    // Initialize smoothed parameters - very fast smoothing for responsive time changes
-    timeMsSmooth.reset(sampleRate, 0.020); // 20ms ramp for very fast, responsive time changes
+    // Initialize smoothed parameters - fast smoothing for responsive time changes
+    timeMsSmooth.reset(sampleRate, 0.020); // 20ms ramp for responsive time changes
     feedbackSmooth.reset(sampleRate, 0.015);
     toneCutoffSmooth.reset(sampleRate, 0.015);
     driveSmooth.reset(sampleRate, 0.015);
@@ -30,9 +30,9 @@ void DubDelayProcessor::prepare(double sampleRate, int maxBlockSize)
     regenDampSmooth.reset(sampleRate, 0.015);
     mixSmooth.reset(sampleRate, 0.015);
     
-    // Smoothing for delay samples to prevent read position jumps (very fast for responsiveness)
-    delaySampsSmoothL.reset(sampleRate, 0.015); // 15ms smoothing for read position (faster)
-    delaySampsSmoothR.reset(sampleRate, 0.015); // 15ms smoothing for read position (faster)
+    // Smoothing for delay samples to prevent read position jumps (slower for smoother pitch transitions)
+    delaySampsSmoothL.reset(sampleRate, 0.080); // 80ms smoothing for read position (smoother pitch transitions)
+    delaySampsSmoothR.reset(sampleRate, 0.080); // 80ms smoothing for read position (smoother pitch transitions)
     
     // Set initial values
     timeMsSmooth.setCurrentAndTargetValue(450.0f);
@@ -89,15 +89,15 @@ void DubDelayProcessor::setTargetDelaySec(float seconds)
     seconds = juce::jlimit(0.001f, 20.0f, seconds);
     float newTimeMs = seconds * 1000.0f;
     
-    // Detect big jump: if ratio > 1.2, trigger crossfade (lower threshold for smoother transitions)
+    // Detect big jump: if ratio > 1.05, trigger crossfade (lower threshold for smoother transitions)
     float currentTimeMs = timeMsSmooth.getTargetValue();
     float ratio = juce::jmax(newTimeMs, currentTimeMs) / juce::jmin(newTimeMs, currentTimeMs);
     
-    if (ratio > 1.2f && !isCrossfading)
+    if (ratio > 1.05f && !isCrossfading)
     {
         // Start crossfade (longer crossfade for smoother transitions)
         isCrossfading = true;
-        crossfadeTotalSamples = static_cast<int>(sr * 0.030); // 30ms crossfade (smoother)
+        crossfadeTotalSamples = static_cast<int>(sr * 0.050); // 50ms crossfade (smoother pitch transitions)
         crossfadeSamplesRemaining = crossfadeTotalSamples;
         
         // Store frozen delay times (in samples) for crossfade

@@ -519,7 +519,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout PluginProcessor::createParam
     params.push_back(std::make_unique<juce::AudioParameterChoice>("filterSlope", "Filter Slope", 
         juce::StringArray{"12dB", "24dB"}, 1)); // 0=12dB, 1=24dB, default 24dB
     params.push_back(std::make_unique<juce::AudioParameterFloat>("filterDrive", "Filter Drive", 
-        juce::NormalisableRange<float>(0.0f, 24.0f, 0.1f, 1.0f), 6.0f)); // dB
+        juce::NormalisableRange<float>(0.0f, 18.0f, 0.1f, 1.0f), 6.0f)); // dB (max 18 = 50% of 36)
     params.push_back(std::make_unique<juce::AudioParameterFloat>("filterQ", "Filter Q", 
         juce::NormalisableRange<float>(0.5f, 10.0f, 0.01f, 0.5f), 0.707f)); // Q factor
     params.push_back(std::make_unique<juce::AudioParameterFloat>("filterMix", "Filter Mix", 
@@ -977,6 +977,7 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                 
                 // Also lock-in Chorus sequencer if enabled
                 if (chorusSeq.enabled.load()) {
+                    chorusSeq.active.store(true);
                     const int chorusStep = chorusSeq.computeStepFromPPQ(ppq);
                     chorusSeq.currentStep.store(chorusStep);
                     chorusSeq.playingStep.store(chorusStep);
@@ -1041,12 +1042,23 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                     DBG("[FORM2 SEQ] Lock-in at PPQ=" << ppq << " -> step " << form2Step);
                 }
                 
-                if (filterSeq.enabled.load() && filterSeq.active.load()) {
+                // Also lock-in Filter sequencer if enabled
+                if (filterSeq.enabled.load()) {
+                    filterSeq.active.store(true);
                     const int filterStep = filterSeq.computeStepFromPPQ(ppq);
                     const int safeStep = juce::jlimit(0, 15, filterStep);
                     filterSeq.currentStep.store(safeStep);
                     filterSeq.playingStep.store(safeStep);
                     DBG("[FILTER SEQ] Lock-in at PPQ=" << ppq << " -> step " << safeStep);
+                }
+                
+                // Also lock-in Saturate sequencer if enabled
+                if (saturateSeq.enabled.load()) {
+                    saturateSeq.active.store(true);
+                    const int saturateStep = saturateSeq.computeStepFromPPQ(ppq);
+                    saturateSeq.currentStep.store(saturateStep);
+                    saturateSeq.playingStep.store(saturateStep);
+                    DBG("[SATURATE SEQ] Lock-in at PPQ=" << ppq << " -> step " << saturateStep);
                 }
                 
                 armPending.store(false);
@@ -1807,36 +1819,106 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
             
             case EffectID::Redux:
             {
-                // Read Redux parameters from APVTS (in UI order)
-                auto* bitDepthParam = valueTreeState.getRawParameterValue("reduxBitDepth");
-                auto* sampleRateReductionParam = valueTreeState.getRawParameterValue("reduxSampleRateReduction");
-                auto* jitterParam = valueTreeState.getRawParameterValue("reduxJitter");
-                auto* preFilterParam = valueTreeState.getRawParameterValue("reduxPreFilter");
-                auto* postFilterParam = valueTreeState.getRawParameterValue("reduxPostFilter");
-                auto* driveParam = valueTreeState.getRawParameterValue("reduxDrive");
-                auto* emphasisParam = valueTreeState.getRawParameterValue("reduxEmphasis");
-                auto* mixParam = valueTreeState.getRawParameterValue("reduxMix");
-                
-                if (mixParam && bitDepthParam && sampleRateReductionParam && jitterParam &&
-                    preFilterParam && postFilterParam && driveParam && emphasisParam)
+                // Check if Redux sequencer is enabled and active
+                if (reduxSeq.enabled.load() && reduxSeq.active.load())
                 {
-                    // Set Redux parameters (in order: mix, bitDepth, sampleRateReduction, jitter, preFilter, postFilter, drive, emphasis)
-                    // Convert UI bit depth (1-12) to internal bit depth (4-16)
-                    int internalBitDepth = static_cast<int>(bitDepthParam->load()) + 3;
-                    reduxBank.setParams(
-                        mixParam->load(),
-                        internalBitDepth,
-                        static_cast<int>(sampleRateReductionParam->load()),
-                        jitterParam->load(),
-                        preFilterParam->load(),
-                        postFilterParam->load(),
-                        driveParam->load(),
-                        emphasisParam->load()
-                    );
+                    // Get current step snapshot
+                    int currentStep = reduxSeq.currentStep.load();
+                    if (currentStep >= 0 && currentStep < 16)
+                    {
+                        StepSnapshot snapshot = getReduxSafeSnapshot(currentStep);
+                        
+                        // Safety check for parameter values
+                        snapshot.redux.bitDepth = juce::jlimit(4, 16, snapshot.redux.bitDepth);
+                        snapshot.redux.sampleRateReduction = juce::jlimit(1, 32, snapshot.redux.sampleRateReduction);
+                        snapshot.redux.jitter = juce::jlimit(0.0f, 1.0f, snapshot.redux.jitter);
+                        snapshot.redux.preFilter = juce::jlimit(20.0f, 20000.0f, snapshot.redux.preFilter);
+                        snapshot.redux.postFilter = juce::jlimit(20.0f, 20000.0f, snapshot.redux.postFilter);
+                        snapshot.redux.drive = juce::jlimit(0.0f, 10.0f, snapshot.redux.drive);
+                        snapshot.redux.emphasis = juce::jlimit(0.0f, 1.0f, snapshot.redux.emphasis);
+                        snapshot.redux.mix = juce::jlimit(0.0f, 1.0f, snapshot.redux.mix);
+                        
+                        // Set Redux parameters from snapshot (in order: mix, bitDepth, sampleRateReduction, jitter, preFilter, postFilter, drive, emphasis)
+                        reduxBank.setParams(
+                            snapshot.redux.mix,
+                            snapshot.redux.bitDepth,
+                            snapshot.redux.sampleRateReduction,
+                            snapshot.redux.jitter,
+                            snapshot.redux.preFilter,
+                            snapshot.redux.postFilter,
+                            snapshot.redux.drive,
+                            snapshot.redux.emphasis
+                        );
+                        
+                        // Process Redux effect
+                        juce::dsp::AudioBlock<float> audioBlock(buffer);
+                        reduxBank.process(audioBlock);
+                    }
+                    else
+                    {
+                        // Fallback to APVTS if step invalid
+                        auto* mixParam = valueTreeState.getRawParameterValue("reduxMix");
+                        auto* bitDepthParam = valueTreeState.getRawParameterValue("reduxBitDepth");
+                        auto* sampleRateReductionParam = valueTreeState.getRawParameterValue("reduxSampleRateReduction");
+                        auto* jitterParam = valueTreeState.getRawParameterValue("reduxJitter");
+                        auto* preFilterParam = valueTreeState.getRawParameterValue("reduxPreFilter");
+                        auto* postFilterParam = valueTreeState.getRawParameterValue("reduxPostFilter");
+                        auto* driveParam = valueTreeState.getRawParameterValue("reduxDrive");
+                        auto* emphasisParam = valueTreeState.getRawParameterValue("reduxEmphasis");
+                        
+                        if (mixParam && bitDepthParam && sampleRateReductionParam && jitterParam &&
+                            preFilterParam && postFilterParam && driveParam && emphasisParam)
+                        {
+                            int internalBitDepth = static_cast<int>(bitDepthParam->load()) + 3;
+                            reduxBank.setParams(
+                                mixParam->load(),
+                                internalBitDepth,
+                                static_cast<int>(sampleRateReductionParam->load()),
+                                jitterParam->load(),
+                                preFilterParam->load(),
+                                postFilterParam->load(),
+                                driveParam->load(),
+                                emphasisParam->load()
+                            );
+                            
+                            juce::dsp::AudioBlock<float> audioBlock(buffer);
+                            reduxBank.process(audioBlock);
+                        }
+                    }
+                }
+                else
+                {
+                    // Sequencer disabled - use APVTS parameters
+                    auto* bitDepthParam = valueTreeState.getRawParameterValue("reduxBitDepth");
+                    auto* sampleRateReductionParam = valueTreeState.getRawParameterValue("reduxSampleRateReduction");
+                    auto* jitterParam = valueTreeState.getRawParameterValue("reduxJitter");
+                    auto* preFilterParam = valueTreeState.getRawParameterValue("reduxPreFilter");
+                    auto* postFilterParam = valueTreeState.getRawParameterValue("reduxPostFilter");
+                    auto* driveParam = valueTreeState.getRawParameterValue("reduxDrive");
+                    auto* emphasisParam = valueTreeState.getRawParameterValue("reduxEmphasis");
+                    auto* mixParam = valueTreeState.getRawParameterValue("reduxMix");
                     
-                    // Process Redux effect
-                    juce::dsp::AudioBlock<float> audioBlock(buffer);
-                    reduxBank.process(audioBlock);
+                    if (mixParam && bitDepthParam && sampleRateReductionParam && jitterParam &&
+                        preFilterParam && postFilterParam && driveParam && emphasisParam)
+                    {
+                        // Set Redux parameters (in order: mix, bitDepth, sampleRateReduction, jitter, preFilter, postFilter, drive, emphasis)
+                        // Convert UI bit depth (1-12) to internal bit depth (4-16)
+                        int internalBitDepth = static_cast<int>(bitDepthParam->load()) + 3;
+                        reduxBank.setParams(
+                            mixParam->load(),
+                            internalBitDepth,
+                            static_cast<int>(sampleRateReductionParam->load()),
+                            jitterParam->load(),
+                            preFilterParam->load(),
+                            postFilterParam->load(),
+                            driveParam->load(),
+                            emphasisParam->load()
+                        );
+                        
+                        // Process Redux effect
+                        juce::dsp::AudioBlock<float> audioBlock(buffer);
+                        reduxBank.process(audioBlock);
+                    }
                 }
                 break;
             }
@@ -3680,7 +3762,7 @@ void PluginProcessor::setFormantStepsUsed(int stepsUsed)
 
 void PluginProcessor::setFormantDivisionIndex(int divisionIndex)
 {
-    formantSeq.divisionIndex.store(juce::jlimit(0, 8, divisionIndex));
+    formantSeq.divisionIndex.store(juce::jlimit(0, 7, divisionIndex)); // 0-7 for 8 divisions (4 bars to 1/32)
 }
 
 void PluginProcessor::setFormantStdMode(int stdMode)
@@ -4684,6 +4766,149 @@ void PluginProcessor::processCompressEffect(juce::AudioBuffer<float>& buffer)
         {
             if (!std::isfinite(d[n]))
                 d[n] = 0.0f;
+        }
+    }
+}
+
+void PluginProcessor::forceSequencerLockIn(EffectID effect) noexcept
+{
+    // Get current transport state
+    if (auto* ph = getPlayHead())
+    {
+        auto pos = ph->getPosition();
+        if (pos.hasValue())
+        {
+            const bool isPlaying = pos->getIsPlaying();
+            const bool ppqValid = pos->getPpqPosition().hasValue();
+            const double ppq = ppqValid ? *pos->getPpqPosition() : -1.0;
+            
+            // Only lock in if transport is playing and PPQ is valid
+            if (isPlaying && ppqValid)
+            {
+                switch (effect)
+                {
+                    case EffectID::SpaceDelay:
+                        if (spacedelaySeq.enabled.load()) {
+                            spacedelaySeq.active.store(true);
+                            const int step = spacedelaySeq.computeStepFromPPQ(ppq);
+                            spacedelaySeq.currentStep.store(step);
+                            spacedelaySeq.playingStep.store(step);
+                        }
+                        break;
+                        
+                    case EffectID::AutoPan:
+                        if (autopanSeq.enabled.load()) {
+                            autopanSeq.active.store(true);
+                            const int step = autopanSeq.computeStepFromPPQ(ppq);
+                            autopanSeq.currentStep.store(step);
+                            autopanSeq.playingStep.store(step);
+                        }
+                        break;
+                        
+                    case EffectID::Dirt:
+                        if (dirtSeq.enabled.load()) {
+                            dirtSeq.active.store(true);
+                            const int step = dirtSeq.computeStepFromPPQ(ppq);
+                            dirtSeq.currentStep.store(step);
+                            dirtSeq.playingStep.store(step);
+                        }
+                        break;
+                        
+                    case EffectID::Chorus:
+                        if (chorusSeq.enabled.load()) {
+                            chorusSeq.active.store(true);
+                            const int step = chorusSeq.computeStepFromPPQ(ppq);
+                            chorusSeq.currentStep.store(step);
+                            chorusSeq.playingStep.store(step);
+                        }
+                        break;
+                        
+                    case EffectID::Reverb:
+                        if (reverbSeq.enabled.load()) {
+                            reverbSeq.active.store(true);
+                            const int step = reverbSeq.computeStepFromPPQ(ppq);
+                            reverbSeq.currentStep.store(step);
+                            reverbSeq.playingStep.store(step);
+                        }
+                        break;
+                        
+                    case EffectID::Granular:
+                        if (granularSeq.enabled.load()) {
+                            granularSeq.active.store(true);
+                            const int step = granularSeq.computeStepFromPPQ(ppq);
+                            granularSeq.currentStep.store(step);
+                            granularSeq.playingStep.store(step);
+                        }
+                        break;
+                        
+                    case EffectID::Slicer:
+                        if (slicerSeq.enabled.load()) {
+                            slicerSeq.active.store(true);
+                            const int step = slicerSeq.computeStepFromPPQ(ppq);
+                            slicerSeq.currentStep.store(step);
+                            slicerSeq.playingStep.store(step);
+                        }
+                        break;
+                        
+                    case EffectID::DubDelay:
+                        if (dubdelaySeq.enabled.load()) {
+                            dubdelaySeq.active.store(true);
+                            const int step = dubdelaySeq.computeStepFromPPQ(ppq);
+                            dubdelaySeq.currentStep.store(step);
+                            dubdelaySeq.playingStep.store(step);
+                        }
+                        break;
+                        
+                    case EffectID::Redux:
+                        if (reduxSeq.enabled.load()) {
+                            reduxSeq.active.store(true);
+                            const int step = reduxSeq.computeStepFromPPQ(ppq);
+                            reduxSeq.currentStep.store(step);
+                            reduxSeq.playingStep.store(step);
+                        }
+                        break;
+                        
+                    case EffectID::PhaseBloom:
+                        if (phaseBloomSeq.enabled.load()) {
+                            phaseBloomSeq.active.store(true);
+                            const int step = phaseBloomSeq.computeStepFromPPQ(ppq);
+                            phaseBloomSeq.currentStep.store(step);
+                            phaseBloomSeq.playingStep.store(step);
+                        }
+                        break;
+                        
+                    case EffectID::Formant:
+                        if (formantSeq.enabled.load()) {
+                            formantSeq.active.store(true);
+                            const int step = formantSeq.computeStepFromPPQ(ppq);
+                            formantSeq.currentStep.store(step);
+                            formantSeq.playingStep.store(step);
+                        }
+                        break;
+                        
+                    case EffectID::Saturate:
+                        if (saturateSeq.enabled.load()) {
+                            saturateSeq.active.store(true);
+                            const int step = saturateSeq.computeStepFromPPQ(ppq);
+                            saturateSeq.currentStep.store(step);
+                            saturateSeq.playingStep.store(step);
+                        }
+                        break;
+                        
+                    case EffectID::Filter:
+                        if (filterSeq.enabled.load()) {
+                            filterSeq.active.store(true);
+                            const int step = filterSeq.computeStepFromPPQ(ppq);
+                            const int safeStep = juce::jlimit(0, 15, step);
+                            filterSeq.currentStep.store(safeStep);
+                            filterSeq.playingStep.store(safeStep);
+                        }
+                        break;
+                        
+                    default:
+                        break;
+                }
+            }
         }
     }
 }

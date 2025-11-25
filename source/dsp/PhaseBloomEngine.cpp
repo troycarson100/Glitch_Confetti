@@ -218,8 +218,17 @@ void PhaseBloomEngine::process(juce::AudioBuffer<float>& buffer, double hostBPM)
             wetL = juce::jlimit(-0.8f, 0.8f, wetL);
             wetR = juce::jlimit(-0.8f, 0.8f, wetR);
             
-            // Stereo spread: invert right channel at full spread (≈180° LFO shift)
-            wetR *= invSpread;
+            // Stereo spread: apply phase offset between L and R channels
+            // Use proper stereo spread that maintains balance (not simple inversion)
+            if (currentSpread > 0.001f) {
+                // Create phase offset for right channel (0 to 90 degrees)
+                float phaseOffset = currentSpread * juce::MathConstants<float>::halfPi;
+                // Apply phase shift to right channel using rotation
+                float tempR = wetR;
+                wetR = wetR * std::cos(phaseOffset) - wetL * std::sin(phaseOffset) * 0.3f;
+                // Left channel gets slight opposite phase for balance
+                wetL = wetL * std::cos(phaseOffset * 0.5f) + tempR * std::sin(phaseOffset * 0.5f) * 0.2f;
+            }
             
             // Final dry/wet mix
             float outL = juce::jmap(currentMix, dryL, wetL);

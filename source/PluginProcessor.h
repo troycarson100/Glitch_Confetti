@@ -625,6 +625,9 @@ public:
     void setFilterStepSnapshot(int step, const StepSnapshot& snapshot) noexcept;
     void updateFilterCurrentStepSnapshot(int knobIndex, float value);
     
+    // Force sequencer lock-in (immediately activate sequencer if transport is playing)
+    void forceSequencerLockIn(EffectID effect) noexcept;
+    
     // Form 2 DSP Implementation
     Form2Processor form2Processor;
     

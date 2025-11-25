@@ -925,7 +925,7 @@ public:
         std::unique_ptr<juce::Label> formantStepTitle;
         std::unique_ptr<CustomDiceButton> formantDiceButton;
         std::unique_ptr<CustomDiceButton> formantStepDiceButton;
-        std::unique_ptr<juce::Label> formantStepAmountLabel;
+        std::unique_ptr<juce::TextEditor> formantStepAmountLabel;
         std::unique_ptr<juce::ComboBox> formantRateDropdown;
         std::unique_ptr<CircularToggleButton> formantStdToggle;
         std::unique_ptr<AllStepsToggleButton> formantAllStepsToggle;
@@ -1299,6 +1299,7 @@ public:
     void updateBackgroundsAfterSwap();
     void updateTabButtonImages();
     juce::ComboBox* getEffectSelectorForSlot(int slotIndex);
+    int effectIDToDropdownID(EffectID effectID);
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PluginEditor)
 };

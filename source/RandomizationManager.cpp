@@ -84,6 +84,11 @@ void RandomizationManager::randomizeAll()
     // Verify and report
     verifyAndReport();
     
+    // Update effect selector dropdowns to reflect new router assignments
+    if (editor) {
+        editor->updateAllEffectSelectors();
+    }
+    
     // Resume processing
     processor.suspendProcessing(false);
 }
@@ -289,6 +294,12 @@ void RandomizationManager::applyParamChanges()
             
             case EffectID::AutoPan:
             {
+                // Enable autopan effect
+                auto* autopanEnabledParam = apvts.getParameter("autopanEnabled");
+                if (autopanEnabledParam) {
+                    safeSetParameterValue(autopanEnabledParam, 1.0f);
+                }
+                
                 int step = editor->autopanUiSelectedStep;
                 if (step >= 0 && step < 16) {
                     auto s = processor.getAutoPanSafeSnapshot(step);
@@ -347,6 +358,12 @@ void RandomizationManager::applyParamChanges()
             
             case EffectID::Reverb:
             {
+                // Enable reverb effect
+                auto* verbEnabledParam = apvts.getParameter("verbEnabled");
+                if (verbEnabledParam) {
+                    safeSetParameterValue(verbEnabledParam, 1.0f);
+                }
+                
                 int step = editor->reverbUiSelectedStep;
                 if (step >= 0 && step < 16) {
                     auto s = processor.getReverbSafeSnapshot(step);
@@ -439,6 +456,17 @@ void RandomizationManager::applyParamChanges()
                     safeSetParameterValue(resonanceParam, s.formant.resonance);
                     safeSetParameterValue(intensityParam, s.formant.intensity);
                     safeSetParameterValue(mixParam, s.formant.mix);
+                    
+                    // Also randomize the bottom 4 knobs (Shift, Brightness, Motion, Air) which are regular APVTS params
+                    auto* shiftParam = apvts.getParameter("formantShift");
+                    auto* brightnessParam = apvts.getParameter("formantBrightness");
+                    auto* motionParam = apvts.getParameter("formantMotion");
+                    auto* airParam = apvts.getParameter("formantAir");
+                    if (shiftParam) safeSetParameterValue(shiftParam, 0.5f + rand01() * 1.5f); // 0.5-2.0
+                    if (brightnessParam) safeSetParameterValue(brightnessParam, -12.0f + rand01() * 24.0f); // -12 to +12 dB
+                    if (motionParam) safeSetParameterValue(motionParam, rand01()); // 0-1
+                    if (airParam) safeSetParameterValue(airParam, rand01()); // 0-1
+                    
                     DBG("[RAND]   Formant step " + juce::String(step) + " reloaded");
                 }
                 break;
@@ -465,6 +493,12 @@ void RandomizationManager::applyParamChanges()
             
             case EffectID::Filter:
             {
+                // Enable filter effect
+                auto* filterEnabledParam = apvts.getParameter("filterEnabled");
+                if (filterEnabledParam) {
+                    safeSetParameterValue(filterEnabledParam, 1.0f);
+                }
+                
                 int step = editor->filterUiSelectedStep;
                 if (step >= 0 && step < 16) {
                     auto s = processor.getFilterSafeSnapshot(step);
@@ -496,6 +530,32 @@ void RandomizationManager::applyParamChanges()
                     // Mix (filterKnobs[4])
                     safeSetParameterValue(mixParam, s.filter.mix);
                     DBG("[RAND]   Filter step " + juce::String(step) + " reloaded");
+                }
+                break;
+            }
+            
+            case EffectID::Redux:
+            {
+                // Enable redux effect
+                auto* reduxEnabledParam = apvts.getParameter("reduxEnabled");
+                if (reduxEnabledParam) {
+                    safeSetParameterValue(reduxEnabledParam, 1.0f);
+                }
+                
+                int step = editor->reduxUiSelectedStep;
+                if (step >= 0 && step < 16) {
+                    auto s = processor.getReduxSafeSnapshot(step);
+                    std::vector<juce::String> paramIds = {"reduxBitDepth", "reduxSampleRateReduction", "reduxJitter", "reduxPreFilter",
+                                                          "reduxPostFilter", "reduxDrive", "reduxEmphasis", "reduxMix"};
+                    safeSetParameterValue(apvts.getParameter(paramIds[0]), s.redux.bitDepth);
+                    safeSetParameterValue(apvts.getParameter(paramIds[1]), s.redux.sampleRateReduction);
+                    safeSetParameterValue(apvts.getParameter(paramIds[2]), s.redux.jitter);
+                    safeSetParameterValue(apvts.getParameter(paramIds[3]), s.redux.preFilter);
+                    safeSetParameterValue(apvts.getParameter(paramIds[4]), s.redux.postFilter);
+                    safeSetParameterValue(apvts.getParameter(paramIds[5]), s.redux.drive);
+                    safeSetParameterValue(apvts.getParameter(paramIds[6]), s.redux.emphasis);
+                    safeSetParameterValue(apvts.getParameter(paramIds[7]), s.redux.mix);
+                    DBG("[RAND]   Redux step " + juce::String(step) + " reloaded");
                 }
                 break;
             }
@@ -676,7 +736,7 @@ void RandomizationManager::applyStepChanges()
                 snapshot.filter.cutoff = 20.0f + rand01() * 19980.0f; // 20-20000 Hz
                 snapshot.filter.resonance = rand01(); // 0-1
                 snapshot.filter.slope = rand01(); // 0-1 (12dB to 24dB)
-                snapshot.filter.drive = rand01() * 36.0f; // 0-36 dB
+                snapshot.filter.drive = rand01() * 18.0f; // 0-18 dB (50% of 36 dB, displayed as 0-100%)
                 snapshot.filter.spread = -50.0f + rand01() * 100.0f; // -50 to +50 cents
                 snapshot.filter.keytrack = rand01(); // 0-1
                 snapshot.filter.mix = rand01(); // 0-1
@@ -715,8 +775,8 @@ void RandomizationManager::applySequencerChanges()
         // Randomize steps used (4-16, weighted toward higher values)
         int stepsUsed = 4 + static_cast<int>(rand01() * rand01() * 12); // Square for bias toward higher values
         
-        // Randomize division index (1-7: 2 bars to 1/32)
-        int divisionIndex = 1 + static_cast<int>(rand01() * 7); // Range: 1-7 (2 bars to 1/32)
+        // Randomize division index (0-7: 4 bars to 1/32)
+        int divisionIndex = static_cast<int>(rand01() * 8); // Range: 0-7 (4 bars to 1/32)
         
         // Apply sequencer settings based on effect type
         switch (target.effect)
@@ -749,18 +809,30 @@ void RandomizationManager::applySequencerChanges()
                 processor.setReverbSequencerEnabled(sequencerEnabled);
                 processor.setReverbStepsUsed(stepsUsed);
                 processor.setReverbDivisionIndex(divisionIndex);
+                // Update UI dropdown to match (dropdown IDs are 1-8, so add 1 to index)
+                if (editor && editor->reverbRateDropdown) {
+                    editor->reverbRateDropdown->setSelectedId(divisionIndex + 1, juce::dontSendNotification);
+                }
                 break;
                 
             case EffectID::Granular:
                 processor.setGranularSequencerEnabled(sequencerEnabled);
                 processor.setGranularStepsUsed(stepsUsed);
                 processor.setGranularDivisionIndex(divisionIndex);
+                // Update UI dropdown to match (dropdown IDs are 1-8, so add 1 to index)
+                if (editor && editor->granularRateDropdown) {
+                    editor->granularRateDropdown->setSelectedId(divisionIndex + 1, juce::dontSendNotification);
+                }
                 break;
                 
             case EffectID::Slicer:
                 processor.setSlicerSequencerEnabled(sequencerEnabled);
                 processor.setSlicerStepsUsed(stepsUsed);
                 processor.setSlicerDivisionIndex(divisionIndex);
+                // Update UI dropdown to match (dropdown IDs are 1-8, so add 1 to index)
+                if (editor && editor->slicerRateDropdown) {
+                    editor->slicerRateDropdown->setSelectedId(divisionIndex + 1, juce::dontSendNotification);
+                }
                 break;
                 
             case EffectID::DubDelay:
@@ -785,6 +857,13 @@ void RandomizationManager::applySequencerChanges()
                 processor.setFormantSequencerEnabled(sequencerEnabled);
                 processor.setFormantStepsUsed(stepsUsed);
                 processor.setFormantDivisionIndex(divisionIndex);
+                // Update UI dropdown to match (dropdown IDs are 1-8, so add 1 to index)
+                // IMPORTANT: Also manually trigger the onChange callback to ensure sequencer uses the correct value
+                if (editor && editor->formantRateDropdown) {
+                    editor->formantRateDropdown->setSelectedId(divisionIndex + 1, juce::dontSendNotification);
+                    // Manually call setFormantDivisionIndex again to ensure it's applied
+                    processor.setFormantDivisionIndex(divisionIndex);
+                }
                 break;
                 
             case EffectID::Saturate:
@@ -798,6 +877,12 @@ void RandomizationManager::applySequencerChanges()
                 processor.setFilterStepsUsed(stepsUsed);
                 processor.setFilterDivisionIndex(divisionIndex);
                 break;
+        }
+        
+        // If sequencer was enabled, immediately lock it in to current transport position
+        // This ensures it starts running right away if transport is already playing
+        if (sequencerEnabled) {
+            processor.forceSequencerLockIn(target.effect);
         }
         
         DBG("[RAND] " + target.pageId + ": enabled=" + (sequencerEnabled ? "ON" : "OFF") 

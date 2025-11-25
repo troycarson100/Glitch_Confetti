@@ -1639,6 +1639,102 @@ void PluginEditor::timerCallback()
     
     updateFilterSequencerUI();
     
+    // Update Redux value labels
+    for (int i = 0; i < 8; ++i)
+    {
+        if (reduxValueLabels[i] != nullptr && reduxKnobs[i] != nullptr)
+        {
+            float knobValue = reduxKnobs[i]->getValue();
+            juce::String valueText;
+            
+            // If Redux sequencer is enabled and running, show the playing step's snapshot value
+            const bool seqEnabled = processorRef.getReduxSeqState().enabled.load();
+            const bool seqActive = processorRef.getReduxSeqState().active.load();
+            const int playingStep = processorRef.getReduxPlayingStep();
+            
+            if (seqEnabled && seqActive && playingStep >= 0 && playingStep < 16)
+            {
+                StepSnapshot s = processorRef.getReduxSafeSnapshot(playingStep);
+                
+                switch (i) {
+                    case 0: valueText = juce::String(s.redux.bitDepth - 3); break; // Bit Depth (internal 4-16, UI 1-12)
+                    case 1: valueText = juce::String(s.redux.sampleRateReduction); break; // Sample Rate
+                    case 2: valueText = juce::String(s.redux.jitter, 2); break; // Jitter
+                    case 3: valueText = juce::String((int)s.redux.preFilter) + " Hz"; break; // Pre Filter
+                    case 4: valueText = juce::String((int)s.redux.postFilter) + " Hz"; break; // Post Filter
+                    case 5: valueText = juce::String(s.redux.drive, 2); break; // Drive
+                    case 6: valueText = juce::String(s.redux.emphasis, 2); break; // Emphasis
+                    case 7: valueText = juce::String(s.redux.mix, 2); break; // Mix
+                }
+            }
+            else
+            {
+                // Sequencer is off - show current knob value
+                switch (i) {
+                    case 0: valueText = juce::String((int)knobValue); break; // Bit Depth
+                    case 1: valueText = juce::String((int)knobValue); break; // Sample Rate
+                    case 2: valueText = juce::String(knobValue, 2); break; // Jitter
+                    case 3: valueText = juce::String((int)knobValue) + " Hz"; break; // Pre Filter
+                    case 4: valueText = juce::String((int)knobValue) + " Hz"; break; // Post Filter
+                    case 5: valueText = juce::String(knobValue, 2); break; // Drive
+                    case 6: valueText = juce::String(knobValue, 2); break; // Emphasis
+                    case 7: valueText = juce::String(knobValue, 2); break; // Mix
+                }
+            }
+            
+            reduxValueLabels[i]->setText(valueText, juce::dontSendNotification);
+        }
+    }
+    
+    // Update Redux indicator bars
+    for (int i = 0; i < 8; ++i)
+    {
+        if (reduxIndicatorBars[i] != nullptr && reduxKnobs[i] != nullptr)
+        {
+            float knobValue = reduxKnobs[i]->getValue();
+            float indicatorValue = 0.0f;
+            
+            // If Redux sequencer is enabled and running, show the playing step's snapshot value
+            const bool seqEnabled = processorRef.getReduxSeqState().enabled.load();
+            const bool seqActive = processorRef.getReduxSeqState().active.load();
+            const int playingStep = processorRef.getReduxPlayingStep();
+            
+            if (seqEnabled && seqActive && playingStep >= 0 && playingStep < 16)
+            {
+                StepSnapshot s = processorRef.getReduxSafeSnapshot(playingStep);
+                
+                switch (i) {
+                    case 0: indicatorValue = (s.redux.bitDepth - 4.0f) / 12.0f; break; // Bit Depth (internal 4-16, normalize to 0-1)
+                    case 1: indicatorValue = (s.redux.sampleRateReduction - 1.0f) / 31.0f; break; // Sample Rate (1-32)
+                    case 2: indicatorValue = s.redux.jitter; break; // Jitter (0-1)
+                    case 3: indicatorValue = (s.redux.preFilter - 20.0f) / 19980.0f; break; // Pre Filter (20-20000)
+                    case 4: indicatorValue = (s.redux.postFilter - 20.0f) / 19980.0f; break; // Post Filter (20-20000)
+                    case 5: indicatorValue = s.redux.drive / 10.0f; break; // Drive (0-10)
+                    case 6: indicatorValue = s.redux.emphasis; break; // Emphasis (0-1)
+                    case 7: indicatorValue = s.redux.mix; break; // Mix (0-1)
+                }
+            }
+            else
+            {
+                // Sequencer is off - normalize knob value to 0-1 for indicator
+                switch (i) {
+                    case 0: indicatorValue = (knobValue - 1.0f) / 11.0f; break; // Bit depth UI 1-12
+                    case 1: indicatorValue = (knobValue - 1.0f) / 31.0f; break; // Sample rate 1-32
+                    case 2: case 6: case 7: 
+                        indicatorValue = knobValue; break; // 0-1 params (Jitter, Emphasis, Mix)
+                    case 3: case 4: 
+                        indicatorValue = (knobValue - 20.0f) / 19980.0f; break; // Filters 20-20000
+                    case 5: indicatorValue = knobValue / 10.0f; break; // Drive 0-10
+                }
+            }
+            
+            reduxIndicatorBars[i]->setValue(indicatorValue);
+        }
+    }
+    
+    // Update Redux sequencer UI
+    updateReduxSequencerUI();
+    
     // Update Dub Delay time label (handles sync mode display)
     updateDubDelayTimeLabel();
     
@@ -2613,7 +2709,7 @@ void PluginEditor::setupMasterKnobs()
     // Position dice button 20px left from before (was 160, now 140), 20% smaller
     const int diceSizeMaster = 26; // 20% smaller: 32 * 0.8 = 25.6 ≈ 26
     masterDiceButton->setBounds(
-        masterArea.getX() + 140,  // 20px left from before
+        masterArea.getX() + 148,  // 20px left from before, then 4px right, then 4px more right
         masterArea.getY() + 6,    // Aligned with MASTER title
             diceSizeMaster, diceSizeMaster
         );
@@ -2795,10 +2891,10 @@ void PluginEditor::setupMasterKnobs()
                 
                 // Refresh effect selector dropdowns to reflect new router assignment
                 auto& router = processorRef.getEffectRouter();
-                if (effectSelector1) effectSelector1->setSelectedId(static_cast<int>(router.getEffectInSlot(SlotID::Slot1)) + 1, juce::dontSendNotification);
-                if (effectSelector2) effectSelector2->setSelectedId(static_cast<int>(router.getEffectInSlot(SlotID::Slot2)) + 1, juce::dontSendNotification);
-                if (effectSelector3) effectSelector3->setSelectedId(static_cast<int>(router.getEffectInSlot(SlotID::Slot3)) + 1, juce::dontSendNotification);
-                if (effectSelector4) effectSelector4->setSelectedId(static_cast<int>(router.getEffectInSlot(SlotID::Slot4)) + 1, juce::dontSendNotification);
+                if (effectSelector1) effectSelector1->setSelectedId(effectIDToDropdownID(router.getEffectInSlot(SlotID::Slot1)), juce::dontSendNotification);
+                if (effectSelector2) effectSelector2->setSelectedId(effectIDToDropdownID(router.getEffectInSlot(SlotID::Slot2)), juce::dontSendNotification);
+                if (effectSelector3) effectSelector3->setSelectedId(effectIDToDropdownID(router.getEffectInSlot(SlotID::Slot3)), juce::dontSendNotification);
+                if (effectSelector4) effectSelector4->setSelectedId(effectIDToDropdownID(router.getEffectInSlot(SlotID::Slot4)), juce::dontSendNotification);
                 
                 // Refresh UI to show correct effect controls for current page
                 showPage(currentPage);
@@ -3226,10 +3322,10 @@ void PluginEditor::setupMasterKnobs()
                         
                         // Refresh effect selector dropdowns to reflect new router assignment
                         auto& router = processorRef.getEffectRouter();
-                        if (effectSelector1) effectSelector1->setSelectedId(static_cast<int>(router.getEffectInSlot(SlotID::Slot1)) + 1, juce::dontSendNotification);
-                        if (effectSelector2) effectSelector2->setSelectedId(static_cast<int>(router.getEffectInSlot(SlotID::Slot2)) + 1, juce::dontSendNotification);
-                        if (effectSelector3) effectSelector3->setSelectedId(static_cast<int>(router.getEffectInSlot(SlotID::Slot3)) + 1, juce::dontSendNotification);
-                        if (effectSelector4) effectSelector4->setSelectedId(static_cast<int>(router.getEffectInSlot(SlotID::Slot4)) + 1, juce::dontSendNotification);
+                        if (effectSelector1) effectSelector1->setSelectedId(effectIDToDropdownID(router.getEffectInSlot(SlotID::Slot1)), juce::dontSendNotification);
+                        if (effectSelector2) effectSelector2->setSelectedId(effectIDToDropdownID(router.getEffectInSlot(SlotID::Slot2)), juce::dontSendNotification);
+                        if (effectSelector3) effectSelector3->setSelectedId(effectIDToDropdownID(router.getEffectInSlot(SlotID::Slot3)), juce::dontSendNotification);
+                        if (effectSelector4) effectSelector4->setSelectedId(effectIDToDropdownID(router.getEffectInSlot(SlotID::Slot4)), juce::dontSendNotification);
                         
                         // Refresh UI to show correct effect controls for current page
                         showPage(currentPage);
@@ -3671,8 +3767,8 @@ void PluginEditor::setupMasterKnobs()
         addAndMakeVisible(diceButton.get());
         
         // Position dice button to the right of the title (20% smaller and moved down 5px)
-        const int diceSize = 32; // 20% smaller: 40 * 0.8 = 32
-        diceButton->setBounds(effectArea.getX() + 130, effectArea.getY() + 5, diceSize, diceSize); // Moved down 5px from +0 to +5
+        const int diceSize = 26; // Same size as master dice button
+        diceButton->setBounds(effectArea.getX() + 114, effectArea.getY() + 7, diceSize, diceSize); // Moved down 5px from +0 to +5, then left 8px, then left 8px more, then down 2px
         
         // Set the dice image
         if (assets.diceLarge != nullptr)
@@ -3788,16 +3884,18 @@ void PluginEditor::setupSpaceDelayUI()
     
     // Add effect types
     effectTypeDropdown->addItem("Space Delay", 1);
-    effectTypeDropdown->addItem("Auto Pan", 2);
-    effectTypeDropdown->addItem("Dirt", 3);
+    effectTypeDropdown->addItem("Dub Echo", 2);
+    effectTypeDropdown->addItem("Hall Verb", 3);
     effectTypeDropdown->addItem("Chorus", 4);
-    effectTypeDropdown->addItem("Hall", 5);
+    effectTypeDropdown->addItem("Auto Pan", 5);
     effectTypeDropdown->addItem("Grain", 6);
-    effectTypeDropdown->addItem("Slicer", 7);
-    effectTypeDropdown->addItem("Dub Echo", 8);
-    effectTypeDropdown->addItem("Redux", 9);
-    effectTypeDropdown->addItem("PhaseBloom", 10);
+    effectTypeDropdown->addItem("Slice", 7);
+    effectTypeDropdown->addItem("Phase Bloom", 8);
+    effectTypeDropdown->addItem("Heat", 9);
+    effectTypeDropdown->addItem("Dirt", 10);
+    effectTypeDropdown->addItem("Redux", 11);
     effectTypeDropdown->addItem("Form", 12);
+    effectTypeDropdown->addItem("Filter", 13);
     effectTypeDropdown->setSelectedId(1, juce::dontSendNotification);
     
     // Position dropdown with proper height for closed control
@@ -4783,20 +4881,18 @@ void PluginEditor::setupTabSystem()
         selector->clear(juce::dontSendNotification);
         
         selector->addItem("Space Delay", 1);
-        selector->addItem("Auto Pan", 2);
-        selector->addItem("Dirt", 3);
+        selector->addItem("Dub Echo", 2);
+        selector->addItem("Hall Verb", 3);
         selector->addItem("Chorus", 4);
-        selector->addItem("Hall", 5);
+        selector->addItem("Auto Pan", 5);
         selector->addItem("Grain", 6);
-        selector->addItem("Slicer", 7);
-        selector->addItem("Dub Echo", 8);
-        selector->addItem("Redux", 9);
-        selector->addItem("PhaseBloom", 10);
-        selector->addItem("Form", 11); // EffectID::Formant (10)
-        // Form2 removed - using Formant instead
-        // selector->addItem("Form 2", 12); // EffectID::Form2 (11)
-        selector->addItem("Heat", 13); // EffectID::Saturate (12)
-        selector->addItem("Filter", 14); // EffectID::Filter (13)
+        selector->addItem("Slice", 7);
+        selector->addItem("Phase Bloom", 8);
+        selector->addItem("Heat", 9);
+        selector->addItem("Dirt", 10);
+        selector->addItem("Redux", 11);
+        selector->addItem("Form", 12);
+        selector->addItem("Filter", 13);
         
         int numItems = selector->getNumItems();
         DBG("[UI] Added dropdown items - total: " << numItems);
@@ -4837,10 +4933,10 @@ void PluginEditor::setupTabSystem()
     
     // Set initial selections based on current router assignment
     auto& router = processorRef.getEffectRouter();
-    effectSelector1->setSelectedId(static_cast<int>(router.getEffectInSlot(SlotID::Slot1)) + 1, juce::dontSendNotification);
-    effectSelector2->setSelectedId(static_cast<int>(router.getEffectInSlot(SlotID::Slot2)) + 1, juce::dontSendNotification);
-    effectSelector3->setSelectedId(static_cast<int>(router.getEffectInSlot(SlotID::Slot3)) + 1, juce::dontSendNotification);
-    effectSelector4->setSelectedId(static_cast<int>(router.getEffectInSlot(SlotID::Slot4)) + 1, juce::dontSendNotification);
+    effectSelector1->setSelectedId(effectIDToDropdownID(router.getEffectInSlot(SlotID::Slot1)), juce::dontSendNotification);
+    effectSelector2->setSelectedId(effectIDToDropdownID(router.getEffectInSlot(SlotID::Slot2)), juce::dontSendNotification);
+    effectSelector3->setSelectedId(effectIDToDropdownID(router.getEffectInSlot(SlotID::Slot3)), juce::dontSendNotification);
+    effectSelector4->setSelectedId(effectIDToDropdownID(router.getEffectInSlot(SlotID::Slot4)), juce::dontSendNotification);
     
     // Add change listeners (lambda captures slot index)
     effectSelector1->onChange = [this]() { onEffectSelectorChanged(0); };
@@ -5224,6 +5320,30 @@ void PluginEditor::showPage(FxPageID id)
         case EffectID::Reverb:
             setVisibleVec(reverbGroup, true);
             DBG("[ROUTER] Showing Reverb UI for slot " << slotIndex);
+            
+            // Restore UI state from processor/APVTS parameters
+            {
+                auto* fxEnabledParam = processorRef.getAPVTS().getRawParameterValue("verbEnabled");
+                reverbFxAreaEnabled = fxEnabledParam ? (fxEnabledParam->load() > 0.5f) : true;
+                if (reverbFxPowerButton) {
+                    reverbFxPowerButton->setToggleState(reverbFxAreaEnabled, juce::dontSendNotification);
+                }
+
+                // Step power reflects processor sequencer enabled state
+                reverbStepAreaEnabled = processorRef.getReverbSeqState().enabled.load();
+                if (reverbStepPowerButton) {
+                    reverbStepPowerButton->setToggleState(reverbStepAreaEnabled, juce::dontSendNotification);
+                }
+                
+                // Update rate dropdown to match sequencer state (dropdown IDs are 1-8, so add 1 to index)
+                if (reverbRateDropdown) {
+                    int divisionIndex = processorRef.getReverbSeqState().divisionIndex.load();
+                    reverbRateDropdown->setSelectedId(divisionIndex + 1, juce::dontSendNotification);
+                }
+
+                updateReverbFxAreaVisibility();
+                updateReverbStepAreaVisibility();
+            }
             break;
         case EffectID::Granular:
             setVisibleVec(granularGroup, true);
@@ -5245,6 +5365,12 @@ void PluginEditor::showPage(FxPageID id)
                 slicerStepAreaEnabled = processorRef.getSlicerSeqState().enabled.load();
                 if (slicerStepPowerButton) {
                     slicerStepPowerButton->setToggleState(slicerStepAreaEnabled, juce::dontSendNotification);
+                }
+                
+                // Update rate dropdown to match sequencer state (dropdown IDs are 1-8, so add 1 to index)
+                if (slicerRateDropdown) {
+                    int divisionIndex = processorRef.getSlicerSeqState().divisionIndex.load();
+                    slicerRateDropdown->setSelectedId(divisionIndex + 1, juce::dontSendNotification);
                 }
 
                 updateSlicerFxAreaVisibility();
@@ -5387,6 +5513,12 @@ void PluginEditor::showPage(FxPageID id)
                 formantStepAreaEnabled = processorRef.getFormantSeqState().enabled.load();
                 if (formantStepPowerButton) {
                     formantStepPowerButton->setToggleState(formantStepAreaEnabled, juce::dontSendNotification);
+                }
+                
+                // Update rate dropdown to match sequencer state (dropdown IDs are 1-8, so add 1 to index)
+                if (formantRateDropdown) {
+                    int divisionIndex = processorRef.getFormantSeqState().divisionIndex.load();
+                    formantRateDropdown->setSelectedId(divisionIndex + 1, juce::dontSendNotification);
                 }
                 
                 updateFormantFxAreaVisibility();
@@ -5748,8 +5880,8 @@ void PluginEditor::setupAutoPanEffectsArea()
     autopanDiceButton->setVisible(false); // Initially hidden until AutoPan page is selected
     
     // Position dice button to the right of the title (EXACT same as delay page)
-    const int diceSize = 32; // 20% smaller: 40 * 0.8 = 32
-    autopanDiceButton->setBounds(effectArea.getX() + 130, effectArea.getY() + 5, diceSize, diceSize); // EXACT same as delay page
+    const int diceSize = 26; // Same size as master dice button
+    autopanDiceButton->setBounds(effectArea.getX() + 114, effectArea.getY() + 7, diceSize, diceSize); // EXACT same as delay page, then left 8px, then left 8px more, then down 2px
     
     // Set the dice image (EXACT same as delay page)
     if (assets.diceLarge != nullptr)
@@ -6427,8 +6559,8 @@ void PluginEditor::setupDirtEffectsArea()
     addAndMakeVisible(dirtDiceButton.get());
     dirtDiceButton->setVisible(false);
     
-    const int diceSize = 32;
-    dirtDiceButton->setBounds(effectArea.getX() + 130, effectArea.getY() + 5, diceSize, diceSize);
+    const int diceSize = 26; // Same size as master dice button
+    dirtDiceButton->setBounds(effectArea.getX() + 114, effectArea.getY() + 7, diceSize, diceSize);
     
     if (assets.diceLarge != nullptr) {
         dirtDiceButton->setDiceImage(assets.diceLarge->createCopy());
@@ -7267,8 +7399,8 @@ void PluginEditor::setupChorusEffectsArea()
     addAndMakeVisible(chorusDiceButton.get());
     chorusDiceButton->setVisible(false);
     
-    const int diceSize = 32;
-    chorusDiceButton->setBounds(effectArea.getX() + 130, effectArea.getY() + 5, diceSize, diceSize);
+    const int diceSize = 26; // Same size as master dice button
+    chorusDiceButton->setBounds(effectArea.getX() + 114, effectArea.getY() + 7, diceSize, diceSize);
     
     if (assets.diceLarge != nullptr)
     {
@@ -7930,8 +8062,8 @@ void PluginEditor::setupReverbEffectsArea()
     addAndMakeVisible(reverbDiceButton.get());
     reverbDiceButton->setVisible(false);
     
-    const int diceSize = 32;
-    reverbDiceButton->setBounds(effectArea.getX() + 130, effectArea.getY() + 5, diceSize, diceSize);
+    const int diceSize = 26; // Same size as master dice button
+    reverbDiceButton->setBounds(effectArea.getX() + 114, effectArea.getY() + 7, diceSize, diceSize);
     
     if (assets.diceLarge != nullptr)
     {
@@ -8430,6 +8562,27 @@ juce::ComboBox* PluginEditor::getEffectSelectorForSlot(int slotIndex)
     }
 }
 
+int PluginEditor::effectIDToDropdownID(EffectID effectID)
+{
+    // Map EffectID to dropdown ID (new order)
+    switch (effectID) {
+        case EffectID::SpaceDelay: return 1;   // Space Delay
+        case EffectID::DubDelay: return 2;     // Dub Echo
+        case EffectID::Reverb: return 3;        // Hall Verb
+        case EffectID::Chorus: return 4;       // Chorus
+        case EffectID::AutoPan: return 5;       // Auto Pan
+        case EffectID::Granular: return 6;     // Grain
+        case EffectID::Slicer: return 7;        // Slicer
+        case EffectID::PhaseBloom: return 8;   // Phase Bloom
+        case EffectID::Saturate: return 9;     // Heat
+        case EffectID::Dirt: return 10;        // Dirt
+        case EffectID::Redux: return 11;       // Redux
+        case EffectID::Formant: return 12;     // Form
+        case EffectID::Filter: return 13;      // Filter
+        default: return 1; // Default to Space Delay
+    }
+}
+
 void PluginEditor::onEffectSelectorChanged(int slotIndex)
 {
     DBG("[ROUTER] ========== Effect selector changed for slot " << slotIndex << " ==========");
@@ -8443,23 +8596,38 @@ void PluginEditor::onEffectSelectorChanged(int slotIndex)
     int selectedId = selector->getSelectedId(); // ComboBox IDs are 1-based (1, 2, 3, ..., 14)
     DBG("[ROUTER] Selected dropdown ID: " << selectedId);
     
-    // Map dropdown IDs to EffectIDs
-    // Dropdown IDs: 1-11 map sequentially to EffectIDs 0-10 (SpaceDelay through Formant)
-    // Dropdown ID 12 maps to EffectID 11 (Form2)
-    // Dropdown ID 13 maps to EffectID 12 (Saturate/Heat)
-    // Dropdown ID 14 maps to EffectID 13 (Filter)
+    // Map dropdown IDs to EffectIDs (new order)
+    // 1: Space Delay -> EffectID 0 (SpaceDelay)
+    // 2: Dub Echo -> EffectID 7 (DubDelay)
+    // 3: Hall Verb -> EffectID 4 (Reverb)
+    // 4: Chorus -> EffectID 3 (Chorus)
+    // 5: Auto Pan -> EffectID 1 (AutoPan)
+    // 6: Grain -> EffectID 5 (Granular)
+    // 7: Slicer -> EffectID 6 (Slicer)
+    // 8: Phase Bloom -> EffectID 9 (PhaseBloom)
+    // 9: Heat -> EffectID 12 (Saturate)
+    // 10: Dirt -> EffectID 2 (Dirt)
+    // 11: Redux -> EffectID 8 (Redux)
+    // 12: Form -> EffectID 10 (Formant)
+    // 13: Filter -> EffectID 13 (Filter)
     int selectedEffectID;
-    if (selectedId >= 1 && selectedId <= 11) {
-        selectedEffectID = selectedId - 1; // SpaceDelay(0) through Formant(10)
-    } else if (selectedId == 12) {
-        selectedEffectID = 11; // Form2 (EffectID::Form2)
-    } else if (selectedId == 13) {
-        selectedEffectID = 12; // Saturate/Heat (EffectID::Saturate)
-    } else if (selectedId == 14) {
-        selectedEffectID = 13; // Filter (EffectID::Filter)
-    } else {
-        DBG("[ROUTER] ERROR: Invalid dropdown ID " << selectedId);
-        return;
+    switch (selectedId) {
+        case 1: selectedEffectID = 0; break;  // Space Delay -> SpaceDelay
+        case 2: selectedEffectID = 7; break;  // Dub Echo -> DubDelay
+        case 3: selectedEffectID = 4; break;  // Hall Verb -> Reverb
+        case 4: selectedEffectID = 3; break;  // Chorus -> Chorus
+        case 5: selectedEffectID = 1; break;  // Auto Pan -> AutoPan
+        case 6: selectedEffectID = 5; break;  // Grain -> Granular
+        case 7: selectedEffectID = 6; break;  // Slicer -> Slicer
+        case 8: selectedEffectID = 9; break;  // Phase Bloom -> PhaseBloom
+        case 9: selectedEffectID = 12; break; // Heat -> Saturate
+        case 10: selectedEffectID = 2; break; // Dirt -> Dirt
+        case 11: selectedEffectID = 8; break; // Redux -> Redux
+        case 12: selectedEffectID = 10; break; // Form -> Formant
+        case 13: selectedEffectID = 13; break; // Filter -> Filter
+        default:
+            DBG("[ROUTER] ERROR: Invalid dropdown ID " << selectedId);
+            return;
     }
     
     DBG("[ROUTER] Mapped to EffectID: " << selectedEffectID);
@@ -8596,6 +8764,31 @@ void PluginEditor::onEffectSelectorChanged(int slotIndex)
         case EffectID::Reverb:
             DBG("[ROUTER] Showing Reverb group (" << reverbGroup.size() << " components)");
             setVisibleVec(reverbGroup, true);
+            
+            // Restore UI state from APVTS parameters
+            {
+                auto* fxEnabledParam = processorRef.getAPVTS().getRawParameterValue("verbEnabled");
+                reverbFxAreaEnabled = fxEnabledParam ? (fxEnabledParam->load() > 0.5f) : true;
+                if (reverbFxPowerButton) {
+                    reverbFxPowerButton->setToggleState(reverbFxAreaEnabled, juce::dontSendNotification);
+                }
+                
+                // Restore sequencer enabled state from processor
+                reverbStepAreaEnabled = processorRef.getReverbSeqState().enabled.load();
+                if (reverbStepPowerButton) {
+                    reverbStepPowerButton->setToggleState(reverbStepAreaEnabled, juce::dontSendNotification);
+                }
+                
+                // Update rate dropdown to match sequencer state (dropdown IDs are 1-8, so add 1 to index)
+                if (reverbRateDropdown) {
+                    int divisionIndex = processorRef.getReverbSeqState().divisionIndex.load();
+                    reverbRateDropdown->setSelectedId(divisionIndex + 1, juce::dontSendNotification);
+                }
+                
+                updateReverbFxAreaVisibility();
+                updateReverbStepAreaVisibility();
+            }
+            
             DBG("[ROUTER] ✓ Reverb group shown");
             break;
         case EffectID::Granular:
@@ -8902,7 +9095,7 @@ void PluginEditor::updateAllEffectSelectors(int skipSlot)
         if (selector)
         {
             EffectID effect = router.getEffectInSlot(static_cast<SlotID>(i));
-            int comboId = static_cast<int>(effect) + 1; // ComboBox IDs are 1-based
+            int comboId = effectIDToDropdownID(effect); // Use mapping function for new dropdown order
             selector->setSelectedId(comboId, juce::dontSendNotification);
         }
     }
@@ -9266,8 +9459,8 @@ void PluginEditor::setupGranularEffectsArea()
     addAndMakeVisible(granularDiceButton.get());
     granularDiceButton->setVisible(false);
     
-    const int diceSize = 32;
-    granularDiceButton->setBounds(effectArea.getX() + 130, effectArea.getY() + 5, diceSize, diceSize);
+    const int diceSize = 26; // Same size as master dice button
+    granularDiceButton->setBounds(effectArea.getX() + 114, effectArea.getY() + 7, diceSize, diceSize);
     
     if (assets.diceLarge != nullptr)
     {
@@ -10015,8 +10208,8 @@ void PluginEditor::setupSlicerEffectsArea()
     }
     
     // Position next to title (match Grain page)
-    const int diceSize = 32;
-    slicerDiceButton->setBounds(effectArea.getX() + 130, effectArea.getY() + 5, diceSize, diceSize);
+    const int diceSize = 26; // Same size as master dice button
+    slicerDiceButton->setBounds(effectArea.getX() + 114, effectArea.getY() + 7, diceSize, diceSize);
     
     slicerDiceButton->onClick = [this]() {
         DBG("[UI] Slicer main dice clicked - randomizing current step knobs");
@@ -10816,8 +11009,8 @@ void PluginEditor::setupDubDelayEffectsArea()
     addAndMakeVisible(dubdelayDiceButton.get());
     dubdelayDiceButton->setVisible(false);
     
-    const int diceSize = 32;
-    dubdelayDiceButton->setBounds(effectArea.getX() + 130, effectArea.getY() + 5, diceSize, diceSize);
+    const int diceSize = 26; // Same size as master dice button
+    dubdelayDiceButton->setBounds(effectArea.getX() + 114, effectArea.getY() + 7, diceSize, diceSize);
     if (assets.diceLarge != nullptr) {
         dubdelayDiceButton->setDiceImage(assets.diceLarge->createCopy());
     }
@@ -11356,14 +11549,34 @@ void PluginEditor::updateFormantSequencerUI()
     int selectedStep = formantUiSelectedStep.load();
     int playingStep = processorRef.getFormantPlayingStep();
     bool sequencerEnabled = processorRef.getFormantSeqState().enabled.load();
+    const int stepsUsed = processorRef.getFormantSeqState().stepsUsed.load();
     
     for (int i = 0; i < 16; ++i) {
         if (formantStepButtons[i] != nullptr) {
             formantStepButtons[i]->setSelected(i == selectedStep);
             formantStepButtons[i]->setPlaying(sequencerEnabled && (i == playingStep));
-            formantStepButtons[i]->setEnabledStep(true); // All steps enabled for now
+            bool shouldBeEnabled = i < stepsUsed;
+            formantStepButtons[i]->setEnabledStep(shouldBeEnabled);
         }
     }
+    
+    // Update step amount display
+    if (formantStepAmountLabel != nullptr && !formantStepAmountLabel->hasKeyboardFocus(true)) {
+        juce::String currentText = formantStepAmountLabel->getText();
+        juce::String newText = juce::String(stepsUsed);
+        // Only update if the value has actually changed to avoid text doubling
+        if (currentText != newText) {
+            formantStepAmountLabel->setText(newText, false);
+        }
+    }
+    
+    // Update rate dropdown to match sequencer state (dropdown IDs are 1-8, so add 1 to index)
+    if (formantRateDropdown != nullptr) {
+        int divisionIndex = processorRef.getFormantSeqState().divisionIndex.load();
+        formantRateDropdown->setSelectedId(divisionIndex + 1, juce::dontSendNotification);
+    }
+    
+    repaint();
 }
 
 void PluginEditor::setupFormantKnobs()
@@ -11583,8 +11796,8 @@ void PluginEditor::setupFormantEffectsArea()
     formantDiceButton->setVisible(false); // Initially hidden until Formant page is selected
     
     // Position dice button to the right of the title (EXACT same as other pages)
-    const int diceSize = 32; // 20% smaller: 40 * 0.8 = 32
-    formantDiceButton->setBounds(effectArea.getX() + 130, effectArea.getY() + 5, diceSize, diceSize);
+    const int diceSize = 26; // Same size as master dice button
+    formantDiceButton->setBounds(effectArea.getX() + 114, effectArea.getY() + 7, diceSize, diceSize);
     
     // Set the dice image (EXACT same as other pages)
     if (assets.diceLarge != nullptr)
@@ -11677,20 +11890,21 @@ void PluginEditor::setupFormantSequencerArea()
     }
     
     // Create step amount label (EXACT same as Space Delay page)
-    formantStepAmountLabel = std::make_unique<juce::Label>();
+    formantStepAmountLabel = std::make_unique<juce::TextEditor>();
     // Force to 16 by default, then sync with processor state
     processorRef.setFormantStepsUsed(16);
     formantStepAmountLabel->setText("16", juce::dontSendNotification);
     formantStepAmountLabel->setFont(juce::Font(16.0f, juce::Font::bold));
-    formantStepAmountLabel->setColour(juce::Label::textColourId, juce::Colours::white);
-    formantStepAmountLabel->setColour(juce::Label::backgroundColourId, juce::Colours::transparentBlack);
-    formantStepAmountLabel->setColour(juce::Label::outlineColourId, juce::Colours::white);
-    formantStepAmountLabel->setJustificationType(juce::Justification::centred);
-    formantStepAmountLabel->setBorderSize(juce::BorderSize<int>(2));
-    // Allow direct editing for step count (1..16)
-    formantStepAmountLabel->setEditable(true, true, false);
-    formantStepAmountLabel->onEditorHide = [this]() {
-        if (formantStepAmountLabel != nullptr)
+    formantStepAmountLabel->setColour(juce::TextEditor::textColourId, juce::Colours::white);
+    formantStepAmountLabel->setColour(juce::TextEditor::backgroundColourId, juce::Colours::transparentBlack);
+    formantStepAmountLabel->setColour(juce::TextEditor::outlineColourId, juce::Colours::white);
+    formantStepAmountLabel->setColour(juce::TextEditor::focusedOutlineColourId, juce::Colours::white);
+    formantStepAmountLabel->setJustification(juce::Justification::centred);
+    formantStepAmountLabel->setBorder(juce::BorderSize<int>(2));
+    formantStepAmountLabel->setIndents(0, 0);
+    formantStepAmountLabel->setInputRestrictions(2, "0123456789");
+    formantStepAmountLabel->onTextChange = [this]() {
+        if (formantStepAmountLabel != nullptr && !formantStepAmountLabel->hasKeyboardFocus(true))
         {
             int value = formantStepAmountLabel->getText().getIntValue();
             value = juce::jlimit(1, 16, value);
@@ -11699,34 +11913,32 @@ void PluginEditor::setupFormantSequencerArea()
             updateFormantSequencerUI();
         }
     };
+    formantStepAmountLabel->onReturnKey = [this]() {
+        if (formantStepAmountLabel != nullptr) {
+            int value = formantStepAmountLabel->getText().getIntValue();
+            value = juce::jlimit(1, 16, value);
+            processorRef.setFormantStepsUsed(value);
+            formantStepAmountLabel->setText(juce::String(value), juce::dontSendNotification);
+            formantStepAmountLabel->giveAwayKeyboardFocus();
+            updateFormantSequencerUI();
+        }
+    };
+    formantStepAmountLabel->setPopupMenuEnabled(false);
     addAndMakeVisible(formantStepAmountLabel.get());
     // Move step amount left by 80px
     formantStepAmountLabel->setBounds(stepArea.getX() + 180, stepArea.getY() - 10, 30, 25);
     
-    // Create rate dropdown (EXACT same as Space Delay page)
+    // Create rate dropdown (EXACT same as other effects - 8 items: 4 to 1/32)
     formantRateDropdown = std::make_unique<juce::ComboBox>();
-    // Slower divisions added: 4 and 2 bars; and rename 1/1 to 1
-    formantRateDropdown->addItem("4", 1);      // 4 bars (16 beats)
-    formantRateDropdown->addItem("2", 2);      // 2 bars (8 beats)
-    formantRateDropdown->addItem("1", 3);      // 1 bar  (4 beats)
+    formantRateDropdown->addItem("4", 1);
+    formantRateDropdown->addItem("2", 2);
+    formantRateDropdown->addItem("1", 3);
     formantRateDropdown->addItem("1/2", 4);
     formantRateDropdown->addItem("1/4", 5);
     formantRateDropdown->addItem("1/8", 6);
     formantRateDropdown->addItem("1/16", 7);
     formantRateDropdown->addItem("1/32", 8);
-    formantRateDropdown->addItem("1/64", 9);
-    formantRateDropdown->addItem("1/128", 10);
-    formantRateDropdown->addItem("1/256", 11);
-    formantRateDropdown->addItem("1/512", 12);
-    formantRateDropdown->addItem("1/1024", 13);
-    formantRateDropdown->addItem("1/2048", 14);
-    formantRateDropdown->addItem("1/4096", 15);
-    formantRateDropdown->addItem("1/8192", 16);
-    formantRateDropdown->addItem("1/16384", 17);
-    formantRateDropdown->addItem("1/32768", 18);
-    formantRateDropdown->addItem("1/65536", 19);
-    formantRateDropdown->addItem("1/131072", 20);
-    formantRateDropdown->setSelectedId(5); // Default to 1/4
+    formantRateDropdown->setSelectedId(6); // Default to 1/8
     // Make dropdown transparent (no background or border) - EXACT same as Space Delay
     formantRateDropdown->setColour(juce::ComboBox::backgroundColourId, juce::Colours::transparentBlack);
     formantRateDropdown->setColour(juce::ComboBox::outlineColourId, juce::Colours::transparentBlack);
@@ -11739,9 +11951,14 @@ void PluginEditor::setupFormantSequencerArea()
     
     // Set up rate dropdown callback
     formantRateDropdown->onChange = [this]() {
-        int divisionIndex = formantRateDropdown->getSelectedId() - 1;
-        processorRef.setFormantDivisionIndex(divisionIndex);
-        DBG("[UI] Formant rate changed to division index: " << divisionIndex);
+        if (formantRateDropdown) {
+            int selectedId = formantRateDropdown->getSelectedId();
+            if (selectedId >= 1 && selectedId <= 8) {
+                int divisionIndex = selectedId - 1;
+                processorRef.setFormantDivisionIndex(divisionIndex);
+                DBG("[UI] Formant rate changed to division index: " << divisionIndex << " (selectedId: " << selectedId << ")");
+            }
+        }
     };
     
     // Create STD toggle (EXACT same as Space Delay page)
@@ -12364,23 +12581,24 @@ void PluginEditor::setupFilterKnobs()
                     }
                     case 1: text = juce::String(static_cast<int>(value * 100)) + "%"; break;
                     case 2: {
-                        // Drive: convert 0-36 dB to 0-100% for display
+                        // Drive: display 0-100% where 100% = 18 dB (50% of 36 dB)
                         // Read the actual parameter value instead of knob value (SliderAttachment may normalize it)
                         auto* driveParam = processorRef.getAPVTS().getParameter("filterDrive");
                         float driveDb = 0.0f;
                         
                         if (driveParam) {
-                            // Get normalized value (0-1) and convert to actual dB value (0-36)
+                            // Get normalized value (0-1) and convert to actual dB value (0-18)
                             float normalized = driveParam->getValue(); // Returns 0-1
-                            driveDb = driveParam->convertFrom0to1(normalized); // Converts to 0-36 dB
+                            driveDb = driveParam->convertFrom0to1(normalized); // Converts to 0-18 dB
                         } else {
                             // Fallback: use knob value directly if parameter not available
-                            driveDb = juce::jlimit(0.0f, 36.0f, value);
+                            driveDb = juce::jlimit(0.0f, 18.0f, value);
                         }
                         
                         // Ensure we have a valid range
-                        driveDb = juce::jlimit(0.0f, 36.0f, driveDb);
-                        float drivePercent = (driveDb / 36.0f) * 100.0f;
+                        driveDb = juce::jlimit(0.0f, 18.0f, driveDb);
+                        // Display as 0-100% where 100% = 18 dB
+                        float drivePercent = (driveDb / 18.0f) * 100.0f;
                         text = juce::String(static_cast<int>(drivePercent)) + "%";
                         break;
                     }
@@ -12466,8 +12684,8 @@ void PluginEditor::setupFilterEffectsArea()
     filterDiceButton = std::make_unique<CustomDiceButton>();
     addAndMakeVisible(filterDiceButton.get());
     filterDiceButton->setVisible(false);
-    const int diceSize = 32;
-    filterDiceButton->setBounds(effectArea.getX() + 130, effectArea.getY() + 5, diceSize, diceSize);
+    const int diceSize = 26; // Same size as master dice button
+    filterDiceButton->setBounds(effectArea.getX() + 114, effectArea.getY() + 7, diceSize, diceSize);
     if (assets.diceLarge != nullptr) {
         filterDiceButton->setDiceImage(assets.diceLarge->createCopy());
     }
@@ -12551,7 +12769,7 @@ void PluginEditor::setupFilterSequencerArea()
                 snapshot.filter.slope = rng.nextFloat(); // 0-1 (12dB or 24dB)
             }
             if (!filterKnobLocked[4]) {
-                snapshot.filter.drive = rng.nextFloat() * 36.0f; // 0-36 dB
+                snapshot.filter.drive = rng.nextFloat() * 18.0f; // 0-18 dB (50% of 36 dB, displayed as 0-100%)
             }
             if (!filterKnobLocked[5]) {
                 snapshot.filter.keytrack = rng.nextFloat(); // 0-1
@@ -12988,6 +13206,11 @@ void PluginEditor::updateFilterParameterFromKnob(int knobIndex)
     // knobIndex: -1 = Type, -2 = Slope, 0-3 = filterKnobs[0-3] (Cutoff, Res, Drive, Key Track)
     // Mix knob (filterKnobs[4]) is global, not saved per step
     
+    // Don't save if we're loading from snapshot
+    if (isLoadingFromSnapshot.load()) {
+        return;
+    }
+    
     // Get current step - if sequencer is active, update the playing step, otherwise update selected step
     const auto& seqState = processorRef.getFilterSeqState();
     int currentStep = filterUiSelectedStep;
@@ -13075,7 +13298,7 @@ void PluginEditor::updateFilterSequencerUI()
             
             // Update Drive indicator bar (index 4)
             if (filterIndicatorBars[4]) {
-                float driveNorm = snapshot.filter.drive / 36.0f;
+                float driveNorm = snapshot.filter.drive / 18.0f; // Max is now 18 dB
                 filterIndicatorBars[4]->setValue(driveNorm);
             }
             
@@ -13114,9 +13337,16 @@ void PluginEditor::onFilterStepButtonClicked(int stepIndex)
     isLoadingFromSnapshot.store(true);
     
     if (!filterAllStepsEnabled) {
-        // Update knobs with values from the snapshot
-        if (filterTypeKnob) filterTypeKnob->setValue(snapshot.filter.type, juce::dontSendNotification);
-        // Convert frequency from snapshot to normalized value for cutoff knob
+        // Set flag to prevent snapshot saving during load
+        isLoadingFromSnapshot.store(true);
+        
+        // Set knob values directly first (this ensures visual update)
+        // Type knob
+        if (filterTypeKnob) {
+            filterTypeKnob->setValue(snapshot.filter.type, juce::dontSendNotification);
+        }
+        
+        // Cutoff knob (convert frequency to normalized)
         if (filterKnobs[0]) {
             float freq = snapshot.filter.cutoff;
             float normalized = freq <= 5000.0f 
@@ -13125,13 +13355,88 @@ void PluginEditor::onFilterStepButtonClicked(int stepIndex)
             normalized = juce::jlimit(0.0f, 1.0f, normalized);
             filterKnobs[0]->setValue(normalized, juce::dontSendNotification);
         }
-        if (filterKnobs[1]) filterKnobs[1]->setValue(snapshot.filter.resonance, juce::dontSendNotification);
-        if (filterSlopeKnob) filterSlopeKnob->setValue(snapshot.filter.slope, juce::dontSendNotification);
-        if (filterKnobs[2]) filterKnobs[2]->setValue(snapshot.filter.drive, juce::dontSendNotification);
-        // Key Track knob (filterKnobs[3])
-        if (filterKnobs[3]) filterKnobs[3]->setValue(snapshot.filter.keytrack, juce::dontSendNotification);
-        // Mix knob (filterKnobs[4]) - update from snapshot
-        if (filterKnobs[4]) filterKnobs[4]->setValue(snapshot.filter.mix, juce::dontSendNotification);
+        
+        // Resonance knob
+        if (filterKnobs[1]) {
+            filterKnobs[1]->setValue(snapshot.filter.resonance, juce::dontSendNotification);
+        }
+        
+        // Slope knob
+        if (filterSlopeKnob) {
+            filterSlopeKnob->setValue(snapshot.filter.slope, juce::dontSendNotification);
+        }
+        
+        // Drive knob - clamp to 18 dB max (note: knob range is 0-36, but we clamp to 18)
+        if (filterKnobs[2]) {
+            float driveDb = juce::jlimit(0.0f, 18.0f, snapshot.filter.drive);
+            filterKnobs[2]->setValue(driveDb, juce::dontSendNotification);
+        }
+        
+        // Key Track knob
+        if (filterKnobs[3]) {
+            filterKnobs[3]->setValue(snapshot.filter.keytrack, juce::dontSendNotification);
+        }
+        
+        // Mix knob
+        if (filterKnobs[4]) {
+            filterKnobs[4]->setValue(snapshot.filter.mix, juce::dontSendNotification);
+        }
+        
+        // Now update APVTS parameters to match (without notifying host to avoid attachment conflicts)
+        // Type parameter
+        auto* typeParam = processorRef.getAPVTS().getParameter("fType");
+        if (typeParam) {
+            float normalizedType = typeParam->convertTo0to1(snapshot.filter.type);
+            typeParam->setValue(normalizedType); // Use setValue instead of setValueNotifyingHost
+        }
+        
+        // Cutoff parameter
+        auto* cutoffParam = processorRef.getAPVTS().getParameter("cutoff");
+        if (cutoffParam && filterKnobs[0]) {
+            float normalized = filterKnobs[0]->getValue(); // Get the value we just set
+            cutoffParam->setValue(normalized);
+        }
+        
+        // Resonance parameter
+        auto* resParam = processorRef.getAPVTS().getParameter("res");
+        if (resParam && filterKnobs[1]) {
+            float normalizedRes = resParam->convertTo0to1(snapshot.filter.resonance);
+            resParam->setValue(normalizedRes);
+        }
+        
+        // Slope parameter
+        auto* slopeParam = processorRef.getAPVTS().getParameter("slope");
+        if (slopeParam) {
+            float normalizedSlope = slopeParam->convertTo0to1(snapshot.filter.slope);
+            slopeParam->setValue(normalizedSlope);
+        }
+        
+        // Drive parameter
+        auto* driveParam = processorRef.getAPVTS().getParameter("filterDrive");
+        if (driveParam && filterKnobs[2]) {
+            float driveDb = juce::jlimit(0.0f, 18.0f, snapshot.filter.drive);
+            float normalizedDrive = driveParam->convertTo0to1(driveDb);
+            driveParam->setValue(normalizedDrive);
+        }
+        
+        // Key Track parameter
+        auto* keytrackParam = processorRef.getAPVTS().getParameter("keytrack");
+        if (keytrackParam) {
+            keytrackParam->setValue(snapshot.filter.keytrack);
+        }
+        
+        // Mix parameter
+        auto* mixParam = processorRef.getAPVTS().getParameter("filterMix");
+        if (mixParam) {
+            mixParam->setValue(snapshot.filter.mix);
+        }
+        
+        // Force knobs to repaint to show updated values
+        if (filterTypeKnob) filterTypeKnob->repaint();
+        if (filterSlopeKnob) filterSlopeKnob->repaint();
+        for (int i = 0; i < 5; ++i) {
+            if (filterKnobs[i]) filterKnobs[i]->repaint();
+        }
         
         // Clear flag before triggering callbacks so labels update
         isLoadingFromSnapshot.store(false);
@@ -13166,10 +13471,10 @@ void PluginEditor::onFilterStepButtonClicked(int stepIndex)
             filterValueLabels[3]->setText(value > 0.5f ? "24dB" : "12dB", juce::dontSendNotification);
         }
         
-        // Drive label (index 4)
+        // Drive label (index 4) - display 0-100% where 100% = 18 dB
         if (filterValueLabels[4] && filterKnobs[2]) {
             float value = filterKnobs[2]->getValue();
-            float drivePercent = (value / 36.0f) * 100.0f;
+            float drivePercent = (value / 18.0f) * 100.0f;
             filterValueLabels[4]->setText(juce::String(static_cast<int>(drivePercent)) + "%", juce::dontSendNotification);
         }
         
@@ -13222,9 +13527,10 @@ void PluginEditor::onFilterStepButtonClicked(int stepIndex)
             filterIndicatorBars[3]->setValue(snapshot.filter.slope);
         }
         
-        // Drive indicator bar (index 4)
+        // Drive indicator bar (index 4) - clamp to 18 dB max
         if (filterIndicatorBars[4]) {
-            float driveNorm = snapshot.filter.drive / 36.0f;
+            float driveDb = juce::jlimit(0.0f, 18.0f, snapshot.filter.drive);
+            float driveNorm = driveDb / 18.0f;
             filterIndicatorBars[4]->setValue(driveNorm);
         }
         
@@ -13510,8 +13816,8 @@ void PluginEditor::setupSaturateEffectsArea()
     addAndMakeVisible(saturateDiceButton.get());
     saturateDiceButton->setVisible(false);
     
-    const int diceSize = 32;
-    saturateDiceButton->setBounds(effectArea.getX() + 130, effectArea.getY() + 5, diceSize, diceSize);
+    const int diceSize = 26; // Same size as master dice button
+    saturateDiceButton->setBounds(effectArea.getX() + 114, effectArea.getY() + 7, diceSize, diceSize);
     if (assets.diceLarge != nullptr) {
         saturateDiceButton->setDiceImage(assets.diceLarge->createCopy());
     }
@@ -15090,8 +15396,8 @@ void PluginEditor::setupReduxEffectsArea()
     addAndMakeVisible(reduxDiceButton.get());
     reduxDiceButton->setVisible(false);
     
-    const int diceSize = 32;
-    reduxDiceButton->setBounds(effectArea.getX() + 130, effectArea.getY() + 5, diceSize, diceSize);
+    const int diceSize = 26; // Same size as master dice button
+    reduxDiceButton->setBounds(effectArea.getX() + 114, effectArea.getY() + 7, diceSize, diceSize);
     if (assets.diceLarge != nullptr) {
         reduxDiceButton->setDiceImage(assets.diceLarge->createCopy());
     }
@@ -15410,7 +15716,28 @@ void PluginEditor::setupReduxSequencerArea()
     reduxStepAmountLabel->setBorder(juce::BorderSize<int>(2));
     reduxStepAmountLabel->setIndents(0, 0);
     reduxStepAmountLabel->setInputRestrictions(2, "0123456789");
-    reduxStepAmountLabel->setReadOnly(true); // Read-only for now as Redux uses fixed 16-step patterns
+    reduxStepAmountLabel->setReadOnly(false); // Make it editable
+    reduxStepAmountLabel->onTextChange = [this]() {
+        if (reduxStepAmountLabel != nullptr && !reduxStepAmountLabel->hasKeyboardFocus(true))
+        {
+            int value = reduxStepAmountLabel->getText().getIntValue();
+            value = juce::jlimit(1, 16, value);
+            processorRef.setReduxStepsUsed(value);
+            reduxStepAmountLabel->setText(juce::String(value), juce::dontSendNotification);
+            updateReduxSequencerUI();
+        }
+    };
+    reduxStepAmountLabel->onReturnKey = [this]() {
+        if (reduxStepAmountLabel != nullptr) {
+            int value = reduxStepAmountLabel->getText().getIntValue();
+            value = juce::jlimit(1, 16, value);
+            processorRef.setReduxStepsUsed(value);
+            reduxStepAmountLabel->setText(juce::String(value), juce::dontSendNotification);
+            reduxStepAmountLabel->giveAwayKeyboardFocus();
+            updateReduxSequencerUI();
+        }
+    };
+    reduxStepAmountLabel->setPopupMenuEnabled(false);
     addAndMakeVisible(reduxStepAmountLabel.get());
     reduxStepAmountLabel->setVisible(false);
     reduxStepAmountLabel->setBounds(sequencerArea.getX() + 180, sequencerArea.getY() - 10, 30, 25);
@@ -15425,22 +15752,26 @@ void PluginEditor::setupReduxSequencerArea()
     reduxRateDropdown->addItem("1/8", 6);
     reduxRateDropdown->addItem("1/16", 7);
     reduxRateDropdown->addItem("1/32", 8);
-    reduxRateDropdown->setSelectedId(4); // Default to 1/8
+    reduxRateDropdown->setSelectedId(6); // Default to 1/8 (index 5, so ID 6)
     reduxRateDropdown->setColour(juce::ComboBox::backgroundColourId, juce::Colours::transparentBlack);
     reduxRateDropdown->setColour(juce::ComboBox::outlineColourId, juce::Colours::transparentBlack);
     reduxRateDropdown->setColour(juce::ComboBox::buttonColourId, juce::Colours::transparentBlack);
     reduxRateDropdown->setColour(juce::ComboBox::textColourId, juce::Colours::white);
     reduxRateDropdown->setColour(juce::ComboBox::arrowColourId, juce::Colours::white);
+    // Note: ComboBox font is set via LookAndFeel, not directly
     reduxRateDropdown->onChange = [this]() {
         if (reduxRateDropdown) {
             int selectedId = reduxRateDropdown->getSelectedId();
-            DBG("[UI] Redux rate changed to: " << selectedId);
-            // TODO: Update processor with new rate
+            if (selectedId >= 1 && selectedId <= 8) {
+                int divisionIndex = selectedId - 1;
+                processorRef.setReduxDivisionIndex(divisionIndex);
+                DBG("[UI] Redux rate changed to division index: " << divisionIndex << " (selectedId: " << selectedId << ")");
+            }
         }
     };
     addAndMakeVisible(reduxRateDropdown.get());
     reduxRateDropdown->setVisible(false);
-    reduxRateDropdown->setBounds(sequencerArea.getX() + 220, sequencerArea.getY() - 10, 60, 25);
+    reduxRateDropdown->setBounds(sequencerArea.getX() + 220, sequencerArea.getY() - 10, 74, 25);
     
     // Create std toggle (EXACT same as other effects)
     reduxStdToggle = std::make_unique<CircularToggleButton>();
@@ -16085,8 +16416,8 @@ void PluginEditor::setupPhaseBloomEffectsArea()
     
     // Create dice button
     phaseBloomDiceButton = std::make_unique<CustomDiceButton>();
-    const int diceSize = 32;
-    phaseBloomDiceButton->setBounds(effectArea.getX() + 130, effectArea.getY() + 5, diceSize, diceSize);
+    const int diceSize = 26; // Same size as master dice button
+    phaseBloomDiceButton->setBounds(effectArea.getX() + 114, effectArea.getY() + 7, diceSize, diceSize);
     if (assets.diceLarge != nullptr) {
         phaseBloomDiceButton->setDiceImage(assets.diceLarge->createCopy());
     }
@@ -17405,4 +17736,5 @@ void PluginEditor::SmallGainReductionMeter::timerCallback()
     
     repaint();
 }
+
 

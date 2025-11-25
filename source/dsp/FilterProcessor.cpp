@@ -85,7 +85,7 @@ void FilterProcessor::setTargets(const Targets& t)
     resSm.setTargetValue(juce::jlimit(0.0f, 0.95f, newRes));
     
     slope = juce::jlimit(0, 1, t.slope);
-    drive = std::isfinite(t.drive) ? juce::jlimit(0.0f, 36.0f, t.drive) : 6.0f;
+    drive = std::isfinite(t.drive) ? juce::jlimit(0.0f, 18.0f, t.drive) : 6.0f; // Max 18 dB (50% of 36, displayed as 0-100%)
     spreadCents = std::isfinite(t.spread) ? t.spread : 0.0f;
     kt = std::isfinite(t.keytrack) ? juce::jlimit(0.0f, 1.0f, t.keytrack) : 0.0f;
     mix = std::isfinite(t.mix) ? juce::jlimit(0.0f, 1.0f, t.mix) : 1.0f;
