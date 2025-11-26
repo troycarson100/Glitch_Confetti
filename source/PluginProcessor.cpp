@@ -146,6 +146,7 @@ PluginProcessor::PluginProcessor()
     
     // Initialize Redux sequencer
     reduxSeq.enabled.store(true); // Start enabled
+    reduxSeq.active.store(true);  // Start active so it runs immediately
     reduxSeq.stepsUsed.store(16);
     reduxSeq.divisionIndex.store(5); // 1/8 default
     reduxSeq.playingStep.store(0);
@@ -1125,6 +1126,15 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                     form2Seq.currentStep.store(form2Step);
                     form2Seq.playingStep.store(form2Step);
                     DBG("[FORM2 SEQ] Lock-in at PPQ=" << ppq << " -> step " << form2Step);
+                }
+                
+                // Also lock-in Redux sequencer if enabled
+                if (reduxSeq.enabled.load()) {
+                    reduxSeq.active.store(true);
+                    const int reduxStep = reduxSeq.computeStepFromPPQ(ppq);
+                    reduxSeq.currentStep.store(reduxStep);
+                    reduxSeq.playingStep.store(reduxStep);
+                    DBG("[REDUX SEQ] Lock-in at PPQ=" << ppq << " -> step " << reduxStep);
                 }
                 
                 // Also lock-in Filter sequencer if enabled
