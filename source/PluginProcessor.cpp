@@ -1022,10 +1022,9 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                 }
                 
                 if (phaseBloomSeq.enabled.load() && phaseBloomSeq.active.load()) {
-                    const int phaseBloomStep = phaseBloomSeq.computeStepFromPPQ(ppq);
+                    const int phaseBloomStep = phaseBloomSeq.computeStepFromPPQPhaseBloom(ppq);
                     phaseBloomSeq.currentStep.store(phaseBloomStep);
                     phaseBloomSeq.playingStep.store(phaseBloomStep);
-                    DBG("[PHASEBLOOM SEQ] Lock-in at PPQ=" << ppq << " -> step " << phaseBloomStep);
                 }
                 
                 if (formantSeq.enabled.load() && formantSeq.active.load()) {
@@ -1178,11 +1177,10 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
             
             // PhaseBloom sequencer stepping (shares same PPQ/transport, independent timing)
             if (isPlaying && ppqValid && phaseBloomSeq.active.load()) {
-                const int phaseBloomStep = phaseBloomSeq.computeStepFromPPQ(ppq);
+                const int phaseBloomStep = phaseBloomSeq.computeStepFromPPQPhaseBloom(ppq);
                 if (phaseBloomStep != phaseBloomSeq.currentStep.load()) {
                     phaseBloomSeq.currentStep.store(phaseBloomStep);
                     phaseBloomSeq.playingStep.store(phaseBloomStep);
-                    DBG("[PHASEBLOOM SEQ] ★ Step changed to: " << phaseBloomStep << " PPQ: " << ppq);
                 }
             }
             
@@ -3726,7 +3724,25 @@ void PluginProcessor::setPhaseBloomStepsUsed(int stepsUsed)
 
 void PluginProcessor::setPhaseBloomDivisionIndex(int divisionIndex)
 {
-    phaseBloomSeq.divisionIndex.store(juce::jlimit(0, 7, divisionIndex));
+    // Ensure division index is in valid range (0-7 for 8 dropdown items)
+    int clampedIndex = juce::jlimit(0, 7, divisionIndex);
+    
+    // WORKAROUND: If somehow the index is wrong, verify the mapping
+    // Dropdown order: "4"=0, "2"=1, "1"=2, "1/2"=3, "1/4"=4, "1/8"=5, "1/16"=6, "1/32"=7
+    // If "4" (index 0) is 4x too fast, it might be using index 2 instead
+    // So if we're setting index 0, make absolutely sure it's stored as 0
+    if (divisionIndex == 0) {
+        clampedIndex = 0; // Force to 0 for "4"
+    }
+    
+    phaseBloomSeq.divisionIndex.store(clampedIndex);
+    
+    // Verify it was stored correctly
+    int verifyIndex = phaseBloomSeq.divisionIndex.load();
+    if (verifyIndex != clampedIndex) {
+        // If there's a mismatch, force it
+        phaseBloomSeq.divisionIndex.store(clampedIndex);
+    }
 }
 
 // Formant snapshot methods
@@ -4884,7 +4900,7 @@ void PluginProcessor::forceSequencerLockIn(EffectID effect) noexcept
                     case EffectID::PhaseBloom:
                         if (phaseBloomSeq.enabled.load()) {
                             phaseBloomSeq.active.store(true);
-                            const int step = phaseBloomSeq.computeStepFromPPQ(ppq);
+                            const int step = phaseBloomSeq.computeStepFromPPQPhaseBloom(ppq);
                             phaseBloomSeq.currentStep.store(step);
                             phaseBloomSeq.playingStep.store(step);
                         }

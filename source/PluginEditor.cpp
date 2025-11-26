@@ -1068,10 +1068,24 @@ void PluginEditor::timerCallback()
             auto* param = processorRef.getParameters().getUnchecked(i);
             float paramValue = param->getValue();
             
-            // Only update knob value if it's not currently being dragged
-            if (!knobs[i]->isMouseButtonDown())
-            {
-                knobs[i]->setValue(paramValue, juce::dontSendNotification);
+            // Special handling for Time knob in non-sync mode: convert normalized to actual value
+            if (i == 0 && !timeSyncEnabled) {
+                if (auto* floatParam = dynamic_cast<juce::AudioParameterFloat*>(param)) {
+                    float actualValue = floatParam->convertFrom0to1(paramValue);
+                    actualValue = juce::jlimit(10.0f, 2000.0f, actualValue);
+                    // Only update knob value if it's not currently being dragged
+                    if (!knobs[i]->isMouseButtonDown())
+                    {
+                        knobs[i]->setValue(actualValue, juce::dontSendNotification);
+                    }
+                }
+            } else {
+                // For other knobs, parameter value is already normalized (0-1)
+                // Only update knob value if it's not currently being dragged
+                if (!knobs[i]->isMouseButtonDown())
+                {
+                    knobs[i]->setValue(paramValue, juce::dontSendNotification);
+                }
             }
             
             // Update value label
@@ -2480,9 +2494,12 @@ void PluginEditor::setupKnobs()
             } else if (i == 0) {
                 // Time knob in non-sync mode: 10-2000ms (matches parameter range)
                 knobs[i]->setRange(10.0, 2000.0, 1.0);
+                knobs[i]->setEnabled(true); // Ensure knob is enabled
                 if (auto* floatParam = dynamic_cast<juce::AudioParameterFloat*>(param))
                 {
-                    knobs[i]->setValue(floatParam->convertFrom0to1(param->getValue()), juce::dontSendNotification);
+                    float actualValue = floatParam->convertFrom0to1(param->getValue());
+                    actualValue = juce::jlimit(10.0f, 2000.0f, actualValue);
+                    knobs[i]->setValue(actualValue, juce::dontSendNotification);
                 }
                 else
                 {
@@ -3832,12 +3849,16 @@ void PluginEditor::setupMasterKnobs()
         } else if (knobs[0] != nullptr) {
             // Switch to 10-2000ms range for non-sync mode (matches parameter range)
             knobs[0]->setRange(10.0, 2000.0, 1.0);
+            // Ensure knob is enabled
+            knobs[0]->setEnabled(true);
             // Read current time from parameter (convert from normalized to actual value)
             auto* timeParam = dynamic_cast<juce::AudioParameterFloat*>(processorRef.getAPVTS().getParameter("timeMs"));
             if (timeParam) {
                 auto* rawParam = processorRef.getAPVTS().getRawParameterValue("timeMs");
                 float normalizedValue = rawParam ? rawParam->load() : 0.5f;
                 float actualValue = timeParam->convertFrom0to1(normalizedValue);
+                // Clamp to valid range
+                actualValue = juce::jlimit(10.0f, 2000.0f, actualValue);
                 knobs[0]->setValue(actualValue, juce::dontSendNotification);
             } else {
                 knobs[0]->setValue(250.0, juce::dontSendNotification); // Start at 250ms
@@ -4543,7 +4564,7 @@ void PluginEditor::updateParameterFromKnob(int knobIndex)
         float knobValue = knobs[knobIndex]->getValue();
         
         // Special handling for time knob (index 0) when sync is off
-        // The knob has range 1.0-2000.0, but parameter expects normalized 0-1
+        // The knob has range 10.0-2000.0, parameter range is 10-2000, convert to normalized 0-1
         float normalizedValue = knobValue;
         float actualValue = knobValue;
         
@@ -4553,6 +4574,10 @@ void PluginEditor::updateParameterFromKnob(int knobIndex)
             if (auto* floatParam = dynamic_cast<juce::AudioParameterFloat*>(param)) {
                 actualValue = juce::jlimit(10.0f, 2000.0f, knobValue);
                 normalizedValue = floatParam->convertTo0to1(actualValue);
+                DBG("[SPACE DELAY] Time knob changed: knobValue=" << knobValue << "ms, actualValue=" << actualValue << "ms, normalized=" << normalizedValue);
+            } else {
+                DBG("[SPACE DELAY] ERROR: timeMs parameter not found!");
+                return; // Can't update if parameter doesn't exist
             }
         } else {
             // For other knobs, knob value is already normalized (0-1)
@@ -16762,7 +16787,11 @@ void PluginEditor::setupPhaseBloomSequencerArea()
     phaseBloomRateDropdown->onChange = [this]() {
         int selectedId = phaseBloomRateDropdown->getSelectedId();
         int divisionIndex = selectedId - 1; // Convert 1-based to 0-based
+        DBG("[PHASEBLOOM] Rate dropdown changed: selectedId=" << selectedId << ", divisionIndex=" << divisionIndex);
         processorRef.setPhaseBloomDivisionIndex(divisionIndex);
+        // Verify it was set correctly
+        int actualIndex = processorRef.getPhaseBloomSeqState().divisionIndex.load();
+        DBG("[PHASEBLOOM] Division index after setting: " << actualIndex);
     };
     
     // Create STD toggle

@@ -136,6 +136,9 @@ void PhaseBloomEngine::process(juce::AudioBuffer<float>& buffer, double hostBPM)
     double quarterSec = 60.0 / juce::jmax(1.0, bpm); // Prevent division by zero
     double period = quarterSec * divisionFactors[rateIdx];
     
+    // PHASEBLOOM FIX: Multiply period by 4 to make the effect rate 4x slower
+    period *= 4.0;
+    
     // Prevent division by zero and invalid values
     if (period <= 0.0 || !std::isfinite(period)) {
         period = 1.0; // Fallback to 1 second

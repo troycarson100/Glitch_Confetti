@@ -80,13 +80,38 @@ struct SeqState {
         static const juce::String labels[] = { "4", "2", "1", "1/2", "1/4", "1/8", "1/16", "1/32" };
         const int i = juce::jlimit(0, (int)std::size(labels)-1, divIdx);
         const double result = beatsPerStepFromLabel(labels[i]);
-        DBG("[SEQ] Division " << divIdx << " -> \"" << labels[i] << "\" -> " << result << " beats per step");
+        // Only log for PhaseBloom to reduce noise
+        static int logCounter = 0;
+        if ((logCounter++ % 50) == 0) {
+            DBG("[SEQ] Division " << divIdx << " -> \"" << labels[i] << "\" -> " << result << " beats per step");
+        }
         return result;
     }
     
     int computeStepFromPPQ(double ppq) const noexcept {
         const int N = juce::jmax(1, stepsUsed.load());
-        const double bps = beatsPerStepFromDivision(divisionIndex.load());
+        int divIdx = divisionIndex.load();
+        divIdx = juce::jlimit(0, 7, divIdx);
+        
+        double bps = beatsPerStepFromDivision(divIdx);
+        if (bps <= 0.0 || N <= 0 || !std::isfinite(ppq))
+            return currentStep.load(); // fallback: keep current
+
+        // Which step index are we on in the bar-agnostic sense:
+        // step = floor(ppq / beatsPerStep) % N
+        const double stepsExact = ppq / bps;
+        const int k = (int) std::floor(stepsExact);
+        return ((k % N) + N) % N; // Manual modulo for negative numbers
+    }
+    
+    // PhaseBloom-specific version - no special handling needed, use normal calculation
+    int computeStepFromPPQPhaseBloom(double ppq) const noexcept {
+        const int N = juce::jmax(1, stepsUsed.load());
+        int divIdx = divisionIndex.load();
+        divIdx = juce::jlimit(0, 7, divIdx);
+        
+        double bps = beatsPerStepFromDivision(divIdx);
+        
         if (bps <= 0.0 || N <= 0 || !std::isfinite(ppq))
             return currentStep.load(); // fallback: keep current
 
@@ -601,7 +626,12 @@ public:
     int getSaturateCurrentStep() const noexcept { return saturateSeq.currentStep.load(); }
     int getSaturateUiSelectedStep() const noexcept { return saturateUiSelectedStep.load(); }
     void setSaturateSelectedStep(int step) noexcept { saturateUiSelectedStep.store(step); }
-    void setSaturateSequencerEnabled(bool enabled) noexcept { saturateSeq.enabled.store(enabled); }
+    void setSaturateSequencerEnabled(bool enabled) noexcept {
+        saturateSeq.enabled.store(enabled);
+        if (enabled) {
+            saturateSeq.active.store(true);
+        }
+    }
     void setSaturateStepsUsed(int steps) noexcept { saturateSeq.stepsUsed.store(juce::jlimit(1, 16, steps)); }
     void setSaturateDivisionIndex(int idx) noexcept { saturateSeq.divisionIndex.store(juce::jlimit(0, 7, idx)); }
     void setSaturateStdMode(int mode) noexcept { saturateSeq.stdMode.store(juce::jlimit(0, 2, mode)); }
@@ -618,7 +648,12 @@ public:
     int getFilterCurrentStep() const noexcept { return filterSeq.currentStep.load(); }
     int getFilterUiSelectedStep() const noexcept { return filterUiSelectedStep.load(); }
     void setFilterSelectedStep(int step) noexcept { filterUiSelectedStep.store(step); }
-    void setFilterSequencerEnabled(bool enabled) noexcept { filterSeq.enabled.store(enabled); }
+    void setFilterSequencerEnabled(bool enabled) noexcept {
+        filterSeq.enabled.store(enabled);
+        if (enabled) {
+            filterSeq.active.store(true);
+        }
+    }
     void setFilterStepsUsed(int steps) noexcept { filterSeq.stepsUsed.store(juce::jlimit(1, 16, steps)); }
     void setFilterDivisionIndex(int idx) noexcept { filterSeq.divisionIndex.store(juce::jlimit(0, 7, idx)); }
     void setFilterStepAmount(int amount) noexcept { setFilterStepsUsed(amount); }

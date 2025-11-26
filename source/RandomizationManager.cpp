@@ -81,6 +81,34 @@ void RandomizationManager::randomizeAll()
     applyStepChanges();
     applySequencerChanges();
     
+    // Update UI button states for Space Delay and Dub Delay if they're currently visible
+    // This ensures the step power button reflects the disabled state immediately
+    if (editor) {
+        auto& router = processor.getEffectRouter();
+        for (int slot = 0; slot < 4; ++slot) {
+            EffectID effect = router.getEffectInSlot(static_cast<SlotID>(slot));
+            if (effect == EffectID::SpaceDelay) {
+                // Update Space Delay step power button if it's currently visible
+                bool sequencerEnabled = processor.getSpaceDelaySeqState().enabled.load();
+                editor->stepAreaEnabled = sequencerEnabled;
+                if (editor->stepPowerButton) {
+                    editor->stepPowerButton->setToggleState(sequencerEnabled, juce::dontSendNotification);
+                }
+                // Update visibility
+                editor->updateStepAreaVisibility();
+            } else if (effect == EffectID::DubDelay) {
+                // Update Dub Delay step power button if it's currently visible
+                bool sequencerEnabled = processor.getDubDelaySeqState().enabled.load();
+                editor->dubdelayStepAreaEnabled = sequencerEnabled;
+                if (editor->dubdelayStepPowerButton) {
+                    editor->dubdelayStepPowerButton->setToggleState(sequencerEnabled, juce::dontSendNotification);
+                }
+                // Update visibility
+                editor->updateDubDelayStepAreaVisibility();
+            }
+        }
+    }
+    
     // Verify and report
     verifyAndReport();
     
@@ -782,7 +810,8 @@ void RandomizationManager::applySequencerChanges()
         switch (target.effect)
         {
             case EffectID::SpaceDelay:
-                processor.setSpaceDelaySequencerEnabled(sequencerEnabled);
+                // Always disable Space Delay sequencer when using master random button
+                processor.setSpaceDelaySequencerEnabled(false);
                 processor.setSpaceDelayStepsUsed(stepsUsed);
                 processor.setSpaceDelayDivisionIndex(divisionIndex);
                 // Update UI dropdown to match (dropdown IDs are 1-8, so add 1 to index)
@@ -852,7 +881,8 @@ void RandomizationManager::applySequencerChanges()
                 break;
                 
             case EffectID::DubDelay:
-                processor.setDubDelaySequencerEnabled(sequencerEnabled);
+                // Always disable Dub Delay sequencer when using master random button
+                processor.setDubDelaySequencerEnabled(false);
                 processor.setDubDelayStepsUsed(stepsUsed);
                 processor.setDubDelayDivisionIndex(divisionIndex);
                 // Update UI dropdown to match (dropdown IDs are 1-8, so add 1 to index)
@@ -917,11 +947,17 @@ void RandomizationManager::applySequencerChanges()
         
         // If sequencer was enabled, immediately lock it in to current transport position
         // This ensures it starts running right away if transport is already playing
-        if (sequencerEnabled) {
+        // Note: SpaceDelay and DubDelay are always disabled, so skip lock-in for them
+        if (sequencerEnabled && target.effect != EffectID::SpaceDelay && target.effect != EffectID::DubDelay) {
             processor.forceSequencerLockIn(target.effect);
         }
         
-        DBG("[RAND] " + target.pageId + ": enabled=" + (sequencerEnabled ? "ON" : "OFF") 
+        // For SpaceDelay and DubDelay, always log as OFF since they're forced to disabled
+        bool loggedEnabled = sequencerEnabled;
+        if (target.effect == EffectID::SpaceDelay || target.effect == EffectID::DubDelay) {
+            loggedEnabled = false;
+        }
+        DBG("[RAND] " + target.pageId + ": enabled=" + (loggedEnabled ? "ON" : "OFF") 
             + ", steps=" + juce::String(stepsUsed) + ", division=" + juce::String(divisionIndex));
         
         stats.sequencersRandomized++;
