@@ -1320,6 +1320,7 @@ public:
         // Tab system helpers
         void setupTabSystem();
         void showPage(FxPageID id);
+    FxPageID getCurrentPage() const { return currentPage; }
     void drawGridOverlay(juce::Graphics& g);
     void drawMainAreas(juce::Graphics& g);
     

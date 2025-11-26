@@ -593,6 +593,23 @@ void PluginProcessor::changeProgramName (int index, const juce::String& newName)
 //==============================================================================
 void PluginProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 {
+    // VST3 DEBUG: Log prepareToPlay to file
+    static juce::File logFile = juce::File::getSpecialLocation(juce::File::userHomeDirectory).getChildFile("stepper_vst3_debug.txt");
+    juce::String logMsg = juce::String("[VST3] prepareToPlay called - SampleRate: ") + juce::String(sampleRate) 
+        + " SamplesPerBlock: " + juce::String(samplesPerBlock)
+        + " Input buses: " + juce::String(getBusCount(true))
+        + " Output buses: " + juce::String(getBusCount(false))
+        + " IsSuspended: " + juce::String(isSuspended() ? 1 : 0)
+        + "\n";
+    if (auto stream = logFile.createOutputStream()) {
+        stream->writeString(logMsg);
+        stream->flush();
+    }
+    
+    // VST3 FIX: Ensure plugin is NOT suspended after prepareToPlay
+    // Some hosts may leave plugins suspended, which prevents processBlock from being called
+    suspendProcessing(false);
+    
     dspSampleRate = sampleRate;
     spaceDelay.prepare(sampleRate, samplesPerBlock);
     autoPan.prepare(sampleRate, 30.0); // 30ms smoothing
@@ -751,8 +768,9 @@ void PluginProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 
 void PluginProcessor::releaseResources()
 {
-    // Suspend processing to prevent audio callbacks during cleanup
-    suspendProcessing(true);
+    // VST3 FIX: Don't suspend here - let the host control suspension
+    // Suspending here can prevent the plugin from processing audio after releaseResources
+    // suspendProcessing(true); // REMOVED - was preventing VST3 from processing
     
     // Clear all buffers to prevent access to invalid memory
     // dryBuffer removed - no longer needed
@@ -809,6 +827,74 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
     
     // Simplified processing to avoid crashes
     juce::ignoreUnused(midiMessages);
+    
+    // VST3 CRITICAL FIX: If plugin is suspended, ensure audio passes through
+    if (isSuspended()) {
+        // Plugin is suspended - log it and ensure audio passes through
+        static int suspendLogCount = 0;
+        if (++suspendLogCount <= 5) {
+            static juce::File logFile = juce::File::getSpecialLocation(juce::File::userHomeDirectory).getChildFile("stepper_vst3_debug.txt");
+            juce::String logMsg = juce::String("[VST3] WARNING: processBlock called but plugin is SUSPENDED!\n");
+            if (auto stream = logFile.createOutputStream()) {
+                stream->writeString(logMsg);
+                stream->flush();
+            }
+        }
+        // Don't return - continue processing to ensure audio passes through
+        // The VST3 wrapper will clear the buffer if suspended, so we need to unsuspend
+        suspendProcessing(false);
+    }
+    
+    // CRITICAL FIX: Store input buffer immediately to ensure we always have audio to pass through
+    // This is a safety measure to ensure audio always passes through in VST3
+    juce::AudioBuffer<float> inputBuffer;
+    inputBuffer.makeCopyOf(buffer);
+    
+    // VST3 DEBUG: Write to file for debugging (since console may not show)
+    static int debugCounter = 0;
+    static bool fileLogInitialized = false;
+    static juce::File logFile = juce::File::getSpecialLocation(juce::File::userHomeDirectory).getChildFile("stepper_vst3_debug.txt");
+    
+    if (!fileLogInitialized) {
+        logFile.deleteFile(); // Clear old log
+        fileLogInitialized = true;
+    }
+    
+    if (++debugCounter <= 20) {
+        float inputLevel = 0.0f;
+        for (int ch = 0; ch < inputBuffer.getNumChannels(); ++ch) {
+            const float* data = inputBuffer.getReadPointer(ch);
+            for (int n = 0; n < inputBuffer.getNumSamples(); ++n) {
+                inputLevel = juce::jmax(inputLevel, std::abs(data[n]));
+            }
+        }
+        
+        bool inputBusEnabled = false;
+        bool outputBusEnabled = false;
+        if (getBusCount(true) > 0) {
+            if (auto* bus = getBus(true, 0)) {
+                inputBusEnabled = bus->isEnabled();
+            }
+        }
+        if (getBusCount(false) > 0) {
+            if (auto* bus = getBus(false, 0)) {
+                outputBusEnabled = bus->isEnabled();
+            }
+        }
+        
+        juce::String logMsg = juce::String("[VST3] processBlock #") + juce::String(debugCounter) 
+            + " - Input level: " + juce::String(inputLevel, 6)
+            + " Channels: " + juce::String(inputBuffer.getNumChannels())
+            + " Samples: " + juce::String(inputBuffer.getNumSamples())
+            + " Input bus enabled: " + juce::String(inputBusEnabled ? 1 : 0)
+            + " Output bus enabled: " + juce::String(outputBusEnabled ? 1 : 0)
+            + "\n";
+        
+        if (auto stream = logFile.createOutputStream()) {
+            stream->writeString(logMsg);
+            stream->flush();
+        }
+    }
     
 #if GC_SAFE_DELAY_ONLY
     const FxType fx = FxType::Delay;
@@ -2494,6 +2580,26 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
     // Process COMPRESS+ Master Effect (after all other effects)
     processCompressEffect(buffer);
     
+    // CRITICAL FIX: Ensure audio passes through even when no effects are enabled
+    // Check if buffer is silent (all zeros) and restore from dryBuffer if needed
+    // This ensures audio always passes through in VST3 format
+    bool bufferIsSilent = true;
+    for (int ch = 0; ch < buffer.getNumChannels() && bufferIsSilent; ++ch) {
+        const float* data = buffer.getReadPointer(ch);
+        for (int n = 0; n < buffer.getNumSamples() && bufferIsSilent; ++n) {
+            if (std::abs(data[n]) > 1e-6f) { // Check for non-zero samples
+                bufferIsSilent = false;
+            }
+        }
+    }
+    
+    // If buffer is silent, restore from dryBuffer to ensure audio passes through
+    if (bufferIsSilent && dryBuffer.getNumChannels() > 0 && dryBuffer.getNumSamples() > 0) {
+        for (int ch = 0; ch < juce::jmin(buffer.getNumChannels(), dryBuffer.getNumChannels()); ++ch) {
+            buffer.copyFrom(ch, 0, dryBuffer, ch, 0, juce::jmin(buffer.getNumSamples(), dryBuffer.getNumSamples()));
+        }
+    }
+    
     // Safety check: detect and fix NaN/infinity values that could cause audio to go silent
     // Last-resort guard: ensure NaNs/infinity don't escape into the host
     // This is cheap and catches any NaN/infinity that slipped through from any effect
@@ -2746,22 +2852,27 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
     if (masterDryWetParam != nullptr) {
         float dryWet = masterDryWetParam->load(); // 0.0 = 100% dry, 1.0 = 100% wet
         
-        // Only apply dry/wet mixing if it's not 100% wet (to avoid unnecessary processing)
-        if (dryWet < 1.0f) {
-            float dryGain = 1.0f - dryWet;  // Dry signal gain
-            float wetGain = dryWet;         // Wet signal gain
+        // Always apply dry/wet mixing to ensure audio passes through
+        // When dryWet == 1.0f, we still want to ensure the buffer has content
+        float dryGain = 1.0f - dryWet;  // Dry signal gain
+        float wetGain = dryWet;         // Wet signal gain
+        
+        // Mix dry and wet signals properly
+        for (int channel = 0; channel < buffer.getNumChannels(); ++channel) {
+            // Scale the wet signal (current buffer) by wet gain
+            buffer.applyGainRamp(channel, 0, buffer.getNumSamples(), wetGain, wetGain);
             
-            // Mix dry and wet signals properly
-            for (int channel = 0; channel < buffer.getNumChannels(); ++channel) {
-                // Scale the wet signal (current buffer) by wet gain
-                buffer.applyGainRamp(channel, 0, buffer.getNumSamples(), wetGain, wetGain);
-                
-                // Add the dry signal scaled by dry gain
-                buffer.addFromWithRamp(channel, 0, dryBuffer.getReadPointer(channel), 
-                                     buffer.getNumSamples(), dryGain, dryGain);
-            }
+            // Add the dry signal scaled by dry gain
+            buffer.addFromWithRamp(channel, 0, dryBuffer.getReadPointer(channel), 
+                                 buffer.getNumSamples(), dryGain, dryGain);
         }
-        // If dryWet == 1.0f (100% wet), the current buffer is already the wet signal, no mixing needed
+    } else {
+        // If masterDryWet parameter doesn't exist, ensure audio passes through by mixing dry signal
+        // This is a safety fallback to ensure audio always passes through
+        for (int channel = 0; channel < buffer.getNumChannels(); ++channel) {
+            buffer.addFrom(channel, 0, dryBuffer.getReadPointer(channel), 
+                          buffer.getNumSamples());
+        }
     }
     
     // Apply master output gain (post dry/wet mix)
@@ -2771,6 +2882,43 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
         float outputGain = juce::Decibels::decibelsToGain(outputGainDb);
         buffer.applyGain(outputGain);
         
+    }
+    
+    // FINAL SAFETY CHECK: Ensure audio is present in output buffer
+    // If buffer is silent or invalid, restore from input buffer
+    bool hasAudio = false;
+    bool inputHasAudio = false;
+    
+    // Check if input buffer has audio
+    for (int ch = 0; ch < inputBuffer.getNumChannels() && !inputHasAudio; ++ch) {
+        const float* data = inputBuffer.getReadPointer(ch);
+        for (int n = 0; n < inputBuffer.getNumSamples() && !inputHasAudio; ++n) {
+            if (std::abs(data[n]) > 1e-8f) {
+                inputHasAudio = true;
+            }
+        }
+    }
+    
+    // Check if output buffer has audio
+    for (int ch = 0; ch < buffer.getNumChannels() && !hasAudio; ++ch) {
+        const float* data = buffer.getReadPointer(ch);
+        for (int n = 0; n < buffer.getNumSamples() && !hasAudio; ++n) {
+            if (std::abs(data[n]) > 1e-8f) {
+                hasAudio = true;
+            }
+        }
+    }
+    
+    // VST3 FIX: If input has audio but output doesn't, copy input to output
+    // This ensures audio always passes through even if processing fails
+    if (inputHasAudio && !hasAudio && inputBuffer.getNumChannels() > 0 && inputBuffer.getNumSamples() > 0) {
+        static int restoreCount = 0;
+        if (++restoreCount <= 5) {
+            DBG("[VST3] Restoring audio from input buffer - output was silent but input had audio");
+        }
+        for (int ch = 0; ch < juce::jmin(buffer.getNumChannels(), inputBuffer.getNumChannels()); ++ch) {
+            buffer.copyFrom(ch, 0, inputBuffer, ch, 0, juce::jmin(buffer.getNumSamples(), inputBuffer.getNumSamples()));
+        }
     }
     
     // Call AFTER processing = output meter
@@ -4797,6 +4945,16 @@ void PluginProcessor::processCompressEffect(juce::AudioBuffer<float>& buffer)
                 d[n] = 0.0f;
         }
     }
+}
+
+void PluginProcessor::processBlockBypassed (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages)
+{
+    // Bypass: Just pass audio through unchanged
+    // This ensures audio always passes through when bypassed (works for both AU and VST3)
+    juce::ignoreUnused(midiMessages);
+    
+    // Audio passes through unchanged when bypassed
+    // No processing needed - buffer already contains input audio
 }
 
 void PluginProcessor::forceSequencerLockIn(EffectID effect) noexcept

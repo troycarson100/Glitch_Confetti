@@ -115,6 +115,35 @@ void RandomizationManager::randomizeAll()
     // Update effect selector dropdowns to reflect new router assignments
     if (editor) {
         editor->updateAllEffectSelectors();
+        
+        // Refresh UI for all slots to show the correct effects after randomization
+        // This ensures components are properly shown/hidden and initialized
+        // We need to refresh all 4 slots to initialize components, but preserve
+        // the current visible page. Since showPage() uses the router to determine
+        // which effect to show for each slot, we refresh all slots then restore
+        // visibility by calling showPage for each slot in order.
+        // The last visible page will be determined by editor->currentPage.
+        
+        // Store which slot was visible before refresh (0-3)
+        int currentSlot = static_cast<int>(editor->getCurrentPage());
+        
+        // Refresh all 4 slots to initialize components properly
+        editor->showPage(FxPageID::SpaceDelay);  // Slot 0
+        editor->showPage(FxPageID::Panner);      // Slot 1  
+        editor->showPage(FxPageID::Dirt);        // Slot 2
+        editor->showPage(FxPageID::Chorus);      // Slot 3
+        
+        // Restore the previously visible slot
+        switch (currentSlot) {
+            case 0: editor->showPage(FxPageID::SpaceDelay); break;
+            case 1: editor->showPage(FxPageID::Panner); break;
+            case 2: editor->showPage(FxPageID::Dirt); break;
+            case 3: editor->showPage(FxPageID::Chorus); break;
+            default: editor->showPage(FxPageID::SpaceDelay); break;
+        }
+        
+        // Force a repaint to ensure UI updates are visible
+        editor->repaint();
     }
     
     // Resume processing
