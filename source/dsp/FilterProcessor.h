@@ -142,13 +142,7 @@ struct SVFProc : IFilter {
         }
         
         // Apply output gain trim
-        // For BP mode, apply additional gain boost to compensate for natural attenuation
-        float finalGain = outputGain;
-        if (filterType == 2) { // BP mode
-            // Bandpass filters naturally attenuate signal, so boost by ~6dB (2x) for audibility
-            finalGain *= 2.0f;
-        }
-        out.multiplyBy(finalGain);
+        out.multiplyBy(outputGain);
     }
     
 private:
@@ -179,6 +173,9 @@ public:
         while (readPos < 0.0f) readPos += static_cast<float>(bufferSize);
         while (readPos >= static_cast<float>(bufferSize)) readPos -= static_cast<float>(bufferSize);
         
+        // Allow reading from buffer even when not fully filled - this allows gradual buildup
+        // The buffer is initialized to 0, so reading early positions returns 0 (which is correct)
+        // This is safe because the buffer is zero-initialized in the constructor
         return lagrange3(buffer, readPos);
     }
     
@@ -219,503 +216,143 @@ private:
     }
 };
 
-// Simple cubic soft clip - branch-light and fast
-// This is the core protection that prevents nasty digital clipping
-inline float softClip(float x) {
-    // Cubic soft saturation: x - (x^3) * (1/3)
-    // This provides smooth saturation without harsh clipping
-    // Works well for values up to about ±1.5, then saturates smoothly
-    const float x3 = x * x * x;
-    return x - (x3 * 0.333333f);
-}
-
 // Comb filter processor (Comb- / Comb+)
-// Clean, robust design based on proven comb filter topology
-// Design choices:
-// - inputGain: Creates internal headroom to prevent clipping (0.4 = -7.9dB headroom)
-// - wetGain: Controls output level (1.0 for Comb+, 1.4 for Comb- to make it more obvious)
-// - maxFeedback: Hard caps to prevent instability (0.94 for Comb+, -0.97 for Comb-)
-// - damping: One-pole LPF in feedback path (0.1 = bright, 0.3 = smooth)
-// - softClip: Cubic saturation prevents digital clipping while maintaining musical character
 struct CombProc : IFilter {
-    // Tuning constants - adjust these to change character:
-    static constexpr float MAX_FB_PLUS = 0.94f;   // Comb+ max feedback (lower = safer, less wild)
-    static constexpr float MAX_FB_MINUS = -0.97f; // Comb- max feedback (more negative = deeper notches)
-    static constexpr float INPUT_GAIN_PLUS = 0.4f;  // Comb+ input gain (lower = more headroom, less clipping)
-    static constexpr float INPUT_GAIN_MINUS = 0.4f; // Comb- input gain (same for consistency)
-    static constexpr float WET_GAIN_PLUS = 1.5f;    // Comb+ wet gain (increased for more prominence)
-    static constexpr float WET_GAIN_MINUS = 2.0f;   // Comb- wet gain (increased for more prominence at higher frequencies)
-    static constexpr float DAMPING_PLUS = 0.1f;     // Comb+ damping (lower = brighter, more resonant)
-    static constexpr float DAMPING_MINUS = 0.15f;   // Comb- damping (slightly higher for stability, but still sharp)
-    
-    CombProc(int polarity) : combPolarity(polarity), isNegative(polarity < 0) {
+    CombProc(int polarity) : combPolarity(polarity) {
         // polarity: -1 for Comb-, +1 for Comb+
-        // Set defaults based on comb type
-        if (isNegative) {
-            inputGain = INPUT_GAIN_MINUS;
-            wetGain = WET_GAIN_MINUS;
-            currentDamping = DAMPING_MINUS;
-        } else {
-            inputGain = INPUT_GAIN_PLUS;
-            wetGain = WET_GAIN_PLUS;
-            currentDamping = DAMPING_PLUS;
-        }
     }
     
     void prepare(const juce::dsp::ProcessSpec& spec) override {
         specCached = spec;
         double fs = spec.sampleRate;
-        sampleRateHz = fs;
         
         // Maximum delay: 1 second at highest sample rate
-        const size_t maxSamples = static_cast<size_t>(std::ceil(1.0 * fs));
+        int maxDelaySamples = static_cast<int>(fs * 1.0);
+        // Round up to power of 2
+        int bufferSize = 1;
+        while (bufferSize < maxDelaySamples) bufferSize *= 2;
         
-        // Allocate delay buffers (simple circular buffers)
-        bufferSizeL = maxSamples + 1;
-        bufferSizeR = maxSamples + 1;
-        bufferL.assign(bufferSizeL, 0.0f);
-        bufferR.assign(bufferSizeR, 0.0f);
+        delayL = std::make_unique<FractionalDelay>(bufferSize);
+        delayR = std::make_unique<FractionalDelay>(bufferSize);
         
-        // Call recover to ensure clean state
-        recover();
+        // Internal LP for stability (12-16 kHz)
+        lpL.prepare(spec);
+        lpR.prepare(spec);
+        lpL.setType(juce::dsp::StateVariableTPTFilterType::lowpass);
+        lpR.setType(juce::dsp::StateVariableTPTFilterType::lowpass);
+        lpL.setCutoffFrequency(14000.0f);
+        lpR.setCutoffFrequency(14000.0f);
     }
     
     void set(float cutoffHz, float res, float slopeOrDepth, int slopeSel, float driveDb, float spreadCents, float fs) override {
-        // Safety check: must have valid sample rate and buffer prepared
-        if (fs <= 0.0f || bufferSizeL == 0 || bufferSizeR == 0 || !std::isfinite(cutoffHz)) {
-            return; // Skip if not ready
-        }
-        
         // cutoff becomes Tune (Hz) for comb
         float tuneHz = juce::jlimit(40.0f, 8000.0f, cutoffHz);
         
-        // Safety check: ensure tuneHz is valid and not zero
-        if (tuneHz <= 0.0f || !std::isfinite(tuneHz)) {
-            tuneHz = 40.0f; // Safe default
-        }
+        // res becomes Feedback
+        feedback = juce::jlimit(0.0f, 0.95f, res);
         
-        // res becomes Feedback - use curved mapping for sweet spot
-        // Shape the resonance parameter: res^2 gives more control in lower range
-        float shaped = res * res;
-        shaped = juce::jlimit(0.0f, 1.0f, shaped);
-        
-        // Set feedback based on comb type with different caps
-        if (isNegative) {
-            // Comb-: use stronger negative feedback for deeper notches
-            feedback = MAX_FB_MINUS * shaped;
-        } else {
-            // Comb+: use positive feedback, slightly lower cap for safety
-            feedback = MAX_FB_PLUS * shaped;
-        }
-        
-        // slopeOrDepth becomes Depth (feed-forward tap) - not used in this design
-        // We use wetGain instead for output level control
+        // slope becomes Depth (feed-forward tap) - use slopeOrDepth value directly
+        // For comb filters, depth should come from the slopeOrDepth parameter
         depth = juce::jlimit(0.0f, 1.0f, slopeOrDepth);
-        
-        // Make wet gain frequency-dependent: higher gain at higher frequencies for more prominence
-        // At 25% cutoff (~2000Hz), use base gain. At 100% (8000Hz), use 2x gain
-        // Map 40-8000Hz to 0-1, then scale gain from 1.0 to 2.0
-        float freqNormalized = (tuneHz - 40.0f) / (8000.0f - 40.0f);
-        freqNormalized = juce::jlimit(0.0f, 1.0f, freqNormalized);
-        float freqGainMultiplier = 1.0f + freqNormalized; // 1.0 at low freq, 2.0 at high freq
-        
-        if (isNegative) {
-            wetGain = WET_GAIN_MINUS * freqGainMultiplier;
-        } else {
-            wetGain = WET_GAIN_PLUS * freqGainMultiplier;
-        }
         
         // Calculate delay length: L = fs / TuneHz
         float delaySamples = static_cast<float>(fs) / tuneHz;
-        
-        // Ensure buffer is valid before clamping (use minimum of both buffers for safety)
-        const size_t minBufferSize = juce::jmin(bufferSizeL, bufferSizeR);
-        const float maxDelay = static_cast<float>(minBufferSize > 2 ? minBufferSize - 2 : 1);
-        delaySamples = juce::jlimit(1.0f, maxDelay, delaySamples);
-        
-        // Safety check: ensure delay is finite
-        if (!std::isfinite(delaySamples)) {
-            delaySamples = 1.0f; // Safe default
-        }
+        delaySamples = juce::jlimit(1.0f, static_cast<float>(delayL->getBufferSize() - 1), delaySamples);
+        baseDelaySamples = delaySamples;
         
         // Stereo spread: offset tune per channel
         float spreadFactorL = std::pow(2.0f, spreadCents / 1200.0f);
         float spreadFactorR = std::pow(2.0f, -spreadCents / 1200.0f);
         
-        // Safety check: ensure spread factors are finite
-        if (!std::isfinite(spreadFactorL)) spreadFactorL = 1.0f;
-        if (!std::isfinite(spreadFactorR)) spreadFactorR = 1.0f;
+        delaySamplesL = delaySamples * spreadFactorL;
+        delaySamplesR = delaySamples * spreadFactorR;
         
-        currentDelayL = delaySamples * spreadFactorL;
-        currentDelayR = delaySamples * spreadFactorR;
+        delaySamplesL = juce::jlimit(1.0f, static_cast<float>(delayL->getBufferSize() - 1), delaySamplesL);
+        delaySamplesR = juce::jlimit(1.0f, static_cast<float>(delayR->getBufferSize() - 1), delaySamplesR);
         
-        // Ensure delays are clamped to valid range
-        currentDelayL = juce::jlimit(1.0f, maxDelay, currentDelayL);
-        currentDelayR = juce::jlimit(1.0f, maxDelay, currentDelayR);
-        
-        // Final safety check: ensure delays are finite
-        if (!std::isfinite(currentDelayL)) currentDelayL = 1.0f;
-        if (!std::isfinite(currentDelayR)) currentDelayR = 1.0f;
-        
-        // Damping is set based on comb type in constructor, but can be adjusted here if needed
-        // For now, keep the defaults set in constructor
-    }
-    
-    // State validation method
-    bool isValidState() const {
-        // Check buffer sizes are valid
-        if (bufferSizeL == 0 || bufferSizeR == 0) return false;
-        if (bufferL.empty() || bufferR.empty()) return false;
-        
-        // Check write indices are within bounds
-        if (writeIndexL >= bufferSizeL || writeIndexR >= bufferSizeR) return false;
-        
-        // Check delay values are finite and in valid range
-        if (!std::isfinite(currentDelayL) || !std::isfinite(currentDelayR)) return false;
-        if (currentDelayL < 1.0f || currentDelayL > static_cast<float>(bufferSizeL - 1)) return false;
-        if (currentDelayR < 1.0f || currentDelayR > static_cast<float>(bufferSizeR - 1)) return false;
-        
-        // Check feedback is finite
-        if (!std::isfinite(feedback)) return false;
-        
-        return true;
-    }
-    
-    // Recovery method to reset filter state
-    void recover() {
-        // Reset write indices to 0
-        writeIndexL = 0;
-        writeIndexR = 0;
-        
-        // Clear buffer state (fill with zeros)
-        if (!bufferL.empty()) {
-            std::fill(bufferL.begin(), bufferL.end(), 0.0f);
+        // Update LP if feedback/depth are high
+        if (feedback > 0.8f || depth > 0.5f) {
+            lpL.setCutoffFrequency(12000.0f);
+            lpR.setCutoffFrequency(12000.0f);
+        } else {
+            lpL.setCutoffFrequency(16000.0f);
+            lpR.setCutoffFrequency(16000.0f);
         }
-        if (!bufferR.empty()) {
-            std::fill(bufferR.begin(), bufferR.end(), 0.0f);
-        }
-        
-        // Reset delay values to safe defaults
-        currentDelayL = 1.0f;
-        currentDelayR = 1.0f;
-        
-        // Reset damping state variables
-        lastLowpassOutL = 0.0f;
-        lastLowpassOutR = 0.0f;
-        
-        // Reset feedback to safe value
-        feedback = 0.0f;
     }
     
     void process(juce::dsp::AudioBlock<float>& in, juce::dsp::AudioBlock<float>& out) override {
         auto numChannels = in.getNumChannels();
         auto numSamples = in.getNumSamples();
         
-        // Safety check: buffer must be prepared
-        if (numChannels < 2 || bufferSizeL == 0 || bufferSizeR == 0 || bufferL.empty() || bufferR.empty()) {
-            // Pass through if not prepared
-            out.copyFrom(in);
-            return;
-        }
-        
-        // Validate state before processing - if invalid, just pass through (don't try to recover in audio thread)
-        // Recovery requires prepare() which can't be called from audio thread
-        if (!isValidState()) {
-            // Just pass through input - don't try to process with invalid state
-            out.copyFrom(in);
-            return;
-        }
+        if (numChannels < 2) return;
         
         auto* inL = in.getChannelPointer(0);
         auto* inR = in.getChannelPointer(1);
         auto* outL = out.getChannelPointer(0);
         auto* outR = out.getChannelPointer(1);
         
-        // Process with per-sample validation
+        // Temporary buffers for LP processing
+        juce::AudioBuffer<float> lpTempL(1, numSamples);
+        juce::AudioBuffer<float> lpTempR(1, numSamples);
+        float* lpTempLData = lpTempL.getWritePointer(0);
+        float* lpTempRData = lpTempR.getWritePointer(0);
+        
         for (int i = 0; i < numSamples; ++i) {
-            // Validate state before each sample - if it becomes invalid during processing, pass through
-            if (!isValidState()) {
-                // State became invalid during processing - pass through remaining samples
-                for (int j = i; j < numSamples; ++j) {
-                    outL[j] = inL[j];
-                    outR[j] = inR[j];
-                }
-                return;
-            }
+            // Left channel: read delayed signal FIRST (before writing)
+            float delayedL = delayL->read(delaySamplesL);
             
-            // Per-channel error detection with fallback to input
-            try {
-                float resultL = processSampleL(inL[i]);
-                // Validate result before writing
-                if (!std::isfinite(resultL) || std::abs(resultL) > 1.0e4f) {
-                    resultL = inL[i]; // Fallback to input
-                }
-                outL[i] = resultL;
-            } catch (...) {
-                outL[i] = inL[i]; // Fallback to input on error
-            }
+            // Calculate feedback signal (before LP filtering)
+            float fbL = delayedL * feedback * combPolarity;
+            lpTempLData[i] = fbL;
             
-            try {
-                float resultR = processSampleR(inR[i]);
-                // Validate result before writing
-                if (!std::isfinite(resultR) || std::abs(resultR) > 1.0e4f) {
-                    resultR = inR[i]; // Fallback to input
-                }
-                outR[i] = resultR;
-            } catch (...) {
-                outR[i] = inR[i]; // Fallback to input on error
-            }
+            // Feed-forward tap (depth) - use current input
+            float ffL = inL[i] * depth;
+            
+            // Output: input + delayed + feed-forward (standard comb filter topology)
+            // Even if delay is empty initially, input signal will still pass through
+            outL[i] = inL[i] + delayedL + ffL;
+            
+            // Right channel
+            float delayedR = delayR->read(delaySamplesR);
+            
+            float fbR = delayedR * feedback * combPolarity;
+            lpTempRData[i] = fbR;
+            
+            float ffR = inR[i] * depth;
+            
+            outR[i] = inR[i] + delayedR + ffR;
+            
+            // Process LP filter on this sample's feedback (sample-by-sample for correct order)
+            // Use single-sample AudioBlock for LP filtering (StateVariableTPTFilter processes blocks)
+            juce::AudioBuffer<float> singleSampleL(1, 1);
+            juce::AudioBuffer<float> singleSampleR(1, 1);
+            singleSampleL.setSample(0, 0, fbL);
+            singleSampleR.setSample(0, 0, fbR);
+            
+            juce::dsp::AudioBlock<float> singleBlockL(singleSampleL);
+            juce::dsp::AudioBlock<float> singleBlockR(singleSampleR);
+            lpL.process(juce::dsp::ProcessContextReplacing<float>(singleBlockL));
+            lpR.process(juce::dsp::ProcessContextReplacing<float>(singleBlockR));
+            
+            float filteredFbL = singleSampleL.getSample(0, 0);
+            float filteredFbR = singleSampleR.getSample(0, 0);
+            
+            // Write input + FILTERED feedback to delay line
+            // This happens AFTER reading, so the delay line builds up over time
+            delayL->write(inL[i] + filteredFbL);
+            delayR->write(inR[i] + filteredFbR);
         }
     }
     
 private:
-    // Process single sample for left channel
-    inline float processSampleL(float inputSample) {
-        // Guard input
-        if (!std::isfinite(inputSample)) {
-            inputSample = 0.0f;
-        }
-        
-        // Safety check: buffer must be prepared
-        if (bufferSizeL == 0 || bufferL.empty() || !std::isfinite(currentDelayL)) {
-            return inputSample; // Pass through if not prepared
-        }
-        
-        // Ensure delay is valid and clamped
-        const float safeDelay = juce::jlimit(1.0f, static_cast<float>(bufferSizeL - 2), currentDelayL);
-        
-        // Read delayed sample with linear interpolation
-        float readIndex = static_cast<float>(writeIndexL) - safeDelay;
-        if (readIndex < 0.0f) {
-            readIndex += static_cast<float>(bufferSizeL);
-        }
-        
-        // Wrap read index to valid range
-        while (readIndex >= static_cast<float>(bufferSizeL)) {
-            readIndex -= static_cast<float>(bufferSizeL);
-        }
-        
-        const int idxA = static_cast<int>(readIndex);
-        const int idxB = (idxA + 1) % static_cast<int>(bufferSizeL);
-        const float frac = juce::jlimit(0.0f, 1.0f, readIndex - static_cast<float>(idxA));
-        
-        // Bounds checking for safety
-        const size_t safeIdxA = static_cast<size_t>(juce::jlimit(0, static_cast<int>(bufferSizeL - 1), idxA));
-        const size_t safeIdxB = static_cast<size_t>(juce::jlimit(0, static_cast<int>(bufferSizeL - 1), idxB));
-        
-        const float sa = bufferL[safeIdxA];
-        const float sb = bufferL[safeIdxB];
-        float delayedSample = sa + frac * (sb - sa);
-        
-        // Guard delayed sample - emergency reset if blown up
-        if (!std::isfinite(delayedSample) || std::abs(delayedSample) > 1.0e4f) {
-            delayedSample = 0.0f;
-            lastLowpassOutL = 0.0f;
-            feedback = 0.0f;
-            // Reset buffer to prevent poisoning
-            std::fill(bufferL.begin(), bufferL.end(), 0.0f);
-        }
-        
-        // Feedback path damping (one-pole LPF)
-        float filtered = (1.0f - currentDamping) * delayedSample + currentDamping * lastLowpassOutL;
-        lastLowpassOutL = filtered;
-        
-        // Guard filtered - emergency reset if blown up
-        if (!std::isfinite(filtered) || std::abs(filtered) > 1.0e4f) {
-            filtered = 0.0f;
-            lastLowpassOutL = 0.0f;
-            feedback = 0.0f;
-        }
-        
-        // Calculate feedback sample
-        float feedbackSample = filtered * feedback;
-        
-        // Sum input (with headroom) + feedback
-        float internal = inputSample * inputGain + feedbackSample;
-        
-        // Soft clip to prevent clipping inside loop
-        internal = softClip(internal);
-        
-        // Guard internal - emergency reset if blown up
-        if (!std::isfinite(internal) || std::abs(internal) > 1.0e4f) {
-            internal = 0.0f;
-            lastLowpassOutL = 0.0f;
-            feedback = 0.0f;
-            // Reset buffer to prevent poisoning
-            std::fill(bufferL.begin(), bufferL.end(), 0.0f);
-        }
-        
-        // Validate write index before writing
-        if (writeIndexL >= bufferSizeL) {
-            writeIndexL = juce::jlimit(0, static_cast<int>(bufferSizeL - 1), static_cast<int>(writeIndexL));
-        }
-        
-        // Write into buffer with bounds checking
-        if (writeIndexL < bufferSizeL) {
-            bufferL[writeIndexL] = internal;
-        }
-        
-        // Increment write index (circular) with safety check
-        if (bufferSizeL > 0) {
-            ++writeIndexL;
-            if (writeIndexL >= bufferSizeL) {
-                writeIndexL = 0;
-            }
-        } else {
-            writeIndexL = 0; // Reset if buffer size is invalid
-        }
-        
-        // Output: input + delayed signal (standard comb filter topology)
-        // The wetGain scales the delayed component for Comb- prominence
-        float output = inputSample + delayedSample * wetGain;
-        
-        // Final soft clip on output for safety
-        output = softClip(output);
-        
-        // Final guard on output - clamp to safe range
-        if (!std::isfinite(output)) {
-            output = 0.0f;
-        } else {
-            output = juce::jlimit(-0.99f, 0.99f, output);
-        }
-        
-        return output;
-    }
-    
-    // Process single sample for right channel
-    inline float processSampleR(float inputSample) {
-        // Guard input
-        if (!std::isfinite(inputSample)) {
-            inputSample = 0.0f;
-        }
-        
-        // Safety check: buffer must be prepared
-        if (bufferSizeR == 0 || bufferR.empty() || !std::isfinite(currentDelayR)) {
-            return inputSample; // Pass through input if not prepared (prevents right channel going silent)
-        }
-        
-        // Ensure delay is valid and clamped
-        const float safeDelay = juce::jlimit(1.0f, static_cast<float>(bufferSizeR - 2), currentDelayR);
-        
-        // Read delayed sample with linear interpolation
-        float readIndex = static_cast<float>(writeIndexR) - safeDelay;
-        if (readIndex < 0.0f) {
-            readIndex += static_cast<float>(bufferSizeR);
-        }
-        
-        // Wrap read index to valid range
-        while (readIndex >= static_cast<float>(bufferSizeR)) {
-            readIndex -= static_cast<float>(bufferSizeR);
-        }
-        
-        const int idxA = static_cast<int>(readIndex);
-        const int idxB = (idxA + 1) % static_cast<int>(bufferSizeR);
-        const float frac = juce::jlimit(0.0f, 1.0f, readIndex - static_cast<float>(idxA));
-        
-        // Bounds checking for safety
-        const size_t safeIdxA = static_cast<size_t>(juce::jlimit(0, static_cast<int>(bufferSizeR - 1), idxA));
-        const size_t safeIdxB = static_cast<size_t>(juce::jlimit(0, static_cast<int>(bufferSizeR - 1), idxB));
-        
-        const float sa = bufferR[safeIdxA];
-        const float sb = bufferR[safeIdxB];
-        float delayedSample = sa + frac * (sb - sa);
-        
-        // Guard delayed sample - emergency reset if blown up
-        if (!std::isfinite(delayedSample) || std::abs(delayedSample) > 1.0e4f) {
-            delayedSample = 0.0f;
-            lastLowpassOutR = 0.0f;
-            feedback = 0.0f;
-            // Reset buffer to prevent poisoning
-            std::fill(bufferR.begin(), bufferR.end(), 0.0f);
-        }
-        
-        // Feedback path damping (one-pole LPF)
-        float filtered = (1.0f - currentDamping) * delayedSample + currentDamping * lastLowpassOutR;
-        lastLowpassOutR = filtered;
-        
-        // Guard filtered - emergency reset if blown up
-        if (!std::isfinite(filtered) || std::abs(filtered) > 1.0e4f) {
-            filtered = 0.0f;
-            lastLowpassOutR = 0.0f;
-            feedback = 0.0f;
-        }
-        
-        // Calculate feedback sample
-        float feedbackSample = filtered * feedback;
-        
-        // Sum input (with headroom) + feedback
-        float internal = inputSample * inputGain + feedbackSample;
-        
-        // Soft clip to prevent clipping inside loop
-        internal = softClip(internal);
-        
-        // Guard internal - emergency reset if blown up
-        if (!std::isfinite(internal) || std::abs(internal) > 1.0e4f) {
-            internal = 0.0f;
-            lastLowpassOutR = 0.0f;
-            feedback = 0.0f;
-            // Reset buffer to prevent poisoning
-            std::fill(bufferR.begin(), bufferR.end(), 0.0f);
-        }
-        
-        // Validate write index before writing
-        if (writeIndexR >= bufferSizeR) {
-            writeIndexR = juce::jlimit(0, static_cast<int>(bufferSizeR - 1), static_cast<int>(writeIndexR));
-        }
-        
-        // Write into buffer with bounds checking
-        if (writeIndexR < bufferSizeR) {
-            bufferR[writeIndexR] = internal;
-        }
-        
-        // Increment write index (circular) with safety check
-        if (bufferSizeR > 0) {
-            ++writeIndexR;
-            if (writeIndexR >= bufferSizeR) {
-                writeIndexR = 0;
-            }
-        } else {
-            writeIndexR = 0; // Reset if buffer size is invalid
-        }
-        
-        // Output: input + delayed signal (standard comb filter topology)
-        // The wetGain scales the delayed component for Comb- prominence
-        float output = inputSample + delayedSample * wetGain;
-        
-        // Final soft clip on output for safety
-        output = softClip(output);
-        
-        // Final guard on output - clamp to safe range
-        if (!std::isfinite(output)) {
-            output = 0.0f;
-        } else {
-            output = juce::jlimit(-0.99f, 0.99f, output);
-        }
-        
-        return output;
-    }
-    
     int combPolarity; // -1 for Comb-, +1 for Comb+
-    bool isNegative;  // true for Comb-, false for Comb+
-    
-    // Delay buffers (simple circular buffers)
-    std::vector<float> bufferL, bufferR;
-    size_t bufferSizeL = 0;
-    size_t bufferSizeR = 0;
-    size_t writeIndexL = 0;
-    size_t writeIndexR = 0;
-    
-    // Parameters
-    double sampleRateHz = 44100.0;
-    float currentDelayL = 1.0f;
-    float currentDelayR = 1.0f;
+    std::unique_ptr<FractionalDelay> delayL, delayR;
+    juce::dsp::StateVariableTPTFilter<float> lpL, lpR;
     float feedback = 0.0f;
-    float depth = 0.0f; // Not used in this design, kept for API compatibility
-    float inputGain = 0.4f; // Headroom gain (0.4 = -7.9dB)
-    float wetGain = 1.0f;   // Output gain (1.0 for Comb+, 1.4 for Comb-)
-    float currentDamping = 0.1f; // One-pole LPF damping (0-1)
-    float lastLowpassOutL = 0.0f; // Damping state for left channel
-    float lastLowpassOutR = 0.0f; // Damping state for right channel
+    float depth = 0.0f;
+    float baseDelaySamples = 100.0f;
+    float delaySamplesL = 100.0f;
+    float delaySamplesR = 100.0f;
     juce::dsp::ProcessSpec specCached;
 };
 

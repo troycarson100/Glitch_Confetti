@@ -156,6 +156,12 @@ float SaturateProcessor::OnePole::process(float x)
 void SaturateProcessor::ToneFilter::prepare(double fs)
 {
     sampleRate = fs;
+    // Prepare the StateVariableTPTFilter with proper ProcessSpec
+    juce::dsp::ProcessSpec spec;
+    spec.sampleRate = fs;
+    spec.maximumBlockSize = 512;
+    spec.numChannels = 1;
+    svf.prepare(spec);
     svf.reset();
     svf.setType(juce::dsp::StateVariableTPTFilterType::lowpass);
     svf.setCutoffFrequency(15000.0f);

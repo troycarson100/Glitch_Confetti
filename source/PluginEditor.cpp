@@ -702,7 +702,10 @@ void PluginEditor::paint (juce::Graphics& g)
         juce::Drawable* bg = getBackgroundForSlot(slot);
         if (bg != nullptr)
         {
-            bg->drawWithin(g, bounds, juce::RectanglePlacement::centred, 1.0f);
+            // Draw background - use slightly reduced opacity for inactive tabs to grey them out
+            // Using 0.95 opacity (5% reduction) instead of 0.9 to minimize blending while still greying
+            float bgAlpha = (slot == currentSlotIndex) ? 1.0f : 0.95f;
+            bg->drawWithin(g, bounds, juce::RectanglePlacement::centred, bgAlpha);
             hasBackground = true;
         }
 
@@ -751,7 +754,10 @@ void PluginEditor::paint (juce::Graphics& g)
             
             // Create bounds at fixed size - use fillDestination to ensure all icons fill the same space
             auto iconBounds = juce::Rectangle<float>(iconX, iconY, iconWidth, iconHeight);
-            icon->drawWithin(g, iconBounds, juce::RectanglePlacement::fillDestination, 1.0f);
+            
+            // Draw icons - use slightly reduced opacity for inactive tabs to match background greying
+            float iconAlpha = (slot == currentSlotIndex) ? 1.0f : 0.95f;
+            icon->drawWithin(g, iconBounds, juce::RectanglePlacement::fillDestination, iconAlpha);
         }
     }
     
@@ -4782,18 +4788,26 @@ void PluginEditor::setupUIToggle()
     freeRunBpmLabel->setInputRestrictions(3, "0123456789");
     freeRunBpmLabel->setSize(50, 20);
     // Position BPM label to the right of play button with proper spacing
-    // Window width is 974px
-    // BPM label: 50px wide, positioned 5px from right edge: getWidth() - 50 - 5 = 919px
+    // Window width is 974px - use fixed value to avoid issues during plugin scan
+    const int windowWidth = 974; // Fixed window width
     const int bpmLabelWidth = 50;
     const int spacingFromEdge = 5;
-    const int bpmLabelX = getWidth() - bpmLabelWidth - spacingFromEdge;
+    const int bpmLabelX = windowWidth - bpmLabelWidth - spacingFromEdge;
     freeRunBpmLabel->setTopLeftPosition(bpmLabelX, 5);
     
-    // Initialize with current BPM parameter value
-    auto* bpmParam = processorRef.getAPVTS().getParameter("freeRunBpm");
-    if (bpmParam) {
-        float currentBpm = bpmParam->convertFrom0to1(bpmParam->getValue());
-        freeRunBpmLabel->setText(juce::String((int)currentBpm), false);
+    // Initialize with current BPM parameter value (safely wrapped)
+    try {
+        auto* bpmParam = processorRef.getAPVTS().getParameter("freeRunBpm");
+        if (bpmParam) {
+            float currentBpm = bpmParam->convertFrom0to1(bpmParam->getValue());
+            freeRunBpmLabel->setText(juce::String((int)currentBpm), false);
+        } else {
+            // Default to 120 BPM if parameter not found
+            freeRunBpmLabel->setText("120", false);
+        }
+    } catch (...) {
+        // If anything goes wrong during plugin scan, just use default
+        freeRunBpmLabel->setText("120", false);
     }
     
     // Set up callback to update BPM parameter
@@ -4959,6 +4973,12 @@ void PluginEditor::setupTabSystem()
     {
         tab->setPaintingIsUnclipped(false);
     }
+    
+    // Set initial alpha values - SpaceDelay tab is selected by default (1.0), others are greyed out (0.9)
+    if (tabSpaceDelay) tabSpaceDelay->setAlpha(1.0f);
+    if (tabPanner) tabPanner->setAlpha(0.9f);
+    if (tabDirt) tabDirt->setAlpha(0.9f);
+    if (tabChorus) tabChorus->setAlpha(0.9f);
     
     DBG("[UI] Tab buttons created and added to editor");
     DBG("[UI] tabSpaceDelay bounds: " << tabSpaceDelay->getBounds().toString());
@@ -5800,6 +5820,14 @@ void PluginEditor::showPage(FxPageID id)
             break;
     }
 
+    // Set tab button alphas: selected tab = 1.0, others = 0.9 (10% greyed out)
+    // Tabs map to slots: tab 0 = SpaceDelay (slot 0), tab 1 = Panner (slot 1), tab 2 = Dirt (slot 2), tab 3 = Chorus (slot 3)
+    int currentSlotIndex = static_cast<int>(id);
+    if (tabSpaceDelay) tabSpaceDelay->setAlpha(currentSlotIndex == 0 ? 1.0f : 0.9f);
+    if (tabPanner) tabPanner->setAlpha(currentSlotIndex == 1 ? 1.0f : 0.9f);
+    if (tabDirt) tabDirt->setAlpha(currentSlotIndex == 2 ? 1.0f : 0.9f);
+    if (tabChorus) tabChorus->setAlpha(currentSlotIndex == 3 ? 1.0f : 0.9f);
+    
     // Raise the active tab to front
     if (id == FxPageID::SpaceDelay && tabSpaceDelay) tabSpaceDelay->toFront(false);
     else if (id == FxPageID::Panner && tabPanner) tabPanner->toFront(false);
