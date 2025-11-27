@@ -122,23 +122,12 @@ void FilterProcessor::process(juce::AudioBuffer<float>& buffer, int numSamples)
         // Reset current filter if it's a comb filter (clear delay lines)
         // This prevents delay line state from persisting when switching away from comb
         if (cur) {
-            auto* combFilterOld = dynamic_cast<CombProc*>(cur.get());
-            if (combFilterOld) {
-                // Recover old comb filter state before switching
-                combFilterOld->recover();
-            }
         }
         
         // Create new filter with current params
         makeFilter(targetType);
         if (newF) {
             newF->prepare(specCached);
-            
-            // If switching to comb filter, ensure it's in clean state
-            auto* combFilterNew = dynamic_cast<CombProc*>(newF.get());
-            if (combFilterNew) {
-                combFilterNew->recover(); // Ensure clean state
-            }
             
             ramp.start(fs, 20.0); // 20ms crossfade
         }
@@ -196,42 +185,14 @@ void FilterProcessor::process(juce::AudioBuffer<float>& buffer, int numSamples)
     
     // Process current filter
     if (cur) {
-        // Health check: if current filter is a CombProc, validate its state before processing
-        // This catches corruption before it causes channel failure
-        auto* combFilter = dynamic_cast<CombProc*>(cur.get());
-        if (combFilter) {
-            if (!combFilter->isValidState()) {
-                // State is invalid - try recovery (safe to do in audio thread)
-                combFilter->recover();
-                // If still invalid after recovery, skip processing this block (pass through)
-                // Can't call prepare() from audio thread, so just skip if recovery didn't work
-                if (!combFilter->isValidState()) {
-                    // Just copy input to output and skip filter processing
-                    ioBlockSub.copyFrom(blockA);
-                    return;
-                }
-            }
-        }
+        // Process current filter normally (health checks removed - CombProc doesn't have these methods)
         
         cur->set(cut, r, depthValue, slope, drive, spreadCents, (float)fs);
         cur->process(blockA, blockA);
     }
     
     if (ramp.isActive() && newF) {
-        // Health check: if new filter is a CombProc, validate its state before processing
-        auto* combFilterNew = dynamic_cast<CombProc*>(newF.get());
-        if (combFilterNew) {
-            if (!combFilterNew->isValidState()) {
-                // State is invalid - try recovery (safe to do in audio thread)
-                combFilterNew->recover();
-                // If still invalid after recovery, skip crossfade and just use current filter
-                if (!combFilterNew->isValidState()) {
-                    // Skip crossfade, just use current filter output
-                    ioBlockSub.copyFrom(blockA);
-                    return;
-                }
-            }
-        }
+        // Process new filter normally (health checks removed - CombProc doesn't have these methods)
         
         // Process new filter
         blockB.copyFrom(ioBlockSub);

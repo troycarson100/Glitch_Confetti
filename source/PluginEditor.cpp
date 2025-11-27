@@ -763,7 +763,8 @@ void PluginEditor::paint (juce::Graphics& g)
     }
     
     // Only draw grid overlay and main areas if UI is visible
-    if (uiVisible) {
+    // Grid overlay removed - no longer needed
+    if (false) {
     // Draw the grid overlay
     drawGridOverlay(g);
     
@@ -946,7 +947,8 @@ void PluginEditor::resized()
 void PluginEditor::drawGridOverlay(juce::Graphics& g)
 {
     // Only draw the grid overlay if UI is visible
-    if (!uiVisible) return;
+    // Grid overlay removed - no longer needed
+    return;
     
     auto bounds = getLocalBounds();
     const int gridSize = 50; // 50 pixel grid
@@ -998,7 +1000,8 @@ void PluginEditor::drawGridOverlay(juce::Graphics& g)
 void PluginEditor::drawMainAreas(juce::Graphics& g)
 {
     // Only draw the colored area boxes if UI is visible
-    if (!uiVisible) return;
+    // Grid overlay removed - no longer needed
+    return;
     
     // Define the three main areas based on your grid coordinates
     auto effectArea = juce::Rectangle<int>(25, 54, 413, 296);    // 88px wider, 90px shorter
@@ -4763,59 +4766,85 @@ void PluginEditor::updateSequencerUI()
 
 void PluginEditor::setupUIToggle()
 {
-    DBG("[UI] Setting up UI toggle button...");
+    DBG("[UI] Setting up Free-Run BPM control...");
     
-    // Create UI toggle button (tiny button in top right corner)
-    uiToggleButton = std::make_unique<juce::ToggleButton>();
-    uiToggleButton->setButtonText("UI");
-    uiToggleButton->setSize(30, 20); // Tiny button
-    uiToggleButton->setTopLeftPosition(getWidth() - 35, 5); // Top right corner with 5px margin
+    // Create BPM TextEditor (replaces UI toggle)
+    freeRunBpmLabel = std::make_unique<juce::TextEditor>();
+    freeRunBpmLabel->setText("120");
+    freeRunBpmLabel->setFont(juce::Font(14.0f, juce::Font::bold));
+    freeRunBpmLabel->setColour(juce::TextEditor::textColourId, juce::Colours::white);
+    freeRunBpmLabel->setColour(juce::TextEditor::backgroundColourId, juce::Colours::black.withAlpha(0.5f)); // Semi-transparent black background for visibility
+    freeRunBpmLabel->setColour(juce::TextEditor::outlineColourId, juce::Colours::white);
+    freeRunBpmLabel->setColour(juce::TextEditor::focusedOutlineColourId, juce::Colours::white);
+    freeRunBpmLabel->setJustification(juce::Justification::centred);
+    freeRunBpmLabel->setBorder(juce::BorderSize<int>(1));
+    freeRunBpmLabel->setIndents(0, 0);
+    freeRunBpmLabel->setInputRestrictions(3, "0123456789");
+    freeRunBpmLabel->setSize(50, 20);
+    // Position BPM label to the right of play button with proper spacing
+    // Window width is 974px
+    // BPM label: 50px wide, positioned 5px from right edge: getWidth() - 50 - 5 = 919px
+    const int bpmLabelWidth = 50;
+    const int spacingFromEdge = 5;
+    const int bpmLabelX = getWidth() - bpmLabelWidth - spacingFromEdge;
+    freeRunBpmLabel->setTopLeftPosition(bpmLabelX, 5);
     
-    // Style the button
-    uiToggleButton->setColour(juce::ToggleButton::textColourId, juce::Colours::white);
-    uiToggleButton->setColour(juce::ToggleButton::tickColourId, juce::Colours::white);
-    uiToggleButton->setColour(juce::ToggleButton::tickDisabledColourId, juce::Colours::grey);
+    // Initialize with current BPM parameter value
+    auto* bpmParam = processorRef.getAPVTS().getParameter("freeRunBpm");
+    if (bpmParam) {
+        float currentBpm = bpmParam->convertFrom0to1(bpmParam->getValue());
+        freeRunBpmLabel->setText(juce::String((int)currentBpm), false);
+    }
     
-    // Set initial state (hidden by default)
-    uiToggleButton->setToggleState(false, juce::dontSendNotification);
-    uiVisible = false;
-    
-    // Set up callback
-    uiToggleButton->onClick = [this]() {
-        toggleUIVisibility();
+    // Set up callback to update BPM parameter
+    freeRunBpmLabel->onTextChange = [this]() {
+        juce::String text = freeRunBpmLabel->getText();
+        float bpm = text.getFloatValue();
+        if (bpm >= 20.0f && bpm <= 300.0f) {
+            auto* param = processorRef.getAPVTS().getParameter("freeRunBpm");
+            if (param) {
+                param->setValueNotifyingHost(param->convertTo0to1(bpm));
+            }
+        }
     };
     
-    addAndMakeVisible(uiToggleButton.get());
+    // Set up focus lost callback to restore valid value
+    freeRunBpmLabel->onFocusLost = [this]() {
+        auto* param = processorRef.getAPVTS().getParameter("freeRunBpm");
+        if (param) {
+            float currentBpm = param->convertFrom0to1(param->getValue());
+            float clampedBpm = juce::jlimit(20.0f, 300.0f, currentBpm);
+            freeRunBpmLabel->setText(juce::String((int)clampedBpm), false);
+        }
+    };
     
-    // Initially hide all UI areas
-    toggleUIVisibility();
+    // Initially disabled (only enabled when play button is on)
+    // But always visible (just greyed out when disabled)
+    freeRunBpmLabel->setEnabled(false);
+    freeRunBpmLabel->setAlpha(0.5f); // More visible when disabled (was 0.3f)
     
-    DBG("[UI] UI toggle button setup complete");
-}
-
-void PluginEditor::toggleUIVisibility()
-{
-    uiVisible = uiToggleButton->getToggleState();
+    addAndMakeVisible(freeRunBpmLabel.get());
+    freeRunBpmLabel->setAlwaysOnTop(true); // Always visible on top like play button
+    freeRunBpmLabel->setVisible(true); // Explicitly ensure it's visible
     
-    DBG("[UI] Toggling visual elements visibility: " << (uiVisible ? "SHOW" : "HIDE"));
-    
-    // Only toggle the visual elements (grid overlay and colored area boxes)
-    // All functional UI elements (knobs, buttons, etc.) remain visible
-    
-    // Trigger repaint to update grid overlay and area box visibility
-    repaint();
-    
-    DBG("[UI] Visual elements visibility toggled: " << (uiVisible ? "VISIBLE" : "HIDDEN"));
+    DBG("[UI] Free-Run BPM control setup complete");
 }
 
 void PluginEditor::setupPlayButton()
 {
     DBG("[UI] Setting up play button...");
     
-    // Create play button (next to UI toggle button)
+    // Create play button (top right corner, visible on all pages)
+    // Position to the left of BPM label with spacing
     playButton = std::make_unique<PlayButton>();
-    playButton->setSize(30, 20); // Same size as UI toggle
-    playButton->setTopLeftPosition(getWidth() - 70, 5); // Next to UI toggle with 5px spacing
+    playButton->setSize(30, 20);
+    // Position play button to the left of BPM label
+    // BPM label starts at getWidth() - 55 (974 - 50 - 5 = 919)
+    // Play button width 30px, spacing 5px, so play button X = 919 - 5 - 30 = 884 (getWidth() - 90)
+    const int playButtonSpacing = 5;
+    const int playButtonWidth = 30;
+    const int playButtonX = (getWidth() - 50 - 5) - playButtonSpacing - playButtonWidth; // Position to left of BPM label
+    playButton->setTopLeftPosition(playButtonX, 5);
     
     // Set initial state (stopped - grey)
     playButton->setPlaying(false);
@@ -4825,7 +4854,9 @@ void PluginEditor::setupPlayButton()
         togglePlayback();
     };
     
+    // Always visible on all pages
     addAndMakeVisible(playButton.get());
+    playButton->setAlwaysOnTop(true);
     
     DBG("[UI] Play button setup complete");
 }
@@ -4836,18 +4867,26 @@ void PluginEditor::togglePlayback()
     bool newPlayingState = !playButton->isPlayingState();
     playButton->setPlaying(newPlayingState);
     
-    DBG("[UI] Toggling playback: " << (newPlayingState ? "PLAY" : "STOP"));
+    DBG("[UI] Toggling free-run playback: " << (newPlayingState ? "PLAY" : "STOP"));
     
-    if (newPlayingState) {
-        // Starting playback - enable sequencer and set origin for standalone mode
-        processorRef.setSequencerEnabled(true);
-        processorRef.startStandalonePlayback();
-    } else {
-        // Stopping playback - disable sequencer
-        processorRef.setSequencerEnabled(false);
+    // Enable/disable BPM control based on play state
+    if (freeRunBpmLabel) {
+        freeRunBpmLabel->setEnabled(newPlayingState);
+        freeRunBpmLabel->setAlpha(newPlayingState ? 1.0f : 0.3f);
     }
     
-    DBG("[UI] Playback toggled: " << (newPlayingState ? "PLAYING" : "STOPPED"));
+    // Set free-run mode in processor
+    processorRef.setFreeRunMode(newPlayingState);
+    
+    if (newPlayingState) {
+        // Starting free-run playback - reset all sequencers
+        processorRef.startFreeRunPlayback();
+    } else {
+        // Stopping free-run playback
+        processorRef.stopFreeRunPlayback();
+    }
+    
+    DBG("[UI] Free-run playback toggled: " << (newPlayingState ? "PLAYING" : "STOPPED"));
 }
 
 void PluginEditor::setupTabSystem()
@@ -5060,8 +5099,8 @@ void PluginEditor::setupTabSystem()
     if (stepTitle) spaceDelayGroup.push_back(stepTitle.get());
     if (stepDiceButton) spaceDelayGroup.push_back(stepDiceButton.get());
     if (stepPowerButton) spaceDelayGroup.push_back(stepPowerButton.get());
-    if (uiToggleButton) spaceDelayGroup.push_back(uiToggleButton.get());
-    if (playButton) spaceDelayGroup.push_back(playButton.get());
+    // Play button and BPM control are always visible (not in spaceDelayGroup)
+    // They're added separately and shown on all pages
     
     // Collect pointers to AutoPan UI components
     pannerGroup.clear();
@@ -5308,6 +5347,16 @@ void PluginEditor::showPage(FxPageID id)
     auto& router = processorRef.getEffectRouter();
     int slotIndex = static_cast<int>(id);  // Page maps to slot (0=Slot1, 1=Slot2, etc.)
     EffectID assignedEffect = router.getEffectInSlot(static_cast<SlotID>(slotIndex));
+    
+    // Play button and BPM control are always visible on all pages
+    if (playButton) {
+        playButton->setVisible(true);
+        playButton->toFront(false);
+    }
+    if (freeRunBpmLabel) {
+        freeRunBpmLabel->setVisible(true);
+        freeRunBpmLabel->toFront(false);
+    }
     
     // Hide all groups first
     setVisibleVec(spaceDelayGroup, false);

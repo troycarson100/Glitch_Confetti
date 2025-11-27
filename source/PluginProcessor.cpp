@@ -323,6 +323,9 @@ juce::AudioProcessorValueTreeState::ParameterLayout PluginProcessor::createParam
     params.push_back(std::make_unique<juce::AudioParameterFloat>("chorusShape",    "Ch Shape",   juce::NormalisableRange<float>(0.0f,  1.0f,  0.0f, 1.0f),    0.25f)); // 0=sin .. 0.5=tri .. 1=soft square
     params.push_back(std::make_unique<juce::AudioParameterFloat>("chorusMix",      "Ch Mix",     juce::NormalisableRange<float>(0.0f,  1.0f,  0.0f, 1.0f),    0.5f));
     
+    // Free-run BPM parameter (for standalone sequencer mode)
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("freeRunBpm", "Free Run BPM", 20.0f, 300.0f, 120.0f));
+    
     // COMPRESS+ Parameters - Master effect after all other effects
     // Top row: Compressor controls
     params.push_back(std::make_unique<juce::AudioParameterFloat>("compressThreshold", "Compress Threshold", -60.0f, 0.0f, -20.0f)); // -60dB to 0dB threshold
@@ -906,8 +909,131 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
     // Update transport cache
     updateTransportCache(getPlayHead(), buffer.getNumSamples());
     
-    // Stateless PPQ-driven sequencer logic
-    if (auto* ph = getPlayHead())
+    // Check free-run mode first - if enabled, use free-run timing regardless of DAW transport
+    bool useFreeRun = freeRunMode.load();
+    
+    if (useFreeRun) {
+        // Free-run mode: use freeRunBpm parameter and freeRunStartTime
+        auto* freeRunBpmParam = valueTreeState.getRawParameterValue("freeRunBpm");
+        const double bpm = freeRunBpmParam ? freeRunBpmParam->load() : 120.0;
+        
+        // Update all enabled sequencers in free-run mode
+        auto now = std::chrono::high_resolution_clock::now();
+        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - freeRunStartTime).count();
+        
+        // Calculate PPQ equivalent for free-run (at specified BPM)
+        const double ppqPerMs = (bpm / 60.0) / 1000.0; // PPQ per millisecond
+        const double freeRunPPQ = elapsed * ppqPerMs;
+        
+        // Update all sequencers using free-run PPQ
+        if (seq.active.load() && seq.enabled.load()) {
+            const int step = seq.computeStepFromPPQ(freeRunPPQ);
+            if (step != seq.currentStep.load()) {
+                seq.currentStep.store(step);
+                seq.playingStep.store(step);
+            }
+        }
+        if (autopanSeq.active.load() && autopanSeq.enabled.load()) {
+            const int step = autopanSeq.computeStepFromPPQ(freeRunPPQ);
+            if (step != autopanSeq.currentStep.load()) {
+                autopanSeq.currentStep.store(step);
+                autopanSeq.playingStep.store(step);
+            }
+        }
+        if (dirtSeq.active.load() && dirtSeq.enabled.load()) {
+            const int step = dirtSeq.computeStepFromPPQ(freeRunPPQ);
+            if (step != dirtSeq.currentStep.load()) {
+                dirtSeq.currentStep.store(step);
+                dirtSeq.playingStep.store(step);
+            }
+        }
+        if (chorusSeq.active.load() && chorusSeq.enabled.load()) {
+            const int step = chorusSeq.computeStepFromPPQ(freeRunPPQ);
+            if (step != chorusSeq.currentStep.load()) {
+                chorusSeq.currentStep.store(step);
+                chorusSeq.playingStep.store(step);
+            }
+        }
+        if (reverbSeq.active.load() && reverbSeq.enabled.load()) {
+            const int step = reverbSeq.computeStepFromPPQ(freeRunPPQ);
+            if (step != reverbSeq.currentStep.load()) {
+                reverbSeq.currentStep.store(step);
+                reverbSeq.playingStep.store(step);
+            }
+        }
+        if (granularSeq.active.load() && granularSeq.enabled.load()) {
+            const int step = granularSeq.computeStepFromPPQ(freeRunPPQ);
+            if (step != granularSeq.currentStep.load()) {
+                granularSeq.currentStep.store(step);
+                granularSeq.playingStep.store(step);
+            }
+        }
+        if (slicerSeq.active.load() && slicerSeq.enabled.load()) {
+            const int step = slicerSeq.computeStepFromPPQ(freeRunPPQ);
+            if (step != slicerSeq.currentStep.load()) {
+                slicerSeq.currentStep.store(step);
+                slicerSeq.playingStep.store(step);
+            }
+        }
+        if (dubdelaySeq.active.load() && dubdelaySeq.enabled.load()) {
+            const int step = dubdelaySeq.computeStepFromPPQ(freeRunPPQ);
+            if (step != dubdelaySeq.currentStep.load()) {
+                dubdelaySeq.currentStep.store(step);
+                dubdelaySeq.playingStep.store(step);
+            }
+        }
+        if (spacedelaySeq.active.load() && spacedelaySeq.enabled.load()) {
+            const int step = spacedelaySeq.computeStepFromPPQ(freeRunPPQ);
+            if (step != spacedelaySeq.currentStep.load()) {
+                spacedelaySeq.currentStep.store(step);
+                spacedelaySeq.playingStep.store(step);
+            }
+        }
+        if (phaseBloomSeq.active.load() && phaseBloomSeq.enabled.load()) {
+            const int step = phaseBloomSeq.computeStepFromPPQPhaseBloom(freeRunPPQ);
+            if (step != phaseBloomSeq.currentStep.load()) {
+                phaseBloomSeq.currentStep.store(step);
+                phaseBloomSeq.playingStep.store(step);
+            }
+        }
+        if (reduxSeq.active.load() && reduxSeq.enabled.load()) {
+            const int step = reduxSeq.computeStepFromPPQ(freeRunPPQ);
+            if (step != reduxSeq.currentStep.load()) {
+                reduxSeq.currentStep.store(step);
+                reduxSeq.playingStep.store(step);
+            }
+        }
+        if (formantSeq.active.load() && formantSeq.enabled.load()) {
+            const int step = formantSeq.computeStepFromPPQ(freeRunPPQ);
+            if (step != formantSeq.currentStep.load()) {
+                formantSeq.currentStep.store(step);
+                formantSeq.playingStep.store(step);
+            }
+        }
+        if (saturateSeq.active.load() && saturateSeq.enabled.load()) {
+            const int step = saturateSeq.computeStepFromPPQ(freeRunPPQ);
+            if (step != saturateSeq.currentStep.load()) {
+                saturateSeq.currentStep.store(step);
+                saturateSeq.playingStep.store(step);
+            }
+        }
+        if (form2Seq.active.load() && form2Seq.enabled.load()) {
+            const int step = form2Seq.computeStepFromPPQ(freeRunPPQ);
+            if (step != form2Seq.currentStep.load()) {
+                form2Seq.currentStep.store(step);
+                form2Seq.playingStep.store(step);
+            }
+        }
+        if (filterSeq.active.load() && filterSeq.enabled.load()) {
+            const int step = filterSeq.computeStepFromPPQ(freeRunPPQ);
+            if (step != filterSeq.currentStep.load()) {
+                filterSeq.currentStep.store(step);
+                filterSeq.playingStep.store(step);
+            }
+        }
+    }
+    // Stateless PPQ-driven sequencer logic (only if not in free-run mode)
+    else if (auto* ph = getPlayHead())
     {
         auto pos = ph->getPosition();
         if (pos.hasValue())
@@ -1393,7 +1519,7 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
     }
     else
     {
-        // Standalone mode - no DAW transport, use internal timing
+        // No play head - standalone mode (legacy, only for delay sequencer)
         if (seq.active.load() && seq.enabled.load()) {
             // Use standalone timing to advance sequencer
             auto now = std::chrono::high_resolution_clock::now();
@@ -2864,18 +2990,18 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
         
         // Always apply dry/wet mixing to ensure audio passes through
         // When dryWet == 1.0f, we still want to ensure the buffer has content
-        float dryGain = 1.0f - dryWet;  // Dry signal gain
-        float wetGain = dryWet;         // Wet signal gain
-        
-        // Mix dry and wet signals properly
-        for (int channel = 0; channel < buffer.getNumChannels(); ++channel) {
-            // Scale the wet signal (current buffer) by wet gain
-            buffer.applyGainRamp(channel, 0, buffer.getNumSamples(), wetGain, wetGain);
+            float dryGain = 1.0f - dryWet;  // Dry signal gain
+            float wetGain = dryWet;         // Wet signal gain
             
-            // Add the dry signal scaled by dry gain
-            buffer.addFromWithRamp(channel, 0, dryBuffer.getReadPointer(channel), 
-                                 buffer.getNumSamples(), dryGain, dryGain);
-        }
+            // Mix dry and wet signals properly
+            for (int channel = 0; channel < buffer.getNumChannels(); ++channel) {
+                // Scale the wet signal (current buffer) by wet gain
+                buffer.applyGainRamp(channel, 0, buffer.getNumSamples(), wetGain, wetGain);
+                
+                // Add the dry signal scaled by dry gain
+                buffer.addFromWithRamp(channel, 0, dryBuffer.getReadPointer(channel), 
+                                     buffer.getNumSamples(), dryGain, dryGain);
+            }
     } else {
         // If masterDryWet parameter doesn't exist, ensure audio passes through by mixing dry signal
         // This is a safety fallback to ensure audio always passes through
@@ -4589,6 +4715,72 @@ void PluginProcessor::startStandalonePlayback() noexcept
     DBG("[Processor] Standalone playback started - sequencer active: " + juce::String(seq.active.load() ? 1 : 0));
 }
 
+void PluginProcessor::setFreeRunMode(bool enabled) noexcept
+{
+    freeRunMode.store(enabled);
+}
+
+void PluginProcessor::startFreeRunPlayback() noexcept
+{
+    // Reset free-run start time
+    freeRunStartTime = std::chrono::high_resolution_clock::now();
+    
+    // Activate all enabled sequencers for free-run mode
+    if (seq.enabled.load()) seq.active.store(true);
+    if (autopanSeq.enabled.load()) autopanSeq.active.store(true);
+    if (dirtSeq.enabled.load()) dirtSeq.active.store(true);
+    if (chorusSeq.enabled.load()) chorusSeq.active.store(true);
+    if (reverbSeq.enabled.load()) reverbSeq.active.store(true);
+    if (granularSeq.enabled.load()) granularSeq.active.store(true);
+    if (slicerSeq.enabled.load()) slicerSeq.active.store(true);
+    if (dubdelaySeq.enabled.load()) dubdelaySeq.active.store(true);
+    if (spacedelaySeq.enabled.load()) spacedelaySeq.active.store(true);
+    if (phaseBloomSeq.enabled.load()) phaseBloomSeq.active.store(true);
+    if (reduxSeq.enabled.load()) reduxSeq.active.store(true);
+    if (formantSeq.enabled.load()) formantSeq.active.store(true);
+    if (saturateSeq.enabled.load()) saturateSeq.active.store(true);
+    if (form2Seq.enabled.load()) form2Seq.active.store(true);
+    if (filterSeq.enabled.load()) filterSeq.active.store(true);
+    
+    // Reset all sequencer phases
+    seq.resetPhase();
+    autopanSeq.resetPhase();
+    dirtSeq.resetPhase();
+    chorusSeq.resetPhase();
+    reverbSeq.resetPhase();
+    granularSeq.resetPhase();
+    slicerSeq.resetPhase();
+    dubdelaySeq.resetPhase();
+    spacedelaySeq.resetPhase();
+    phaseBloomSeq.resetPhase();
+    reduxSeq.resetPhase();
+    formantSeq.resetPhase();
+    saturateSeq.resetPhase();
+    form2Seq.resetPhase();
+    filterSeq.resetPhase();
+}
+
+void PluginProcessor::stopFreeRunPlayback() noexcept
+{
+    // Deactivate all sequencers (they'll reactivate if DAW transport is playing)
+    // Don't disable them, just deactivate for free-run mode
+    seq.active.store(false);
+    autopanSeq.active.store(false);
+    dirtSeq.active.store(false);
+    chorusSeq.active.store(false);
+    reverbSeq.active.store(false);
+    granularSeq.active.store(false);
+    slicerSeq.active.store(false);
+    dubdelaySeq.active.store(false);
+    spacedelaySeq.active.store(false);
+    phaseBloomSeq.active.store(false);
+    reduxSeq.active.store(false);
+    formantSeq.active.store(false);
+    saturateSeq.active.store(false);
+    form2Seq.active.store(false);
+    filterSeq.active.store(false);
+}
+
 // Helper function for sequencer
 double PluginProcessor::divisionToBeats(int divIdx)
 {
@@ -5488,9 +5680,9 @@ void PluginProcessor::forceSequencerLockIn(EffectID effect) noexcept
                     
                 default:
                     break;
-            }
         }
     }
+}
 
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
 {

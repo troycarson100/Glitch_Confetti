@@ -632,12 +632,11 @@ public:
     std::unique_ptr<juce::DrawableButton> stepPowerButton;
     bool stepAreaEnabled = true; // Default to enabled
     
-    // UI visibility toggle
-    std::unique_ptr<juce::ToggleButton> uiToggleButton;
-    bool uiVisible = false; // Default to hidden
-    
-    // Play button
+    // Play button (visible on all pages)
     std::unique_ptr<PlayButton> playButton;
+    
+    // Free-run BPM control (replaces UI toggle)
+    std::unique_ptr<juce::TextEditor> freeRunBpmLabel;
     
     // AutoPan page components
     std::array<std::unique_ptr<CustomKnob>, 6> autopanKnobs; // 6 knobs instead of 8
@@ -1129,8 +1128,7 @@ public:
     void updateSelectedStepInProcessor(int stepIndex);
     void updateSnapshotValue(StepSnapshot& snapshot, int knobIndex, float value);
     juce::String getParameterIdForKnob(int knobIndex);
-        void setupUIToggle();
-        void toggleUIVisibility();
+        void setupUIToggle(); // Sets up BPM control (replaces old UI toggle)
         void setupPlayButton();
         
         // AutoPan page helper methods

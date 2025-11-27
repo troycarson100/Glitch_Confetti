@@ -10,23 +10,34 @@ FontManager& FontManager::getInstance()
 
 juce::Font FontManager::getFont(const juce::String& fontName, float height, int style)
 {
-    // First try to get from loaded fonts
-    auto key = fontName + "_" + juce::String(height) + "_" + juce::String(style);
-    auto it = loadedFonts.find(key);
-    if (it != loadedFonts.end())
+    // Wrap in try-catch to prevent crashes during plugin scan
+    try
     {
-        return it->second;
+        // First try to get from loaded fonts
+        auto key = fontName + "_" + juce::String(height) + "_" + juce::String(style);
+        auto it = loadedFonts.find(key);
+        if (it != loadedFonts.end())
+        {
+            return it->second;
+        }
+        
+        // Try to load from BinaryData
+        juce::Font font = loadFontFromBinaryData(fontName, height, style);
+        
+        // Check if we got a custom font (not default system font)
+        // Only cache if it's actually a custom font to avoid caching system fonts
+        if (font.getTypefaceName() != juce::Font::getDefaultSansSerifFontName())
+        {
+            loadedFonts[key] = font;
+            return font;
+        }
+    }
+    catch (...)
+    {
+        // If anything goes wrong, just return system font
     }
     
-    // Try to load from BinaryData
-    juce::Font font = loadFontFromBinaryData(fontName, height, style);
-    if (font.getTypefaceName() != juce::Font::getDefaultSansSerifFontName())
-    {
-        loadedFonts[key] = font;
-        return font;
-    }
-    
-    // Fallback to system font
+    // Fallback to system font (always safe)
     return juce::Font(height, style);
 }
 
@@ -39,22 +50,31 @@ juce::Font FontManager::loadFontFromFile(const juce::File& fontFile, float heigh
 
 juce::Font FontManager::getFontByName(const juce::String& name, float height, int style)
 {
-    // Try exact match first
-    juce::Font font = getFont(name, height, style);
-    if (font.getTypefaceName() != juce::Font::getDefaultSansSerifFontName())
+    // Wrap in try-catch to prevent crashes during plugin scan
+    try
     {
-        return font;
-    }
-    
-    // Try case-insensitive match
-    for (const auto& pair : loadedFonts)
-    {
-        if (pair.first.containsIgnoreCase(name))
+        // Try exact match first
+        juce::Font font = getFont(name, height, style);
+        if (font.getTypefaceName() != juce::Font::getDefaultSansSerifFontName())
         {
-            return pair.second;
+            return font;
+        }
+        
+        // Try case-insensitive match
+        for (const auto& pair : loadedFonts)
+        {
+            if (pair.first.containsIgnoreCase(name))
+            {
+                return pair.second;
+            }
         }
     }
+    catch (...)
+    {
+        // If anything goes wrong, just return system font
+    }
     
+    // Fallback to system font (always safe)
     return juce::Font(height, style);
 }
 
@@ -70,40 +90,42 @@ juce::StringArray FontManager::getAvailableFonts() const
 
 juce::Font FontManager::loadFontFromBinaryData(const juce::String& fontName, float height, int style)
 {
-    // Map user-friendly names to BinaryData resource names
-    juce::String resourceName;
-    if (fontName == "Akira Expanded")
-        resourceName = "Akira_Expanded_otf";
-    else if (fontName == "AlteHaasGroteskBold")
-        resourceName = "AlteHaasGroteskBold_ttf";
-    else if (fontName == "AlteHaasGroteskRegular")
-        resourceName = "AlteHaasGroteskRegular_ttf";
-    else
-        resourceName = fontName; // Try direct name
-    
-    // Load from BinaryData
-    int dataSize = 0;
-    const char* data = BinaryData::getNamedResource(resourceName.toUTF8(), dataSize);
-    DBG("Loading font: " + fontName + " -> " + resourceName + " (dataSize: " + juce::String(dataSize) + ")");
-    if (data != nullptr && dataSize > 0)
+    // Wrap everything in try-catch to prevent crashes during plugin scan
+    try
     {
-        auto typeface = juce::Typeface::createSystemTypefaceFor(data, static_cast<size_t>(dataSize));
-        if (typeface != nullptr)
-        {
-            DBG("Successfully loaded font: " + fontName + " -> " + typeface->getName());
-            return juce::Font(typeface).withHeight(height).withStyle(style);
-        }
+        // Map user-friendly names to BinaryData resource names
+        juce::String resourceName;
+        if (fontName == "Akira Expanded")
+            resourceName = "Akira_Expanded_otf";
+        else if (fontName == "AlteHaasGroteskBold")
+            resourceName = "AlteHaasGroteskBold_ttf";
+        else if (fontName == "AlteHaasGroteskRegular")
+            resourceName = "AlteHaasGroteskRegular_ttf";
         else
+            resourceName = fontName; // Try direct name
+        
+        // Load from BinaryData
+        int dataSize = 0;
+        const char* data = BinaryData::getNamedResource(resourceName.toUTF8(), dataSize);
+        
+        // Only attempt to load if we have valid data
+        if (data != nullptr && dataSize > 0)
         {
-            DBG("Failed to create typeface for: " + fontName);
+            // Try to create typeface - this can fail during plugin scan
+            auto typeface = juce::Typeface::createSystemTypefaceFor(data, static_cast<size_t>(dataSize));
+            if (typeface != nullptr)
+            {
+                // Successfully loaded - create font with the typeface
+                return juce::Font(typeface).withHeight(height).withStyle(style);
+            }
         }
     }
-    else
+    catch (...)
     {
-        DBG("No data found for font: " + fontName + " (resource: " + resourceName + ")");
+        // If anything goes wrong (especially during plugin scan), just fall back to system font
+        // Don't log or throw - silently fall back to prevent crashes
     }
     
-    // Fallback to system font
-    DBG("Font not found in BinaryData: " + fontName + " (tried: " + resourceName + ")");
+    // Fallback to system font (always safe)
     return juce::Font(height, style);
 }

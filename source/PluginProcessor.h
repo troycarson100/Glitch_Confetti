@@ -443,6 +443,9 @@ public:
     void setStdMode(int mode) noexcept { seq.stdMode.store(juce::jlimit(0, 2, mode)); }
     void resetSequencerState() noexcept;
     void startStandalonePlayback() noexcept;
+    void setFreeRunMode(bool enabled) noexcept;
+    void startFreeRunPlayback() noexcept;
+    void stopFreeRunPlayback() noexcept;
     void randomizeAllStepSnapshots() noexcept;
     
     // Level tracking for meters
@@ -480,6 +483,8 @@ private:
     std::atomic<int> uiSelectedStep { 0 };  // Editor's selected step for editing only
     bool prevHostPlaying = false;
     std::chrono::high_resolution_clock::time_point standaloneStartTime;
+    std::chrono::high_resolution_clock::time_point freeRunStartTime;
+    std::atomic<bool> freeRunMode { false };
     
     // AutoPan sequencer state (independent from delay)
     SeqState autopanSeq;

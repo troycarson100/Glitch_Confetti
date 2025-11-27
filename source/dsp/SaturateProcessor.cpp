@@ -235,6 +235,9 @@ void SaturateProcessor::prepare(double fs, int blockSize)
     dryBuffer.setSize(2, maxBlockSize);
     dryMatchedBuffer.setSize(2, maxBlockSize);
 
+    // Initialize all model states
+    for (auto& runtime : modelStates)
+    {
         runtime.reset();
         for (auto& ch : runtime.channels)
         {
@@ -243,6 +246,7 @@ void SaturateProcessor::prepare(double fs, int blockSize)
             ch.preHP.prepare(osSampleRate, 28.0f, true);
             ch.postHP.prepare(osSampleRate, 18.0f, true);
             ch.toneFilter.prepare(osSampleRate);
+        }
     }
 
     // Initialize parameter smoothing (100ms for top knobs to prevent clicks and static)
@@ -254,15 +258,11 @@ void SaturateProcessor::prepare(double fs, int blockSize)
     outputSmooth.reset(sampleRate, smoothTime);
     mixSmooth.reset(sampleRate, smoothTime);
     
-    // Initialize per-sample bias smoother for oversampled domain (150ms for smoother transitions)
-    biasSmoothOS.reset(osSampleRate, 0.150);
-    
     // Set initial values
     driveSmooth.setCurrentAndTargetValue(12.0f);
     colorSmooth.setCurrentAndTargetValue(0.5f);
     shapeSmooth.setCurrentAndTargetValue(0.5f);
     biasSmooth.setCurrentAndTargetValue(0.0f);
-    biasSmoothOS.setCurrentAndTargetValue(0.0f);
     outputSmooth.setCurrentAndTargetValue(0.0f);
     mixSmooth.setCurrentAndTargetValue(1.0f);
 
@@ -274,13 +274,11 @@ void SaturateProcessor::reset()
     if (oversamplerPrimary) oversamplerPrimary->reset();
     if (oversamplerDry) oversamplerDry->reset();
     
-    // Reset bias smoother to current value to prevent jumps
-    if (sampleRate > 0.0)
+    // Reset all model states
+    for (auto& runtime : modelStates)
     {
-        biasSmoothOS.setCurrentAndTargetValue(biasSmooth.getCurrentValue());
-    }
-
         runtime.reset();
+    }
 
     // Reset filter tracking to prevent clicks on page switch
     prevPreTiltDb = 0.0f;
@@ -290,7 +288,8 @@ void SaturateProcessor::reset()
 }
 
 //==============================================================================
-SaturateProcessor::ParameterSet SaturateProcessor::mapParameters(float drive,
+SaturateProcessor::ParameterSet SaturateProcessor::mapParameters(float type,
+                                                                 float drive,
                                                                  float color,
                                                                  float shape,
                                                                  float bias,
@@ -339,7 +338,8 @@ SaturateProcessor::ParameterSet SaturateProcessor::mapParameters(float drive,
 
 void SaturateProcessor::refreshFilters(ModelRuntime& runtime,
                                        const ParameterSet& params,
-                                       double /*fs*/)
+                                       double osSampleRate,
+                                       int modelIndex)
 {
     // Only update filters if values have changed significantly to prevent clicks
     // Increased thresholds to reduce filter update frequency and prevent static
@@ -461,18 +461,20 @@ void SaturateProcessor::process(juce::AudioBuffer<float>& buffer,
         mixSmooth.skip(1);
     }
 
-    ParameterSet params = mapParameters(drive,
+    ParameterSet params = mapParameters(currentType,
+                                        drive,
                                         color,
                                         shape,
                                         bias,
                                         output,
                                         mix);
 
-    processInternal(buffer, numSamples, params, false);
+    processInternal(buffer, numSamples, params, currentType, false);
 }
 
 void SaturateProcessor::processWithSnapshot(juce::AudioBuffer<float>& buffer,
                                             int numSamples,
+                                            float type,
                                             float drive,
                                             float color,
                                             float shape,
@@ -543,20 +545,22 @@ void SaturateProcessor::processWithSnapshot(juce::AudioBuffer<float>& buffer,
         mixSmooth.skip(1);
     }
 
-    ParameterSet params = mapParameters(smoothedDrive,
+    ParameterSet params = mapParameters(type,
+                                        smoothedDrive,
                                         smoothedColor,
                                         smoothedShape,
                                         smoothedBias,
                                         smoothedOutput,
                                         smoothedMix);
 
-    processInternal(buffer, numSamples, params, stepChanged);
+    processInternal(buffer, numSamples, params, static_cast<int>(type), stepChanged);
 }
 
 //==============================================================================
 void SaturateProcessor::processInternal(juce::AudioBuffer<float>& buffer,
                                         int numSamples,
                                         ParameterSet liveParams,
+                                        int targetType,
                                         bool stepChanged)
 {
     juce::ScopedNoDenormals guard;
@@ -567,10 +571,11 @@ void SaturateProcessor::processInternal(juce::AudioBuffer<float>& buffer,
 
     dryBuffer.makeCopyOf(buffer, true);
 
-    // Refresh filters at the start of the block
-    refreshFilters(runtime, liveParams, osSampleRate);
+    // Refresh filters at the start of the block for current model
+    auto& runtime = modelStates[targetType];
+    refreshFilters(runtime, liveParams, osSampleRate, targetType);
 
-    renderModelToBuffer(runtime, buffer, liveParams);
+    renderModelToBuffer(targetType, runtime, buffer, liveParams, false);
 
     dryMatchedBuffer.makeCopyOf(dryBuffer, true);
     juce::dsp::AudioBlock<float> dryBlock(dryMatchedBuffer);
@@ -593,9 +598,11 @@ void SaturateProcessor::processInternal(juce::AudioBuffer<float>& buffer,
 }
 
 //==============================================================================
-void SaturateProcessor::renderModelToBuffer(ModelRuntime& runtime,
+void SaturateProcessor::renderModelToBuffer(int modelIndex,
+                                            ModelRuntime& runtime,
                                             juce::AudioBuffer<float>& workBuffer,
-                                            const ParameterSet& params)
+                                            const ParameterSet& params,
+                                            bool updateRuntimeParams)
 {
     // Safety check: ensure oversampler is initialized
     if (!oversamplerPrimary)
@@ -604,7 +611,7 @@ void SaturateProcessor::renderModelToBuffer(ModelRuntime& runtime,
     juce::dsp::AudioBlock<float> block(workBuffer);
     auto osBlock = oversamplerPrimary->processSamplesUp(block);
 
-    processOversampledBlock(runtime, osBlock, params);
+    processOversampledBlock(modelIndex, runtime, osBlock, params);
 
         oversamplerPrimary->processSamplesDown(block);
 }
@@ -694,7 +701,8 @@ float SaturateProcessor::blendDryWet(float dry, float wet, float mix) const
 }
 
 //==============================================================================
-void SaturateProcessor::processOversampledBlock(ModelRuntime& runtime,
+void SaturateProcessor::processOversampledBlock(int modelIndex,
+                                                ModelRuntime& runtime,
                                                 juce::dsp::AudioBlock<float>& osBlock,
                                                 const ParameterSet& params)
 {
@@ -712,7 +720,8 @@ void SaturateProcessor::processOversampledBlock(ModelRuntime& runtime,
     const float driveBlendGlobal = juce::jlimit(0.0f, 1.0f, params.driveDb / 36.0f);
     
     // Set target for per-sample bias smoother (prevents clicks when bias changes)
-    biasSmoothOS.setTargetValue(params.bias);
+    // Update bias smoothing target
+    biasSmooth.setTargetValue(params.bias);
 
     // Aggressive, colorful saturation with frequency-dependent processing
     auto processAggressiveSaturation = [&](float& sample, ModelChannelState& state, float smoothedBias)
@@ -773,8 +782,8 @@ void SaturateProcessor::processOversampledBlock(ModelRuntime& runtime,
 
     for (int i = 0; i < osSamples; ++i)
     {
-        // Get per-sample smoothed bias value (prevents clicks when bias changes)
-        const float smoothedBias = biasSmoothOS.getNextValue();
+        // Get smoothed bias value (prevents clicks when bias changes)
+        const float smoothedBias = biasSmooth.getNextValue();
         
         float l = left[i];
         float r = right[i];
