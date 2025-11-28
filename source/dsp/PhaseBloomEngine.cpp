@@ -28,9 +28,9 @@ void PhaseBloomEngine::prepare(double newSampleRate, int samplesPerBlock, int nu
 {
     sampleRate = newSampleRate;
     
-    // Reset smoothing sample rates - faster smoothing for more responsive feel
+    // Reset smoothing sample rates - minimal smoothing for immediate response
     depth.reset(sampleRate, 0.01);
-    rate.reset(sampleRate, 0.005);  // Very fast smoothing for rate
+    rate.reset(sampleRate, 0.001);  // Very fast smoothing (1ms) for immediate rate response
     feedback.reset(sampleRate, 0.01);
     center.reset(sampleRate, 0.01);
     bloom.reset(sampleRate, 0.01);
@@ -100,8 +100,10 @@ void PhaseBloomEngine::process(juce::AudioBuffer<float>& buffer, double hostBPM)
     if (hostBPM > 0.0)
         bpm = hostBPM;
     
-    // Tempo-synced division factors (quarter notes) - corrected for proper musical timing
-    static const double divisionFactors[9] = { 4.0, 2.0, 1.0, 0.5, 0.25, 0.125, 0.0625, 0.03125, 0.015625 };
+    // Tempo-synced division factors (in quarter notes)
+    // Labels: "4 Bars", "2 Bars", "1 Bar", "1/2", "1/4", "1/8", "1/16", "1/32", "1/64"
+    // 4 Bars = 16 quarter notes, 2 Bars = 8, 1 Bar = 4, 1/2 = 2, 1/4 = 1, etc.
+    static const double divisionFactors[9] = { 16.0, 8.0, 4.0, 2.0, 1.0, 0.5, 0.25, 0.125, 0.0625 };
     
     // Copy original (dry) buffer for later dry/wet mixing
     juce::AudioBuffer<float> dryBuffer(buffer);
@@ -110,8 +112,9 @@ void PhaseBloomEngine::process(juce::AudioBuffer<float>& buffer, double hostBPM)
     int slot = 0;
     
     // Get parameter values - only smooth non-critical parameters
+    // Rate should update immediately for tempo sync - use target value to bypass smoothing delay
     float currentDepth = depth.getNextValue();
-    float currentRate = rate.getNextValue();
+    float currentRate = rate.getTargetValue(); // Use target value directly for immediate tempo sync response
     float currentFeedback = feedback.getNextValue(); // No smoothing for feedback to prevent lag
     float currentCenter = center.getNextValue();
     float currentBloom = bloom.getNextValue();
@@ -132,12 +135,10 @@ void PhaseBloomEngine::process(juce::AudioBuffer<float>& buffer, double hostBPM)
     // Limit feedback to prevent instability and loudness issues
     resonanceFeedback = juce::jlimit(-0.7f, 0.7f, resonanceFeedback);
     
-    // Calculate tempo-synced LFO rate in Hz with limiting for smoothness
-    double quarterSec = 60.0 / juce::jmax(1.0, bpm); // Prevent division by zero
-    double period = quarterSec * divisionFactors[rateIdx];
-    
-    // DivisionFactors already represent quarter note multiples, so no need to multiply by 4
-    // (removed previous "fix" that was making it 4x slower - was causing it to be too fast)
+    // Calculate tempo-synced LFO rate in Hz
+    // divisionFactors are in quarter notes, so multiply by quarter note duration
+    double quarterSec = 60.0 / juce::jmax(1.0, bpm); // Seconds per quarter note
+    double period = quarterSec * divisionFactors[rateIdx]; // Total period in seconds
     
     // Prevent division by zero and invalid values
     if (period <= 0.0 || !std::isfinite(period)) {
@@ -152,22 +153,28 @@ void PhaseBloomEngine::process(juce::AudioBuffer<float>& buffer, double hostBPM)
     }
     rateHz = juce::jlimit(0.1, 20.0, rateHz);
     
+    // Update phaser parameters (per-slot, per-channel)
+    // Always update rate immediately - JUCE Phaser handles internal smoothing
+    float targetRateHz = static_cast<float>(rateHz);
+    phaserL[slot].setRate(targetRateHz);
+    phaserR[slot].setRate(targetRateHz);
+    
     // Debug output every 1000 blocks to verify rate calculation
     static int debugCounter = 0;
     if ((debugCounter++ % 1000) == 0) {
         DBG("[PHASEBLOOM] BPM=" << bpm << " rateIdx=" << rateIdx 
-            << " division=" << divisionFactors[rateIdx] 
-            << " period=" << period << " rateHz=" << rateHz);
+            << " division=" << divisionFactors[rateIdx] << " quarters"
+            << " period=" << period << "s rateHz=" << rateHz);
     }
     
-    // Update phaser parameters (per-slot, per-channel)
-    phaserL[slot].setRate(static_cast<float>(rateHz));
+    // Update phaser parameters (per-slot, per-channel) - but rate is handled above
+    // phaserL[slot].setRate() is now called conditionally above
     phaserL[slot].setDepth(currentDepth);
     phaserL[slot].setCentreFrequency(currentCenter);
     phaserL[slot].setFeedback(resonanceFeedback);
     phaserL[slot].setMix(1.0f); // full wet inside phaser
     
-    phaserR[slot].setRate(static_cast<float>(rateHz));
+    // phaserR[slot].setRate() is handled above with conditional update
     phaserR[slot].setDepth(currentDepth);
     phaserR[slot].setCentreFrequency(currentCenter);
     phaserR[slot].setFeedback(resonanceFeedback);
