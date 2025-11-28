@@ -29,14 +29,14 @@ void PhaseBloomEngine::prepare(double newSampleRate, int samplesPerBlock, int nu
     sampleRate = newSampleRate;
     
     // Reset smoothing sample rates - minimal smoothing for immediate response
-    depth.reset(sampleRate, 0.01);
-    rate.reset(sampleRate, 0.001);  // Very fast smoothing (1ms) for immediate rate response
-    feedback.reset(sampleRate, 0.01);
-    center.reset(sampleRate, 0.01);
-    bloom.reset(sampleRate, 0.01);
-    spread.reset(sampleRate, 0.01);
-    resonance.reset(sampleRate, 0.01);
-    mix.reset(sampleRate, 0.01);
+    depth.reset(sampleRate, 0.001);  // Very fast smoothing (1ms) for immediate depth response
+    rate.reset(sampleRate, 0.001);   // Very fast smoothing (1ms) for immediate rate response
+    feedback.reset(sampleRate, 0.0001);  // Minimal smoothing (0.1ms) for immediate feedback response
+    center.reset(sampleRate, 0.001); // Very fast smoothing (1ms) for immediate center response
+    bloom.reset(sampleRate, 0.001);  // Very fast smoothing (1ms) for immediate bloom response
+    spread.reset(sampleRate, 0.001); // Very fast smoothing (1ms) for immediate spread response
+    resonance.reset(sampleRate, 0.001); // Very fast smoothing (1ms) for immediate resonance response
+    mix.reset(sampleRate, 0.001);    // Very fast smoothing (1ms) for immediate mix response
     
     // Reset state
     lfoPhase = 0.0f;
@@ -112,15 +112,16 @@ void PhaseBloomEngine::process(juce::AudioBuffer<float>& buffer, double hostBPM)
     int slot = 0;
     
     // Get parameter values - only smooth non-critical parameters
-    // Rate should update immediately for tempo sync - use target value to bypass smoothing delay
-    float currentDepth = depth.getNextValue();
-    float currentRate = rate.getTargetValue(); // Use target value directly for immediate tempo sync response
-    float currentFeedback = feedback.getNextValue(); // No smoothing for feedback to prevent lag
-    float currentCenter = center.getNextValue();
-    float currentBloom = bloom.getNextValue();
-    float currentSpread = spread.getNextValue();
-    float currentResonance = resonance.getNextValue();
-    float currentMix = mix.getNextValue();
+    // Use target values for rate and feedback (immediate tempo sync and feedback response)
+    // Use next values for others (smooth but fast response with minimal smoothing)
+    float currentDepth = depth.getNextValue();       // Fast smooth depth response
+    float currentRate = rate.getTargetValue();       // Immediate rate response (tempo sync)
+    float currentFeedback = feedback.getTargetValue(); // Immediate feedback response (no delay)
+    float currentCenter = center.getNextValue();     // Fast smooth center response
+    float currentBloom = bloom.getNextValue();       // Fast smooth bloom response
+    float currentSpread = spread.getNextValue();     // Fast smooth spread response
+    float currentResonance = resonance.getNextValue(); // Fast smooth resonance response
+    float currentMix = mix.getNextValue();           // Fast smooth mix response
     
     // If mix is at 0 (fully dry), bypass processing entirely
     if (currentMix <= 0.0f)
@@ -129,11 +130,17 @@ void PhaseBloomEngine::process(juce::AudioBuffer<float>& buffer, double hostBPM)
     // Convert rate value (0-1) to rate index (0-8)
     int rateIdx = juce::jlimit(0, 8, static_cast<int>(currentRate * 8.0f));
     
-    // Map resonance [0,1] to enhanced feedback with stability limiting
-    float resonanceFeedback = juce::jmap(currentResonance, 0.0f, 1.0f, currentFeedback, currentFeedback * 1.2f);
+    // Map feedback [0,1] to JUCE Phaser feedback range [0, 0.6] (positive values only)
+    // Keep feedback range lower to prevent excessive resonance
+    float mappedFeedback = juce::jmap(currentFeedback, 0.0f, 1.0f, 0.0f, 0.6f);
     
-    // Limit feedback to prevent instability and loudness issues
-    resonanceFeedback = juce::jlimit(-0.7f, 0.7f, resonanceFeedback);
+    // Map resonance [0,1] to additional feedback boost ONLY when resonance > 0
+    // When resonance is 0, no extra feedback is added (prevents unwanted resonance)
+    float resonanceBoost = 0.0f;
+    if (currentResonance > 0.001f) {
+        resonanceBoost = currentResonance * 0.15f; // Add up to 0.15 extra feedback only when resonance is used
+    }
+    float resonanceFeedback = juce::jlimit(0.0f, 0.75f, mappedFeedback + resonanceBoost);
     
     // Calculate tempo-synced LFO rate in Hz
     // divisionFactors are in quarter notes, so multiply by quarter note duration
@@ -168,14 +175,15 @@ void PhaseBloomEngine::process(juce::AudioBuffer<float>& buffer, double hostBPM)
     }
     
     // Update phaser parameters (per-slot, per-channel) - but rate is handled above
-    // phaserL[slot].setRate() is now called conditionally above
-    phaserL[slot].setDepth(currentDepth);
+    // Boost depth for more prominent phasing (JUCE Phaser multiplies by 0.5 internally)
+    float boostedDepth = juce::jmin(1.0f, currentDepth * 1.4f); // Boost depth by 40% for more prominence
+    phaserL[slot].setDepth(boostedDepth);
     phaserL[slot].setCentreFrequency(currentCenter);
     phaserL[slot].setFeedback(resonanceFeedback);
     phaserL[slot].setMix(1.0f); // full wet inside phaser
     
     // phaserR[slot].setRate() is handled above with conditional update
-    phaserR[slot].setDepth(currentDepth);
+    phaserR[slot].setDepth(boostedDepth);
     phaserR[slot].setCentreFrequency(currentCenter);
     phaserR[slot].setFeedback(resonanceFeedback);
     phaserR[slot].setMix(1.0f);
@@ -201,8 +209,6 @@ void PhaseBloomEngine::process(juce::AudioBuffer<float>& buffer, double hostBPM)
     buffer.copyFrom(1, 0, rightBuffer, 0, 0, numSamples);
     
         // Apply Bloom (tanh) and mixing sample-by-sample
-        float invSpread = 1.0f - 2.0f * currentSpread; // for 0→1 spread (0..180° phase)
-        
         // TEMPORARILY DISABLE DELAY-BASED BLOOM TO PREVENT CRASHES
         // TODO: Re-implement bloom with safer approach
         
@@ -215,29 +221,49 @@ void PhaseBloomEngine::process(juce::AudioBuffer<float>& buffer, double hostBPM)
             float wetL = buffer.getSample(0, n);
             float wetR = buffer.getSample(1, n);
             
-            // Simple bloom effect with saturation only (no delay lines)
+            // Bloom effect: subtle saturation + harmonic generation for noticeable "bloom" without distortion
             if (currentBloom > 0.001f)
             {
-                // Apply gentle saturation for bloom effect
-                float bloomAmount = currentBloom * 0.8f;
-                wetL = juce::jmap(bloomAmount, wetL, std::tanh(wetL * 0.9f));
-                wetR = juce::jmap(bloomAmount, wetR, std::tanh(wetR * 0.9f));
+                float bloomAmount = currentBloom;
+                
+                // Moderate saturation (up to 2x drive at max bloom) to prevent distortion
+                float drive = 1.0f + bloomAmount * 1.0f; // 1.0x to 2.0x drive
+                float saturatedL = std::tanh(wetL * drive);
+                float saturatedR = std::tanh(wetR * drive);
+                
+                // Add subtle harmonic content (even harmonics for warmth)
+                float harmonicsL = wetL * wetL * 0.15f * bloomAmount; // Subtle 2nd harmonic
+                float harmonicsR = wetR * wetR * 0.15f * bloomAmount;
+                
+                // Blend: saturation + harmonics for rich "bloom" effect
+                wetL = juce::jmap(bloomAmount, wetL, saturatedL + harmonicsL);
+                wetR = juce::jmap(bloomAmount, wetR, saturatedR + harmonicsR);
             }
             
-            // Soft limiting to prevent loudness issues
-            wetL = juce::jlimit(-0.8f, 0.8f, wetL);
-            wetR = juce::jlimit(-0.8f, 0.8f, wetR);
+            // Less aggressive limiting to preserve effect prominence
+            wetL = juce::jlimit(-0.95f, 0.95f, wetL);
+            wetR = juce::jlimit(-0.95f, 0.95f, wetR);
             
-            // Stereo spread: apply phase offset between L and R channels
-            // Use proper stereo spread that maintains balance (not simple inversion)
+            // Stereo spread: cross-feed with phase offset for clear, noticeable stereo width
+            // This creates a much more obvious stereo widening effect
             if (currentSpread > 0.001f) {
-                // Create phase offset for right channel (0 to 90 degrees)
-                float phaseOffset = currentSpread * juce::MathConstants<float>::halfPi;
-                // Apply phase shift to right channel using rotation
+                // Cross-feed amount: 0 = mono, 1 = full stereo width
+                float crossFeed = currentSpread * 0.5f; // Up to 50% cross-feed for noticeable effect
+                
+                // Apply cross-feed: each channel gets a mix of itself and the opposite channel
+                // This creates clear stereo separation that's easy to hear
+                float tempL = wetL;
                 float tempR = wetR;
-                wetR = wetR * std::cos(phaseOffset) - wetL * std::sin(phaseOffset) * 0.3f;
-                // Left channel gets slight opposite phase for balance
-                wetL = wetL * std::cos(phaseOffset * 0.5f) + tempR * std::sin(phaseOffset * 0.5f) * 0.2f;
+                
+                // Left gets: itself + inverted right (creates width)
+                wetL = tempL + tempR * crossFeed;
+                // Right gets: itself - inverted left (creates width)
+                wetR = tempR - tempL * crossFeed;
+                
+                // Normalize to prevent level increase
+                float norm = 1.0f / (1.0f + crossFeed);
+                wetL *= norm;
+                wetR *= norm;
             }
             
             // Final dry/wet mix

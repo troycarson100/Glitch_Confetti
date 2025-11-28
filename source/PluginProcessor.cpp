@@ -466,7 +466,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout PluginProcessor::createParam
     // PhaseBloom Parameters - 8 sliders
     params.push_back(std::make_unique<juce::AudioParameterFloat>("phasebloomDepth", "PhaseBloom Depth", 0.0f, 1.0f, 0.5f));
     params.push_back(std::make_unique<juce::AudioParameterFloat>("phasebloomRate", "PhaseBloom Rate", 0.0f, 1.0f, 0.5f));
-    params.push_back(std::make_unique<juce::AudioParameterFloat>("phasebloomFeedback", "PhaseBloom Feedback", -0.8f, 0.8f, 0.3f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("phasebloomFeedback", "PhaseBloom Feedback", 0.0f, 1.0f, 0.3f));
     params.push_back(std::make_unique<juce::AudioParameterFloat>("phasebloomCenter", "PhaseBloom Center", 200.0f, 8000.0f, 2000.0f));
     params.push_back(std::make_unique<juce::AudioParameterFloat>("phasebloomBloom", "PhaseBloom Bloom", 0.0f, 1.0f, 0.2f));
     params.push_back(std::make_unique<juce::AudioParameterFloat>("phasebloomSpread", "PhaseBloom Spread", 0.0f, 1.0f, 0.8f));
