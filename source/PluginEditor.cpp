@@ -955,7 +955,7 @@ void PluginEditor::resized()
     const int spacing = 10;
     const int totalWidth = playButtonWidth + spacing + bpmWidth;
     const int rightEdge = getWidth();
-    const int bpmX = rightEdge - bpmWidth;
+    const int bpmX = rightEdge - bpmWidth - 10;
     const int playButtonX = bpmX - spacing - playButtonWidth;
     const int centerY = 7; // Center both horizontally
     
@@ -4335,7 +4335,7 @@ void PluginEditor::setupSequencerArea()
     // Force to 16 by default, then sync with processor state
     processorRef.setSpaceDelayStepsUsed(16);
     stepAmountLabel->setText("16", juce::dontSendNotification);
-    stepAmountLabel->setFont(juce::Font(16.0f, juce::Font::bold));
+    stepAmountLabel->setFont(juce::Font(16.0f, juce::Font::plain));
     stepAmountLabel->setColour(juce::Label::textColourId, juce::Colours::white);
     stepAmountLabel->setColour(juce::Label::backgroundColourId, juce::Colours::transparentBlack);
     stepAmountLabel->setColour(juce::Label::outlineColourId, juce::Colours::white);
@@ -4760,7 +4760,7 @@ void PluginEditor::setupUIToggle()
     // Create BPM TextEditor - positioned to the left of play button
     freeRunBpmLabel = std::make_unique<juce::TextEditor>();
     freeRunBpmLabel->setText("120", juce::dontSendNotification);
-    freeRunBpmLabel->setFont(juce::Font(16.0f, juce::Font::bold));
+    freeRunBpmLabel->setFont(juce::Font(16.0f, juce::Font::plain));
     freeRunBpmLabel->setColour(juce::TextEditor::textColourId, juce::Colours::white);
     freeRunBpmLabel->setColour(juce::TextEditor::backgroundColourId, juce::Colours::transparentBlack);
     freeRunBpmLabel->setColour(juce::TextEditor::outlineColourId, juce::Colours::white);
@@ -4784,7 +4784,7 @@ void PluginEditor::setupUIToggle()
     const int playButtonWidth = 30;
     const int spacing = 10;
     const int rightEdge = getWidth();
-    const int bpmX = rightEdge - bpmWidth;
+    const int bpmX = rightEdge - bpmWidth - 10;
     const int centerY = 7; // Center both horizontally
     freeRunBpmLabel->setBounds(bpmX, centerY, bpmWidth, bpmHeight);
     
@@ -4863,7 +4863,7 @@ void PluginEditor::setupPlayButton()
     const int bpmWidth = 50;
     const int spacing = 10;
     const int rightEdge = getWidth();
-    const int bpmX = rightEdge - bpmWidth;
+    const int bpmX = rightEdge - bpmWidth - 10;
     const int playButtonX = bpmX - spacing - playButtonWidth;
     const int centerY = 7; // Center both horizontally
     playButton->setSize(playButtonWidth, playButtonHeight);
@@ -5054,7 +5054,6 @@ void PluginEditor::updateBpmBoxVisibility()
     bool isPlaying = playButton && playButton->isPlayingState();
     
     if (freeRunBpmLabel) {
-        freeRunBpmLabel->setEnabled(isPlaying);
         if (!isPlaying) {
             // Grey out the text color when disabled
             freeRunBpmLabel->setColour(juce::TextEditor::textColourId, juce::Colours::grey);
