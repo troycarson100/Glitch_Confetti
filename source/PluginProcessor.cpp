@@ -819,8 +819,18 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
     // Update transport cache
     updateTransportCache(getPlayHead(), buffer.getNumSamples());
     
+    // DISABLED: Free run mode - always sync with DAW
     // Check if we should force standalone mode (ignore DAW transport)
-    const bool forceStandalone = forceStandaloneMode.load();
+    // const bool forceStandalone = forceStandaloneMode.load();
+    const bool forceStandalone = false; // Always use DAW sync
+    
+    // Debug: Log mode switching
+    static bool lastForceStandalone = false;
+    if (forceStandalone != lastForceStandalone) {
+        DBG("[PROCESSBLOCK] ★★★ Mode changed: forceStandalone=" << (forceStandalone ? 1 : 0) 
+            << " (was " << (lastForceStandalone ? 1 : 0) << ")");
+        lastForceStandalone = forceStandalone;
+    }
     
     // Stateless PPQ-driven sequencer logic
     auto* ph = getPlayHead();
@@ -836,31 +846,44 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
 
             // Detect play edge
             const bool playEdge = (isPlaying && !wasPlaying.load());
+            
+            // Also check if sequencer should be enabled but isn't (e.g., after turning off free run)
+            // This handles the case where DAW is already playing when we switch from standalone to DAW sync
+            const bool shouldEnableSequencer = isPlaying && followHost.load() && !seq.enabled.load() && !userDisabledSequencer.load();
 
             // Handle hosts that set play before PPQ is valid:
-            if (playEdge) {
-                armPending.store(true);
-                seq.resetPhase();          // visuals/phase reset
-                autopanSeq.resetPhase();   // AutoPan sequencer phase reset
-                dirtSeq.resetPhase();      // Dirt sequencer phase reset
-                chorusSeq.resetPhase();    // Chorus sequencer phase reset
-                reverbSeq.resetPhase();    // Reverb sequencer phase reset
-                granularSeq.resetPhase();  // Granular sequencer phase reset
-                slicerSeq.resetPhase();    // Slicer sequencer phase reset
-                dubdelaySeq.resetPhase();  // Dub Delay sequencer phase reset
-                spacedelaySeq.resetPhase();  // Space Delay sequencer phase reset
-                phaseBloomSeq.resetPhase();  // PhaseBloom sequencer phase reset
-                reduxSeq.resetPhase();      // Redux sequencer phase reset
+            if (playEdge || shouldEnableSequencer) {
+                if (playEdge) {
+                    armPending.store(true);
+                    seq.resetPhase();          // visuals/phase reset
+                    autopanSeq.resetPhase();   // AutoPan sequencer phase reset
+                    dirtSeq.resetPhase();      // Dirt sequencer phase reset
+                    chorusSeq.resetPhase();    // Chorus sequencer phase reset
+                    reverbSeq.resetPhase();    // Reverb sequencer phase reset
+                    granularSeq.resetPhase();  // Granular sequencer phase reset
+                    slicerSeq.resetPhase();    // Slicer sequencer phase reset
+                    dubdelaySeq.resetPhase();  // Dub Delay sequencer phase reset
+                    spacedelaySeq.resetPhase();  // Space Delay sequencer phase reset
+                    phaseBloomSeq.resetPhase();  // PhaseBloom sequencer phase reset
+                    reduxSeq.resetPhase();      // Redux sequencer phase reset
+                }
                 
-                // Auto-enable delay sequencer on DAW play (only if user hasn't explicitly disabled it)
+                // Auto-enable delay sequencer on DAW play
+                // Clear userDisabledSequencer on play edge to allow auto-enable after free run mode
+                // This ensures sequencer can resume after turning off free run mode
                 if (followHost.load() && !userDisabledSequencer.load()) {
+                    if (shouldEnableSequencer && !playEdge) {
+                        // DAW is already playing but sequencer wasn't enabled - trigger lock-in
+                        armPending.store(true);
+                    }
+                    userDisabledSequencer.store(false);  // Clear flag on play edge
                     seq.enabled.store(true);  // Enable delay sequencer
                     seq.active.store(true);   // Activate delay sequencer
-                    DBG("[SEQ] Auto-enabled delay sequencer (followHost=true, userDisabled=false)");
-                } else if (followHost.load() && userDisabledSequencer.load()) {
-                    DBG("[SEQ] Skipped auto-enable delay sequencer (user explicitly disabled)");
+                    DBG("[SEQ] Auto-enabled delay sequencer (playEdge=" << (playEdge ? "true" : "false") 
+                        << ", shouldEnable=" << (shouldEnableSequencer ? "true" : "false") << ", followHost=true)");
                 } else {
-                    DBG("[SEQ] Skipped auto-enable delay sequencer (followHost=false)");
+                    DBG("[SEQ] Skipped auto-enable delay sequencer (followHost=" << (followHost.load() ? 1 : 0) 
+                        << ", userDisabled=" << (userDisabledSequencer.load() ? 1 : 0) << ")");
                 }
                 
                 // AutoPan sequencer activates if enabled (independent of followHost)
@@ -1067,14 +1090,196 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                 
                 armPending.store(false);
             }
+            
+            // CRITICAL: Lock-in sequencers if they're enabled and active but haven't synced to DAW yet
+            // This handles the case when switching from free run to DAW sync while DAW is already playing
+            // (no play edge, so armPending lock-in above doesn't run)
+            // We check forceAllSequencersLockIn flag OR haveOrigin is false to determine if lock-in is needed
+            // This ensures sequencers sync properly when switching modes
+            const bool shouldForceLockIn = forceAllSequencersLockIn.load();
+            if (shouldForceLockIn) {
+                DBG("[SEQ] ★★★ FORCE LOCK-IN FLAG IS SET - isPlaying=" << (isPlaying ? 1 : 0) << " ppqValid=" << (ppqValid ? 1 : 0) << " PPQ=" << ppq);
+                // CRITICAL: If PPQ is not valid yet, we still need to wait, but log it
+                if (!ppqValid) {
+                    DBG("[SEQ] ★★★ WARNING: Force lock-in set but PPQ not valid yet! Will retry next block.");
+                }
+            }
+            
+            // CRITICAL: Run lock-in even if PPQ is not valid yet when force flag is set
+            // This ensures we catch the lock-in as soon as PPQ becomes valid
+            if (isPlaying && (ppqValid || shouldForceLockIn)) {
+                // Helper lambda to lock-in a sequencer if needed
+                auto lockInSequencer = [&ppq, shouldForceLockIn, isPlaying, ppqValid](SeqState& seqState, const char* name) {
+                    const bool isEnabled = seqState.enabled.load();
+                    const bool isActive = seqState.active.load();
+                    const bool hasOrigin = seqState.haveOrigin.load();
+                    const int currentStepValue = seqState.currentStep.load();
+                    
+                    // If enabled but not active, activate it first
+                    // This ensures sequencers are ready to step immediately after lock-in
+                    if (isEnabled && !isActive) {
+                        seqState.active.store(true);
+                        DBG("[" << name << " SEQ] Activated during lock-in");
+                    }
+                    
+                    // CRITICAL: If force flag is set, lock in IMMEDIATELY if PPQ is valid
+                    // Otherwise, lock in if enabled, active, and don't have origin (or step is -1)
+                    bool needsLockIn = false;
+                    if (shouldForceLockIn && ppqValid) {
+                        // Force lock-in: enabled and active sequencers MUST lock in
+                        needsLockIn = (isEnabled && isActive);
+                    } else if (isPlaying && ppqValid) {
+                        // Normal lock-in: only if don't have origin or step is reset
+                        needsLockIn = (isEnabled && isActive && (!hasOrigin || currentStepValue == -1));
+                    }
+                    
+                    if (needsLockIn) {
+                        const int step = seqState.computeStepFromPPQ(ppq);
+                        // CRITICAL: Always update step, even if it's the same, to ensure sequencer is in sync
+                        // This forces the sequencer to immediately reflect the current DAW position
+                        seqState.currentStep.store(step);
+                        seqState.playingStep.store(step);
+                        // Set haveOrigin and originPPQ after lock-in so we don't keep re-locking
+                        seqState.haveOrigin.store(true);
+                        seqState.originPPQ.store(ppq);
+                        DBG("[" << name << " SEQ] ★★★ Lock-in " << (shouldForceLockIn ? "(FORCED)" : "(normal)") 
+                            << " at PPQ=" << ppq << " -> step " << step 
+                            << " (enabled=" << (isEnabled ? 1 : 0) << " active=" << (isActive ? 1 : 0) 
+                            << " hadOrigin=" << (hasOrigin ? 1 : 0) << " oldStep=" << currentStepValue << ")");
+                    } else if (isEnabled && !isActive) {
+                        // Debug: sequencer is enabled but not active
+                        static int debugCounter = 0;
+                        if ((debugCounter++ % 100) == 0) {
+                            DBG("[" << name << " SEQ] WARNING: Enabled but not active! (enabled=" << (isEnabled ? 1 : 0) 
+                                << " active=" << (isActive ? 1 : 0) << " haveOrigin=" << (hasOrigin ? 1 : 0) << ")");
+                        }
+                    } else if (isEnabled && isActive && hasOrigin && currentStepValue != -1) {
+                        // Debug: sequencer should be stepping but isn't locking in
+                        static int debugCounter = 0;
+                        if ((debugCounter++ % 10) == 0 && shouldForceLockIn) {
+                            DBG("[" << name << " SEQ] WARNING: Force lock-in set but sequencer not locking in! "
+                                << "enabled=" << (isEnabled ? 1 : 0) << " active=" << (isActive ? 1 : 0) 
+                                << " haveOrigin=" << (hasOrigin ? 1 : 0) << " currentStep=" << currentStepValue);
+                        }
+                    }
+                };
+                
+                // Lock-in all sequencers that need it (main and all effect sequencers)
+                lockInSequencer(seq, "MAIN");
+                lockInSequencer(autopanSeq, "AUTOPAN");
+                lockInSequencer(spacedelaySeq, "SPACEDELAY");
+                lockInSequencer(dirtSeq, "DIRT");
+                lockInSequencer(chorusSeq, "CHORUS");
+                lockInSequencer(reverbSeq, "REVERB");
+                lockInSequencer(granularSeq, "GRANULAR");
+                lockInSequencer(slicerSeq, "SLICER");
+                lockInSequencer(dubdelaySeq, "DUBDELAY");
+                lockInSequencer(phaseBloomSeq, "PHASEBLOOM");
+                lockInSequencer(formantSeq, "FORMANT");
+                lockInSequencer(form2Seq, "FORM2");
+                lockInSequencer(reduxSeq, "REDUX");
+                lockInSequencer(filterSeq, "FILTER");
+                lockInSequencer(saturateSeq, "SATURATE");
+                
+                // Clear force lock-in flag AFTER all sequencers are processed
+                // This ensures all sequencers see the flag during the lock-in pass
+                if (shouldForceLockIn) {
+                    forceAllSequencersLockIn.store(false);
+                    
+                    // CRITICAL: After forced lock-in, immediately step all sequencers to ensure they're in sync
+                    // This handles the case where sequencers were stepping in free-run mode and need to sync to DAW
+                    if (isPlaying && ppqValid) {
+                        auto forceStep = [&ppq](SeqState& seqState, const char* name) {
+                            if (seqState.enabled.load() && seqState.active.load()) {
+                                const int step = seqState.computeStepFromPPQ(ppq);
+                                seqState.currentStep.store(step);
+                                seqState.playingStep.store(step);
+                                DBG("[" << name << " SEQ] Forced step update after lock-in: " << step << " PPQ: " << ppq);
+                            }
+                        };
+                        
+                        forceStep(seq, "MAIN");
+                        forceStep(autopanSeq, "AUTOPAN");
+                        forceStep(spacedelaySeq, "SPACEDELAY");
+                        forceStep(dirtSeq, "DIRT");
+                        forceStep(chorusSeq, "CHORUS");
+                        forceStep(reverbSeq, "REVERB");
+                        forceStep(granularSeq, "GRANULAR");
+                        forceStep(slicerSeq, "SLICER");
+                        forceStep(dubdelaySeq, "DUBDELAY");
+                        forceStep(phaseBloomSeq, "PHASEBLOOM");
+                        forceStep(formantSeq, "FORMANT");
+                        forceStep(form2Seq, "FORM2");
+                        forceStep(reduxSeq, "REDUX");
+                        forceStep(filterSeq, "FILTER");
+                        forceStep(saturateSeq, "SATURATE");
+                    }
+                }
+            }
 
+            // Ensure sequencer is enabled and active when DAW is playing
+            // This handles both auto-enable and manual enable cases
+            if (isPlaying && followHost.load()) {
+                // If sequencer is enabled but not active, activate it immediately
+                if (seq.enabled.load() && !seq.active.load()) {
+                    seq.active.store(true);
+                    // Clear userDisabledSequencer flag to allow future auto-enables
+                    userDisabledSequencer.store(false);
+                    if (ppqValid) {
+                        // Immediately lock-in to current PPQ position
+                        const int step = seq.computeStepFromPPQ(ppq);
+                        seq.currentStep.store(step);
+                        seq.playingStep.store(step);
+                        // Set haveOrigin and originPPQ for proper sync
+                        seq.haveOrigin.store(true);
+                        seq.originPPQ.store(ppq);
+                        DBG("[SEQ] Activated and locked-in sequencer (was enabled but not active, DAW playing, step=" << step << ")");
+                    } else {
+                        armPending.store(true);  // Trigger lock-in when PPQ becomes valid
+                        DBG("[SEQ] Activated sequencer (was enabled but not active, DAW playing, PPQ not valid yet)");
+                    }
+                }
+                // If sequencer should be enabled but isn't (auto-enable case)
+                else if (!seq.enabled.load() && !userDisabledSequencer.load()) {
+                    userDisabledSequencer.store(false);  // Explicitly clear flag to allow future auto-enables
+                    seq.enabled.store(true);
+                    seq.active.store(true);
+                    if (ppqValid) {
+                        // Immediately lock-in to current PPQ position
+                        const int step = seq.computeStepFromPPQ(ppq);
+                        seq.currentStep.store(step);
+                        seq.playingStep.store(step);
+                        // Set haveOrigin and originPPQ for proper sync
+                        seq.haveOrigin.store(true);
+                        seq.originPPQ.store(ppq);
+                        DBG("[SEQ] Auto-enabled and locked-in sequencer (DAW playing, followHost=true, step=" << step << ")");
+                    } else {
+                        armPending.store(true);  // Trigger lock-in on next block with valid PPQ
+                        DBG("[SEQ] Auto-enabled sequencer (DAW playing, followHost=true, PPQ not valid yet)");
+                    }
+                }
+            }
+            
             // While playing with valid PPQ: compute step every block (stateless)
+            // Ensure sequencer is active if it's enabled (handles mode switching)
+            if (isPlaying && seq.enabled.load() && !seq.active.load()) {
+                seq.active.store(true);
+                DBG("[SEQ] Activated sequencer (was enabled but not active during playback)");
+            }
+            
             if (isPlaying && ppqValid && seq.active.load()) {
                 const int step = seq.computeStepFromPPQ(ppq);
-                if (step != seq.currentStep.load()) {
+                const int currentStepValue = seq.currentStep.load();
+                // CRITICAL: If currentStep is -1 (reset state), always update to force sync
+                // This handles the case when switching from free run to DAW sync
+                if (step != currentStepValue || currentStepValue == -1) {
                     seq.currentStep.store(step);
                     seq.playingStep.store(step);
-                    DBG("[SEQ] Step changed to: " << step << " PPQ: " << ppq);
+                    if (currentStepValue == -1) {
+                        DBG("[SEQ] Step updated from reset state: " << step << " PPQ: " << ppq);
+                    } else {
+                        DBG("[SEQ] Step changed to: " << step << " PPQ: " << ppq);
+                    }
                 }
             }
             
@@ -1088,7 +1293,8 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
             
             if (isPlaying && ppqValid && autopanSeq.active.load()) {
                 const int autopanStep = autopanSeq.computeStepFromPPQ(ppq);
-                if (autopanStep != autopanSeq.currentStep.load()) {
+                const int currentStepValue = autopanSeq.currentStep.load();
+                if (autopanStep != currentStepValue || currentStepValue == -1) {
                     autopanSeq.currentStep.store(autopanStep);
                     autopanSeq.playingStep.store(autopanStep);
                     DBG("[AUTOPAN SEQ] ★ Step changed to: " << autopanStep << " PPQ: " << ppq 
@@ -1109,7 +1315,8 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
             
             if (isPlaying && ppqValid && spacedelaySeq.active.load()) {
                 const int spacedelayStep = spacedelaySeq.computeStepFromPPQ(ppq);
-                if (spacedelayStep != spacedelaySeq.currentStep.load()) {
+                const int currentStepValue = spacedelaySeq.currentStep.load();
+                if (spacedelayStep != currentStepValue || currentStepValue == -1) {
                     spacedelaySeq.currentStep.store(spacedelayStep);
                     spacedelaySeq.playingStep.store(spacedelayStep);
                     DBG("[SPACEDELAY SEQ] ★ Step changed to: " << spacedelayStep << " PPQ: " << ppq 
@@ -1123,7 +1330,8 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
             // Dirt sequencer stepping (shares same PPQ/transport, independent timing)
             if (isPlaying && ppqValid && dirtSeq.active.load()) {
                 const int dirtStep = dirtSeq.computeStepFromPPQ(ppq);
-                if (dirtStep != dirtSeq.currentStep.load()) {
+                const int currentStepValue = dirtSeq.currentStep.load();
+                if (dirtStep != currentStepValue || currentStepValue == -1) {
                     dirtSeq.currentStep.store(dirtStep);
                     dirtSeq.playingStep.store(dirtStep);
                     DBG("[DIRT SEQ] ★ Step changed to: " << dirtStep << " PPQ: " << ppq);
@@ -1133,7 +1341,8 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
             // Chorus sequencer stepping (shares same PPQ/transport, independent timing)
             if (isPlaying && ppqValid && chorusSeq.active.load()) {
                 const int chorusStep = chorusSeq.computeStepFromPPQ(ppq);
-                if (chorusStep != chorusSeq.currentStep.load()) {
+                const int currentStepValue = chorusSeq.currentStep.load();
+                if (chorusStep != currentStepValue || currentStepValue == -1) {
                     chorusSeq.currentStep.store(chorusStep);
                     chorusSeq.playingStep.store(chorusStep);
                     DBG("[CHORUS SEQ] ★ Step changed to: " << chorusStep << " PPQ: " << ppq);
@@ -1143,7 +1352,8 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
             // Reverb sequencer stepping (shares same PPQ/transport, independent timing)
             if (isPlaying && ppqValid && reverbSeq.active.load()) {
                 const int reverbStep = reverbSeq.computeStepFromPPQ(ppq);
-                if (reverbStep != reverbSeq.currentStep.load()) {
+                const int currentStepValue = reverbSeq.currentStep.load();
+                if (reverbStep != currentStepValue || currentStepValue == -1) {
                     reverbSeq.currentStep.store(reverbStep);
                     reverbSeq.playingStep.store(reverbStep);
                     DBG("[REVERB SEQ] ★ Step changed to: " << reverbStep << " PPQ: " << ppq);
@@ -1153,7 +1363,8 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
             // Granular sequencer stepping (shares same PPQ/transport, independent timing)
             if (isPlaying && ppqValid && granularSeq.active.load()) {
                 const int granularStep = granularSeq.computeStepFromPPQ(ppq);
-                if (granularStep != granularSeq.currentStep.load()) {
+                const int currentStepValue = granularSeq.currentStep.load();
+                if (granularStep != currentStepValue || currentStepValue == -1) {
                     granularSeq.currentStep.store(granularStep);
                     granularSeq.playingStep.store(granularStep);
                     DBG("[GRANULAR SEQ] ★ Step changed to: " << granularStep << " PPQ: " << ppq);
@@ -1163,7 +1374,8 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
             // Slicer sequencer stepping (shares same PPQ/transport, independent timing)
             if (isPlaying && ppqValid && slicerSeq.active.load()) {
                 const int slicerStep = slicerSeq.computeStepFromPPQ(ppq);
-                if (slicerStep != slicerSeq.currentStep.load()) {
+                const int currentStepValue = slicerSeq.currentStep.load();
+                if (slicerStep != currentStepValue || currentStepValue == -1) {
                     slicerSeq.currentStep.store(slicerStep);
                     slicerSeq.playingStep.store(slicerStep);
                     DBG("[SLICER SEQ] ★ Step changed to: " << slicerStep << " PPQ: " << ppq);
@@ -1173,7 +1385,8 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
             // Dub Delay sequencer stepping (shares same PPQ/transport, independent timing)
             if (isPlaying && ppqValid && dubdelaySeq.active.load()) {
                 const int dubdelayStep = dubdelaySeq.computeStepFromPPQ(ppq);
-                if (dubdelayStep != dubdelaySeq.currentStep.load()) {
+                const int currentStepValue = dubdelaySeq.currentStep.load();
+                if (dubdelayStep != currentStepValue || currentStepValue == -1) {
                     dubdelaySeq.currentStep.store(dubdelayStep);
                     dubdelaySeq.playingStep.store(dubdelayStep);
                     DBG("[DUBDELAY SEQ] ★ Step changed to: " << dubdelayStep << " PPQ: " << ppq);
@@ -1183,7 +1396,8 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
             // PhaseBloom sequencer stepping (shares same PPQ/transport, independent timing)
             if (isPlaying && ppqValid && phaseBloomSeq.active.load()) {
                 const int phaseBloomStep = phaseBloomSeq.computeStepFromPPQ(ppq);
-                if (phaseBloomStep != phaseBloomSeq.currentStep.load()) {
+                const int currentStepValue = phaseBloomSeq.currentStep.load();
+                if (phaseBloomStep != currentStepValue || currentStepValue == -1) {
                     phaseBloomSeq.currentStep.store(phaseBloomStep);
                     phaseBloomSeq.playingStep.store(phaseBloomStep);
                     DBG("[PHASEBLOOM SEQ] ★ Step changed to: " << phaseBloomStep << " PPQ: " << ppq);
@@ -1193,7 +1407,8 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
             // Formant sequencer stepping (shares same PPQ/transport, independent timing)
             if (isPlaying && ppqValid && formantSeq.enabled.load() && formantSeq.active.load()) {
                 const int formantStep = formantSeq.computeStepFromPPQ(ppq);
-                if (formantStep != formantSeq.currentStep.load()) {
+                const int currentStepValue = formantSeq.currentStep.load();
+                if (formantStep != currentStepValue || currentStepValue == -1) {
                     formantSeq.currentStep.store(formantStep);
                     formantSeq.playingStep.store(formantStep);
                     DBG("[FORMANT SEQ] ★ Step changed to: " << formantStep << " PPQ: " << ppq);
@@ -1208,7 +1423,8 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
             // Saturate (Heat) sequencer stepping (shares same PPQ/transport, independent timing)
             if (isPlaying && ppqValid && saturateSeq.enabled.load() && saturateSeq.active.load()) {
                 const int saturateStep = saturateSeq.computeStepFromPPQ(ppq);
-                if (saturateStep != saturateSeq.currentStep.load()) {
+                const int currentStepValue = saturateSeq.currentStep.load();
+                if (saturateStep != currentStepValue || currentStepValue == -1) {
                     saturateSeq.currentStep.store(saturateStep);
                     saturateSeq.playingStep.store(saturateStep);
                     DBG("[SATURATE SEQ] ★ Step changed to: " << saturateStep << " PPQ: " << ppq);
@@ -1223,7 +1439,8 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
             // Form 2 sequencer stepping (shares same PPQ/transport, independent timing)
             if (isPlaying && ppqValid && form2Seq.active.load()) {
                 const int form2Step = form2Seq.computeStepFromPPQ(ppq);
-                if (form2Step != form2Seq.currentStep.load()) {
+                const int currentStepValue = form2Seq.currentStep.load();
+                if (form2Step != currentStepValue || currentStepValue == -1) {
                     form2Seq.currentStep.store(form2Step);
                     form2Seq.playingStep.store(form2Step);
                     DBG("[FORM2 SEQ] ★ Step changed to: " << form2Step << " PPQ: " << ppq);
@@ -1233,7 +1450,8 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
             // Redux sequencer stepping (shares same PPQ/transport, independent timing)
             if (isPlaying && ppqValid && reduxSeq.active.load()) {
                 const int reduxStep = reduxSeq.computeStepFromPPQ(ppq);
-                if (reduxStep != reduxSeq.currentStep.load()) {
+                const int currentStepValue = reduxSeq.currentStep.load();
+                if (reduxStep != currentStepValue || currentStepValue == -1) {
                     reduxSeq.currentStep.store(reduxStep);
                     reduxSeq.playingStep.store(reduxStep);
                     DBG("[REDUX SEQ] ★ Step changed to: " << reduxStep << " PPQ: " << ppq);
@@ -1245,7 +1463,8 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                 const int filterStep = filterSeq.computeStepFromPPQ(ppq);
                 // Safety check: ensure step is valid before storing
                 const int safeStep = juce::jlimit(0, 15, filterStep);
-                if (safeStep != filterSeq.currentStep.load()) {
+                const int currentStepValue = filterSeq.currentStep.load();
+                if (safeStep != currentStepValue || currentStepValue == -1) {
                     filterSeq.currentStep.store(safeStep);
                     filterSeq.playingStep.store(safeStep);
                     DBG("[FILTER SEQ] ★ Step changed to: " << safeStep << " PPQ: " << ppq);
@@ -1255,6 +1474,42 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
             // Deactivate filter sequencer if not playing
             if (!isPlaying && filterSeq.active.load()) {
                 filterSeq.active.store(false);
+            }
+            
+            // Fallback lock-in: Check for any sequencers that are enabled/active but haven't locked in yet
+            // This catches sequencers that were enabled after the main lock-in pass
+            if (isPlaying && ppqValid) {
+                auto fallbackLockIn = [&ppq](SeqState& seqState, const char* name) {
+                    const bool isEnabled = seqState.enabled.load();
+                    const bool isActive = seqState.active.load();
+                    const bool hasOrigin = seqState.haveOrigin.load();
+                    
+                    // Lock-in if enabled and active but don't have origin
+                    if (isEnabled && isActive && !hasOrigin) {
+                        const int step = seqState.computeStepFromPPQ(ppq);
+                        seqState.currentStep.store(step);
+                        seqState.playingStep.store(step);
+                        seqState.haveOrigin.store(true);
+                        seqState.originPPQ.store(ppq);
+                        DBG("[" << name << " SEQ] ★ Fallback lock-in at PPQ=" << ppq << " -> step " << step);
+                    }
+                };
+                
+                fallbackLockIn(seq, "MAIN");
+                fallbackLockIn(autopanSeq, "AUTOPAN");
+                fallbackLockIn(spacedelaySeq, "SPACEDELAY");
+                fallbackLockIn(dirtSeq, "DIRT");
+                fallbackLockIn(chorusSeq, "CHORUS");
+                fallbackLockIn(reverbSeq, "REVERB");
+                fallbackLockIn(granularSeq, "GRANULAR");
+                fallbackLockIn(slicerSeq, "SLICER");
+                fallbackLockIn(dubdelaySeq, "DUBDELAY");
+                fallbackLockIn(phaseBloomSeq, "PHASEBLOOM");
+                fallbackLockIn(formantSeq, "FORMANT");
+                fallbackLockIn(form2Seq, "FORM2");
+                fallbackLockIn(reduxSeq, "REDUX");
+                fallbackLockIn(filterSeq, "FILTER");
+                fallbackLockIn(saturateSeq, "SATURATE");
             }
             
             // Publish AutoPan Sequencer Visual Clock (independent from Delay sequencer)
@@ -1303,7 +1558,10 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
     }
     
     // Standalone mode - either no DAW transport OR forceStandalone is true
-    if (forceStandalone || !getPlayHead())
+    // CRITICAL: If forceAllSequencersLockIn is set, we're switching from free run to DAW sync
+    // In this case, DON'T step sequencers in standalone mode - let DAW sync handle it
+    const bool shouldSkipStandaloneStepping = forceAllSequencersLockIn.load();
+    if ((forceStandalone || !getPlayHead()) && !shouldSkipStandaloneStepping)
     {
         // Standalone mode - ignore DAW transport, use internal timing
         // Calculate simulated PPQ from elapsed time and BPM
@@ -1311,9 +1569,10 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
         auto elapsed = std::chrono::duration<double>(now - standaloneStartTime).count();
         // Always use the BPM from transportCache (set by setFreeRunBpm)
         const double bpm = juce::jmax(20.0, transportCache.bpm.load()); // Ensure minimum 20 BPM
-        // Calculate PPQ: beats per second = bpm / 60, PPQ per second = (bpm / 60) * 4
+        // Calculate PPQ: PPQ is in quarter-note beats (1 PPQ = 1 beat)
+        // beats per second = bpm / 60, PPQ per second = beats per second
         const double beatsPerSecond = bpm / 60.0;
-        const double ppqPerSecond = beatsPerSecond * 4.0; // 4 PPQ per beat
+        const double ppqPerSecond = beatsPerSecond; // PPQ equals beats
         // Calculate simulated PPQ from elapsed time
         const double simulatedPPQ = elapsed * ppqPerSecond;
         
@@ -1334,7 +1593,13 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                 << " transportCache.bpm=" << transportCache.bpm.load()
                 << " ppqPerSecond=" << ppqPerSecond
                 << " beatsPerSecond=" << beatsPerSecond
-                << " beats=" << (simulatedPPQ / 4.0));
+                << " beats=" << simulatedPPQ);
+        }
+        
+        // Ensure sequencer is active if it's enabled (handles mode switching)
+        if (isPlaying && seq.enabled.load() && !seq.active.load()) {
+            seq.active.store(true);
+            DBG("[SEQ] Activated sequencer in standalone mode (was enabled but not active)");
         }
         
         // Main delay sequencer stepping
@@ -1355,7 +1620,7 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
         } else {
             if ((standaloneDebugCounter % 100) == 0) {
                 DBG("[SEQ] WARNING: Not stepping - isPlaying=" << (isPlaying ? 1 : 0) 
-                    << " active=" << seq.active.load() << " enabled=" << seq.enabled.load());
+                    << " active=" << (seq.active.load() ? 1 : 0) << " enabled=" << (seq.enabled.load() ? 1 : 0));
             }
         }
         
@@ -1377,7 +1642,7 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                     spacedelaySeq.currentStep.store(step);
                     spacedelaySeq.playingStep.store(step);
                     DBG("[SPACEDELAY SEQ] Standalone step: " << step << " PPQ: " << simulatedPPQ 
-                        << " enabled=" << spacedelaySeq.enabled.load() << " active=" << spacedelaySeq.active.load()
+                        << " enabled=" << (spacedelaySeq.enabled.load() ? 1 : 0) << " active=" << (spacedelaySeq.active.load() ? 1 : 0)
                         << " stepsUsed=" << spacedelaySeq.stepsUsed.load());
                 }
             } else {
@@ -1388,7 +1653,7 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
         } else {
             if ((standaloneDebugCounter % 100) == 0) {
                 DBG("[SPACEDELAY SEQ] WARNING: Not stepping - isPlaying=" << (isPlaying ? 1 : 0) 
-                    << " active=" << spacedelaySeq.active.load() << " enabled=" << spacedelaySeq.enabled.load());
+                    << " active=" << (spacedelaySeq.active.load() ? 1 : 0) << " enabled=" << (spacedelaySeq.enabled.load() ? 1 : 0));
             }
         }
         
@@ -2265,6 +2530,15 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
 
             case EffectID::Saturate:
             {
+                // TEMP SAFETY: Disable Saturate processing in AU wrappers to prevent host crashes.
+                // Crash report shows EXC_BAD_ACCESS in SaturateProcessor::processInternal when running as AU in Ableton Live.
+                // Standalone and VST3 are stable, so we only bypass for AU / AUv3 wrappers.
+                if (wrapperType == juce::AudioProcessor::wrapperType_AudioUnit
+                    || wrapperType == juce::AudioProcessor::wrapperType_AudioUnitv3)
+                {
+                    break;
+                }
+
                 auto* saturateEnabledParam = valueTreeState.getRawParameterValue("saturateEnabled");
                 bool isSaturateEnabled = saturateEnabledParam ? (saturateEnabledParam->load() > 0.5f) : false;
                 
@@ -3630,8 +3904,9 @@ void PluginProcessor::updatePlayingStepFromTransport()
         auto elapsed = std::chrono::duration<double>(now - standaloneStartTime).count();
         
         // Simulate PPQ using BPM from transportCache (or default 120)
+        // PPQ is in quarter-note beats (1 PPQ = 1 beat)
         const double bpm = transportCache.bpm.load() > 0.0 ? transportCache.bpm.load() : 120.0;
-        const double ppqPerSecond = (bpm / 60.0) * 4.0; // 4 PPQ per beat
+        const double ppqPerSecond = bpm / 60.0; // PPQ equals beats
         ppqPos = elapsed * ppqPerSecond;
         barStartPpq = 0.0; // Start of bar
         timeSigNum = 4; // 4/4 time signature
@@ -4585,6 +4860,74 @@ void PluginProcessor::resetSequencerState() noexcept
     DBG("[Processor] Sequencer state reset - playingStep: " << seq.playingStep.load() << ", currentStep: " << seq.currentStep.load() << ", originPPQ: " << seq.originPPQ.load());
 }
 
+void PluginProcessor::resetAllSequencerOrigins() noexcept
+{
+    // Reset originPPQ, haveOrigin, and playingStep for all sequencers so they can lock-in to DAW transport
+    // This is called when switching from free run mode to DAW sync mode
+    // Resetting playingStep to -1 ensures the lock-in code will trigger when sequencers are enabled
+    seq.originPPQ.store(0.0);
+    seq.haveOrigin.store(false);
+    seq.playingStep.store(-1);
+    
+    autopanSeq.originPPQ.store(0.0);
+    autopanSeq.haveOrigin.store(false);
+    autopanSeq.playingStep.store(-1);
+    
+    dirtSeq.originPPQ.store(0.0);
+    dirtSeq.haveOrigin.store(false);
+    dirtSeq.playingStep.store(-1);
+    
+    chorusSeq.originPPQ.store(0.0);
+    chorusSeq.haveOrigin.store(false);
+    chorusSeq.playingStep.store(-1);
+    
+    reverbSeq.originPPQ.store(0.0);
+    reverbSeq.haveOrigin.store(false);
+    reverbSeq.playingStep.store(-1);
+    
+    granularSeq.originPPQ.store(0.0);
+    granularSeq.haveOrigin.store(false);
+    granularSeq.playingStep.store(-1);
+    
+    slicerSeq.originPPQ.store(0.0);
+    slicerSeq.haveOrigin.store(false);
+    slicerSeq.playingStep.store(-1);
+    
+    dubdelaySeq.originPPQ.store(0.0);
+    dubdelaySeq.haveOrigin.store(false);
+    dubdelaySeq.playingStep.store(-1);
+    
+    spacedelaySeq.originPPQ.store(0.0);
+    spacedelaySeq.haveOrigin.store(false);
+    spacedelaySeq.playingStep.store(-1);
+    
+    phaseBloomSeq.originPPQ.store(0.0);
+    phaseBloomSeq.haveOrigin.store(false);
+    phaseBloomSeq.playingStep.store(-1);
+    
+    formantSeq.originPPQ.store(0.0);
+    formantSeq.haveOrigin.store(false);
+    formantSeq.playingStep.store(-1);
+    
+    form2Seq.originPPQ.store(0.0);
+    form2Seq.haveOrigin.store(false);
+    form2Seq.playingStep.store(-1);
+    
+    reduxSeq.originPPQ.store(0.0);
+    reduxSeq.haveOrigin.store(false);
+    reduxSeq.playingStep.store(-1);
+    
+    filterSeq.originPPQ.store(0.0);
+    filterSeq.haveOrigin.store(false);
+    filterSeq.playingStep.store(-1);
+    
+    saturateSeq.originPPQ.store(0.0);
+    saturateSeq.haveOrigin.store(false);
+    saturateSeq.playingStep.store(-1);
+    
+    DBG("[Processor] Reset all sequencer origins and playing steps - ready for DAW sync lock-in");
+}
+
 void PluginProcessor::startStandalonePlayback() noexcept
 {
     DBG("[Processor] ========== startStandalonePlayback() called ==========");
@@ -4624,12 +4967,12 @@ void PluginProcessor::startStandalonePlayback() noexcept
     }
     
     DBG("[Processor] Standalone playback started:");
-    DBG("[Processor]   wasPlaying: " << wasPlaying.load());
-    DBG("[Processor]   transportCache.playing: " << transportCache.playing.load());
-    DBG("[Processor]   transportCache.valid: " << transportCache.valid.load());
+    DBG("[Processor]   wasPlaying: " << (wasPlaying.load() ? 1 : 0));
+    DBG("[Processor]   transportCache.playing: " << (transportCache.playing.load() ? 1 : 0));
+    DBG("[Processor]   transportCache.valid: " << (transportCache.valid.load() ? 1 : 0));
     DBG("[Processor]   transportCache.bpm: " << transportCache.bpm.load());
-    DBG("[Processor]   seq.enabled: " << seq.enabled.load());
-    DBG("[Processor]   seq.active: " << seq.active.load());
+    DBG("[Processor]   seq.enabled: " << (seq.enabled.load() ? 1 : 0));
+    DBG("[Processor]   seq.active: " << (seq.active.load() ? 1 : 0));
     DBG("[Processor]   seq.currentStep: " << seq.currentStep.load());
     DBG("[Processor]   seq.playingStep: " << seq.playingStep.load());
     DBG("[Processor]   seq.stepsUsed: " << seq.stepsUsed.load());

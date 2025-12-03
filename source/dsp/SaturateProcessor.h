@@ -93,6 +93,11 @@ private:
     private:
         juce::dsp::StateVariableTPTFilter<float> svf;
         double sampleRate = 44100.0;
+        bool isPrepared = false; // Track if filter is properly prepared
+        std::atomic<float> pendingToneNorm { 0.5f }; // Store pending tone update to apply safely
+        std::atomic<bool> hasPendingUpdate { false }; // Flag to indicate pending update
+        std::atomic<bool> isBypassed { false }; // CRITICAL: Bypass flag to prevent crashes from corrupted filter
+        std::atomic<int> errorCount { 0 }; // Track consecutive errors to permanently bypass if too many
     };
 
     struct DiodeClipper

@@ -119,16 +119,10 @@ void FilterProcessor::process(juce::AudioBuffer<float>& buffer, int numSamples)
     
     // Handle type change with crossfade
     if (currentType != targetType) {
-        // Reset current filter if it's a comb filter (clear delay lines)
-        // This prevents delay line state from persisting when switching away from comb
-        if (cur) {
-        }
-        
         // Create new filter with current params
         makeFilter(targetType);
         if (newF) {
             newF->prepare(specCached);
-            
             ramp.start(fs, 20.0); // 20ms crossfade
         }
         currentType = targetType;
@@ -185,14 +179,11 @@ void FilterProcessor::process(juce::AudioBuffer<float>& buffer, int numSamples)
     
     // Process current filter
     if (cur) {
-        // Process current filter normally (health checks removed - CombProc doesn't have these methods)
-        
         cur->set(cut, r, depthValue, slope, drive, spreadCents, (float)fs);
         cur->process(blockA, blockA);
     }
     
     if (ramp.isActive() && newF) {
-        // Process new filter normally (health checks removed - CombProc doesn't have these methods)
         
         // Process new filter
         blockB.copyFrom(ioBlockSub);

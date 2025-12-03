@@ -4446,19 +4446,24 @@ void PluginEditor::setupStepPowerButton()
         DBG("[UI] Step area power: " << (stepAreaEnabled ? "ON" : "OFF"));
         
         if (!stepAreaEnabled) {
-            // Disable sequencer and stop it immediately when turning OFF
-            processorRef.setSpaceDelaySequencerEnabled(false);
+            // Disable main delay sequencer (not SpaceDelay sequencer) when turning OFF
+            processorRef.setSequencerEnabled(false);
             processorRef.resetSequencerState();
-            DBG("[UI] Space Delay sequencer STOPPED by user");
+            DBG("[UI] Main delay sequencer STOPPED by user");
         } else {
-            // Enable sequencer when turning ON
-            processorRef.setSpaceDelaySequencerEnabled(true);
-            DBG("[UI] Space Delay sequencer ENABLED by user");
-            // If followHost is enabled and DAW is playing, realign immediately
+            // Enable main delay sequencer when turning ON
+            processorRef.setSequencerEnabled(true);
+            // Also ensure it's active so it can step immediately
+            processorRef.setSequencerActive(true);
+            // Clear userDisabledSequencer flag to ensure sequencer can auto-enable in future
+            processorRef.clearUserDisabledSequencerFlag();
+            DBG("[UI] Main delay sequencer ENABLED and ACTIVATED by user");
+            // If followHost is enabled and DAW is playing, trigger lock-in
             if (auto* ph = processorRef.getPlayHead()) {
                 auto pos = ph->getPosition();
                 if (pos.hasValue() && pos->getIsPlaying()) {
-                    // Sequencer will be armed by the transport watcher
+                    // Sequencer will be armed by the transport watcher on next processBlock
+                    // The audio thread will detect it's enabled and lock-in immediately
                 }
             }
         }
@@ -4840,13 +4845,13 @@ void PluginEditor::setupUIToggle()
         }
     };
     
-    // Add to component tree - MUST be added and visible
-    addAndMakeVisible(freeRunBpmLabel.get());
-    freeRunBpmLabel->setVisible(true);
-    freeRunBpmLabel->setEnabled(true);
-    freeRunBpmLabel->toFront(true); // Force to front with repaint
+    // DISABLED: Free run mode - always sync with DAW
+    // addAndMakeVisible(freeRunBpmLabel.get());
+    // freeRunBpmLabel->setVisible(true);
+    // freeRunBpmLabel->setEnabled(true);
+    // freeRunBpmLabel->toFront(true); // Force to front with repaint
     
-    DBG("[UI] BPM control setup complete at (" + juce::String(freeRunBpmX) + ", " + juce::String(freeRunBpmY) + ")");
+    DBG("[UI] BPM control setup complete");
     DBG("[UI] BPM label bounds: " + freeRunBpmLabel->getBounds().toString());
     DBG("[UI] BPM label isVisible: " + juce::String(freeRunBpmLabel->isVisible() ? 1 : 0));
     DBG("[UI] BPM label isShowing: " + juce::String(freeRunBpmLabel->isShowing() ? 1 : 0));
@@ -4882,11 +4887,12 @@ void PluginEditor::setupPlayButton()
     playButton->setEnabled(true);
     playButton->setInterceptsMouseClicks(true, true);
     
-    addAndMakeVisible(playButton.get());
-    playButton->setVisible(true);
-    playButton->toFront(false);
+    // DISABLED: Free run mode - always sync with DAW
+    // addAndMakeVisible(playButton.get());
+    // playButton->setVisible(true);
+    // playButton->toFront(false);
     
-    DBG("[UI] Play button setup complete");
+    DBG("[UI] Play button setup complete (DISABLED - always sync with DAW)");
 }
 
 void PluginEditor::togglePlayback()
@@ -5013,36 +5019,179 @@ void PluginEditor::togglePlayback()
         updateBpmBoxVisibility();
         
     } else {
-        // STOP PLAYBACK - Disable all sequencers
-        DBG("[UI] Stopping playback - disabling all sequencers");
+        // STOP PLAYBACK - Check DAW state first before disabling sequencers
+        DBG("[UI] Stopping free-run playback");
         
-        processorRef.setSequencerEnabled(false);
-        processorRef.setSpaceDelaySequencerEnabled(false);
-        processorRef.setAutoPanSequencerEnabled(false);
-        processorRef.setDirtSequencerEnabled(false);
-        processorRef.setChorusSequencerEnabled(false);
-        processorRef.setReverbSequencerEnabled(false);
-        processorRef.setGranularSequencerEnabled(false);
-        processorRef.setSlicerSequencerEnabled(false);
-        processorRef.setDubDelaySequencerEnabled(false);
-        processorRef.setReduxSequencerEnabled(false);
-        processorRef.setPhaseBloomSequencerEnabled(false);
-        processorRef.setFormantSequencerEnabled(false);
-        processorRef.setForm2SequencerEnabled(false);
-        processorRef.setFilterSequencerEnabled(false);
-        processorRef.setSaturateSequencerEnabled(false);
+        // Check if DAW is currently playing
+        bool dawIsPlaying = false;
+        if (auto* ph = processorRef.getPlayHead()) {
+            auto pos = ph->getPosition();
+            if (pos.hasValue() && pos->getIsPlaying()) {
+                dawIsPlaying = true;
+            }
+        }
         
-        // Also set wasPlaying to false to stop standalone mode
-        auto& seq = const_cast<SeqState&>(processorRef.getSeqState());
-        seq.active.store(false);
-        
-        // Stop standalone playback (resets wasPlaying and forceStandaloneMode)
+        // CRITICAL: Stop standalone playback FIRST - this sets forceStandaloneMode to false
+        // This ensures the next audio block will use DAW transport instead of standalone mode
         processorRef.stopStandalonePlayback();
+        
+        // CRITICAL: Reset all sequencer origins so they can properly lock-in to DAW transport
+        // This ensures sequencers sync correctly when switching from free run to DAW sync
+        // MUST be called AFTER stopStandalonePlayback to ensure sequencers stop stepping in standalone mode
+        processorRef.resetAllSequencerOrigins();
+        
+        // Clear userDisabledSequencer flag FIRST to allow auto-enable
+        processorRef.clearUserDisabledSequencerFlag();
+        
+        // If DAW is already playing, enable sequencers immediately so they sync right away
+        // Otherwise, disable them and let auto-enable handle it when DAW starts
+        if (dawIsPlaying) {
+            DBG("[UI] ========== SWITCHING FROM FREE RUN TO DAW SYNC ==========");
+            DBG("[UI] DAW is playing - enabling sequencers immediately for sync");
+            
+            // CRITICAL: Reset sequencer states AGAIN after stopping standalone to ensure clean state
+            // This handles any race conditions where sequencers might still be stepping in standalone mode
+            auto& mainSeq = const_cast<SeqState&>(processorRef.getSeqState());
+            mainSeq.playingStep.store(-1);  // Force lock-in on next audio block
+            mainSeq.haveOrigin.store(false);  // Force lock-in
+            mainSeq.currentStep.store(-1);  // Reset current step to force update
+            
+            // Use setSequencerEnabled to properly enable and activate main sequencer
+            // This will set active=true and clear userDisabledSequencer
+            processorRef.setSequencerEnabled(true);
+            processorRef.setSequencerActive(true);
+            processorRef.clearUserDisabledSequencerFlag();  // Ensure flag is cleared
+            
+            // Update UI state to match sequencer state
+            stepAreaEnabled = true;
+            if (stepPowerButton) {
+                stepPowerButton->setToggleState(true, juce::dontSendNotification);
+            }
+            
+            // Enable and activate all effect sequencers
+            // The enable methods already set active=true when enabling
+            // This ensures they lock-in immediately when switching from free run to DAW sync
+            // CRITICAL: Also reset their currentStep to -1 to force immediate update
+            auto& spaceDelaySeq = const_cast<SeqState&>(processorRef.getSpaceDelaySeqState());
+            spaceDelaySeq.currentStep.store(-1);
+            spaceDelaySeq.playingStep.store(-1);
+            spaceDelaySeq.haveOrigin.store(false);
+            processorRef.setSpaceDelaySequencerEnabled(true);
+            
+            auto& autopanSeq = const_cast<SeqState&>(processorRef.getAutoPanSeqState());
+            autopanSeq.currentStep.store(-1);
+            autopanSeq.playingStep.store(-1);
+            autopanSeq.haveOrigin.store(false);
+            processorRef.setAutoPanSequencerEnabled(true);
+            
+            auto& dirtSeq = const_cast<SeqState&>(processorRef.getDirtSeqState());
+            dirtSeq.currentStep.store(-1);
+            dirtSeq.playingStep.store(-1);
+            dirtSeq.haveOrigin.store(false);
+            processorRef.setDirtSequencerEnabled(true);
+            
+            auto& chorusSeq = const_cast<SeqState&>(processorRef.getChorusSeqState());
+            chorusSeq.currentStep.store(-1);
+            chorusSeq.playingStep.store(-1);
+            chorusSeq.haveOrigin.store(false);
+            processorRef.setChorusSequencerEnabled(true);
+            
+            auto& reverbSeq = const_cast<SeqState&>(processorRef.getReverbSeqState());
+            reverbSeq.currentStep.store(-1);
+            reverbSeq.playingStep.store(-1);
+            reverbSeq.haveOrigin.store(false);
+            processorRef.setReverbSequencerEnabled(true);
+            
+            auto& granularSeq = const_cast<SeqState&>(processorRef.getGranularSeqState());
+            granularSeq.currentStep.store(-1);
+            granularSeq.playingStep.store(-1);
+            granularSeq.haveOrigin.store(false);
+            processorRef.setGranularSequencerEnabled(true);
+            
+            auto& slicerSeq = const_cast<SeqState&>(processorRef.getSlicerSeqState());
+            slicerSeq.currentStep.store(-1);
+            slicerSeq.playingStep.store(-1);
+            slicerSeq.haveOrigin.store(false);
+            processorRef.setSlicerSequencerEnabled(true);
+            
+            auto& dubdelaySeq = const_cast<SeqState&>(processorRef.getDubDelaySeqState());
+            dubdelaySeq.currentStep.store(-1);
+            dubdelaySeq.playingStep.store(-1);
+            dubdelaySeq.haveOrigin.store(false);
+            processorRef.setDubDelaySequencerEnabled(true);
+            
+            auto& reduxSeq = const_cast<SeqState&>(processorRef.getReduxSeqState());
+            reduxSeq.currentStep.store(-1);
+            reduxSeq.playingStep.store(-1);
+            reduxSeq.haveOrigin.store(false);
+            processorRef.setReduxSequencerEnabled(true);
+            
+            auto& phaseBloomSeq = const_cast<SeqState&>(processorRef.getPhaseBloomSeqState());
+            phaseBloomSeq.currentStep.store(-1);
+            phaseBloomSeq.playingStep.store(-1);
+            phaseBloomSeq.haveOrigin.store(false);
+            processorRef.setPhaseBloomSequencerEnabled(true);
+            
+            auto& formantSeq = const_cast<SeqState&>(processorRef.getFormantSeqState());
+            formantSeq.currentStep.store(-1);
+            formantSeq.playingStep.store(-1);
+            formantSeq.haveOrigin.store(false);
+            processorRef.setFormantSequencerEnabled(true);
+            
+            auto& form2Seq = const_cast<SeqState&>(processorRef.getForm2SeqState());
+            form2Seq.currentStep.store(-1);
+            form2Seq.playingStep.store(-1);
+            form2Seq.haveOrigin.store(false);
+            processorRef.setForm2SequencerEnabled(true);
+            
+            auto& filterSeq = const_cast<SeqState&>(processorRef.getFilterSeqState());
+            filterSeq.currentStep.store(-1);
+            filterSeq.playingStep.store(-1);
+            filterSeq.haveOrigin.store(false);
+            processorRef.setFilterSequencerEnabled(true);
+            
+            auto& saturateSeq = const_cast<SeqState&>(processorRef.getSaturateSeqState());
+            saturateSeq.currentStep.store(-1);
+            saturateSeq.playingStep.store(-1);
+            saturateSeq.haveOrigin.store(false);
+            processorRef.setSaturateSequencerEnabled(true);
+            
+            // CRITICAL: Set force lock-in flag AFTER all sequencers are enabled/activated and reset
+            // This ensures they sync properly even if haveOrigin gets set elsewhere
+            // The flag will be cleared by the audio thread after lock-in completes
+            processorRef.setForceAllSequencersLockIn(true);
+            
+            DBG("[UI] All sequencers enabled, activated, reset, and force lock-in flag set");
+        } else {
+            DBG("[UI] DAW is not playing - disabling sequencers (will auto-enable when DAW plays)");
+            // Disable sequencers directly without going through setSequencerEnabled
+            // This prevents setting userDisabledSequencer flag, allowing auto-enable on DAW play
+            auto& seq = const_cast<SeqState&>(processorRef.getSeqState());
+            seq.enabled.store(false);
+            seq.active.store(false);
+            
+            // Disable effect sequencers (they don't have userDisabledSequencer, so this is fine)
+            // Note: Origins are already reset above, so they'll lock-in properly when re-enabled
+            processorRef.setSpaceDelaySequencerEnabled(false);
+            processorRef.setAutoPanSequencerEnabled(false);
+            processorRef.setDirtSequencerEnabled(false);
+            processorRef.setChorusSequencerEnabled(false);
+            processorRef.setReverbSequencerEnabled(false);
+            processorRef.setGranularSequencerEnabled(false);
+            processorRef.setSlicerSequencerEnabled(false);
+            processorRef.setDubDelaySequencerEnabled(false);
+            processorRef.setReduxSequencerEnabled(false);
+            processorRef.setPhaseBloomSequencerEnabled(false);
+            processorRef.setFormantSequencerEnabled(false);
+            processorRef.setForm2SequencerEnabled(false);
+            processorRef.setFilterSequencerEnabled(false);
+            processorRef.setSaturateSequencerEnabled(false);
+        }
         
         // Grey out BPM box when stopped
         updateBpmBoxVisibility();
         
-        DBG("[UI] All sequencers disabled, standalone mode disabled");
+        DBG("[UI] Free-run mode disabled, DAW sync: " << (dawIsPlaying ? "active" : "inactive"));
     }
     
     // Update BPM box visibility based on play state
@@ -5559,10 +5708,12 @@ void PluginEditor::showPage(FxPageID id)
                 }
 
                 // Step power reflects processor sequencer enabled state
-                stepAreaEnabled = processorRef.getSpaceDelaySeqState().enabled.load();
+                // Use main delay sequencer state (not SpaceDelay sequencer) for the step power button
+                stepAreaEnabled = processorRef.getSeqState().enabled.load();
                 if (stepPowerButton) {
                     stepPowerButton->setToggleState(stepAreaEnabled, juce::dontSendNotification);
                 }
+                DBG("[UI] SpaceDelay page: synced step power button to sequencer enabled=" << (stepAreaEnabled ? 1 : 0));
 
                 // Update All Steps toggle state
                 if (spaceDelayAllStepsToggle) {
@@ -5940,14 +6091,15 @@ void PluginEditor::showPage(FxPageID id)
     }
 
     // Play button and BPM box should always be visible on all pages
-    if (playButton) {
-        playButton->setVisible(true);
-        playButton->toFront(false);
-    }
-    if (freeRunBpmLabel) {
-        freeRunBpmLabel->setVisible(true);
-        freeRunBpmLabel->toFront(false);
-    }
+    // DISABLED: Free run mode - always sync with DAW
+    // if (playButton) {
+    //     playButton->setVisible(true);
+    //     playButton->toFront(false);
+    // }
+    // if (freeRunBpmLabel) {
+    //     freeRunBpmLabel->setVisible(true);
+    //     freeRunBpmLabel->toFront(false);
+    // }
 
     repaint();
 }

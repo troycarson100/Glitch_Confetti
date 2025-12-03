@@ -90,8 +90,9 @@ struct SeqState {
         if (bps <= 0.0 || N <= 0 || !std::isfinite(ppq))
             return currentStep.load(); // fallback: keep current
 
-        // Convert PPQ (quarter-note pulses) to beats: 4 PPQ = 1 beat
-        const double beats = ppq / 4.0;
+        // PPQ is already in quarter-note beats (1 PPQ = 1 beat)
+        // No conversion needed - use PPQ directly as beats
+        const double beats = ppq;
         
         // Which step index are we on in the bar-agnostic sense:
         // step = floor(beats / beatsPerStep) % N
@@ -259,21 +260,22 @@ public:
         transportCache.bpm.store(newBpm);
         
         DBG("[Processor] setFreeRunBpm called: oldBpm=" << oldBpm << ", newBpm=" << newBpm 
-            << ", forceStandalone=" << forceStandaloneMode.load() << ", wasPlaying=" << wasPlaying.load());
+            << ", forceStandalone=" << (forceStandaloneMode.load() ? 1 : 0) << ", wasPlaying=" << (wasPlaying.load() ? 1 : 0));
         
         // If BPM changed while playing, recalculate start time to apply new rate immediately
         // Always adjust if playing, even for small changes, to ensure rate updates immediately
         if (forceStandaloneMode.load() && wasPlaying.load() && std::abs(oldBpm - newBpm) > 0.001) {
             // Calculate current PPQ position using old BPM
+            // PPQ is in quarter-note beats (1 PPQ = 1 beat)
             auto now = std::chrono::high_resolution_clock::now();
             auto elapsed = std::chrono::duration<double>(now - standaloneStartTime).count();
             const double oldBeatsPerSecond = oldBpm / 60.0;
-            const double oldPpqPerSecond = oldBeatsPerSecond * 4.0; // 4 PPQ per beat
+            const double oldPpqPerSecond = oldBeatsPerSecond; // PPQ equals beats
             const double currentPPQ = elapsed * oldPpqPerSecond;
             
             // Calculate what the elapsed time should be with new BPM to get the same PPQ
             const double newBeatsPerSecond = newBpm / 60.0;
-            const double newPpqPerSecond = newBeatsPerSecond * 4.0;
+            const double newPpqPerSecond = newBeatsPerSecond; // PPQ equals beats
             const double newElapsed = (newPpqPerSecond > 0.0) ? (currentPPQ / newPpqPerSecond) : 0.0;
             
             // Adjust start time so that elapsed time calculation with new BPM gives same PPQ
@@ -296,11 +298,21 @@ public:
             DBG("[Processor]   oldPpqPerSecond=" << oldPpqPerSecond << " -> newPpqPerSecond=" << newPpqPerSecond);
         } else if (forceStandaloneMode.load() && wasPlaying.load()) {
             DBG("[Processor] BPM change ignored: diff=" << std::abs(oldBpm - newBpm) 
-                << ", forceStandalone=" << forceStandaloneMode.load() << ", wasPlaying=" << wasPlaying.load());
+                << ", forceStandalone=" << (forceStandaloneMode.load() ? 1 : 0) << ", wasPlaying=" << (wasPlaying.load() ? 1 : 0));
         }
     }
     void setForceStandaloneMode(bool force) noexcept { forceStandaloneMode.store(force); }
-    void stopStandalonePlayback() noexcept { wasPlaying.store(false); forceStandaloneMode.store(false); }
+    void setForceAllSequencersLockIn(bool force) noexcept { forceAllSequencersLockIn.store(force); }
+    void stopStandalonePlayback() noexcept { 
+        forceStandaloneMode.store(false);
+        // Always set wasPlaying to false when stopping standalone mode
+        // This ensures play edge will be detected when DAW starts playing
+        // The audio thread will update wasPlaying correctly based on actual DAW state
+        wasPlaying.store(false);
+        
+        // Note: Don't check DAW state here from UI thread - getPlayHead() may not be reliable
+        // The audio thread will detect play edge and enable sequencer if DAW is playing
+    }
     
     // Step snapshot access (Delay)
     StepSnapshot getSafeSnapshot(int step) const;
@@ -408,8 +420,9 @@ public:
     void setDubDelaySelectedStep(int step) noexcept { dubdelayUiSelectedStep.store(step); }
     void setDubDelaySequencerEnabled(bool enabled) noexcept {
         dubdelaySeq.enabled.store(enabled);
-        // Only set active to false when disabling, don't auto-enable when enabling
-        if (!enabled) {
+        if (enabled) {
+            dubdelaySeq.active.store(true);
+        } else {
             dubdelaySeq.active.store(false);
         }
     }
@@ -424,8 +437,9 @@ public:
     void setSpaceDelaySelectedStep(int step) noexcept { spacedelayUiSelectedStep.store(step); }
     void setSpaceDelaySequencerEnabled(bool enabled) noexcept { 
         spacedelaySeq.enabled.store(enabled);
-        // Only set active to false when disabling, don't auto-enable when enabling
-        if (!enabled) {
+        if (enabled) {
+            spacedelaySeq.active.store(true);
+        } else {
             spacedelaySeq.active.store(false);
         }
     }
@@ -452,21 +466,29 @@ public:
     
     void setSequencerEnabled(bool enabled) noexcept { 
         seq.enabled.store(enabled); 
-        // Track if user explicitly disabled sequencer
-        userDisabledSequencer.store(!enabled);
-        // Only set active if enabled, otherwise leave active state for transport watcher
-        if (enabled) {
+        // Only track user disable if explicitly disabling
+        // Don't set userDisabledSequencer when enabling - let audio thread handle activation
+        if (!enabled) {
+            userDisabledSequencer.store(true);
+            seq.active.store(false);
+        } else {
+            // When enabling, set active immediately so it works in both modes
             seq.active.store(true);
+            userDisabledSequencer.store(false); // Clear flag when manually enabling
         }
     }
     void setSequencerActive(bool active) noexcept { 
         seq.active.store(active); 
+    }
+    void clearUserDisabledSequencerFlag() noexcept {
+        userDisabledSequencer.store(false);
     }
     void setFxEnabled(bool enabled) noexcept { fxEnabled.store(enabled); }
     void setStepsUsed(int steps) noexcept { seq.stepsUsed.store(steps); }
     void setDivisionIndex(int index) noexcept { seq.divisionIndex.store(index); }
     void setStdMode(int mode) noexcept { seq.stdMode.store(juce::jlimit(0, 2, mode)); }
     void resetSequencerState() noexcept;
+    void resetAllSequencerOrigins() noexcept;  // Reset originPPQ and haveOrigin for all sequencers
     void startStandalonePlayback() noexcept;
     void randomizeAllStepSnapshots() noexcept;
     
@@ -496,6 +518,7 @@ private:
     std::atomic<bool> followHost{true};     // follow host transport
     std::atomic<bool> userDisabledSequencer{false}; // track if user explicitly disabled sequencer
     std::atomic<bool> forceStandaloneMode{false}; // force standalone mode, ignore DAW transport
+    std::atomic<bool> forceAllSequencersLockIn{false}; // force all sequencers to lock-in on next DAW block (for mode switching)
 
     
     // Helper function for sequencer (legacy - now handled by SeqState::beatsPerStepFromDivision)

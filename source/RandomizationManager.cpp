@@ -81,34 +81,6 @@ void RandomizationManager::randomizeAll()
     applyStepChanges();
     applySequencerChanges();
     
-    // Update UI button states for Space Delay and Dub Delay if they're currently visible
-    // This ensures the step power button reflects the disabled state immediately
-    if (editor) {
-        auto& router = processor.getEffectRouter();
-        for (int slot = 0; slot < 4; ++slot) {
-            EffectID effect = router.getEffectInSlot(static_cast<SlotID>(slot));
-            if (effect == EffectID::SpaceDelay) {
-                // Update Space Delay step power button if it's currently visible
-                bool sequencerEnabled = processor.getSpaceDelaySeqState().enabled.load();
-                editor->stepAreaEnabled = sequencerEnabled;
-                if (editor->stepPowerButton) {
-                    editor->stepPowerButton->setToggleState(sequencerEnabled, juce::dontSendNotification);
-                }
-                // Update visibility
-                editor->updateStepAreaVisibility();
-            } else if (effect == EffectID::DubDelay) {
-                // Update Dub Delay step power button if it's currently visible
-                bool sequencerEnabled = processor.getDubDelaySeqState().enabled.load();
-                editor->dubdelayStepAreaEnabled = sequencerEnabled;
-                if (editor->dubdelayStepPowerButton) {
-                    editor->dubdelayStepPowerButton->setToggleState(sequencerEnabled, juce::dontSendNotification);
-                }
-                // Update visibility
-                editor->updateDubDelayStepAreaVisibility();
-            }
-        }
-    }
-    
     // Verify and report
     verifyAndReport();
     
@@ -116,34 +88,11 @@ void RandomizationManager::randomizeAll()
     if (editor) {
         editor->updateAllEffectSelectors();
         
-        // Refresh UI for all slots to show the correct effects after randomization
-        // This ensures components are properly shown/hidden and initialized
-        // We need to refresh all 4 slots to initialize components, but preserve
-        // the current visible page. Since showPage() uses the router to determine
-        // which effect to show for each slot, we refresh all slots then restore
-        // visibility by calling showPage for each slot in order.
-        // The last visible page will be determined by editor->currentPage.
+        // Refresh the current page to update backgrounds and visibility
+        editor->showPage(editor->getCurrentPage());
         
-        // Store which slot was visible before refresh (0-3)
-        int currentSlot = static_cast<int>(editor->getCurrentPage());
-        
-        // Refresh all 4 slots to initialize components properly
-        editor->showPage(FxPageID::SpaceDelay);  // Slot 0
-        editor->showPage(FxPageID::Panner);      // Slot 1  
-        editor->showPage(FxPageID::Dirt);        // Slot 2
-        editor->showPage(FxPageID::Chorus);      // Slot 3
-        
-        // Restore the previously visible slot
-        switch (currentSlot) {
-            case 0: editor->showPage(FxPageID::SpaceDelay); break;
-            case 1: editor->showPage(FxPageID::Panner); break;
-            case 2: editor->showPage(FxPageID::Dirt); break;
-            case 3: editor->showPage(FxPageID::Chorus); break;
-            default: editor->showPage(FxPageID::SpaceDelay); break;
-        }
-        
-        // Force a repaint to ensure UI updates are visible
-        editor->repaint();
+        // Refresh the current page's UI to show updated knobs and sequencer
+        editor->refreshCurrentPageUI();
     }
     
     // Resume processing
@@ -253,7 +202,8 @@ static void safeSetParameterValue(juce::RangedAudioParameter* param, float denor
     
     // Check if value is finite
     if (!std::isfinite(denormalizedValue)) {
-        DBG("[RAND] ERROR: Non-finite value for parameter " + param->getName());
+        juce::String paramName = param->getName(100);
+        DBG("[RAND] ERROR: Non-finite value for parameter " << paramName);
         return;
     }
     
@@ -301,9 +251,11 @@ static void safeSetParameterValue(juce::RangedAudioParameter* param, float denor
             param->setValueNotifyingHost(normalizedValue);
         }
     } catch (const std::exception& e) {
-        DBG("[RAND] ERROR: Exception setting parameter value for " + param->getName() + ": " + juce::String(e.what()));
+        juce::String paramName = param->getName(100);
+        DBG("[RAND] ERROR: Exception setting parameter value for " << paramName << ": " << juce::String(e.what()));
     } catch (...) {
-        DBG("[RAND] ERROR: Unknown exception setting parameter value for " + param->getName());
+        juce::String paramName = param->getName(100);
+        DBG("[RAND] ERROR: Unknown exception setting parameter value for " << paramName);
     }
 }
 
@@ -839,44 +791,27 @@ void RandomizationManager::applySequencerChanges()
         switch (target.effect)
         {
             case EffectID::SpaceDelay:
-                // Always disable Space Delay sequencer when using master random button
-                processor.setSpaceDelaySequencerEnabled(false);
+                processor.setSpaceDelaySequencerEnabled(sequencerEnabled);
                 processor.setSpaceDelayStepsUsed(stepsUsed);
                 processor.setSpaceDelayDivisionIndex(divisionIndex);
-                // Update UI dropdown to match (dropdown IDs are 1-8, so add 1 to index)
-                if (editor && editor->rateDropdown) {
-                    editor->rateDropdown->setSelectedId(divisionIndex + 1, juce::dontSendNotification);
-                }
                 break;
                 
             case EffectID::AutoPan:
                 processor.setAutoPanSequencerEnabled(sequencerEnabled);
                 processor.setAutoPanStepsUsed(stepsUsed);
                 processor.setAutoPanDivisionIndex(divisionIndex);
-                // Update UI dropdown to match (dropdown IDs are 1-8, so add 1 to index)
-                if (editor && editor->autopanRateDropdown) {
-                    editor->autopanRateDropdown->setSelectedId(divisionIndex + 1, juce::dontSendNotification);
-                }
                 break;
                 
             case EffectID::Dirt:
                 processor.setDirtSequencerEnabled(sequencerEnabled);
                 processor.setDirtStepsUsed(stepsUsed);
                 processor.setDirtDivisionIndex(divisionIndex);
-                // Update UI dropdown to match (dropdown IDs are 1-8, so add 1 to index)
-                if (editor && editor->dirtRateDropdown) {
-                    editor->dirtRateDropdown->setSelectedId(divisionIndex + 1, juce::dontSendNotification);
-                }
                 break;
                 
             case EffectID::Chorus:
                 processor.setChorusSequencerEnabled(sequencerEnabled);
                 processor.setChorusStepsUsed(stepsUsed);
                 processor.setChorusDivisionIndex(divisionIndex);
-                // Update UI dropdown to match (dropdown IDs are 1-8, so add 1 to index)
-                if (editor && editor->chorusRateDropdown) {
-                    editor->chorusRateDropdown->setSelectedId(divisionIndex + 1, juce::dontSendNotification);
-                }
                 break;
                 
             case EffectID::Reverb:
@@ -910,34 +845,21 @@ void RandomizationManager::applySequencerChanges()
                 break;
                 
             case EffectID::DubDelay:
-                // Always disable Dub Delay sequencer when using master random button
-                processor.setDubDelaySequencerEnabled(false);
+                processor.setDubDelaySequencerEnabled(sequencerEnabled);
                 processor.setDubDelayStepsUsed(stepsUsed);
                 processor.setDubDelayDivisionIndex(divisionIndex);
-                // Update UI dropdown to match (dropdown IDs are 1-8, so add 1 to index)
-                if (editor && editor->dubdelayRateDropdown) {
-                    editor->dubdelayRateDropdown->setSelectedId(divisionIndex + 1, juce::dontSendNotification);
-                }
                 break;
                 
             case EffectID::Redux:
                 processor.setReduxSequencerEnabled(sequencerEnabled);
                 processor.setReduxStepsUsed(stepsUsed);
                 processor.setReduxDivisionIndex(divisionIndex);
-                // Update UI dropdown to match (dropdown IDs are 1-8, so add 1 to index)
-                if (editor && editor->reduxRateDropdown) {
-                    editor->reduxRateDropdown->setSelectedId(divisionIndex + 1, juce::dontSendNotification);
-                }
                 break;
                 
             case EffectID::PhaseBloom:
                 processor.setPhaseBloomSequencerEnabled(sequencerEnabled);
                 processor.setPhaseBloomStepsUsed(stepsUsed);
                 processor.setPhaseBloomDivisionIndex(divisionIndex);
-                // Update UI dropdown to match (dropdown IDs are 1-8, so add 1 to index)
-                if (editor && editor->phaseBloomRateDropdown) {
-                    editor->phaseBloomRateDropdown->setSelectedId(divisionIndex + 1, juce::dontSendNotification);
-                }
                 break;
                 
             case EffectID::Formant:
@@ -957,36 +879,22 @@ void RandomizationManager::applySequencerChanges()
                 processor.setSaturateSequencerEnabled(sequencerEnabled);
                 processor.setSaturateStepsUsed(stepsUsed);
                 processor.setSaturateDivisionIndex(divisionIndex);
-                // Update UI dropdown to match (dropdown IDs are 1-8, so add 1 to index)
-                if (editor && editor->saturateRateDropdown) {
-                    editor->saturateRateDropdown->setSelectedId(divisionIndex + 1, juce::dontSendNotification);
-                }
                 break;
                 
             case EffectID::Filter:
                 processor.setFilterSequencerEnabled(sequencerEnabled);
                 processor.setFilterStepsUsed(stepsUsed);
                 processor.setFilterDivisionIndex(divisionIndex);
-                // Update UI dropdown to match (dropdown IDs are 1-8, so add 1 to index)
-                if (editor && editor->filterRateDropdown) {
-                    editor->filterRateDropdown->setSelectedId(divisionIndex + 1, juce::dontSendNotification);
-                }
                 break;
         }
         
         // If sequencer was enabled, immediately lock it in to current transport position
         // This ensures it starts running right away if transport is already playing
-        // Note: SpaceDelay and DubDelay are always disabled, so skip lock-in for them
-        if (sequencerEnabled && target.effect != EffectID::SpaceDelay && target.effect != EffectID::DubDelay) {
+        if (sequencerEnabled) {
             processor.forceSequencerLockIn(target.effect);
         }
         
-        // For SpaceDelay and DubDelay, always log as OFF since they're forced to disabled
-        bool loggedEnabled = sequencerEnabled;
-        if (target.effect == EffectID::SpaceDelay || target.effect == EffectID::DubDelay) {
-            loggedEnabled = false;
-        }
-        DBG("[RAND] " + target.pageId + ": enabled=" + (loggedEnabled ? "ON" : "OFF") 
+        DBG("[RAND] " + target.pageId + ": enabled=" + (sequencerEnabled ? "ON" : "OFF") 
             + ", steps=" + juce::String(stepsUsed) + ", division=" + juce::String(divisionIndex));
         
         stats.sequencersRandomized++;

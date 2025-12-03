@@ -309,6 +309,7 @@ public:
     void paint (juce::Graphics&) override;
     void resized() override;
     void timerCallback() override;
+    void mouseDown(const juce::MouseEvent& e) override;
     
     // Allow step amount TextEditors to receive keyboard input
     bool keyPressed(const juce::KeyPress& key) override;
@@ -635,7 +636,7 @@ public:
     // Play button (visible on all pages)
     std::unique_ptr<PlayButton> playButton;
     
-    // Free-run BPM control (replaces UI toggle)
+    // Free-run BPM control (replaces UI toggle) - use TextEditor like stepAmountLabel
     std::unique_ptr<juce::TextEditor> freeRunBpmLabel;
     
     // AutoPan page components
@@ -1130,6 +1131,7 @@ public:
     juce::String getParameterIdForKnob(int knobIndex);
         void setupUIToggle(); // Sets up BPM control (replaces old UI toggle)
         void setupPlayButton();
+        void updateBpmBoxVisibility(); // Grey out BPM box when play is off
         
         // AutoPan page helper methods
         void setupAutoPanKnobs();
@@ -1330,6 +1332,7 @@ public:
     void updateTabButtonImages();
     juce::ComboBox* getEffectSelectorForSlot(int slotIndex);
     int effectIDToDropdownID(EffectID effectID);
+    void refreshCurrentPageUI(); // Refresh UI for current page after randomization
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PluginEditor)
 };

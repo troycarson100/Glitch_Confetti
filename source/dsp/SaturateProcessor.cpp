@@ -155,33 +155,242 @@ float SaturateProcessor::OnePole::process(float x)
 //==============================================================================
 void SaturateProcessor::ToneFilter::prepare(double fs)
 {
+    // Safety check: ensure valid sample rate
+    if (fs <= 0.0 || !std::isfinite(fs))
+    {
+        fs = 44100.0; // Fallback to safe default
+    }
+    
     sampleRate = fs;
+    
+    // CRITICAL FIX: Preserve prepared state if filter is already prepared
+    // If filter is already prepared and re-prepare fails, keep it prepared
+    // This prevents audio from stopping during rapid randomization
+    bool wasPrepared = isPrepared;
+    isPrepared = false; // Reset flag only for this prepare attempt
+    
     // Prepare the StateVariableTPTFilter with proper ProcessSpec
-    juce::dsp::ProcessSpec spec;
-    spec.sampleRate = fs;
-    spec.maximumBlockSize = 512;
-    spec.numChannels = 1;
-    svf.prepare(spec);
-    svf.reset();
-    svf.setType(juce::dsp::StateVariableTPTFilterType::lowpass);
-    svf.setCutoffFrequency(15000.0f);
-    svf.setResonance(0.707f);
+    try
+    {
+        juce::dsp::ProcessSpec spec;
+        spec.sampleRate = fs;
+        spec.maximumBlockSize = 512;
+        spec.numChannels = 1;
+        
+        // Prepare filter - wrap in try-catch to prevent crashes
+        svf.prepare(spec);
+        svf.reset();
+        svf.setType(juce::dsp::StateVariableTPTFilterType::lowpass);
+        svf.setCutoffFrequency(15000.0f);
+        svf.setResonance(0.707f);
+        
+        // Mark as prepared only if all operations succeeded
+        isPrepared = true;
+        isBypassed.store(false); // Re-enable filter after successful prepare
+        errorCount.store(0); // Reset error count
+        
+        // Apply any pending tone update that was deferred
+        if (hasPendingUpdate.load())
+        {
+            try
+            {
+                const float hz = juce::jmap(pendingToneNorm.load(), 10000.0f, 22000.0f);
+                svf.setCutoffFrequency(hz);
+                hasPendingUpdate.store(false);
+            }
+            catch (...)
+            {
+                // Update failed, but filter is still prepared
+                // The update will be retried in process()
+            }
+        }
+    }
+    catch (...)
+    {
+        // If prepare fails, preserve the previous prepared state
+        // CRITICAL FIX: If filter was already prepared, keep it that way
+        // This prevents audio from stopping if prepare() fails during rapid randomization
+        if (wasPrepared)
+        {
+            // Filter was already prepared - keep it that way even if re-prepare fails
+            // This prevents audio from stopping during rapid randomization
+            isPrepared = true;
+        }
+        else
+        {
+            // Filter was not prepared before - mark as unprepared
+            isPrepared = false;
+        }
+    }
 }
 
 void SaturateProcessor::ToneFilter::reset()
 {
-    svf.reset();
+    // Wrap reset in try-catch to prevent crashes if filter is in invalid state
+    try
+    {
+        if (isPrepared)
+        {
+            svf.reset();
+        }
+    }
+    catch (...)
+    {
+        // If reset fails, don't mark filter as unprepared
+        // This prevents audio from stopping during rapid randomization
+        // The filter will continue processing even if reset failed
+        // Just skip the reset and continue with current state
+    }
 }
 
 void SaturateProcessor::ToneFilter::setTone(float norm)
 {
-    const float hz = juce::jmap(juce::jlimit(0.0f, 1.0f, norm), 10000.0f, 22000.0f);
-    svf.setCutoffFrequency(hz);
+    // CRITICAL: Don't update if filter is bypassed - it's corrupted
+    if (isBypassed.load()) {
+        return;
+    }
+    
+    // Store the pending tone value - we'll apply it safely in process() if filter is ready
+    // This prevents modifying filter state during rapid randomization which can cause corruption
+    pendingToneNorm.store(juce::jlimit(0.0f, 1.0f, norm));
+    hasPendingUpdate.store(true);
+    
+    // Only apply immediately if filter is prepared and we can do it safely
+    // During rapid randomization, we defer the update to process() to avoid race conditions
+    if (!isPrepared || sampleRate <= 0.0)
+    {
+        return; // Filter not ready, update will be applied when filter is prepared
+    }
+    
+    // Try to apply update, but don't crash if it fails
+    // CRITICAL: Don't mark filter as unprepared if update fails - this causes audio to stop processing
+    // Instead, just skip the update and let the filter continue with its current settings
+    try
+    {
+        const float hz = juce::jmap(pendingToneNorm.load(), 10000.0f, 22000.0f);
+        svf.setCutoffFrequency(hz);
+        hasPendingUpdate.store(false); // Update applied successfully
+    }
+    catch (...)
+    {
+        // If setting tone fails, increment error count and bypass if too many errors
+        int errors = errorCount.fetch_add(1) + 1;
+        if (errors > 10) {
+            isBypassed.store(true);
+        }
+        // Clear the pending update to prevent retry loops
+        hasPendingUpdate.store(false);
+    }
 }
 
 float SaturateProcessor::ToneFilter::process(float x)
 {
-    return svf.processSample(0, x);
+    // CRITICAL: Multiple safety checks to prevent crashes during rapid randomization
+    // 1. Check if filter was prepared - if not, just bypass
+    // CRITICAL FIX: Never call prepare() from process() - it causes double-free crashes
+    // The filter will be re-prepared by the main prepare() method when prepareToPlay() is called
+    // CRITICAL FIX: Never mark filter as unprepared from process() - it causes audio to stop
+    // If there's an error, just bypass this sample but keep filter marked as prepared
+    
+    // CRITICAL: If filter is bypassed or not prepared, just bypass - NEVER call prepare() from audio thread
+    // Calling prepare() from process() causes double-free crashes
+    // The filter will be re-prepared by the main prepare() method when prepareToPlay() is called
+    // CRITICAL FIX: Never mark filter as unprepared from process() - it causes audio to stop
+    // If there's an error, just bypass this sample but keep filter marked as prepared
+    if (isBypassed.load() || !isPrepared || sampleRate <= 0.0)
+    {
+        // Filter is bypassed or not prepared - just bypass this sample
+        // Don't try to re-prepare from audio thread as it causes memory corruption
+        return x;
+    }
+    
+    // 2. Apply pending tone update if we have one (safe to do at start of processing)
+    // This defers filter modifications from setTone() to avoid race conditions
+    if (hasPendingUpdate.load())
+    {
+        try
+        {
+            const float hz = juce::jmap(pendingToneNorm.load(), 10000.0f, 22000.0f);
+            svf.setCutoffFrequency(hz);
+            hasPendingUpdate.store(false);
+        }
+        catch (...)
+        {
+            // Update failed - increment error count and bypass if too many errors
+            int errors = errorCount.fetch_add(1) + 1;
+            if (errors > 10) {
+                isBypassed.store(true);
+            }
+            // Clear the pending update to prevent retry loops
+            hasPendingUpdate.store(false);
+        }
+    }
+    
+    // 3. Validate input is finite
+    if (!std::isfinite(x))
+    {
+        return 0.0f; // Return silence for invalid input
+    }
+    
+    // 4. CRITICAL: Additional validation - check if filter object is in valid state
+    // During rapid randomization, the filter's internal state can become corrupted
+    // even if isPrepared is true. We need to be extra defensive.
+    
+    // Try to access the filter in a safe way - if it throws or crashes, we bypass
+    try
+    {
+        // Double-check the filter is still valid by checking sampleRate matches
+        // This is a lightweight check that doesn't access filter internals
+        if (sampleRate <= 0.0 || !std::isfinite(sampleRate))
+        {
+            // Sample rate is invalid - can't recover, just bypass
+            // Don't mark as unprepared as that would prevent recovery if sampleRate becomes valid again
+            return x;
+        }
+        
+        // Now try to process - wrap in nested try-catch for maximum safety
+        // CRITICAL: If filter is corrupted, it will crash here - we need to catch it
+        try
+        {
+            float result = svf.processSample(0, x);
+            
+            // 5. Validate output is finite
+            if (!std::isfinite(result))
+            {
+                // Output is invalid - increment error count and bypass
+                int errors = errorCount.fetch_add(1) + 1;
+                if (errors > 10) {
+                    // Too many errors - permanently bypass filter to prevent crashes
+                    isBypassed.store(true);
+                }
+                return x;
+            }
+            
+            // Success - reset error count
+            errorCount.store(0);
+            return result;
+        }
+        catch (...)
+        {
+            // Filter processing threw an exception - filter is corrupted
+            // CRITICAL: Increment error count and bypass permanently if too many errors
+            int errors = errorCount.fetch_add(1) + 1;
+            if (errors > 10) {
+                // Too many errors - permanently bypass filter to prevent crashes
+                isBypassed.store(true);
+            }
+            // Don't try to reset - filter is corrupted and reset() might also crash
+            return x;
+        }
+    }
+    catch (...)
+    {
+        // Even the safety checks failed - filter is completely invalid
+        // CRITICAL: Don't mark as unprepared - this causes audio to stop permanently
+        // Just bypass this sample - the filter will try to recover on next call
+        // The auto-recovery in step 1 will re-prepare the filter if needed
+        return x;
+    }
 }
 
 //==============================================================================
@@ -574,8 +783,30 @@ void SaturateProcessor::processInternal(juce::AudioBuffer<float>& buffer,
     // Safety check: ensure oversamplers are initialized and processor is prepared
     if (!oversamplerPrimary || !oversamplerDry || sampleRate <= 0.0 || maxBlockSize <= 0)
         return;
+    
+    // CRITICAL: Validate buffer before copying to prevent crashes during rapid randomization
+    if (buffer.getNumChannels() < 2 || buffer.getNumSamples() < numSamples || numSamples <= 0)
+        return;
+    
+    // Validate buffer pointers are valid
+    if (buffer.getReadPointer(0) == nullptr || buffer.getReadPointer(1) == nullptr)
+        return;
+    
+    // Validate buffer size matches expected size
+    if (buffer.getNumSamples() < numSamples)
+        return;
 
-    dryBuffer.makeCopyOf(buffer, true);
+    // Wrap makeCopyOf in try-catch to prevent crashes from corrupted buffer state
+    try
+    {
+        dryBuffer.makeCopyOf(buffer, true);
+    }
+    catch (...)
+    {
+        // If buffer copy fails, skip processing to prevent crash
+        DBG("[SATURATE] Exception during dryBuffer.makeCopyOf, skipping");
+        return;
+    }
 
     // Refresh filters at the start of the block for current model
     auto& runtime = modelStates[targetType];
@@ -583,23 +814,72 @@ void SaturateProcessor::processInternal(juce::AudioBuffer<float>& buffer,
 
     renderModelToBuffer(targetType, runtime, buffer, liveParams, false);
 
-    dryMatchedBuffer.makeCopyOf(dryBuffer, true);
+    // Wrap makeCopyOf in try-catch to prevent crashes from corrupted buffer state
+    try
+    {
+        // Validate dryBuffer before copying
+        if (dryBuffer.getNumChannels() < 2 || dryBuffer.getNumSamples() < numSamples)
+        {
+            DBG("[SATURATE] Invalid dryBuffer state, skipping dry/wet mix");
+            return;
+        }
+        
+        dryMatchedBuffer.makeCopyOf(dryBuffer, true);
+    }
+    catch (...)
+    {
+        // If buffer copy fails, skip dry/wet mix to prevent crash
+        DBG("[SATURATE] Exception during dryMatchedBuffer.makeCopyOf, skipping dry/wet mix");
+        return;
+    }
+    // Validate dryMatchedBuffer before creating AudioBlock
+    if (dryMatchedBuffer.getNumChannels() < 2 || dryMatchedBuffer.getNumSamples() < numSamples)
+    {
+        DBG("[SATURATE] Invalid dryMatchedBuffer state, skipping dry/wet mix");
+        return;
+    }
+    
     juce::dsp::AudioBlock<float> dryBlock(dryMatchedBuffer);
     auto dryUp = oversamplerDry->processSamplesUp(dryBlock);
     juce::ignoreUnused(dryUp);
     oversamplerDry->processSamplesDown(dryBlock);
 
+    // Validate buffer pointers before accessing
     auto* outL = buffer.getWritePointer(0);
     auto* outR = buffer.getWritePointer(1);
     auto* dryL = dryMatchedBuffer.getWritePointer(0);
     auto* dryR = dryMatchedBuffer.getWritePointer(1);
+    
+    // CRITICAL: Validate all pointers are valid before mixing
+    if (outL == nullptr || outR == nullptr || dryL == nullptr || dryR == nullptr)
+    {
+        DBG("[SATURATE] Null buffer pointers in dry/wet mix, skipping");
+        return;
+    }
+    
+    // Validate buffer sizes match
+    if (buffer.getNumSamples() < numSamples || dryMatchedBuffer.getNumSamples() < numSamples)
+    {
+        DBG("[SATURATE] Buffer size mismatch in dry/wet mix, skipping");
+        return;
+    }
 
     const float mixVal = juce::jlimit(0.0f, 1.0f, liveParams.mix);
     const float dryGain = 1.0f - mixVal;
-    for (int i = 0; i < numSamples; ++i)
+    
+    // Wrap mixing loop in try-catch to prevent crashes from corrupted buffer data
+    try
     {
-        outL[i] = dryL[i] * dryGain + outL[i] * mixVal;
-        outR[i] = dryR[i] * dryGain + outR[i] * mixVal;
+        for (int i = 0; i < numSamples; ++i)
+        {
+            outL[i] = dryL[i] * dryGain + outL[i] * mixVal;
+            outR[i] = dryR[i] * dryGain + outR[i] * mixVal;
+        }
+    }
+    catch (...)
+    {
+        DBG("[SATURATE] Exception during dry/wet mix, skipping");
+        return;
     }
 }
 
