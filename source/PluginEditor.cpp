@@ -83,8 +83,9 @@ PluginEditor::PluginEditor (PluginProcessor& p)
         // Setup step power button
         setupStepPowerButton();
         
+        // DISABLED: Free run mode - always sync with DAW
         // Setup play button first
-        setupPlayButton();
+        // setupPlayButton();
         
         // Setup AutoPan page components
         setupAutoPanKnobs();
@@ -344,7 +345,8 @@ PluginEditor::PluginEditor (PluginProcessor& p)
         setupTabSystem();
         
         // Setup UI toggle (BPM label) LAST so it appears on top of everything
-        setupUIToggle();
+        // DISABLED: Free run mode - always sync with DAW
+        // setupUIToggle();
         
         // Start timer for UI updates
         startTimer(16); // ~60Hz (16ms) for ultra-smooth UI updates
@@ -959,15 +961,26 @@ void PluginEditor::resized()
     const int playButtonX = bpmX - spacing - playButtonWidth;
     const int centerY = 7; // Center both horizontally
     
+    // DISABLED: Free run mode - always sync with DAW
+    // if (playButton) {
+    //     playButton->setTopLeftPosition(playButtonX, centerY);
+    //     playButton->setVisible(true);
+    //     playButton->toFront(false);
+    // }
+    // if (freeRunBpmLabel) {
+    //     freeRunBpmLabel->setBounds(bpmX, centerY, bpmWidth, bpmHeight);
+    //     freeRunBpmLabel->setVisible(true);
+    //     freeRunBpmLabel->toFront(false);
+    // }
+    
+    // Explicitly hide and remove if they somehow exist
     if (playButton) {
-        playButton->setTopLeftPosition(playButtonX, centerY);
-        playButton->setVisible(true);
-        playButton->toFront(false);
+        playButton->setVisible(false);
+        removeChildComponent(playButton.get());
     }
     if (freeRunBpmLabel) {
-        freeRunBpmLabel->setBounds(bpmX, centerY, bpmWidth, bpmHeight);
-        freeRunBpmLabel->setVisible(true);
-        freeRunBpmLabel->toFront(false);
+        freeRunBpmLabel->setVisible(false);
+        removeChildComponent(freeRunBpmLabel.get());
     }
 }
 
@@ -4758,6 +4771,9 @@ void PluginEditor::updateSequencerUI()
 
 void PluginEditor::setupUIToggle()
 {
+    // DISABLED: Free run mode - always sync with DAW
+    return; // Early return - don't create BPM box
+    
     // Sets up BPM control (replaces old UI toggle)
     DBG("[UI] Setting up BPM control...");
     DBG("[UI] Window size at setup: " + juce::String(getWidth()) + "x" + juce::String(getHeight()));
@@ -4859,6 +4875,9 @@ void PluginEditor::setupUIToggle()
 
 void PluginEditor::setupPlayButton()
 {
+    // DISABLED: Free run mode - always sync with DAW
+    return; // Early return - don't create play button
+    
     DBG("[UI] Setting up play button...");
     
     // Create play button (to the left of BPM box, at very right corner)
@@ -5202,19 +5221,25 @@ void PluginEditor::updateBpmBoxVisibility()
 {
     bool isPlaying = playButton && playButton->isPlayingState();
     
+    // DISABLED: Free run mode - always sync with DAW
+    // if (freeRunBpmLabel) {
+    //     if (!isPlaying) {
+    //         // Grey out the text color when disabled
+    //         freeRunBpmLabel->setColour(juce::TextEditor::textColourId, juce::Colours::grey);
+    //         freeRunBpmLabel->setColour(juce::TextEditor::outlineColourId, juce::Colours::grey);
+    //         freeRunBpmLabel->setAlpha(0.3f);
+    //     } else {
+    //         // Restore white colors when enabled
+    //         freeRunBpmLabel->setColour(juce::TextEditor::textColourId, juce::Colours::white);
+    //         freeRunBpmLabel->setColour(juce::TextEditor::outlineColourId, juce::Colours::white);
+    //         freeRunBpmLabel->setAlpha(1.0f);
+    //     }
+    //     repaint();
+    // }
+    
+    // Explicitly hide if it somehow exists
     if (freeRunBpmLabel) {
-        if (!isPlaying) {
-            // Grey out the text color when disabled
-            freeRunBpmLabel->setColour(juce::TextEditor::textColourId, juce::Colours::grey);
-            freeRunBpmLabel->setColour(juce::TextEditor::outlineColourId, juce::Colours::grey);
-            freeRunBpmLabel->setAlpha(0.3f);
-        } else {
-            // Restore white colors when enabled
-            freeRunBpmLabel->setColour(juce::TextEditor::textColourId, juce::Colours::white);
-            freeRunBpmLabel->setColour(juce::TextEditor::outlineColourId, juce::Colours::white);
-            freeRunBpmLabel->setAlpha(1.0f);
-        }
-        repaint();
+        freeRunBpmLabel->setVisible(false);
     }
 }
 
