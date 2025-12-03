@@ -83,10 +83,7 @@ PluginEditor::PluginEditor (PluginProcessor& p)
         // Setup step power button
         setupStepPowerButton();
         
-        // Setup UI toggle
-        setupUIToggle();
-        
-        // Setup play button
+        // Setup play button first
         setupPlayButton();
         
         // Setup AutoPan page components
@@ -346,6 +343,9 @@ PluginEditor::PluginEditor (PluginProcessor& p)
         // Setup tab system
         setupTabSystem();
         
+        // Setup UI toggle (BPM label) LAST so it appears on top of everything
+        setupUIToggle();
+        
         // Start timer for UI updates
         startTimer(16); // ~60Hz (16ms) for ultra-smooth UI updates
         
@@ -463,6 +463,12 @@ void PluginEditor::stopAllTimersSafely()
             }
         }
     }
+}
+
+void PluginEditor::mouseDown(const juce::MouseEvent& e)
+{
+    // Let other components handle the click
+    Component::mouseDown(e);
 }
 
 void PluginEditor::paint (juce::Graphics& g)
@@ -702,10 +708,7 @@ void PluginEditor::paint (juce::Graphics& g)
         juce::Drawable* bg = getBackgroundForSlot(slot);
         if (bg != nullptr)
         {
-            // Draw background - use slightly reduced opacity for inactive tabs to grey them out
-            // Using 0.95 opacity (5% reduction) instead of 0.9 to minimize blending while still greying
-            float bgAlpha = (slot == currentSlotIndex) ? 1.0f : 0.95f;
-            bg->drawWithin(g, bounds, juce::RectanglePlacement::centred, bgAlpha);
+            bg->drawWithin(g, bounds, juce::RectanglePlacement::centred, 1.0f);
             hasBackground = true;
         }
 
@@ -745,19 +748,15 @@ void PluginEditor::paint (juce::Graphics& g)
                     continue; // Skip invalid slots
             }
             
-            // Use fixed size for all icons to ensure they're all the same size
-            // All icons have viewBox="0 0 250 70", so we use a consistent size
-            const float iconWidth = 65.0f;   // Fixed width for all icons (reduced from 70.2f)
-            const float iconHeight = 18.2f;  // Fixed height for all icons (reduced from 19.66f)
+            // Use natural icon size (250x70 from SVG viewBox) reduced by 60%, then 22% smaller, then 10% smaller
+            float iconWidth = 250.0f * 0.4f * 0.78f * 0.9f;  // 60% reduction, then 22% smaller, then 10% smaller = 70.2px
+            float iconHeight = 70.0f * 0.4f * 0.78f * 0.9f;  // 60% reduction, then 22% smaller, then 10% smaller = 19.66px
             float iconX = tabIconX + (tabW - iconWidth) / 2.0f - 16.0f; // Center horizontally, then move left 16px
             float iconY = 12.0f - 32.0f - 10.0f + 20.0f - 5.0f + 25.0f - 4.0f + 3.0f; // Move up 32px + 10px more, then down 20px, then up 5px, then down 25px, then up 4px, then down 3px
             
-            // Create bounds at fixed size - use fillDestination to ensure all icons fill the same space
+            // Create bounds at reduced size
             auto iconBounds = juce::Rectangle<float>(iconX, iconY, iconWidth, iconHeight);
-            
-            // Draw icons - use slightly reduced opacity for inactive tabs to match background greying
-            float iconAlpha = (slot == currentSlotIndex) ? 1.0f : 0.95f;
-            icon->drawWithin(g, iconBounds, juce::RectanglePlacement::fillDestination, iconAlpha);
+            icon->drawWithin(g, iconBounds, juce::RectanglePlacement::centred, 1.0f);
         }
     }
     
@@ -768,16 +767,14 @@ void PluginEditor::paint (juce::Graphics& g)
         DBG("[ROUTER] No backgrounds found");
     }
     
-    // Only draw grid overlay and main areas if UI is visible
-    // Grid overlay removed - no longer needed
-    if (false) {
-    // Draw the grid overlay
-    drawGridOverlay(g);
+    // Grid overlay is hidden by default (was controlled by uiVisible toggle)
+    // Uncomment the line below to show grid for debugging:
+    // drawGridOverlay(g);
     
-    // Draw the three main areas
-    drawMainAreas(g);
-    }
-
+    // Area boxes are hidden by default (was controlled by uiVisible toggle)
+    // Uncomment the line below to show area boxes for debugging:
+    // drawMainAreas(g);
+    
     // Draw knob lock icons on top of UI - ROUTER-AWARE
     // Draw icons for the effect currently assigned to the current slot
     EffectID assignedEffect = router.getEffectInSlot(static_cast<SlotID>(currentSlotIndex));
@@ -942,20 +939,41 @@ void PluginEditor::paint (juce::Graphics& g)
         
         return; // Don't draw the rest of the UI
     }
+    
 }
 
 void PluginEditor::resized()
 {
     // Tabs are positioned in setupTabSystem() - no need to reposition here
+    
+    // Update BPM label and play button positions (top right corner)
+    // Position both at very right corner, play button to the left of BPM box
+    const int bpmWidth = 50;
+    const int bpmHeight = 20;
+    const int playButtonWidth = 30;
+    const int playButtonHeight = 20;
+    const int spacing = 10;
+    const int totalWidth = playButtonWidth + spacing + bpmWidth;
+    const int rightEdge = getWidth();
+    const int bpmX = rightEdge - bpmWidth;
+    const int playButtonX = bpmX - spacing - playButtonWidth;
+    const int centerY = 7; // Center both horizontally
+    
+    if (playButton) {
+        playButton->setTopLeftPosition(playButtonX, centerY);
+        playButton->setVisible(true);
+        playButton->toFront(false);
+    }
+    if (freeRunBpmLabel) {
+        freeRunBpmLabel->setBounds(bpmX, centerY, bpmWidth, bpmHeight);
+        freeRunBpmLabel->setVisible(true);
+        freeRunBpmLabel->toFront(false);
+    }
 }
 
 
 void PluginEditor::drawGridOverlay(juce::Graphics& g)
 {
-    // Only draw the grid overlay if UI is visible
-    // Grid overlay removed - no longer needed
-    return;
-    
     auto bounds = getLocalBounds();
     const int gridSize = 50; // 50 pixel grid
     const int fontSize = 10;
@@ -1005,10 +1023,6 @@ void PluginEditor::drawGridOverlay(juce::Graphics& g)
 
 void PluginEditor::drawMainAreas(juce::Graphics& g)
 {
-    // Only draw the colored area boxes if UI is visible
-    // Grid overlay removed - no longer needed
-    return;
-    
     // Define the three main areas based on your grid coordinates
     auto effectArea = juce::Rectangle<int>(25, 54, 413, 296);    // 88px wider, 90px shorter
     auto stepArea = juce::Rectangle<int>(25, 374, 413, 140);     // 10px shorter, moved down 4px
@@ -1077,24 +1091,10 @@ void PluginEditor::timerCallback()
             auto* param = processorRef.getParameters().getUnchecked(i);
             float paramValue = param->getValue();
             
-            // Special handling for Time knob in non-sync mode: convert normalized to actual value
-            if (i == 0 && !timeSyncEnabled) {
-                if (auto* floatParam = dynamic_cast<juce::AudioParameterFloat*>(param)) {
-                    float actualValue = floatParam->convertFrom0to1(paramValue);
-                    actualValue = juce::jlimit(10.0f, 2000.0f, actualValue);
-                    // Only update knob value if it's not currently being dragged
-                    if (!knobs[i]->isMouseButtonDown())
-                    {
-                        knobs[i]->setValue(actualValue, juce::dontSendNotification);
-                    }
-                }
-            } else {
-                // For other knobs, parameter value is already normalized (0-1)
-                // Only update knob value if it's not currently being dragged
-                if (!knobs[i]->isMouseButtonDown())
-                {
-                    knobs[i]->setValue(paramValue, juce::dontSendNotification);
-                }
+            // Only update knob value if it's not currently being dragged
+            if (!knobs[i]->isMouseButtonDown())
+            {
+                knobs[i]->setValue(paramValue, juce::dontSendNotification);
             }
             
             // Update value label
@@ -1193,6 +1193,31 @@ void PluginEditor::timerCallback()
                     masterValueLabels[i]->setText(valueText, juce::dontSendNotification);
                 }
             }
+        }
+        
+        // Update BPM label only if user is not editing it AND DAW is actually playing
+        // NEVER update BPM in standalone mode - user controls it via the text box
+        if (freeRunBpmLabel != nullptr && !freeRunBpmLabel->hasKeyboardFocus(true)) {
+            // Only update if DAW is actually providing BPM (not in standalone mode)
+            TransportCache transport;
+            processorRef.getTransportSnapshot(transport);
+            // Only update if DAW transport is valid AND playing (not standalone mode)
+            if (transport.valid && transport.playing) {
+                // Check if we're actually in a DAW (not standalone)
+                // In standalone mode, transport.valid might be true but we set it manually
+                // So check if there's actually a playhead
+                auto* ph = processorRef.getPlayHead();
+                if (ph != nullptr) {
+                    // DAW is playing - update from DAW BPM
+                    double bpm = processorRef.getBpmOrDefault(120.0);
+                    int currentBpm = freeRunBpmLabel->getText().getIntValue();
+                    int newBpm = (int)std::round(bpm);
+                    if (currentBpm != newBpm) {
+                        freeRunBpmLabel->setText(juce::String(newBpm), juce::dontSendNotification);
+                    }
+                }
+            }
+            // In standalone mode (no playhead), don't update - preserve user's BPM setting
         }
         
         // Modern dual-bar meters update automatically via their timer
@@ -2469,8 +2494,8 @@ void PluginEditor::setupKnobs()
         auto effectArea = juce::Rectangle<int>(25, 54, 413, 296);
         const int knobSize = 80; // Increased from 60 to 80 (20px larger)
         const int knobSpacing = 20; // Reduced from 25 to 20 (5px less padding)
-        const int startX = effectArea.getX() + 16; // Moved left 2px from +18 to +16
-        const int startY = effectArea.getY() + effectArea.getHeight() - 216; // Moved down 2px from -218 to -216
+        const int startX = effectArea.getX() + 15; // Moved 5px left from +20 to +15
+        const int startY = effectArea.getY() + effectArea.getHeight() - 210; // Adjusted for larger knobs
     
     for (int i = 0; i < 8; ++i)
     {
@@ -2501,14 +2526,11 @@ void PluginEditor::setupKnobs()
                     knobs[i]->setValue(5.0, juce::dontSendNotification); // Default to 1/4 (index 5)
                 }
             } else if (i == 0) {
-                // Time knob in non-sync mode: 10-2000ms (matches parameter range)
-                knobs[i]->setRange(10.0, 2000.0, 1.0);
-                knobs[i]->setEnabled(true); // Ensure knob is enabled
+                // Time knob in non-sync mode: 1-2000ms
+                knobs[i]->setRange(1.0, 2000.0, 1.0);
                 if (auto* floatParam = dynamic_cast<juce::AudioParameterFloat*>(param))
                 {
-                    float actualValue = floatParam->convertFrom0to1(param->getValue());
-                    actualValue = juce::jlimit(10.0f, 2000.0f, actualValue);
-                    knobs[i]->setValue(actualValue, juce::dontSendNotification);
+                    knobs[i]->setValue(floatParam->convertFrom0to1(param->getValue()), juce::dontSendNotification);
                 }
                 else
                 {
@@ -3856,19 +3878,12 @@ void PluginEditor::setupMasterKnobs()
                 knobs[0]->setValue(5.0, juce::dontSendNotification); // Start at 1/4 (index 5)
             }
         } else if (knobs[0] != nullptr) {
-            // Switch to 10-2000ms range for non-sync mode (matches parameter range)
-            knobs[0]->setRange(10.0, 2000.0, 1.0);
-            // Ensure knob is enabled
-            knobs[0]->setEnabled(true);
-            // Read current time from parameter (convert from normalized to actual value)
-            auto* timeParam = dynamic_cast<juce::AudioParameterFloat*>(processorRef.getAPVTS().getParameter("timeMs"));
+            // Switch to 1-2000ms range for non-sync mode
+            knobs[0]->setRange(1.0, 2000.0, 1.0);
+            // Read current time from parameter
+            auto* timeParam = processorRef.getAPVTS().getRawParameterValue("timeMs");
             if (timeParam) {
-                auto* rawParam = processorRef.getAPVTS().getRawParameterValue("timeMs");
-                float normalizedValue = rawParam ? rawParam->load() : 0.5f;
-                float actualValue = timeParam->convertFrom0to1(normalizedValue);
-                // Clamp to valid range
-                actualValue = juce::jlimit(10.0f, 2000.0f, actualValue);
-                knobs[0]->setValue(actualValue, juce::dontSendNotification);
+                knobs[0]->setValue(timeParam->load(), juce::dontSendNotification);
             } else {
                 knobs[0]->setValue(250.0, juce::dontSendNotification); // Start at 250ms
             }
@@ -3895,10 +3910,6 @@ void PluginEditor::setupSpaceDelayUI()
     effectTypeDropdown = std::make_unique<juce::ComboBox>();
     // Don't add to UI - replaced by new router effect selectors
     // addAndMakeVisible(effectTypeDropdown.get());
-    
-    // Create LookAndFeel for rate dropdowns (uses same font as knob titles)
-    rateComboLNF = std::make_unique<RateComboLookAndFeel>();
-    stepAmountLabelLNF = std::make_unique<StepAmountLabelLookAndFeel>();
     
     // Create and configure BigComboWithSvgLNF for larger popup menus with SVG caret
     fxComboLNF = std::make_unique<BigComboWithSvgLNF>();
@@ -4294,7 +4305,7 @@ void PluginEditor::setupSequencerArea()
     // Create step buttons (2 rows of 8)
     const int buttonSize = 40;
     const int buttonSpacing = 8;
-    const int startX = stepArea.getX() + 17; // Moved right 2px from +15 to +17
+    const int startX = stepArea.getX() + 20;
     const int startY = stepArea.getY() + 35; // Moved up 5px from +40 to +35
     
     for (int i = 0; i < 16; ++i) {
@@ -4324,9 +4335,7 @@ void PluginEditor::setupSequencerArea()
     // Force to 16 by default, then sync with processor state
     processorRef.setSpaceDelayStepsUsed(16);
     stepAmountLabel->setText("16", juce::dontSendNotification);
-    juce::Font stepAmountFont = FontManager::getInstance().getFont("AlteHaasGroteskBold", 16.0f, juce::Font::bold);
-    stepAmountLabel->setFont(stepAmountFont);
-    stepAmountLabel->setLookAndFeel(stepAmountLabelLNF.get()); // Use custom LookAndFeel to ensure bold font
+    stepAmountLabel->setFont(juce::Font(16.0f, juce::Font::bold));
     stepAmountLabel->setColour(juce::Label::textColourId, juce::Colours::white);
     stepAmountLabel->setColour(juce::Label::backgroundColourId, juce::Colours::transparentBlack);
     stepAmountLabel->setColour(juce::Label::outlineColourId, juce::Colours::white);
@@ -4334,24 +4343,13 @@ void PluginEditor::setupSequencerArea()
     stepAmountLabel->setBorderSize(juce::BorderSize<int>(2));
     // Allow direct editing for step count (1..16)
     stepAmountLabel->setEditable(true, true, false);
-    stepAmountLabel->onEditorShow = [this]() {
-        if (stepAmountLabel != nullptr) {
-            auto* editor = stepAmountLabel->getCurrentTextEditor();
-            if (editor != nullptr) {
-                editor->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 16.0f, juce::Font::bold));
-            }
-        }
-    };
-    stepAmountLabel->onEditorHide = [this, stepAmountFont]() {
+    stepAmountLabel->onEditorHide = [this]() {
         if (stepAmountLabel != nullptr)
         {
             int value = stepAmountLabel->getText().getIntValue();
             value = juce::jlimit(1, 16, value);
             processorRef.setSpaceDelayStepsUsed(value);
             stepAmountLabel->setText(juce::String(value), juce::dontSendNotification);
-            // Ensure font is still bold after editing
-            stepAmountLabel->setFont(stepAmountFont);
-            stepAmountLabel->repaint();
             updateSequencerUI();
         }
     };
@@ -4377,7 +4375,6 @@ void PluginEditor::setupSequencerArea()
     rateDropdown->setColour(juce::ComboBox::buttonColourId, juce::Colours::transparentBlack);
     rateDropdown->setColour(juce::ComboBox::textColourId, juce::Colours::white);
     rateDropdown->setColour(juce::ComboBox::arrowColourId, juce::Colours::white);
-    rateDropdown->setLookAndFeel(rateComboLNF.get());
     addAndMakeVisible(rateDropdown.get());
     // Move rate left by 80px and widen to avoid arrow overlapping long items
     rateDropdown->setBounds(stepArea.getX() + 220, stepArea.getY() - 10, 74, 25);
@@ -4572,34 +4569,16 @@ void PluginEditor::updateParameterFromKnob(int knobIndex)
         auto* param = processorRef.getParameters().getUnchecked(knobIndex);
         float knobValue = knobs[knobIndex]->getValue();
         
-        // Special handling for time knob (index 0) when sync is off
-        // The knob has range 10.0-2000.0, parameter range is 10-2000, convert to normalized 0-1
-        float normalizedValue = knobValue;
-        float actualValue = knobValue;
+        // Knob value is already normalized (0-1), so directly set parameter
+        param->setValueNotifyingHost(knobValue);
         
-        if (knobIndex == 0 && !timeSyncEnabled) {
-            // Knob is in ms range (10-2000), parameter range is 10-2000
-            // Clamp to parameter range and convert to normalized
-            if (auto* floatParam = dynamic_cast<juce::AudioParameterFloat*>(param)) {
-                actualValue = juce::jlimit(10.0f, 2000.0f, knobValue);
-                normalizedValue = floatParam->convertTo0to1(actualValue);
-                DBG("[SPACE DELAY] Time knob changed: knobValue=" << knobValue << "ms, actualValue=" << actualValue << "ms, normalized=" << normalizedValue);
-            } else {
-                DBG("[SPACE DELAY] ERROR: timeMs parameter not found!");
-                return; // Can't update if parameter doesn't exist
-            }
-        } else {
-            // For other knobs, knob value is already normalized (0-1)
-            normalizedValue = knobValue;
-            // Convert normalized value back to actual parameter value
-            if (auto* floatParam = dynamic_cast<juce::AudioParameterFloat*>(param))
-            {
-                actualValue = floatParam->convertFrom0to1(knobValue);
-            }
+        // Update the current step snapshot with the new value
+        // Convert normalized value back to actual parameter value
+        float actualValue = 0.0f;
+        if (auto* floatParam = dynamic_cast<juce::AudioParameterFloat*>(param))
+        {
+            actualValue = floatParam->convertFrom0to1(knobValue);
         }
-        
-        // Set parameter with normalized value
-        param->setValueNotifyingHost(normalizedValue);
         
         // Update the snapshot for the currently selected step
         // Check if we're on Space Delay page and use dedicated sequencer
@@ -4770,137 +4749,325 @@ void PluginEditor::updateSequencerUI()
     }
 }
 
+// BpmBox removed - using TextEditor directly
+
 void PluginEditor::setupUIToggle()
 {
-    DBG("[UI] Setting up Free-Run BPM control...");
+    // Sets up BPM control (replaces old UI toggle)
+    DBG("[UI] Setting up BPM control...");
+    DBG("[UI] Window size at setup: " + juce::String(getWidth()) + "x" + juce::String(getHeight()));
     
-    // Create BPM TextEditor (replaces UI toggle)
+    // Create BPM TextEditor - positioned to the left of play button
     freeRunBpmLabel = std::make_unique<juce::TextEditor>();
-    freeRunBpmLabel->setText("120");
-    freeRunBpmLabel->setFont(juce::Font(14.0f, juce::Font::bold));
+    freeRunBpmLabel->setText("120", juce::dontSendNotification);
+    freeRunBpmLabel->setFont(juce::Font(16.0f, juce::Font::bold));
     freeRunBpmLabel->setColour(juce::TextEditor::textColourId, juce::Colours::white);
-    freeRunBpmLabel->setColour(juce::TextEditor::backgroundColourId, juce::Colours::black.withAlpha(0.5f)); // Semi-transparent black background for visibility
+    freeRunBpmLabel->setColour(juce::TextEditor::backgroundColourId, juce::Colours::transparentBlack);
     freeRunBpmLabel->setColour(juce::TextEditor::outlineColourId, juce::Colours::white);
     freeRunBpmLabel->setColour(juce::TextEditor::focusedOutlineColourId, juce::Colours::white);
     freeRunBpmLabel->setJustification(juce::Justification::centred);
-    freeRunBpmLabel->setBorder(juce::BorderSize<int>(1));
+    freeRunBpmLabel->setBorder(juce::BorderSize<int>(2));
     freeRunBpmLabel->setIndents(0, 0);
     freeRunBpmLabel->setInputRestrictions(3, "0123456789");
-    freeRunBpmLabel->setSize(50, 20);
-    // Position BPM label to the right of play button with proper spacing
-    // Window width is 974px - use fixed value to avoid issues during plugin scan
-    const int windowWidth = 974; // Fixed window width
-    const int bpmLabelWidth = 50;
-    const int spacingFromEdge = 5;
-    const int bpmLabelX = windowWidth - bpmLabelWidth - spacingFromEdge;
-    freeRunBpmLabel->setTopLeftPosition(bpmLabelX, 5);
+    freeRunBpmLabel->setMultiLine(false);
+    freeRunBpmLabel->setReturnKeyStartsNewLine(false);
+    freeRunBpmLabel->setReadOnly(false);
+    freeRunBpmLabel->setWantsKeyboardFocus(true);
+    freeRunBpmLabel->setSelectAllWhenFocused(true);
     
-    // Initialize with current BPM parameter value (safely wrapped)
-    try {
-        auto* bpmParam = processorRef.getAPVTS().getParameter("freeRunBpm");
-        if (bpmParam) {
-            float currentBpm = bpmParam->convertFrom0to1(bpmParam->getValue());
-            freeRunBpmLabel->setText(juce::String((int)currentBpm), false);
-        } else {
-            // Default to 120 BPM if parameter not found
-            freeRunBpmLabel->setText("120", false);
-        }
-    } catch (...) {
-        // If anything goes wrong during plugin scan, just use default
-        freeRunBpmLabel->setText("120", false);
-    }
+    // Position at very right corner, play button to the left
+    // Window width: 974, BPM box width: 50, play button width: 30, spacing: 10
+    // BPM box: right edge at 974, so left edge at 974 - 50 = 924
+    // Play button: right edge at 924 - 10 = 914, so left edge at 914 - 30 = 884
+    const int bpmWidth = 50;
+    const int bpmHeight = 20;
+    const int playButtonWidth = 30;
+    const int spacing = 10;
+    const int rightEdge = getWidth();
+    const int bpmX = rightEdge - bpmWidth;
+    const int centerY = 7; // Center both horizontally
+    freeRunBpmLabel->setBounds(bpmX, centerY, bpmWidth, bpmHeight);
     
-    // Set up callback to update BPM parameter
+    // Update BPM in real-time as user types (for immediate effect)
     freeRunBpmLabel->onTextChange = [this]() {
-        juce::String text = freeRunBpmLabel->getText();
-        float bpm = text.getFloatValue();
-        if (bpm >= 20.0f && bpm <= 300.0f) {
-            auto* param = processorRef.getAPVTS().getParameter("freeRunBpm");
-            if (param) {
-                param->setValueNotifyingHost(param->convertTo0to1(bpm));
+        if (freeRunBpmLabel) {
+            juce::String bpmText = freeRunBpmLabel->getText().trim();
+            if (bpmText.isEmpty()) return; // Don't update if empty
+            
+            double bpm = bpmText.getDoubleValue();
+            // Always update, even if value is temporarily invalid - clamp it
+            if (bpm <= 0.0 || bpm < 20.0) {
+                // If value is too low, use minimum but still update
+                bpm = 20.0;
+            } else {
+                bpm = juce::jlimit(20.0, 999.0, bpm);
             }
+            
+            // Always update processor BPM immediately for real-time effect
+            processorRef.setFreeRunBpm(bpm);
+            DBG("[UI] BPM updated to: " << bpm << " (text change, raw=" << bpmText << ")");
         }
     };
     
-    // Set up focus lost callback to restore valid value
+    // Also update when focus is lost (to validate and format)
     freeRunBpmLabel->onFocusLost = [this]() {
-        auto* param = processorRef.getAPVTS().getParameter("freeRunBpm");
-        if (param) {
-            float currentBpm = param->convertFrom0to1(param->getValue());
-            float clampedBpm = juce::jlimit(20.0f, 300.0f, currentBpm);
-            freeRunBpmLabel->setText(juce::String((int)clampedBpm), false);
+        if (freeRunBpmLabel) {
+            juce::String bpmText = freeRunBpmLabel->getText().trim();
+            double bpm = bpmText.getDoubleValue();
+            if (bpm <= 0.0 || bpm < 20.0) bpm = 120.0;
+            bpm = juce::jlimit(20.0, 999.0, bpm);
+            freeRunBpmLabel->setText(juce::String(static_cast<int>(bpm)), juce::dontSendNotification);
+            // Update processor BPM for free-run mode (even if playing, update it)
+            processorRef.setFreeRunBpm(bpm);
+            DBG("[UI] BPM updated to: " << bpm << " (focus lost)");
+            DBG("[UI] Processor BPM after update: " << processorRef.getBpmOrDefault());
         }
     };
     
-    // Initially disabled (only enabled when play button is on)
-    // But always visible (just greyed out when disabled)
-    freeRunBpmLabel->setEnabled(false);
-    freeRunBpmLabel->setAlpha(0.5f); // More visible when disabled (was 0.3f)
+    // Also update on return key
+    freeRunBpmLabel->onReturnKey = [this]() {
+        if (freeRunBpmLabel) {
+            // Update BPM when return is pressed
+            juce::String bpmText = freeRunBpmLabel->getText().trim();
+            double bpm = bpmText.getDoubleValue();
+            if (bpm <= 0.0 || bpm < 20.0) bpm = 120.0;
+            bpm = juce::jlimit(20.0, 999.0, bpm);
+            freeRunBpmLabel->setText(juce::String(static_cast<int>(bpm)), juce::dontSendNotification);
+            processorRef.setFreeRunBpm(bpm);
+            freeRunBpmLabel->unfocusAllComponents();
+            DBG("[UI] BPM updated to: " << bpm << " (return key)");
+            DBG("[UI] Processor BPM after update: " << processorRef.getBpmOrDefault());
+        }
+    };
     
+    // Add to component tree - MUST be added and visible
     addAndMakeVisible(freeRunBpmLabel.get());
-    freeRunBpmLabel->setAlwaysOnTop(true); // Always visible on top like play button
-    freeRunBpmLabel->setVisible(true); // Explicitly ensure it's visible
+    freeRunBpmLabel->setVisible(true);
+    freeRunBpmLabel->setEnabled(true);
+    freeRunBpmLabel->toFront(true); // Force to front with repaint
     
-    DBG("[UI] Free-Run BPM control setup complete");
+    DBG("[UI] BPM control setup complete at (" + juce::String(freeRunBpmX) + ", " + juce::String(freeRunBpmY) + ")");
+    DBG("[UI] BPM label bounds: " + freeRunBpmLabel->getBounds().toString());
+    DBG("[UI] BPM label isVisible: " + juce::String(freeRunBpmLabel->isVisible() ? 1 : 0));
+    DBG("[UI] BPM label isShowing: " + juce::String(freeRunBpmLabel->isShowing() ? 1 : 0));
 }
 
 void PluginEditor::setupPlayButton()
 {
     DBG("[UI] Setting up play button...");
     
-    // Create play button (top right corner, visible on all pages)
-    // Position to the left of BPM label with spacing
+    // Create play button (to the left of BPM box, at very right corner)
     playButton = std::make_unique<PlayButton>();
-    playButton->setSize(30, 20);
-    // Position play button to the left of BPM label
-    // BPM label starts at getWidth() - 55 (974 - 50 - 5 = 919)
-    // Play button width 30px, spacing 5px, so play button X = 919 - 5 - 30 = 884 (getWidth() - 90)
-    const int playButtonSpacing = 5;
     const int playButtonWidth = 30;
-    const int playButtonX = (getWidth() - 50 - 5) - playButtonSpacing - playButtonWidth; // Position to left of BPM label
-    playButton->setTopLeftPosition(playButtonX, 5);
+    const int playButtonHeight = 20;
+    const int bpmWidth = 50;
+    const int spacing = 10;
+    const int rightEdge = getWidth();
+    const int bpmX = rightEdge - bpmWidth;
+    const int playButtonX = bpmX - spacing - playButtonWidth;
+    const int centerY = 7; // Center both horizontally
+    playButton->setSize(playButtonWidth, playButtonHeight);
+    playButton->setTopLeftPosition(playButtonX, centerY);
     
     // Set initial state (stopped - grey)
     playButton->setPlaying(false);
     
     // Set up callback
     playButton->onClick = [this]() {
+        DBG("[UI] Play button clicked!");
         togglePlayback();
     };
     
-    // Always visible on all pages
+    // Make sure button is enabled and can receive clicks
+    playButton->setEnabled(true);
+    playButton->setInterceptsMouseClicks(true, true);
+    
     addAndMakeVisible(playButton.get());
-    playButton->setAlwaysOnTop(true);
+    playButton->setVisible(true);
+    playButton->toFront(false);
     
     DBG("[UI] Play button setup complete");
 }
 
 void PluginEditor::togglePlayback()
 {
+    if (!playButton) {
+        DBG("[UI] ERROR: playButton is null!");
+        return;
+    }
+    
     // Toggle the playing state
-    bool newPlayingState = !playButton->isPlayingState();
+    bool currentState = playButton->isPlayingState();
+    bool newPlayingState = !currentState;
+    
+    DBG("[UI] ========== TOGGLE PLAYBACK ==========");
+    DBG("[UI] Current state: " << (currentState ? "PLAY" : "STOP"));
+    DBG("[UI] New playing state: " << (newPlayingState ? "PLAY" : "STOP"));
+    
     playButton->setPlaying(newPlayingState);
     
-    DBG("[UI] Toggling free-run playback: " << (newPlayingState ? "PLAY" : "STOP"));
-    
-    // Enable/disable BPM control based on play state
-    if (freeRunBpmLabel) {
-        freeRunBpmLabel->setEnabled(newPlayingState);
-        freeRunBpmLabel->setAlpha(newPlayingState ? 1.0f : 0.3f);
-    }
-    
-    // Set free-run mode in processor
-    processorRef.setFreeRunMode(newPlayingState);
-    
     if (newPlayingState) {
-        // Starting free-run playback - reset all sequencers
-        processorRef.startFreeRunPlayback();
+        // START PLAYBACK - Enable ALL sequencers and start standalone mode
+        DBG("[UI] Starting free-run playback - enabling ALL sequencers");
+        
+        // Get BPM from text box and update processor BEFORE starting playback
+        double bpm = 120.0;
+        if (freeRunBpmLabel != nullptr) {
+            juce::String bpmText = freeRunBpmLabel->getText().trim();
+            DBG("[UI] BPM text from box: \"" << bpmText << "\"");
+            bpm = bpmText.getDoubleValue();
+            DBG("[UI] BPM parsed as double: " << bpm);
+            if (bpm <= 0.0 || bpm < 20.0) {
+                DBG("[UI] BPM invalid (" << bpm << "), using default 120.0");
+                bpm = 120.0; // Default if invalid
+            }
+            bpm = juce::jlimit(20.0, 999.0, bpm);
+            processorRef.setFreeRunBpm(bpm);
+            DBG("[UI] BPM set to processor: " << bpm);
+            DBG("[UI] Processor BPM after set: " << processorRef.getBpmOrDefault());
+        } else {
+            DBG("[UI] BPM label is null, using default 120.0");
+            processorRef.setFreeRunBpm(120.0); // Default BPM
+        }
+        
+        // Helper function to enable and activate a sequencer
+        auto enableAndActivateSequencer = [](SeqState& seq) {
+            seq.enabled.store(true);
+            seq.active.store(true);
+            seq.resetPhase();
+            seq.originPPQ.store(0.0);
+            seq.haveOrigin.store(false);
+            if (seq.stepsUsed.load() == 0) {
+                seq.stepsUsed.store(16);
+            }
+        };
+        
+        // Enable ALL sequencers
+        auto& mainSeq = const_cast<SeqState&>(processorRef.getSeqState());
+        enableAndActivateSequencer(mainSeq);
+        DBG("[UI] Main sequencer enabled");
+        
+        auto& spaceDelaySeq = const_cast<SeqState&>(processorRef.getSpaceDelaySeqState());
+        enableAndActivateSequencer(spaceDelaySeq);
+        DBG("[UI] SpaceDelay sequencer enabled");
+        
+        auto& autoPanSeq = const_cast<SeqState&>(processorRef.getAutoPanSeqState());
+        enableAndActivateSequencer(autoPanSeq);
+        DBG("[UI] AutoPan sequencer enabled");
+        
+        auto& dirtSeq = const_cast<SeqState&>(processorRef.getDirtSeqState());
+        enableAndActivateSequencer(dirtSeq);
+        DBG("[UI] Dirt sequencer enabled");
+        
+        auto& chorusSeq = const_cast<SeqState&>(processorRef.getChorusSeqState());
+        enableAndActivateSequencer(chorusSeq);
+        DBG("[UI] Chorus sequencer enabled");
+        
+        auto& reverbSeq = const_cast<SeqState&>(processorRef.getReverbSeqState());
+        enableAndActivateSequencer(reverbSeq);
+        DBG("[UI] Reverb sequencer enabled");
+        
+        auto& granularSeq = const_cast<SeqState&>(processorRef.getGranularSeqState());
+        enableAndActivateSequencer(granularSeq);
+        DBG("[UI] Granular sequencer enabled");
+        
+        auto& slicerSeq = const_cast<SeqState&>(processorRef.getSlicerSeqState());
+        enableAndActivateSequencer(slicerSeq);
+        DBG("[UI] Slicer sequencer enabled");
+        
+        auto& dubDelaySeq = const_cast<SeqState&>(processorRef.getDubDelaySeqState());
+        enableAndActivateSequencer(dubDelaySeq);
+        DBG("[UI] DubDelay sequencer enabled");
+        
+        auto& phaseBloomSeq = const_cast<SeqState&>(processorRef.getPhaseBloomSeqState());
+        enableAndActivateSequencer(phaseBloomSeq);
+        DBG("[UI] PhaseBloom sequencer enabled");
+        
+        auto& formantSeq = const_cast<SeqState&>(processorRef.getFormantSeqState());
+        enableAndActivateSequencer(formantSeq);
+        DBG("[UI] Formant sequencer enabled");
+        
+        auto& form2Seq = const_cast<SeqState&>(processorRef.getForm2SeqState());
+        enableAndActivateSequencer(form2Seq);
+        DBG("[UI] Form2 sequencer enabled");
+        
+        auto& reduxSeq = const_cast<SeqState&>(processorRef.getReduxSeqState());
+        enableAndActivateSequencer(reduxSeq);
+        DBG("[UI] Redux sequencer enabled");
+        
+        auto& filterSeq = const_cast<SeqState&>(processorRef.getFilterSeqState());
+        enableAndActivateSequencer(filterSeq);
+        DBG("[UI] Filter sequencer enabled");
+        
+        auto& saturateSeq = const_cast<SeqState&>(processorRef.getSaturateSeqState());
+        enableAndActivateSequencer(saturateSeq);
+        DBG("[UI] Saturate sequencer enabled");
+        
+        // Start standalone playback (ignores DAW completely)
+        // Make sure BPM is set before starting
+        processorRef.setFreeRunBpm(bpm);
+        processorRef.startStandalonePlayback();
+        DBG("[UI] Standalone playback started - ALL sequencers enabled at BPM: " << bpm);
+        
+        // Update BPM box visibility (enable it)
+        updateBpmBoxVisibility();
+        
     } else {
-        // Stopping free-run playback
-        processorRef.stopFreeRunPlayback();
+        // STOP PLAYBACK - Disable all sequencers
+        DBG("[UI] Stopping playback - disabling all sequencers");
+        
+        processorRef.setSequencerEnabled(false);
+        processorRef.setSpaceDelaySequencerEnabled(false);
+        processorRef.setAutoPanSequencerEnabled(false);
+        processorRef.setDirtSequencerEnabled(false);
+        processorRef.setChorusSequencerEnabled(false);
+        processorRef.setReverbSequencerEnabled(false);
+        processorRef.setGranularSequencerEnabled(false);
+        processorRef.setSlicerSequencerEnabled(false);
+        processorRef.setDubDelaySequencerEnabled(false);
+        processorRef.setReduxSequencerEnabled(false);
+        processorRef.setPhaseBloomSequencerEnabled(false);
+        processorRef.setFormantSequencerEnabled(false);
+        processorRef.setForm2SequencerEnabled(false);
+        processorRef.setFilterSequencerEnabled(false);
+        processorRef.setSaturateSequencerEnabled(false);
+        
+        // Also set wasPlaying to false to stop standalone mode
+        auto& seq = const_cast<SeqState&>(processorRef.getSeqState());
+        seq.active.store(false);
+        
+        // Stop standalone playback (resets wasPlaying and forceStandaloneMode)
+        processorRef.stopStandalonePlayback();
+        
+        // Grey out BPM box when stopped
+        updateBpmBoxVisibility();
+        
+        DBG("[UI] All sequencers disabled, standalone mode disabled");
     }
     
-    DBG("[UI] Free-run playback toggled: " << (newPlayingState ? "PLAYING" : "STOPPED"));
+    // Update BPM box visibility based on play state
+    updateBpmBoxVisibility();
+}
+
+void PluginEditor::updateBpmBoxVisibility()
+{
+    bool isPlaying = playButton && playButton->isPlayingState();
+    
+    if (freeRunBpmLabel) {
+        freeRunBpmLabel->setEnabled(isPlaying);
+        if (!isPlaying) {
+            // Grey out the text color when disabled
+            freeRunBpmLabel->setColour(juce::TextEditor::textColourId, juce::Colours::grey);
+            freeRunBpmLabel->setColour(juce::TextEditor::outlineColourId, juce::Colours::grey);
+            freeRunBpmLabel->setAlpha(0.3f);
+        } else {
+            // Restore white colors when enabled
+            freeRunBpmLabel->setColour(juce::TextEditor::textColourId, juce::Colours::white);
+            freeRunBpmLabel->setColour(juce::TextEditor::outlineColourId, juce::Colours::white);
+            freeRunBpmLabel->setAlpha(1.0f);
+        }
+        repaint();
+    }
 }
 
 void PluginEditor::setupTabSystem()
@@ -4973,12 +5140,6 @@ void PluginEditor::setupTabSystem()
     {
         tab->setPaintingIsUnclipped(false);
     }
-    
-    // Set initial alpha values - SpaceDelay tab is selected by default (1.0), others are greyed out (0.9)
-    if (tabSpaceDelay) tabSpaceDelay->setAlpha(1.0f);
-    if (tabPanner) tabPanner->setAlpha(0.9f);
-    if (tabDirt) tabDirt->setAlpha(0.9f);
-    if (tabChorus) tabChorus->setAlpha(0.9f);
     
     DBG("[UI] Tab buttons created and added to editor");
     DBG("[UI] tabSpaceDelay bounds: " << tabSpaceDelay->getBounds().toString());
@@ -5119,8 +5280,7 @@ void PluginEditor::setupTabSystem()
     if (stepTitle) spaceDelayGroup.push_back(stepTitle.get());
     if (stepDiceButton) spaceDelayGroup.push_back(stepDiceButton.get());
     if (stepPowerButton) spaceDelayGroup.push_back(stepPowerButton.get());
-    // Play button and BPM control are always visible (not in spaceDelayGroup)
-    // They're added separately and shown on all pages
+    // Play button should NOT be in any page-specific group - it's visible on all pages
     
     // Collect pointers to AutoPan UI components
     pannerGroup.clear();
@@ -5368,16 +5528,6 @@ void PluginEditor::showPage(FxPageID id)
     int slotIndex = static_cast<int>(id);  // Page maps to slot (0=Slot1, 1=Slot2, etc.)
     EffectID assignedEffect = router.getEffectInSlot(static_cast<SlotID>(slotIndex));
     
-    // Play button and BPM control are always visible on all pages
-    if (playButton) {
-        playButton->setVisible(true);
-        playButton->toFront(false);
-    }
-    if (freeRunBpmLabel) {
-        freeRunBpmLabel->setVisible(true);
-        freeRunBpmLabel->toFront(false);
-    }
-    
     // Hide all groups first
     setVisibleVec(spaceDelayGroup, false);
     setVisibleVec(pannerGroup, false);
@@ -5502,17 +5652,6 @@ void PluginEditor::showPage(FxPageID id)
                     int divisionIndex = processorRef.getSlicerSeqState().divisionIndex.load();
                     slicerRateDropdown->setSelectedId(divisionIndex + 1, juce::dontSendNotification);
                 }
-                
-                // Restore STD toggle state
-                if (slicerStdToggle) {
-                    slicerStdToggle->setEnabled(true); // Ensure it's enabled
-                    int stdMode = processorRef.getSlicerSeqState().stdMode.load();
-                    switch (stdMode) {
-                        case 0: slicerStdToggle->setButtonText("-"); break;
-                        case 1: slicerStdToggle->setButtonText("t"); break;
-                        case 2: slicerStdToggle->setButtonText("."); break;
-                    }
-                }
 
                 updateSlicerFxAreaVisibility();
                 updateSlicerStepAreaVisibility();
@@ -5541,17 +5680,6 @@ void PluginEditor::showPage(FxPageID id)
                 dubdelayStepAreaEnabled = processorRef.getDubDelaySeqState().enabled.load();
                 if (dubdelayStepPowerButton) {
                     dubdelayStepPowerButton->setToggleState(dubdelayStepAreaEnabled, juce::dontSendNotification);
-                }
-                
-                // Restore STD toggle state
-                if (dubdelayStdToggle) {
-                    dubdelayStdToggle->setEnabled(true); // Ensure it's enabled
-                    int stdMode = processorRef.getDubDelaySeqState().stdMode.load();
-                    switch (stdMode) {
-                        case 0: dubdelayStdToggle->setButtonText("-"); break;
-                        case 1: dubdelayStdToggle->setButtonText("t"); break;
-                        case 2: dubdelayStdToggle->setButtonText("."); break;
-                    }
                 }
                 
                 updateDubDelayFxAreaVisibility();
@@ -5627,23 +5755,6 @@ void PluginEditor::showPage(FxPageID id)
                 phaseBloomStepAreaEnabled = processorRef.getPhaseBloomSeqState().enabled.load();
                 if (phaseBloomStepPowerButton) {
                     phaseBloomStepPowerButton->setToggleState(phaseBloomStepAreaEnabled, juce::dontSendNotification);
-                }
-                
-                // Restore STD toggle state
-                if (phaseBloomStdToggle) {
-                    phaseBloomStdToggle->setEnabled(true); // Ensure it's enabled
-                    int stdMode = processorRef.getPhaseBloomSeqState().stdMode.load();
-                    switch (stdMode) {
-                        case 0: phaseBloomStdToggle->setButtonText("-"); break;
-                        case 1: phaseBloomStdToggle->setButtonText("t"); break;
-                        case 2: phaseBloomStdToggle->setButtonText("."); break;
-                    }
-                }
-                
-                // Restore rate dropdown
-                if (phaseBloomRateDropdown) {
-                    int divIdx = processorRef.getPhaseBloomSeqState().divisionIndex.load();
-                    phaseBloomRateDropdown->setSelectedId(divIdx + 1, juce::dontSendNotification);
                 }
                 
                 updatePhaseBloomFxAreaVisibility();
@@ -5729,17 +5840,6 @@ void PluginEditor::showPage(FxPageID id)
                     saturateStepPowerButton->setToggleState(saturateStepAreaEnabled, juce::dontSendNotification);
                 }
                 
-                // Restore STD toggle state
-                if (saturateStdToggle) {
-                    saturateStdToggle->setEnabled(true); // Ensure it's enabled
-                    int stdMode = processorRef.getSaturateSeqState().stdMode.load();
-                    switch (stdMode) {
-                        case 0: saturateStdToggle->setButtonText("-"); break;
-                        case 1: saturateStdToggle->setButtonText("t"); break;
-                        case 2: saturateStdToggle->setButtonText("."); break;
-                    }
-                }
-                
                 updateSaturateFxAreaVisibility();
                 updateSaturateStepAreaVisibility();
             }
@@ -5788,17 +5888,6 @@ void PluginEditor::showPage(FxPageID id)
                     filterStepPowerButton->setToggleState(filterStepAreaEnabled, juce::dontSendNotification);
                 }
                 
-                // Restore STD toggle state
-                if (filterStdToggle) {
-                    filterStdToggle->setEnabled(true); // Ensure it's enabled
-                    int stdMode = processorRef.getFilterSeqState().stdMode.load();
-                    switch (stdMode) {
-                        case 0: filterStdToggle->setButtonText("-"); break;
-                        case 1: filterStdToggle->setButtonText("t"); break;
-                        case 2: filterStdToggle->setButtonText("."); break;
-                    }
-                }
-                
                 updateFilterFxAreaVisibility();
                 updateFilterStepAreaVisibility();
             }
@@ -5820,14 +5909,6 @@ void PluginEditor::showPage(FxPageID id)
             break;
     }
 
-    // Set tab button alphas: selected tab = 1.0, others = 0.9 (10% greyed out)
-    // Tabs map to slots: tab 0 = SpaceDelay (slot 0), tab 1 = Panner (slot 1), tab 2 = Dirt (slot 2), tab 3 = Chorus (slot 3)
-    int currentSlotIndex = static_cast<int>(id);
-    if (tabSpaceDelay) tabSpaceDelay->setAlpha(currentSlotIndex == 0 ? 1.0f : 0.9f);
-    if (tabPanner) tabPanner->setAlpha(currentSlotIndex == 1 ? 1.0f : 0.9f);
-    if (tabDirt) tabDirt->setAlpha(currentSlotIndex == 2 ? 1.0f : 0.9f);
-    if (tabChorus) tabChorus->setAlpha(currentSlotIndex == 3 ? 1.0f : 0.9f);
-    
     // Raise the active tab to front
     if (id == FxPageID::SpaceDelay && tabSpaceDelay) tabSpaceDelay->toFront(false);
     else if (id == FxPageID::Panner && tabPanner) tabPanner->toFront(false);
@@ -5859,6 +5940,16 @@ void PluginEditor::showPage(FxPageID id)
         phaseBloomStepAmountLabel->setWantsKeyboardFocus(true);
     }
 
+    // Play button and BPM box should always be visible on all pages
+    if (playButton) {
+        playButton->setVisible(true);
+        playButton->toFront(false);
+    }
+    if (freeRunBpmLabel) {
+        freeRunBpmLabel->setVisible(true);
+        freeRunBpmLabel->toFront(false);
+    }
+
     repaint();
 }
 
@@ -5879,8 +5970,8 @@ void PluginEditor::setupAutoPanKnobs()
     auto effectArea = juce::Rectangle<int>(25, 54, 413, 296);
     const int knobSize = 80; // EXACT same as delay page
     const int knobSpacing = 20; // EXACT same as delay page
-    const int startX = effectArea.getX() + 16; // Moved left 2px from +18 to +16
-    const int startY = effectArea.getY() + effectArea.getHeight() - 216; // Moved down 2px from -218 to -216
+    const int startX = effectArea.getX() + 15; // EXACT same as delay page
+    const int startY = effectArea.getY() + effectArea.getHeight() - 210; // EXACT same as delay page
     
     for (int i = 0; i < 6; ++i) {
         // Create knob
@@ -6216,7 +6307,7 @@ void PluginEditor::setupAutoPanSequencerArea()
     // Create step buttons (2 rows of 8, EXACT same layout as delay page)
     const int buttonSize = 40;
     const int buttonSpacing = 8;
-    const int startX = sequencerArea.getX() + 17; // Moved right 2px from +15 to +17
+    const int startX = sequencerArea.getX() + 20;
     const int startY = sequencerArea.getY() + 35; // Same as delay page
     
     for (int i = 0; i < 16; ++i) {
@@ -6257,7 +6348,7 @@ void PluginEditor::setupAutoPanSequencerArea()
     // Force to 16 by default, then sync with processor state
     processorRef.setAutoPanStepsUsed(16);
     autopanStepAmountLabel->setText("16");
-    autopanStepAmountLabel->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 16.0f, juce::Font::bold));
+    autopanStepAmountLabel->setFont(juce::Font(16.0f, juce::Font::bold));
     autopanStepAmountLabel->setColour(juce::TextEditor::textColourId, juce::Colours::white);
     autopanStepAmountLabel->setColour(juce::TextEditor::backgroundColourId, juce::Colours::transparentBlack);
     autopanStepAmountLabel->setColour(juce::TextEditor::outlineColourId, juce::Colours::white);
@@ -6324,7 +6415,6 @@ void PluginEditor::setupAutoPanSequencerArea()
     autopanRateDropdown->setColour(juce::ComboBox::buttonColourId, juce::Colours::transparentBlack);
     autopanRateDropdown->setColour(juce::ComboBox::textColourId, juce::Colours::white);
     autopanRateDropdown->setColour(juce::ComboBox::arrowColourId, juce::Colours::white);
-    autopanRateDropdown->setLookAndFeel(rateComboLNF.get());
     autopanRateDropdown->onChange = [this]() {
         if (autopanRateDropdown != nullptr) {
             const int selected = autopanRateDropdown->getSelectedId();
@@ -6575,8 +6665,8 @@ void PluginEditor::setupDirtKnobs()
     auto effectArea = juce::Rectangle<int>(25, 54, 413, 296);
     const int knobSize = 80; // EXACT same as delay page
     const int knobSpacing = 20; // EXACT same as delay page
-    const int startX = effectArea.getX() + 16; // Moved left 2px from +18 to +16
-    const int startY = effectArea.getY() + effectArea.getHeight() - 216; // Moved down 2px from -218 to -216
+    const int startX = effectArea.getX() + 15; // EXACT same as delay page
+    const int startY = effectArea.getY() + effectArea.getHeight() - 210; // EXACT same as delay page
     
     for (int i = 0; i < 8; ++i) {
         // Create knob
@@ -6824,7 +6914,7 @@ void PluginEditor::setupDirtSequencerArea()
     // Create step buttons (2 rows of 8, EXACT same layout as AutoPan page)
     const int buttonSize = 40;
     const int buttonSpacing = 8;
-    const int startX = sequencerArea.getX() + 17; // Moved right 2px from +15 to +17
+    const int startX = sequencerArea.getX() + 20;
     const int startY = sequencerArea.getY() + 35;
     
     for (int i = 0; i < 16; ++i) {
@@ -6864,7 +6954,7 @@ void PluginEditor::setupDirtSequencerArea()
     // Force to 16 by default, then sync with processor state
     processorRef.setDirtStepsUsed(16);
     dirtStepAmountLabel->setText("16");
-    dirtStepAmountLabel->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 16.0f, juce::Font::bold));
+    dirtStepAmountLabel->setFont(juce::Font(16.0f, juce::Font::bold));
     dirtStepAmountLabel->setColour(juce::TextEditor::textColourId, juce::Colours::white);
     dirtStepAmountLabel->setColour(juce::TextEditor::backgroundColourId, juce::Colours::transparentBlack);
     dirtStepAmountLabel->setColour(juce::TextEditor::outlineColourId, juce::Colours::white);
@@ -6930,7 +7020,6 @@ void PluginEditor::setupDirtSequencerArea()
     dirtRateDropdown->setColour(juce::ComboBox::buttonColourId, juce::Colours::transparentBlack);
     dirtRateDropdown->setColour(juce::ComboBox::textColourId, juce::Colours::white);
     dirtRateDropdown->setColour(juce::ComboBox::arrowColourId, juce::Colours::white);
-    dirtRateDropdown->setLookAndFeel(rateComboLNF.get());
     dirtRateDropdown->onChange = [this]() {
         if (dirtRateDropdown != nullptr) {
             const int selected = dirtRateDropdown->getSelectedId();
@@ -7417,8 +7506,8 @@ void PluginEditor::setupChorusKnobs()
     auto effectArea = juce::Rectangle<int>(25, 54, 413, 296);
     const int knobSize = 80;
     const int knobSpacing = 20;
-    const int startX = effectArea.getX() + 16; // Moved left 2px from +18 to +16
-    const int startY = effectArea.getY() + effectArea.getHeight() - 216; // Moved down 2px from -218 to -216
+    const int startX = effectArea.getX() + 15;
+    const int startY = effectArea.getY() + effectArea.getHeight() - 210;
 
     for (int i = 0; i < 8; ++i)
     {
@@ -7664,7 +7753,7 @@ void PluginEditor::setupChorusSequencerArea()
     // Create step buttons (2 rows of 8)
     const int buttonSize = 40;
     const int buttonSpacing = 8;
-    const int startX = sequencerArea.getX() + 17; // Moved right 2px from +15 to +17
+    const int startX = sequencerArea.getX() + 20;
     const int startY = sequencerArea.getY() + 35;
     
     for (int i = 0; i < 16; ++i) {
@@ -7702,7 +7791,7 @@ void PluginEditor::setupChorusSequencerArea()
     // Force to 16 by default, then sync with processor state
     processorRef.setChorusStepsUsed(16);
     chorusStepAmountLabel->setText("16");
-    chorusStepAmountLabel->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 16.0f, juce::Font::bold));
+    chorusStepAmountLabel->setFont(juce::Font(16.0f, juce::Font::bold));
     chorusStepAmountLabel->setColour(juce::TextEditor::textColourId, juce::Colours::white);
     chorusStepAmountLabel->setColour(juce::TextEditor::backgroundColourId, juce::Colours::transparentBlack);
     chorusStepAmountLabel->setColour(juce::TextEditor::outlineColourId, juce::Colours::white);
@@ -7766,7 +7855,6 @@ void PluginEditor::setupChorusSequencerArea()
     chorusRateDropdown->setColour(juce::ComboBox::buttonColourId, juce::Colours::transparentBlack);
     chorusRateDropdown->setColour(juce::ComboBox::textColourId, juce::Colours::white);
     chorusRateDropdown->setColour(juce::ComboBox::arrowColourId, juce::Colours::white);
-    chorusRateDropdown->setLookAndFeel(rateComboLNF.get());
     chorusRateDropdown->onChange = [this]() {
         if (chorusRateDropdown != nullptr) {
             const int selected = chorusRateDropdown->getSelectedId();
@@ -8081,8 +8169,8 @@ void PluginEditor::setupReverbKnobs()
     auto effectArea = juce::Rectangle<int>(25, 54, 413, 296);
     const int knobSize = 80;
     const int knobSpacing = 20;
-    const int startX = effectArea.getX() + 16; // Moved left 2px from +18 to +16
-    const int startY = effectArea.getY() + effectArea.getHeight() - 216; // Moved down 2px from -218 to -216
+    const int startX = effectArea.getX() + 15;
+    const int startY = effectArea.getY() + effectArea.getHeight() - 210;
 
     for (int i = 0; i < 8; ++i)
     {
@@ -8336,7 +8424,7 @@ void PluginEditor::setupReverbSequencerArea()
     // Create step buttons (2 rows of 8)
     const int buttonSize = 40;
     const int buttonSpacing = 8;
-    const int startX = sequencerArea.getX() + 17; // Moved right 2px from +15 to +17
+    const int startX = sequencerArea.getX() + 20;
     const int startY = sequencerArea.getY() + 35;
     
     for (int i = 0; i < 16; ++i)
@@ -8366,7 +8454,7 @@ void PluginEditor::setupReverbSequencerArea()
     // Force to 16 by default, then sync with processor state
     processorRef.setReverbStepsUsed(16);
     reverbStepAmountLabel->setText("16");
-    reverbStepAmountLabel->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 16.0f, juce::Font::bold));
+    reverbStepAmountLabel->setFont(juce::Font(16.0f, juce::Font::bold));
     reverbStepAmountLabel->setColour(juce::TextEditor::textColourId, juce::Colours::white);
     reverbStepAmountLabel->setColour(juce::TextEditor::backgroundColourId, juce::Colours::transparentBlack);
     reverbStepAmountLabel->setColour(juce::TextEditor::outlineColourId, juce::Colours::white);
@@ -8422,7 +8510,6 @@ void PluginEditor::setupReverbSequencerArea()
     reverbRateDropdown->addItem("1/32", 8);
     
     reverbRateDropdown->setSelectedId(6);
-    reverbRateDropdown->setLookAndFeel(rateComboLNF.get());
     reverbRateDropdown->onChange = [this]() {
         int selectedIndex = reverbRateDropdown->getSelectedId() - 1;
         processorRef.setReverbDivisionIndex(selectedIndex);
@@ -9322,6 +9409,150 @@ void PluginEditor::updateTabButtonImages()
     
     DBG("[ROUTER] Tab button images updated (icons now drawn in cascading backgrounds)");
 }
+
+void PluginEditor::refreshCurrentPageUI()
+{
+    DBG("[RAND] Refreshing current page UI...");
+    
+    // Get the effect currently assigned to the current page slot
+    auto& router = processorRef.getEffectRouter();
+    int slotIndex = static_cast<int>(currentPage);
+    EffectID currentEffect = router.getEffectInSlot(static_cast<SlotID>(slotIndex));
+    
+    DBG("[RAND] Current page: " << slotIndex << ", Effect: " << static_cast<int>(currentEffect));
+    
+    // Refresh UI based on the current effect
+    switch (currentEffect)
+    {
+        case EffectID::SpaceDelay:
+            // Trigger value label updates
+            for (int i = 0; i < 8; ++i) {
+                if (knobs[i]) {
+                    knobs[i]->onValueChange();
+                }
+            }
+            updateSequencerUI();
+            break;
+            
+        case EffectID::AutoPan:
+            for (int i = 0; i < 6; ++i) {
+                if (autopanKnobs[i]) {
+                    autopanKnobs[i]->onValueChange();
+                }
+            }
+            updateAutoPanSequencerUI();
+            break;
+            
+        case EffectID::Dirt:
+            for (int i = 0; i < 8; ++i) {
+                if (dirtKnobs[i]) {
+                    dirtKnobs[i]->onValueChange();
+                }
+            }
+            updateDirtSequencerUI();
+            break;
+            
+        case EffectID::Chorus:
+            for (int i = 0; i < 8; ++i) {
+                if (chorusKnobs[i]) {
+                    chorusKnobs[i]->onValueChange();
+                }
+            }
+            updateChorusSequencerUI();
+            break;
+            
+        case EffectID::Reverb:
+            for (int i = 0; i < 8; ++i) {
+                if (reverbKnobs[i]) {
+                    reverbKnobs[i]->onValueChange();
+                }
+            }
+            updateReverbSequencerUI();
+            break;
+            
+        case EffectID::Granular:
+            for (int i = 0; i < 8; ++i) {
+                if (granularKnobs[i]) {
+                    granularKnobs[i]->onValueChange();
+                }
+            }
+            updateGranularSequencerUI();
+            break;
+            
+        case EffectID::Slicer:
+            for (int i = 0; i < 6; ++i) {
+                if (slicerKnobs[i]) {
+                    slicerKnobs[i]->onValueChange();
+                }
+            }
+            updateSlicerSequencerUI();
+            break;
+            
+        case EffectID::DubDelay:
+            for (int i = 0; i < 8; ++i) {
+                if (dubdelayKnobs[i]) {
+                    dubdelayKnobs[i]->onValueChange();
+                }
+            }
+            updateDubDelaySequencerUI();
+            break;
+            
+        case EffectID::Redux:
+            for (int i = 0; i < 8; ++i) {
+                if (reduxKnobs[i]) {
+                    reduxKnobs[i]->onValueChange();
+                }
+            }
+            updateReduxSequencerUI();
+            break;
+            
+        case EffectID::PhaseBloom:
+            for (int i = 0; i < 8; ++i) {
+                if (phaseBloomKnobs[i]) {
+                    phaseBloomKnobs[i]->onValueChange();
+                }
+            }
+            updatePhaseBloomSequencerUI();
+            break;
+            
+        case EffectID::Formant:
+            for (int i = 0; i < 4; ++i) {
+                if (formantKnobs[i]) {
+                    formantKnobs[i]->onValueChange();
+                }
+            }
+            updateFormantSequencerUI();
+            break;
+            
+        case EffectID::Saturate:
+            for (int i = 0; i < 6; ++i) {
+                if (saturateKnobs[i]) {
+                    saturateKnobs[i]->onValueChange();
+                }
+            }
+            updateSaturateSequencerUI();
+            break;
+            
+        case EffectID::Filter:
+            if (filterTypeKnob) filterTypeKnob->onValueChange();
+            if (filterSlopeKnob) filterSlopeKnob->onValueChange();
+            for (int i = 0; i < 5; ++i) {
+                if (filterKnobs[i]) {
+                    filterKnobs[i]->onValueChange();
+                }
+            }
+            updateFilterSequencerUI();
+            break;
+            
+        default:
+            break;
+    }
+    
+    // Force repaint to show updated UI
+    repaint();
+    
+    DBG("[RAND] Current page UI refreshed");
+}
 //==============================================================================
 // Granular Page Implementation
 //==============================================================================
@@ -9339,8 +9570,8 @@ void PluginEditor::setupGranularKnobs()
     auto effectArea = juce::Rectangle<int>(25, 54, 413, 296);
     const int knobSize = 80;
     const int knobSpacing = 20;
-    const int startX = effectArea.getX() + 16; // Moved left 2px from +18 to +16
-    const int startY = effectArea.getY() + effectArea.getHeight() - 216; // Moved down 2px from -218 to -216
+    const int startX = effectArea.getX() + 15;
+    const int startY = effectArea.getY() + effectArea.getHeight() - 210;
 
     for (int i = 0; i < 8; ++i)
     {
@@ -9792,7 +10023,7 @@ void PluginEditor::setupGranularSequencerArea()
     // Create step buttons (2 rows of 8) - EXACT same as Reverb
     const int buttonSize = 40;
     const int buttonSpacing = 8;
-    const int startX = sequencerArea.getX() + 17; // Moved right 2px from +15 to +17
+    const int startX = sequencerArea.getX() + 20;
     const int startY = sequencerArea.getY() + 35;
     
     for (int i = 0; i < 16; ++i)
@@ -9822,7 +10053,7 @@ void PluginEditor::setupGranularSequencerArea()
     // Force to 16 by default, then sync with processor state
     processorRef.setGranularStepsUsed(16);
     granularStepAmountLabel->setText("16");
-    granularStepAmountLabel->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 16.0f, juce::Font::bold));
+    granularStepAmountLabel->setFont(juce::Font(16.0f, juce::Font::bold));
     granularStepAmountLabel->setColour(juce::TextEditor::textColourId, juce::Colours::white);
     granularStepAmountLabel->setColour(juce::TextEditor::backgroundColourId, juce::Colours::transparentBlack);
     granularStepAmountLabel->setColour(juce::TextEditor::outlineColourId, juce::Colours::white);
@@ -9888,9 +10119,6 @@ void PluginEditor::setupGranularSequencerArea()
     granularRateDropdown->setColour(juce::ComboBox::backgroundColourId, juce::Colours::transparentBlack);
     granularRateDropdown->setColour(juce::ComboBox::outlineColourId, juce::Colours::transparentBlack);
     granularRateDropdown->setColour(juce::ComboBox::buttonColourId, juce::Colours::transparentBlack);
-    granularRateDropdown->setColour(juce::ComboBox::textColourId, juce::Colours::white);
-    granularRateDropdown->setColour(juce::ComboBox::arrowColourId, juce::Colours::white);
-    granularRateDropdown->setLookAndFeel(rateComboLNF.get());
     
     addAndMakeVisible(granularRateDropdown.get());
     granularRateDropdown->setVisible(false);
@@ -10155,8 +10383,8 @@ void PluginEditor::setupSlicerKnobs()
     auto effectArea = juce::Rectangle<int>(25, 54, 413, 296);
     const int knobSize = 80;
     const int knobSpacing = 20;
-    const int startX = effectArea.getX() + 16; // Moved left 2px from +18 to +16
-    const int startY = effectArea.getY() + effectArea.getHeight() - 216; // Moved down 2px from -218 to -216
+    const int startX = effectArea.getX() + 15;
+    const int startY = effectArea.getY() + effectArea.getHeight() - 210;
 
     for (int i = 0; i < 6; ++i)
     {
@@ -10480,7 +10708,7 @@ void PluginEditor::updateSlicerStepAreaVisibility()
     }
     if (slicerStdToggle) {
         slicerStdToggle->setAlpha(alpha);
-        slicerStdToggle->setEnabled(true); // Always enabled so it can be clicked
+        slicerStdToggle->setEnabled(slicerStepAreaEnabled);
     }
     if (slicerStepTitle) slicerStepTitle->setAlpha(alpha);
     if (slicerStepDiceButton) {
@@ -10673,7 +10901,7 @@ void PluginEditor::setupSlicerSequencerArea()
     // Create step buttons (2 rows of 8)
     const int buttonSize = 40;
     const int buttonSpacing = 8;
-    const int startX = sequencerArea.getX() + 17; // Moved right 2px from +15 to +17
+    const int startX = sequencerArea.getX() + 20;
     const int startY = sequencerArea.getY() + 35;
     
     for (int i = 0; i < 16; ++i) {
@@ -10704,7 +10932,7 @@ void PluginEditor::setupSlicerSequencerArea()
     // Force to 16 by default, then sync with processor state
     processorRef.setSlicerStepsUsed(16);
     slicerStepAmountLabel->setText("16");
-    slicerStepAmountLabel->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 16.0f, juce::Font::bold));
+    slicerStepAmountLabel->setFont(juce::Font(16.0f, juce::Font::bold));
     slicerStepAmountLabel->setColour(juce::TextEditor::textColourId, juce::Colours::white);
     slicerStepAmountLabel->setColour(juce::TextEditor::backgroundColourId, juce::Colours::transparentBlack);
     slicerStepAmountLabel->setColour(juce::TextEditor::outlineColourId, juce::Colours::white);
@@ -10734,7 +10962,6 @@ void PluginEditor::setupSlicerSequencerArea()
     slicerRateDropdown->setColour(juce::ComboBox::buttonColourId, juce::Colours::transparentBlack);
     slicerRateDropdown->setColour(juce::ComboBox::textColourId, juce::Colours::white);
     slicerRateDropdown->setColour(juce::ComboBox::arrowColourId, juce::Colours::white);
-    slicerRateDropdown->setLookAndFeel(rateComboLNF.get());
     slicerRateDropdown->onChange = [this]() {
         if (slicerRateDropdown) {
             const int selected = slicerRateDropdown->getSelectedId();
@@ -10761,24 +10988,7 @@ void PluginEditor::setupSlicerSequencerArea()
     addAndMakeVisible(slicerStdToggle.get());
     slicerStdToggle->setVisible(false);
     slicerStdToggle->setBounds(sequencerArea.getX() + 288, sequencerArea.getY() - 14, 30, 30);
-    slicerStdToggle->setEnabled(true);
-    
-    slicerStdToggle->onClick = [this]() {
-        DBG("[UI] Slicer STD toggle clicked!");
-        // Cycle through -/t/. states
-        int currentState = processorRef.getSlicerSeqState().stdMode.load();
-        int nextState = (currentState + 1) % 3;
-        
-        switch (nextState) {
-            case 0: slicerStdToggle->setButtonText("-"); break;
-            case 1: slicerStdToggle->setButtonText("t"); break;
-            case 2: slicerStdToggle->setButtonText("."); break;
-        }
-        
-        processorRef.setSlicerStdMode(nextState);
-        slicerStdToggle->repaint();
-        DBG("[UI] Slicer STD mode: " << nextState);
-    };
+    // STD toggle is visual only for Slicer (no functionality needed)
     
     // Create step dice button (EXACT same as AutoPan page)
     slicerStepDiceButton = std::make_unique<CustomDiceButton>();
@@ -10928,8 +11138,8 @@ void PluginEditor::setupDubDelayKnobs()
     auto effectArea = juce::Rectangle<int>(25, 54, 413, 296);
     const int knobSize = 80;
     const int knobSpacing = 20;
-    const int startX = effectArea.getX() + 16; // Moved left 2px from +18 to +16
-    const int startY = effectArea.getY() + effectArea.getHeight() - 216; // Moved down 2px from -218 to -216
+    const int startX = effectArea.getX() + 15;
+    const int startY = effectArea.getY() + effectArea.getHeight() - 210;
 
     for (int i = 0; i < 8; ++i)
     {
@@ -11353,7 +11563,7 @@ void PluginEditor::setupDubDelaySequencerArea()
     // Step buttons (2x8 grid)
     const int buttonSize = 40;
     const int buttonSpacing = 8;
-    const int startX = sequencerArea.getX() + 17; // Moved right 2px from +15 to +17
+    const int startX = sequencerArea.getX() + 20;
     const int startY = sequencerArea.getY() + 35;
     
     for (int i = 0; i < 16; ++i)
@@ -11385,7 +11595,7 @@ void PluginEditor::setupDubDelaySequencerArea()
     // Force to 16 by default, then sync with processor state
     processorRef.setDubDelayStepsUsed(16);
     dubdelayStepAmountLabel->setText("16");
-    dubdelayStepAmountLabel->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 16.0f, juce::Font::bold));
+    dubdelayStepAmountLabel->setFont(juce::Font(16.0f, juce::Font::bold));
     dubdelayStepAmountLabel->setColour(juce::TextEditor::textColourId, juce::Colours::white);
     dubdelayStepAmountLabel->setColour(juce::TextEditor::backgroundColourId, juce::Colours::transparentBlack);
     dubdelayStepAmountLabel->setColour(juce::TextEditor::outlineColourId, juce::Colours::white);
@@ -11420,7 +11630,6 @@ void PluginEditor::setupDubDelaySequencerArea()
     dubdelayRateDropdown->setColour(juce::ComboBox::buttonColourId, juce::Colours::transparentBlack);
     dubdelayRateDropdown->setColour(juce::ComboBox::textColourId, juce::Colours::white);
     dubdelayRateDropdown->setColour(juce::ComboBox::arrowColourId, juce::Colours::white);
-    dubdelayRateDropdown->setLookAndFeel(rateComboLNF.get());
     
     int divIdx = processorRef.getDubDelaySeqState().divisionIndex.load();
     dubdelayRateDropdown->setSelectedId(divIdx + 1, juce::dontSendNotification);
@@ -11443,24 +11652,6 @@ void PluginEditor::setupDubDelaySequencerArea()
     addAndMakeVisible(dubdelayStdToggle.get());
     dubdelayStdToggle->setVisible(false);
     dubdelayStdToggle->setBounds(sequencerArea.getX() + 288, sequencerArea.getY() - 14, 30, 30);
-    dubdelayStdToggle->setEnabled(true);
-    
-    dubdelayStdToggle->onClick = [this]() {
-        DBG("[UI] Dub Delay STD toggle clicked!");
-        // Cycle through -/t/. states
-        int currentState = processorRef.getDubDelaySeqState().stdMode.load();
-        int nextState = (currentState + 1) % 3;
-        
-        switch (nextState) {
-            case 0: dubdelayStdToggle->setButtonText("-"); break;
-            case 1: dubdelayStdToggle->setButtonText("t"); break;
-            case 2: dubdelayStdToggle->setButtonText("."); break;
-        }
-        
-        processorRef.setDubDelayStdMode(nextState);
-        dubdelayStdToggle->repaint();
-        DBG("[UI] Dub Delay STD mode: " << nextState);
-    };
     
     // Step dice button (CRITICAL: CustomDiceButton, NOT DrawableButton! 30% smaller = ~24px)
     dubdelayStepDiceButton = std::make_unique<CustomDiceButton>();
@@ -11681,7 +11872,7 @@ void PluginEditor::updateDubDelayStepAreaVisibility()
     }
     if (dubdelayStdToggle) {
         dubdelayStdToggle->setAlpha(alpha);
-        dubdelayStdToggle->setEnabled(true); // Always enabled so it can be clicked
+        dubdelayStdToggle->setEnabled(dubdelayStepAreaEnabled);
     }
     if (dubdelayStepTitle) dubdelayStepTitle->setAlpha(alpha);
     if (dubdelayStepDiceButton) {
@@ -11854,8 +12045,8 @@ void PluginEditor::setupFormantKnobs()
     auto effectArea = juce::Rectangle<int>(25, 54, 413, 296);
     const int knobSize = 80;
     const int knobSpacing = 20;
-    const int startX = effectArea.getX() + 16; // Moved left 2px from +18 to +16
-    const int startY = effectArea.getY() + effectArea.getHeight() - 216; // Moved down 2px from -218 to -216
+    const int startX = effectArea.getX() + 15;
+    const int startY = effectArea.getY() + effectArea.getHeight() - 210;
 
     // Create and setup knobs - 8 knobs
     for (int i = 0; i < 8; ++i)
@@ -12137,7 +12328,7 @@ void PluginEditor::setupFormantSequencerArea()
     // Force to 16 by default, then sync with processor state
     processorRef.setFormantStepsUsed(16);
     formantStepAmountLabel->setText("16", juce::dontSendNotification);
-    formantStepAmountLabel->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 16.0f, juce::Font::bold));
+    formantStepAmountLabel->setFont(juce::Font(16.0f, juce::Font::bold));
     formantStepAmountLabel->setColour(juce::TextEditor::textColourId, juce::Colours::white);
     formantStepAmountLabel->setColour(juce::TextEditor::backgroundColourId, juce::Colours::transparentBlack);
     formantStepAmountLabel->setColour(juce::TextEditor::outlineColourId, juce::Colours::white);
@@ -12188,7 +12379,6 @@ void PluginEditor::setupFormantSequencerArea()
     formantRateDropdown->setColour(juce::ComboBox::buttonColourId, juce::Colours::transparentBlack);
     formantRateDropdown->setColour(juce::ComboBox::textColourId, juce::Colours::white);
     formantRateDropdown->setColour(juce::ComboBox::arrowColourId, juce::Colours::white);
-    formantRateDropdown->setLookAndFeel(rateComboLNF.get());
     addAndMakeVisible(formantRateDropdown.get());
     formantRateDropdown->setVisible(false);
     formantRateDropdown->setBounds(stepArea.getX() + 220, stepArea.getY() - 10, 74, 25); // EXACT same as Space Delay
@@ -12227,7 +12417,7 @@ void PluginEditor::setupFormantSequencerArea()
     // Create step buttons (EXACT same as Space Delay page)
     const int buttonSize = 40;
     const int buttonSpacing = 8;
-    const int startX = stepArea.getX() + 17; // Moved right 2px from +15 to +17
+    const int startX = stepArea.getX() + 20;
     const int startY = stepArea.getY() + 35;
     
     for (int i = 0; i < 16; ++i) {
@@ -12408,13 +12598,12 @@ void PluginEditor::setupFilterKnobs()
     auto effectArea = juce::Rectangle<int>(25, 54, 413, 296);
     const int knobSize = 80;
     const int knobSpacing = 20;
-    const int startX = effectArea.getX() + 16; // Moved left 2px from +18 to +16
-    const int startY = effectArea.getY() + effectArea.getHeight() - 216; // Moved down 2px from -218 to -216
+    const int startX = effectArea.getX() + 15;
+    const int startY = effectArea.getY() + effectArea.getHeight() - 210;
     
     // Parameter IDs for 7 knobs (Type, Cutoff, Res, Slope, Drive, Key Track, Mix) - Spread removed
-    // Note: keytrack is not an APVTS parameter, it's only stored in snapshots
     std::vector<juce::String> filterParamIds = {
-        "filterType", "filterHighCut", "filterResonance", "filterSlope", "filterDrive", "", "filterMix"
+        "fType", "cutoff", "res", "slope", "filterDrive", "keytrack", "filterMix"
     };
     
     // Knob names for 7 knobs (Spread removed)
@@ -12491,13 +12680,10 @@ void PluginEditor::setupFilterKnobs()
             addAndMakeVisible(filterKnobs[regularKnobIdx].get());
             filterKnobs[regularKnobIdx]->setVisible(false);
             
-            // Create attachment - Map knobIdx to filterParamIds index: 5→5 (Key Track - no APVTS param), 6→6 (Mix)
-            if (knobIdx == 6) { // Mix knob - has APVTS parameter
-                int paramIdsIdx = 6;
-                filterAttachments[regularKnobIdx] = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
-                    processorRef.getAPVTS(), filterParamIds[paramIdsIdx], *filterKnobs[regularKnobIdx]);
-            }
-            // Key Track (knobIdx 5) has no APVTS parameter - it only updates snapshots directly
+            // Create attachment - Map knobIdx to filterParamIds index: 5→5 (Key Track), 6→6 (Mix)
+            int paramIdsIdx = (knobIdx == 5) ? 5 : 6;
+            filterAttachments[regularKnobIdx] = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+                processorRef.getAPVTS(), filterParamIds[paramIdsIdx], *filterKnobs[regularKnobIdx]);
         } else if (knobIdx == 1 || knobIdx == 2 || knobIdx == 4) {
             // Regular knobs (Cutoff, Res, Drive) - Skip Type (0), Slope (3), and empty position 7
             // Map: knobIdx 1→0 (Cutoff), 2→1 (Res), 4→2 (Drive)
@@ -12509,10 +12695,10 @@ void PluginEditor::setupFilterKnobs()
             
             // Set parameter ranges
             switch (regularKnobIdx) {
-                case 0: // Cutoff - use parameter's range (20-20000Hz) to match filterHighCut parameter
-                    // The parameter uses NormalisableRange(20.0f, 20000.0f, 1.0f, 0.5f) with logarithmic skew
-                    filterKnobs[regularKnobIdx]->setRange(20.0, 20000.0, 1.0);
-                    filterKnobs[regularKnobIdx]->setValue(1200.0, juce::dontSendNotification); // 1200Hz default
+                case 0: // Cutoff - linear rotation (0-1), custom frequency mapping in processor
+                    // Knob rotates linearly 0-1, processor converts to frequency: 0-0.75 → 20-5000Hz, 0.75-1.0 → 5000-20000Hz
+                    filterKnobs[regularKnobIdx]->setRange(0.0, 1.0, 0.001);
+                    filterKnobs[regularKnobIdx]->setValue(0.18, juce::dontSendNotification); // ~0.18 = 1200Hz
                     break;
                 case 1: // Res
                     filterKnobs[regularKnobIdx]->setRange(0.0, 1.0, 0.01);
@@ -12723,9 +12909,9 @@ void PluginEditor::setupFilterKnobs()
     
     // Create attachments for Type and Slope
     filterTypeAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
-        processorRef.getAPVTS(), "filterType", *filterTypeKnob);
+        processorRef.getAPVTS(), "fType", *filterTypeKnob);
     filterSlopeAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
-        processorRef.getAPVTS(), "filterSlope", *filterSlopeKnob);
+        processorRef.getAPVTS(), "slope", *filterSlopeKnob);
     
     // Setup value change callbacks for all knobs
     filterTypeKnob->onValueChange = [this]() {
@@ -12736,7 +12922,7 @@ void PluginEditor::setupFilterKnobs()
         // Respect lock state - if locked, restore previous value
         if (filterKnobLocked[0]) {
             // Restore to previous value
-            auto* typeParam = processorRef.getAPVTS().getParameter("filterType");
+            auto* typeParam = processorRef.getAPVTS().getParameter("fType");
             if (typeParam) {
                 float prevValue = typeParam->getValue() * 4.0f; // Convert from normalized to 0-4
                 filterTypeKnob->setValue(prevValue, juce::dontSendNotification);
@@ -12776,7 +12962,7 @@ void PluginEditor::setupFilterKnobs()
         // Respect lock state - if locked, restore previous value
         if (filterKnobLocked[3]) {
             // Restore to previous value
-            auto* slopeParam = processorRef.getAPVTS().getParameter("filterSlope");
+            auto* slopeParam = processorRef.getAPVTS().getParameter("slope");
             if (slopeParam) {
                 float prevValue = slopeParam->getValue(); // 0-1 normalized
                 filterSlopeKnob->setValue(prevValue, juce::dontSendNotification);
@@ -12820,17 +13006,14 @@ void PluginEditor::setupFilterKnobs()
                 
                 switch (i) {
                     case 0: {
-                        // Value is already in Hz (20-20000) from the knob range
-                        float freq = juce::jlimit(20.0f, 20000.0f, value);
+                        // Convert normalized value (0-1) to frequency for display
+                        float freq = value <= 0.75f 
+                            ? 20.0f + (5000.0f - 20.0f) * (value / 0.75f)
+                            : 5000.0f * std::pow(4.0f, (value - 0.75f) / 0.25f);
                         text = juce::String(static_cast<int>(freq)) + " Hz";
                         break;
                     }
-                    case 1: {
-                        // Resonance parameter range is 0-0.95, scale to 0-100% for display
-                        float percent = (value / 0.95f) * 100.0f;
-                        text = juce::String(static_cast<int>(percent)) + "%";
-                        break;
-                    }
+                    case 1: text = juce::String(static_cast<int>(value * 100)) + "%"; break;
                     case 2: {
                         // Drive: display 0-100% where 100% = 18 dB (50% of 36 dB)
                         // Read the actual parameter value instead of knob value (SliderAttachment may normalize it)
@@ -12863,40 +13046,13 @@ void PluginEditor::setupFilterKnobs()
                 if (filterIndicatorBars[knobLabelIdx]) {
                     float norm = 0.0f;
                     switch (i) {
-                        case 0: norm = (value - 20.0f) / (20000.0f - 20.0f); break; // Cutoff - normalize 20-20000Hz to 0-1
+                        case 0: norm = value; break; // Cutoff - already normalized 0-1
                         case 1: norm = value; break; // Res - already normalized 0-1
                         case 2: norm = value / 36.0f; break; // Drive - normalize 0-36 to 0-1
                         case 3: norm = value; break; // Key Track - already normalized 0-1
                         case 4: norm = value; break; // Mix - already normalized 0-1
                     }
                     filterIndicatorBars[knobLabelIdx]->setValue(norm);
-                }
-                
-                // For cutoff knob (i == 0), also update filterLowCut if filter type is HP/BP/Comb
-                if (i == 0) {
-                    // Get current filter type
-                    auto* typeParam = processorRef.getAPVTS().getParameter("filterType");
-                    if (typeParam) {
-                        auto* typeChoice = dynamic_cast<juce::AudioParameterChoice*>(typeParam);
-                        if (typeChoice) {
-                            int filterType = typeChoice->getIndex();
-                            // If filter type is HP (1), BP (2), or Comb (3/4), also update filterLowCut
-                            if (filterType >= 1) {
-                                auto* lowCutParam = processorRef.getAPVTS().getParameter("filterLowCut");
-                                if (lowCutParam) {
-                                    auto* lowCutFloatParam = dynamic_cast<juce::AudioParameterFloat*>(lowCutParam);
-                                    if (lowCutFloatParam) {
-                                        // Value is already in Hz (20-20000) from the knob range
-                                        float freq = juce::jlimit(20.0f, 20000.0f, value);
-                                        
-                                        // Convert frequency to normalized value for filterLowCut parameter
-                                        float normalized = lowCutFloatParam->convertTo0to1(freq);
-                                        lowCutParam->setValueNotifyingHost(normalized);
-                                    }
-                                }
-                            }
-                        }
-                    }
                 }
                 
                 // Save to snapshot (Mix knob at index 4 is global, not saved per step)
@@ -12912,8 +13068,12 @@ void PluginEditor::setupFilterKnobs()
                             if (step != currentStep) {
                                 auto snapshot = processorRef.getFilterSafeSnapshot(step);
                                 switch (i) {
-                                    case 0: { // Cutoff - value is already in Hz (20-20000)
-                                        snapshot.filter.cutoff = juce::jlimit(20.0f, 20000.0f, value);
+                                    case 0: { // Cutoff - convert normalized value to frequency
+                                        // Use the same conversion logic as in processor
+                                        float freq = value <= 0.75f 
+                                            ? 20.0f + (5000.0f - 20.0f) * (value / 0.75f)
+                                            : 5000.0f * std::pow(4.0f, (value - 0.75f) / 0.25f);
+                                        snapshot.filter.cutoff = juce::jlimit(20.0f, 20000.0f, freq);
                                         break;
                                     }
                                     case 1: // Resonance
@@ -13091,7 +13251,7 @@ void PluginEditor::setupFilterSequencerArea()
     // Create step buttons (16 steps)
     const int buttonSize = 40;
     const int buttonSpacing = 8;
-    const int startX = sequencerArea.getX() + 17; // Moved right 2px from +15 to +17
+    const int startX = sequencerArea.getX() + 20;
     const int startY = sequencerArea.getY() + 35;
     
     for (int i = 0; i < 16; ++i) {
@@ -13160,7 +13320,6 @@ void PluginEditor::setupFilterSequencerArea()
     filterRateDropdown->setColour(juce::ComboBox::buttonColourId, juce::Colours::transparentBlack);
     filterRateDropdown->setColour(juce::ComboBox::textColourId, juce::Colours::white);
     filterRateDropdown->setColour(juce::ComboBox::arrowColourId, juce::Colours::white);
-    filterRateDropdown->setLookAndFeel(rateComboLNF.get());
     // Set selected ID from processor state (like Saturate)
     int divIdx = processorRef.getFilterSeqState().divisionIndex.load();
     filterRateDropdown->setSelectedId(divIdx + 1, juce::dontSendNotification);
@@ -13184,24 +13343,6 @@ void PluginEditor::setupFilterSequencerArea()
     addAndMakeVisible(filterStdToggle.get());
     filterStdToggle->setVisible(false);
     filterStdToggle->setBounds(sequencerArea.getX() + 288, sequencerArea.getY() - 14, 30, 30);
-    filterStdToggle->setEnabled(true);
-    
-    filterStdToggle->onClick = [this]() {
-        DBG("[UI] Filter STD toggle clicked!");
-        // Cycle through -/t/. states
-        int currentState = processorRef.getFilterSeqState().stdMode.load();
-        int nextState = (currentState + 1) % 3;
-        
-        switch (nextState) {
-            case 0: filterStdToggle->setButtonText("-"); break;
-            case 1: filterStdToggle->setButtonText("t"); break;
-            case 2: filterStdToggle->setButtonText("."); break;
-        }
-        
-        processorRef.setFilterStdMode(nextState);
-        filterStdToggle->repaint();
-        DBG("[UI] Filter STD mode: " << nextState);
-    };
     
     // Create step power button
     filterStepPowerButton = std::make_unique<juce::DrawableButton>("filterStepPower", juce::DrawableButton::ButtonStyle::ImageFitted);
@@ -13390,7 +13531,7 @@ void PluginEditor::updateFilterStepAreaVisibility()
     }
     if (filterStdToggle) {
         filterStdToggle->setAlpha(alpha);
-        filterStdToggle->setEnabled(true); // Always enabled so it can be clicked
+        filterStdToggle->setEnabled(filterStepAreaEnabled);
     }
     if (filterStepTitle) filterStepTitle->setAlpha(alpha);
     if (filterStepDiceButton) {
@@ -13526,8 +13667,12 @@ void PluginEditor::updateFilterParameterFromKnob(int knobIndex)
     } else if (knobIndex == -2) {
         value = filterSlopeKnob->getValue();
     } else if (knobIndex >= 0 && knobIndex < 5) {
-        if (knobIndex == 0) { // Cutoff - value is already in Hz (20-20000)
-            value = juce::jlimit(20.0f, 20000.0f, static_cast<float>(filterKnobs[0]->getValue()));
+        if (knobIndex == 0) { // Cutoff - convert normalized value to frequency
+            float normalized = filterKnobs[0]->getValue();
+            float freq = normalized <= 0.75f 
+                ? 20.0f + (5000.0f - 20.0f) * (normalized / 0.75f)
+                : 5000.0f * std::pow(4.0f, (normalized - 0.75f) / 0.25f);
+            value = juce::jlimit(20.0f, 20000.0f, freq);
         } else {
             value = filterKnobs[knobIndex]->getValue();
         }
@@ -13566,9 +13711,11 @@ void PluginEditor::updateFilterSequencerUI()
             
             // Update Cutoff indicator bar (index 1)
             if (filterIndicatorBars[1] && filterKnobs[0]) {
-                // Convert frequency to normalized value (20-20000Hz to 0-1)
+                // Convert frequency to normalized value
                 float freq = juce::jlimit(20.0f, 20000.0f, snapshot.filter.cutoff);
-                float normalized = (freq - 20.0f) / (20000.0f - 20.0f);
+                float normalized = freq <= 5000.0f 
+                    ? 0.75f * (freq - 20.0f) / (5000.0f - 20.0f)
+                    : 0.75f + 0.25f * (std::log(freq / 5000.0f) / std::log(4.0f));
                 normalized = juce::jlimit(0.0f, 1.0f, normalized);
                 filterIndicatorBars[1]->setValue(normalized);
             }
@@ -13633,10 +13780,14 @@ void PluginEditor::onFilterStepButtonClicked(int stepIndex)
             filterTypeKnob->setValue(snapshot.filter.type, juce::dontSendNotification);
         }
         
-        // Cutoff knob - value is already in Hz (20-20000)
+        // Cutoff knob (convert frequency to normalized)
         if (filterKnobs[0]) {
-            float freq = juce::jlimit(20.0f, 20000.0f, snapshot.filter.cutoff);
-            filterKnobs[0]->setValue(freq, juce::dontSendNotification);
+            float freq = snapshot.filter.cutoff;
+            float normalized = freq <= 5000.0f 
+                ? 0.75f * (freq - 20.0f) / (5000.0f - 20.0f)
+                : 0.75f + 0.25f * (std::log(freq / 5000.0f) / std::log(4.0f));
+            normalized = juce::jlimit(0.0f, 1.0f, normalized);
+            filterKnobs[0]->setValue(normalized, juce::dontSendNotification);
         }
         
         // Resonance knob
@@ -13667,71 +13818,46 @@ void PluginEditor::onFilterStepButtonClicked(int stepIndex)
         
         // Now update APVTS parameters to match (without notifying host to avoid attachment conflicts)
         // Type parameter
-        auto* typeParam = processorRef.getAPVTS().getParameter("filterType");
+        auto* typeParam = processorRef.getAPVTS().getParameter("fType");
         if (typeParam) {
-            auto* typeChoice = dynamic_cast<juce::AudioParameterChoice*>(typeParam);
-            if (typeChoice) {
-                int typeIndex = static_cast<int>(snapshot.filter.type);
-                typeChoice->setValueNotifyingHost(typeIndex); // Use setValueNotifyingHost for Choice parameters
-            }
+            float normalizedType = typeParam->convertTo0to1(snapshot.filter.type);
+            typeParam->setValue(normalizedType); // Use setValue instead of setValueNotifyingHost
         }
         
-        // Cutoff parameter - update both filterHighCut and filterLowCut based on filter type
-        int filterType = static_cast<int>(snapshot.filter.type);
-        float freq = snapshot.filter.cutoff;
-        
-        // Update filterHighCut (used for LP)
-        auto* highCutParam = processorRef.getAPVTS().getParameter("filterHighCut");
-        if (highCutParam && filterKnobs[0]) {
-            auto* highCutFloatParam = dynamic_cast<juce::AudioParameterFloat*>(highCutParam);
-            if (highCutFloatParam) {
-                float normalized = highCutFloatParam->convertTo0to1(freq);
-                highCutParam->setValue(normalized);
-            }
-        }
-        
-        // Update filterLowCut (used for HP/BP/Comb)
-        auto* lowCutParam = processorRef.getAPVTS().getParameter("filterLowCut");
-        if (lowCutParam && (filterType >= 1)) { // HP, BP, or Comb
-            auto* lowCutFloatParam = dynamic_cast<juce::AudioParameterFloat*>(lowCutParam);
-            if (lowCutFloatParam) {
-                float normalized = lowCutFloatParam->convertTo0to1(freq);
-                lowCutParam->setValue(normalized);
-            }
+        // Cutoff parameter
+        auto* cutoffParam = processorRef.getAPVTS().getParameter("cutoff");
+        if (cutoffParam && filterKnobs[0]) {
+            float normalized = filterKnobs[0]->getValue(); // Get the value we just set
+            cutoffParam->setValue(normalized);
         }
         
         // Resonance parameter
-        auto* resParam = processorRef.getAPVTS().getParameter("filterResonance");
+        auto* resParam = processorRef.getAPVTS().getParameter("res");
         if (resParam && filterKnobs[1]) {
-            auto* resFloatParam = dynamic_cast<juce::AudioParameterFloat*>(resParam);
-            if (resFloatParam) {
-                float normalizedRes = resFloatParam->convertTo0to1(snapshot.filter.resonance);
-                resParam->setValue(normalizedRes);
-            }
+            float normalizedRes = resParam->convertTo0to1(snapshot.filter.resonance);
+            resParam->setValue(normalizedRes);
         }
         
         // Slope parameter
-        auto* slopeParam = processorRef.getAPVTS().getParameter("filterSlope");
+        auto* slopeParam = processorRef.getAPVTS().getParameter("slope");
         if (slopeParam) {
-            auto* slopeChoice = dynamic_cast<juce::AudioParameterChoice*>(slopeParam);
-            if (slopeChoice) {
-                int slopeIndex = static_cast<int>(snapshot.filter.slope);
-                slopeChoice->setValueNotifyingHost(slopeIndex);
-            }
+            float normalizedSlope = slopeParam->convertTo0to1(snapshot.filter.slope);
+            slopeParam->setValue(normalizedSlope);
         }
         
         // Drive parameter
         auto* driveParam = processorRef.getAPVTS().getParameter("filterDrive");
         if (driveParam && filterKnobs[2]) {
-            auto* driveFloatParam = dynamic_cast<juce::AudioParameterFloat*>(driveParam);
-            if (driveFloatParam) {
-                float driveDb = juce::jlimit(0.0f, 18.0f, snapshot.filter.drive);
-                float normalizedDrive = driveFloatParam->convertTo0to1(driveDb);
-                driveParam->setValue(normalizedDrive);
-            }
+            float driveDb = juce::jlimit(0.0f, 18.0f, snapshot.filter.drive);
+            float normalizedDrive = driveParam->convertTo0to1(driveDb);
+            driveParam->setValue(normalizedDrive);
         }
         
-        // Key Track has no APVTS parameter - it's only stored in snapshots
+        // Key Track parameter
+        auto* keytrackParam = processorRef.getAPVTS().getParameter("keytrack");
+        if (keytrackParam) {
+            keytrackParam->setValue(snapshot.filter.keytrack);
+        }
         
         // Mix parameter
         auto* mixParam = processorRef.getAPVTS().getParameter("filterMix");
@@ -13878,8 +14004,8 @@ void PluginEditor::setupSaturateKnobs()
     auto effectArea = juce::Rectangle<int>(25, 54, 413, 296);
     const int knobSize = 80;
     const int knobSpacing = 20;
-    const int startX = effectArea.getX() + 16; // Moved left 2px from +18 to +16
-    const int startY = effectArea.getY() + effectArea.getHeight() - 216; // Moved down 2px from -218 to -216
+    const int startX = effectArea.getX() + 15;
+    const int startY = effectArea.getY() + effectArea.getHeight() - 210;
     
     // Set oversample to max (3 = 8×) in APVTS and snapshots
     auto* osParam = processorRef.getAPVTS().getParameter("satOsMode");
@@ -14199,7 +14325,7 @@ void PluginEditor::setupSaturateSequencerArea()
     // Step buttons (2x8 grid)
     const int buttonSize = 40;
     const int buttonSpacing = 8;
-    const int startX = sequencerArea.getX() + 17; // Moved right 2px from +15 to +17
+    const int startX = sequencerArea.getX() + 20;
     const int startY = sequencerArea.getY() + 35;
     
     for (int i = 0; i < 16; ++i)
@@ -14231,7 +14357,7 @@ void PluginEditor::setupSaturateSequencerArea()
     // Force to 16 by default, then sync with processor state
     processorRef.setSaturateStepsUsed(16);
     saturateStepAmountLabel->setText("16");
-    saturateStepAmountLabel->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 16.0f, juce::Font::bold));
+    saturateStepAmountLabel->setFont(juce::Font(16.0f, juce::Font::bold));
     saturateStepAmountLabel->setColour(juce::TextEditor::textColourId, juce::Colours::white);
     saturateStepAmountLabel->setColour(juce::TextEditor::backgroundColourId, juce::Colours::transparentBlack);
     saturateStepAmountLabel->setColour(juce::TextEditor::outlineColourId, juce::Colours::white);
@@ -14259,7 +14385,6 @@ void PluginEditor::setupSaturateSequencerArea()
     saturateRateDropdown->setColour(juce::ComboBox::buttonColourId, juce::Colours::transparentBlack);
     saturateRateDropdown->setColour(juce::ComboBox::textColourId, juce::Colours::white);
     saturateRateDropdown->setColour(juce::ComboBox::arrowColourId, juce::Colours::white);
-    saturateRateDropdown->setLookAndFeel(rateComboLNF.get());
     
     // Set selected ID from processor state (like Dub Delay)
     int divIdx = processorRef.getSaturateSeqState().divisionIndex.load();
@@ -14284,24 +14409,6 @@ void PluginEditor::setupSaturateSequencerArea()
     addAndMakeVisible(saturateStdToggle.get());
     saturateStdToggle->setVisible(false);
     saturateStdToggle->setBounds(sequencerArea.getX() + 288, sequencerArea.getY() - 14, 30, 30);
-    saturateStdToggle->setEnabled(true);
-    
-    saturateStdToggle->onClick = [this]() {
-        DBG("[UI] Saturate STD toggle clicked!");
-        // Cycle through -/t/. states
-        int currentState = processorRef.getSaturateSeqState().stdMode.load();
-        int nextState = (currentState + 1) % 3;
-        
-        switch (nextState) {
-            case 0: saturateStdToggle->setButtonText("-"); break;
-            case 1: saturateStdToggle->setButtonText("t"); break;
-            case 2: saturateStdToggle->setButtonText("."); break;
-        }
-        
-        processorRef.setSaturateStdMode(nextState);
-        saturateStdToggle->repaint();
-        DBG("[UI] Saturate STD mode: " << nextState);
-    };
     
     // Step dice button
     saturateStepDiceButton = std::make_unique<CustomDiceButton>();
@@ -14493,7 +14600,7 @@ void PluginEditor::updateSaturateStepAreaVisibility()
     }
     if (saturateStdToggle) {
         saturateStdToggle->setAlpha(alpha);
-        saturateStdToggle->setEnabled(true); // Always enabled so it can be clicked
+        saturateStdToggle->setEnabled(saturateStepAreaEnabled);
     }
     if (saturateStepDiceButton) {
         saturateStepDiceButton->setAlpha(alpha);
@@ -14699,8 +14806,8 @@ void PluginEditor::setupForm2Knobs()
     auto effectArea = juce::Rectangle<int>(25, 54, 413, 296);
     const int knobSize = 80;
     const int knobSpacing = 20;
-    const int startX = effectArea.getX() + 16; // Moved left 2px from +18 to +16
-    const int startY = effectArea.getY() + effectArea.getHeight() - 216; // Moved down 2px from -218 to -216
+    const int startX = effectArea.getX() + 15;
+    const int startY = effectArea.getY() + effectArea.getHeight() - 210;
 
     // Create and setup 8 knobs
     for (int i = 0; i < 8; ++i)
@@ -15031,7 +15138,7 @@ void PluginEditor::setupForm2SequencerArea()
     // Create step buttons (2x8 grid)
     const int buttonSize = 40;
     const int buttonSpacing = 8;
-    const int startX = sequencerArea.getX() + 17; // Moved right 2px from +15 to +17
+    const int startX = sequencerArea.getX() + 20;
     const int startY = sequencerArea.getY() + 35;
     
     for (int i = 0; i < 16; ++i) {
@@ -15055,7 +15162,7 @@ void PluginEditor::setupForm2SequencerArea()
     // Create step amount label (TextEditor)
     form2StepAmountLabel = std::make_unique<juce::TextEditor>();
     form2StepAmountLabel->setText("16");
-    form2StepAmountLabel->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 16.0f, juce::Font::bold));
+    form2StepAmountLabel->setFont(juce::Font(16.0f, juce::Font::bold));
     form2StepAmountLabel->setColour(juce::TextEditor::textColourId, juce::Colours::white);
     form2StepAmountLabel->setColour(juce::TextEditor::backgroundColourId, juce::Colours::transparentBlack);
     form2StepAmountLabel->setColour(juce::TextEditor::outlineColourId, juce::Colours::white);
@@ -15092,7 +15199,6 @@ void PluginEditor::setupForm2SequencerArea()
     form2RateDropdown->setColour(juce::ComboBox::buttonColourId, juce::Colours::transparentBlack);
     form2RateDropdown->setColour(juce::ComboBox::textColourId, juce::Colours::white);
     form2RateDropdown->setColour(juce::ComboBox::arrowColourId, juce::Colours::white);
-    form2RateDropdown->setLookAndFeel(rateComboLNF.get());
     form2RateDropdown->setBounds(sequencerArea.getX() + 220, sequencerArea.getY() - 10, 74, 25);
     addAndMakeVisible(form2RateDropdown.get());
     form2RateDropdown->setVisible(false);
@@ -15448,8 +15554,8 @@ void PluginEditor::setupReduxKnobs()
     auto effectArea = juce::Rectangle<int>(25, 54, 413, 296);
     const int knobSize = 80;
     const int knobSpacing = 20;
-    const int startX = effectArea.getX() + 16; // Moved left 2px from +18 to +16
-    const int startY = effectArea.getY() + effectArea.getHeight() - 216; // Moved down 2px from -218 to -216
+    const int startX = effectArea.getX() + 15;
+    const int startY = effectArea.getY() + effectArea.getHeight() - 210;
 
     // Create and setup knobs
     for (int i = 0; i < 8; ++i)
@@ -16004,7 +16110,7 @@ void PluginEditor::setupReduxSequencerArea()
     // Create step buttons (2 rows of 8)
     const int buttonSize = 40;
     const int buttonSpacing = 8;
-    const int startX = sequencerArea.getX() + 17; // Moved right 2px from +15 to +17
+    const int startX = sequencerArea.getX() + 20;
     const int startY = sequencerArea.getY() + 35;
     
     for (int i = 0; i < 16; ++i) {
@@ -16035,7 +16141,7 @@ void PluginEditor::setupReduxSequencerArea()
     // Force to 16 by default, then sync with processor state
     processorRef.setReduxStepsUsed(16);
     reduxStepAmountLabel->setText("16");
-    reduxStepAmountLabel->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 16.0f, juce::Font::bold));
+    reduxStepAmountLabel->setFont(juce::Font(16.0f, juce::Font::bold));
     reduxStepAmountLabel->setColour(juce::TextEditor::textColourId, juce::Colours::white);
     reduxStepAmountLabel->setColour(juce::TextEditor::backgroundColourId, juce::Colours::transparentBlack);
     reduxStepAmountLabel->setColour(juce::TextEditor::outlineColourId, juce::Colours::white);
@@ -16086,7 +16192,7 @@ void PluginEditor::setupReduxSequencerArea()
     reduxRateDropdown->setColour(juce::ComboBox::buttonColourId, juce::Colours::transparentBlack);
     reduxRateDropdown->setColour(juce::ComboBox::textColourId, juce::Colours::white);
     reduxRateDropdown->setColour(juce::ComboBox::arrowColourId, juce::Colours::white);
-    reduxRateDropdown->setLookAndFeel(rateComboLNF.get());
+    // Note: ComboBox font is set via LookAndFeel, not directly
     reduxRateDropdown->onChange = [this]() {
         if (reduxRateDropdown) {
             int selectedId = reduxRateDropdown->getSelectedId();
@@ -16478,8 +16584,8 @@ void PluginEditor::setupPhaseBloomKnobs()
     auto effectArea = juce::Rectangle<int>(25, 54, 413, 296);
     const int knobSize = 80;
     const int knobSpacing = 20;
-    const int startX = effectArea.getX() + 16; // Moved left 2px from +18 to +16
-    const int startY = effectArea.getY() + effectArea.getHeight() - 216; // Moved down 2px from -218 to -216
+    const int startX = effectArea.getX() + 15;
+    const int startY = effectArea.getY() + effectArea.getHeight() - 210;
 
     // Create and setup knobs
     for (int i = 0; i < 8; ++i)
@@ -16792,7 +16898,7 @@ void PluginEditor::setupPhaseBloomSequencerArea()
     // Create step buttons (2x8 grid)
     const int buttonSize = 40;
     const int buttonSpacing = 8;
-    const int startX = sequencerArea.getX() + 17; // Moved right 2px from +15 to +17
+    const int startX = sequencerArea.getX() + 20;
     const int startY = sequencerArea.getY() + 35;
     
     for (int i = 0; i < 16; ++i) {
@@ -16818,7 +16924,7 @@ void PluginEditor::setupPhaseBloomSequencerArea()
     // Force to 16 by default, then sync with processor state
     processorRef.setPhaseBloomStepsUsed(16);
     phaseBloomStepAmountLabel->setText("16");
-    phaseBloomStepAmountLabel->setFont(FontManager::getInstance().getFont("AlteHaasGroteskBold", 16.0f, juce::Font::bold));
+    phaseBloomStepAmountLabel->setFont(juce::Font(16.0f, juce::Font::bold));
     phaseBloomStepAmountLabel->setColour(juce::TextEditor::textColourId, juce::Colours::white);
     phaseBloomStepAmountLabel->setColour(juce::TextEditor::backgroundColourId, juce::Colours::transparentBlack);
     phaseBloomStepAmountLabel->setColour(juce::TextEditor::outlineColourId, juce::Colours::white);
@@ -16855,7 +16961,6 @@ void PluginEditor::setupPhaseBloomSequencerArea()
     phaseBloomRateDropdown->setColour(juce::ComboBox::buttonColourId, juce::Colours::transparentBlack);
     phaseBloomRateDropdown->setColour(juce::ComboBox::textColourId, juce::Colours::white);
     phaseBloomRateDropdown->setColour(juce::ComboBox::arrowColourId, juce::Colours::white);
-    phaseBloomRateDropdown->setLookAndFeel(rateComboLNF.get());
     phaseBloomRateDropdown->setBounds(sequencerArea.getX() + 220, sequencerArea.getY() - 10, 74, 25);
     addAndMakeVisible(phaseBloomRateDropdown.get());
     phaseBloomRateDropdown->setVisible(false);
@@ -16864,11 +16969,7 @@ void PluginEditor::setupPhaseBloomSequencerArea()
     phaseBloomRateDropdown->onChange = [this]() {
         int selectedId = phaseBloomRateDropdown->getSelectedId();
         int divisionIndex = selectedId - 1; // Convert 1-based to 0-based
-        DBG("[PHASEBLOOM] Rate dropdown changed: selectedId=" << selectedId << ", divisionIndex=" << divisionIndex);
         processorRef.setPhaseBloomDivisionIndex(divisionIndex);
-        // Verify it was set correctly
-        int actualIndex = processorRef.getPhaseBloomSeqState().divisionIndex.load();
-        DBG("[PHASEBLOOM] Division index after setting: " << actualIndex);
     };
     
     // Create STD toggle
@@ -16877,24 +16978,6 @@ void PluginEditor::setupPhaseBloomSequencerArea()
     phaseBloomStdToggle->setBounds(sequencerArea.getX() + 288, sequencerArea.getY() - 14, 30, 30);
     addAndMakeVisible(phaseBloomStdToggle.get());
     phaseBloomStdToggle->setVisible(false);
-    phaseBloomStdToggle->setEnabled(true);
-    
-    phaseBloomStdToggle->onClick = [this]() {
-        DBG("[UI] Phase Bloom STD toggle clicked!");
-        // Cycle through -/t/. states
-        int currentState = processorRef.getPhaseBloomSeqState().stdMode.load();
-        int nextState = (currentState + 1) % 3;
-        
-        switch (nextState) {
-            case 0: phaseBloomStdToggle->setButtonText("-"); break;
-            case 1: phaseBloomStdToggle->setButtonText("t"); break;
-            case 2: phaseBloomStdToggle->setButtonText("."); break;
-        }
-        
-        processorRef.setPhaseBloomStdMode(nextState);
-        phaseBloomStdToggle->repaint();
-        DBG("[UI] Phase Bloom STD mode: " << nextState);
-    };
     
     // Create step dice button
     phaseBloomStepDiceButton = std::make_unique<CustomDiceButton>();
@@ -17076,7 +17159,7 @@ void PluginEditor::updatePhaseBloomStepAreaVisibility()
     }
     if (phaseBloomStdToggle) {
         phaseBloomStdToggle->setAlpha(alpha);
-        phaseBloomStdToggle->setEnabled(true); // Always enabled so it can be clicked
+        phaseBloomStdToggle->setEnabled(phaseBloomStepAreaEnabled);
     }
     if (phaseBloomStepTitle) phaseBloomStepTitle->setAlpha(alpha);
     if (phaseBloomStepDiceButton) {

@@ -80,44 +80,22 @@ struct SeqState {
         static const juce::String labels[] = { "4", "2", "1", "1/2", "1/4", "1/8", "1/16", "1/32" };
         const int i = juce::jlimit(0, (int)std::size(labels)-1, divIdx);
         const double result = beatsPerStepFromLabel(labels[i]);
-        // Only log for PhaseBloom to reduce noise
-        static int logCounter = 0;
-        if ((logCounter++ % 50) == 0) {
-            DBG("[SEQ] Division " << divIdx << " -> \"" << labels[i] << "\" -> " << result << " beats per step");
-        }
+        DBG("[SEQ] Division " << divIdx << " -> \"" << labels[i] << "\" -> " << result << " beats per step");
         return result;
     }
     
     int computeStepFromPPQ(double ppq) const noexcept {
         const int N = juce::jmax(1, stepsUsed.load());
-        int divIdx = divisionIndex.load();
-        divIdx = juce::jlimit(0, 7, divIdx);
-        
-        double bps = beatsPerStepFromDivision(divIdx);
+        const double bps = beatsPerStepFromDivision(divisionIndex.load());
         if (bps <= 0.0 || N <= 0 || !std::isfinite(ppq))
             return currentStep.load(); // fallback: keep current
 
-        // Which step index are we on in the bar-agnostic sense:
-        // step = floor(ppq / beatsPerStep) % N
-        const double stepsExact = ppq / bps;
-        const int k = (int) std::floor(stepsExact);
-        return ((k % N) + N) % N; // Manual modulo for negative numbers
-    }
-    
-    // PhaseBloom-specific version - no special handling needed, use normal calculation
-    int computeStepFromPPQPhaseBloom(double ppq) const noexcept {
-        const int N = juce::jmax(1, stepsUsed.load());
-        int divIdx = divisionIndex.load();
-        divIdx = juce::jlimit(0, 7, divIdx);
+        // Convert PPQ (quarter-note pulses) to beats: 4 PPQ = 1 beat
+        const double beats = ppq / 4.0;
         
-        double bps = beatsPerStepFromDivision(divIdx);
-        
-        if (bps <= 0.0 || N <= 0 || !std::isfinite(ppq))
-            return currentStep.load(); // fallback: keep current
-
         // Which step index are we on in the bar-agnostic sense:
-        // step = floor(ppq / beatsPerStep) % N
-        const double stepsExact = ppq / bps;
+        // step = floor(beats / beatsPerStep) % N
+        const double stepsExact = beats / bps;
         const int k = (int) std::floor(stepsExact);
         return ((k % N) + N) % N; // Manual modulo for negative numbers
     }
@@ -231,7 +209,6 @@ public:
     const SeqState& getPhaseBloomSeqState() const { return phaseBloomSeq; }
     int getPhaseBloomPlayingStep() const noexcept { return phaseBloomSeq.playingStep.load(); }
     int getPhaseBloomCurrentStep() const noexcept { return phaseBloomSeq.currentStep.load(); }
-    void setPhaseBloomStdMode(int mode) noexcept { phaseBloomSeq.stdMode.store(juce::jlimit(0, 2, mode)); }
     
     // Formant sequencer accessors
     void setFormantSelectedStep(int step) noexcept { formantUiSelectedStep.store(step); }
@@ -274,6 +251,56 @@ public:
     int getSelectedStep() const noexcept { return uiSelectedStep.load(); }
     bool isSequencerEnabled() const noexcept { return seq.enabled.load(); }
     double getBpmOrDefault(double fallback = 120.0) const noexcept { auto b = transportCache.bpm.load(); return b > 0.0 ? b : fallback; }
+    void setFreeRunBpm(double bpm) noexcept { 
+        double oldBpm = transportCache.bpm.load();
+        double newBpm = juce::jlimit(20.0, 999.0, bpm);
+        
+        // Always update BPM immediately
+        transportCache.bpm.store(newBpm);
+        
+        DBG("[Processor] setFreeRunBpm called: oldBpm=" << oldBpm << ", newBpm=" << newBpm 
+            << ", forceStandalone=" << forceStandaloneMode.load() << ", wasPlaying=" << wasPlaying.load());
+        
+        // If BPM changed while playing, recalculate start time to apply new rate immediately
+        // Always adjust if playing, even for small changes, to ensure rate updates immediately
+        if (forceStandaloneMode.load() && wasPlaying.load() && std::abs(oldBpm - newBpm) > 0.001) {
+            // Calculate current PPQ position using old BPM
+            auto now = std::chrono::high_resolution_clock::now();
+            auto elapsed = std::chrono::duration<double>(now - standaloneStartTime).count();
+            const double oldBeatsPerSecond = oldBpm / 60.0;
+            const double oldPpqPerSecond = oldBeatsPerSecond * 4.0; // 4 PPQ per beat
+            const double currentPPQ = elapsed * oldPpqPerSecond;
+            
+            // Calculate what the elapsed time should be with new BPM to get the same PPQ
+            const double newBeatsPerSecond = newBpm / 60.0;
+            const double newPpqPerSecond = newBeatsPerSecond * 4.0;
+            const double newElapsed = (newPpqPerSecond > 0.0) ? (currentPPQ / newPpqPerSecond) : 0.0;
+            
+            // Adjust start time so that elapsed time calculation with new BPM gives same PPQ
+            // This preserves sequencer position while applying new rate immediately
+            standaloneStartTime = now - std::chrono::duration_cast<std::chrono::high_resolution_clock::duration>(
+                std::chrono::duration<double>(newElapsed));
+            standaloneBpmAtStart.store(newBpm);
+            
+            // Update sequencer origin PPQ to current position
+            seq.originPPQ.store(currentPPQ);
+            seq.haveOrigin.store(true);
+            
+            // Also update transportCache PPQ to match (for consistency)
+            transportCache.ppq.store(currentPPQ);
+            
+            DBG("[Processor] BPM changed while playing:");
+            DBG("[Processor]   oldBpm=" << oldBpm << " -> newBpm=" << newBpm);
+            DBG("[Processor]   currentPPQ=" << currentPPQ << ", preserving position");
+            DBG("[Processor]   oldElapsed=" << elapsed << "s -> newElapsed=" << newElapsed << "s");
+            DBG("[Processor]   oldPpqPerSecond=" << oldPpqPerSecond << " -> newPpqPerSecond=" << newPpqPerSecond);
+        } else if (forceStandaloneMode.load() && wasPlaying.load()) {
+            DBG("[Processor] BPM change ignored: diff=" << std::abs(oldBpm - newBpm) 
+                << ", forceStandalone=" << forceStandaloneMode.load() << ", wasPlaying=" << wasPlaying.load());
+        }
+    }
+    void setForceStandaloneMode(bool force) noexcept { forceStandaloneMode.store(force); }
+    void stopStandalonePlayback() noexcept { wasPlaying.store(false); forceStandaloneMode.store(false); }
     
     // Step snapshot access (Delay)
     StepSnapshot getSafeSnapshot(int step) const;
@@ -372,7 +399,6 @@ public:
     }
     void setSlicerStepsUsed(int steps) noexcept { slicerSeq.stepsUsed.store(juce::jlimit(1, 16, steps)); }
     void setSlicerDivisionIndex(int idx) noexcept { slicerSeq.divisionIndex.store(juce::jlimit(0, 7, idx)); }
-    void setSlicerStdMode(int mode) noexcept { slicerSeq.stdMode.store(juce::jlimit(0, 2, mode)); }
     
     // Dub Delay sequencer accessors
     const SeqState& getDubDelaySeqState() const { return dubdelaySeq; }
@@ -389,7 +415,6 @@ public:
     }
     void setDubDelayStepsUsed(int steps) noexcept { dubdelaySeq.stepsUsed.store(juce::jlimit(1, 16, steps)); }
     void setDubDelayDivisionIndex(int idx) noexcept { dubdelaySeq.divisionIndex.store(juce::jlimit(0, 7, idx)); }
-    void setDubDelayStdMode(int mode) noexcept { dubdelaySeq.stdMode.store(juce::jlimit(0, 2, mode)); }
     
     // Space Delay sequencer accessors
     const SeqState& getSpaceDelaySeqState() const { return spacedelaySeq; }
@@ -443,9 +468,6 @@ public:
     void setStdMode(int mode) noexcept { seq.stdMode.store(juce::jlimit(0, 2, mode)); }
     void resetSequencerState() noexcept;
     void startStandalonePlayback() noexcept;
-    void setFreeRunMode(bool enabled) noexcept;
-    void startFreeRunPlayback() noexcept;
-    void stopFreeRunPlayback() noexcept;
     void randomizeAllStepSnapshots() noexcept;
     
     // Level tracking for meters
@@ -473,6 +495,7 @@ private:
     std::atomic<int64_t> lastSamples{-1};
     std::atomic<bool> followHost{true};     // follow host transport
     std::atomic<bool> userDisabledSequencer{false}; // track if user explicitly disabled sequencer
+    std::atomic<bool> forceStandaloneMode{false}; // force standalone mode, ignore DAW transport
 
     
     // Helper function for sequencer (legacy - now handled by SeqState::beatsPerStepFromDivision)
@@ -483,8 +506,8 @@ private:
     std::atomic<int> uiSelectedStep { 0 };  // Editor's selected step for editing only
     bool prevHostPlaying = false;
     std::chrono::high_resolution_clock::time_point standaloneStartTime;
-    std::chrono::high_resolution_clock::time_point freeRunStartTime;
-    std::atomic<bool> freeRunMode { false };
+    std::atomic<double> standaloneBpmAtStart{120.0}; // BPM when standalone started
+    std::atomic<double> standalonePPQAtLastBpmChange{0.0}; // PPQ position when BPM last changed
     
     // AutoPan sequencer state (independent from delay)
     SeqState autopanSeq;
@@ -632,15 +655,9 @@ public:
     int getSaturateCurrentStep() const noexcept { return saturateSeq.currentStep.load(); }
     int getSaturateUiSelectedStep() const noexcept { return saturateUiSelectedStep.load(); }
     void setSaturateSelectedStep(int step) noexcept { saturateUiSelectedStep.store(step); }
-    void setSaturateSequencerEnabled(bool enabled) noexcept {
-        saturateSeq.enabled.store(enabled);
-        if (enabled) {
-            saturateSeq.active.store(true);
-        }
-    }
+    void setSaturateSequencerEnabled(bool enabled) noexcept { saturateSeq.enabled.store(enabled); }
     void setSaturateStepsUsed(int steps) noexcept { saturateSeq.stepsUsed.store(juce::jlimit(1, 16, steps)); }
     void setSaturateDivisionIndex(int idx) noexcept { saturateSeq.divisionIndex.store(juce::jlimit(0, 7, idx)); }
-    void setSaturateStdMode(int mode) noexcept { saturateSeq.stdMode.store(juce::jlimit(0, 2, mode)); }
     
     // Saturate snapshot accessors
     StepSnapshot getSaturateSafeSnapshot(int step) const;
@@ -654,12 +671,7 @@ public:
     int getFilterCurrentStep() const noexcept { return filterSeq.currentStep.load(); }
     int getFilterUiSelectedStep() const noexcept { return filterUiSelectedStep.load(); }
     void setFilterSelectedStep(int step) noexcept { filterUiSelectedStep.store(step); }
-    void setFilterSequencerEnabled(bool enabled) noexcept {
-        filterSeq.enabled.store(enabled);
-        if (enabled) {
-            filterSeq.active.store(true);
-        }
-    }
+    void setFilterSequencerEnabled(bool enabled) noexcept { filterSeq.enabled.store(enabled); }
     void setFilterStepsUsed(int steps) noexcept { filterSeq.stepsUsed.store(juce::jlimit(1, 16, steps)); }
     void setFilterDivisionIndex(int idx) noexcept { filterSeq.divisionIndex.store(juce::jlimit(0, 7, idx)); }
     void setFilterStepAmount(int amount) noexcept { setFilterStepsUsed(amount); }
