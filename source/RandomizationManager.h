@@ -48,6 +48,10 @@ private:
     
     std::atomic<bool> busy { false };
     
+    // Debounce mechanism: prevent rapid-fire randomization
+    juce::int64 lastRandomizationTime = 0;
+    static constexpr juce::int64 MIN_RANDOMIZATION_INTERVAL_MS = 150; // Minimum 150ms between randomizations
+    
     // Collected targets (filled in collectTargets)
     struct ParamTarget {
         juce::RangedAudioParameter* param = nullptr;

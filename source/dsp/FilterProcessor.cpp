@@ -118,14 +118,28 @@ void FilterProcessor::process(juce::AudioBuffer<float>& buffer, int numSamples)
     }
     
     // Handle type change with crossfade
-    if (currentType != targetType) {
+    // CRITICAL: Don't change type while crossfade is active to prevent crashes from rapid switching
+    // Also add a minimum time between type changes to prevent rapid switching
+    static juce::int64 lastTypeChangeTime = 0;
+    const juce::int64 currentTime = juce::Time::currentTimeMillis();
+    const juce::int64 minTimeBetweenChanges = 50; // Minimum 50ms between type changes
+    
+    if (currentType != targetType && !ramp.isActive() && 
+        (currentTime - lastTypeChangeTime) >= minTimeBetweenChanges) {
         // Create new filter with current params
         makeFilter(targetType);
         if (newF) {
             newF->prepare(specCached);
             ramp.start(fs, 20.0); // 20ms crossfade
+            currentType = targetType;
+            lastTypeChangeTime = currentTime;
+        } else {
+            // If filter creation failed, keep current type to prevent crashes
+            targetType = currentType;
         }
-        currentType = targetType;
+    } else if (currentType != targetType && (ramp.isActive() || (currentTime - lastTypeChangeTime) < minTimeBetweenChanges)) {
+        // Defer type change if crossfade is active or too soon since last change
+        // This prevents rapid switching that causes crashes
     }
     
     // Drive pre-filter

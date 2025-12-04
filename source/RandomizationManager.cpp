@@ -16,11 +16,28 @@ RandomizationManager::RandomizationManager(PluginProcessor& proc, juce::AudioPro
 
 void RandomizationManager::requestRandomizeAllActivePages()
 {
-    // Debounce: ignore if already busy
-    if (busy.exchange(true)) {
+    // CRITICAL FIX 1: Debounce - prevent rapid-fire clicks
+    const juce::int64 currentTime = juce::Time::currentTimeMillis();
+    const juce::int64 timeSinceLastRandomization = currentTime - lastRandomizationTime;
+    
+    if (timeSinceLastRandomization < MIN_RANDOMIZATION_INTERVAL_MS) {
+        DBG("[RAND] Request ignored - too soon after last randomization (" 
+            << timeSinceLastRandomization << "ms < " << MIN_RANDOMIZATION_INTERVAL_MS << "ms)");
+        return;
+    }
+    
+    // CRITICAL FIX 2: Cancel any pending async updates to prevent queue buildup
+    cancelPendingUpdate();
+    
+    // CRITICAL FIX 3: Check if already busy (prevents re-entrancy)
+    bool expected = false;
+    if (!busy.compare_exchange_strong(expected, true)) {
         DBG("[RAND] Already randomizing, ignoring request");
         return;
     }
+    
+    // Update debounce timestamp
+    lastRandomizationTime = currentTime;
     
     DBG("[RAND] Randomization requested - triggering async update");
     triggerAsyncUpdate();
@@ -30,39 +47,75 @@ void RandomizationManager::handleAsyncUpdate()
 {
     jassert(juce::MessageManager::getInstance()->isThisTheMessageThread());
     
+    // CRITICAL FIX: Ensure busy flag is cleared even if we return early
+    struct BusyGuard {
+        std::atomic<bool>& flag;
+        BusyGuard(std::atomic<bool>& f) : flag(f) {}
+        ~BusyGuard() { flag.store(false); }
+    };
+    BusyGuard guard(busy);
+    
     // Fix: Check global shutdown flag FIRST to prevent any operations during shutdown
     if (processor.globalShutdownFlag.load()) {
-        busy.store(false);
+        DBG("[RAND] Shutdown in progress, aborting randomization");
         return;
     }
     
     // Fix: bail immediately if the editor has already been destroyed
     if (editor == nullptr) {
-        busy.store(false);
+        DBG("[RAND] Editor destroyed, aborting randomization");
         return;
     }
     
     DBG("[RAND] ═══════════════════════════════════════════");
     DBG("[RAND] Starting randomization on message thread");
     randomizeAll();
-    busy.store(false);
     DBG("[RAND] ═══════════════════════════════════════════");
+    // Busy flag will be cleared by BusyGuard destructor
 }
 
 void RandomizationManager::randomizeAll()
 {
-    // Fix: Check global shutdown flag FIRST to prevent any operations during shutdown
+    // CRITICAL: Use RAII guard to ensure processing is ALWAYS resumed, even if an exception occurs
+    // This prevents audio from being permanently suspended if randomization fails
+    // Must be created FIRST before any early returns
+    struct ProcessingGuard {
+        PluginProcessor& proc;
+        bool wasSuspended = false;
+        bool shouldResume = false;
+        
+        ProcessingGuard(PluginProcessor& p) : proc(p) {
+            wasSuspended = proc.isSuspended();
+            if (!wasSuspended) {
+                proc.suspendProcessing(true);
+                shouldResume = true;
+            }
+        }
+        
+        ~ProcessingGuard() {
+            // Always resume processing, even if an exception occurred
+            if (shouldResume) {
+                proc.suspendProcessing(false);
+                // CRITICAL: Verify processing was actually resumed (VST3 can be finicky)
+                // If still suspended, force resume again
+                if (proc.isSuspended()) {
+                    proc.suspendProcessing(false);
+                }
+            }
+        }
+    };
+    
+    ProcessingGuard guard(processor);
+    
+    // Fix: Check global shutdown flag AFTER guard is created
     if (processor.globalShutdownFlag.load()) {
-        return;
+        return; // Guard will resume processing
     }
     
     // Fix: randomization is skipped if shutdown has already begun
     if (editor == nullptr) {
-        return;
+        return; // Guard will resume processing
     }
-    
-    // Suspend processing briefly
-    processor.suspendProcessing(true);
     
     // Clear previous stats
     stats = Stats();
@@ -70,39 +123,76 @@ void RandomizationManager::randomizeAll()
     stepTargets.clear();
     sequencerTargets.clear();
     
-    // FIRST: Change the effect router to select 4 random effects
-    randomizeEffectRouter();
-    
-    // THEN: Collect targets for the newly assigned effects
-    collectTargets();
-    
-    // Apply changes
-    applyParamChanges();
-    applyStepChanges();
-    applySequencerChanges();
-    
-    // Verify and report
-    verifyAndReport();
-    
-    // Update effect selector dropdowns to reflect new router assignments
-    if (editor) {
-        editor->updateAllEffectSelectors();
+    try {
+        // FIRST: Change the effect router to select 4 random effects
+        DBG("[RAND] Step 1: Randomizing effect router...");
+        randomizeEffectRouter();
         
-        // Refresh the current page to update backgrounds and visibility
-        editor->showPage(editor->getCurrentPage());
+        // THEN: Collect targets for the newly assigned effects
+        DBG("[RAND] Step 2: Collecting targets...");
+        collectTargets();
         
-        // Refresh the current page's UI to show updated knobs and sequencer
-        editor->refreshCurrentPageUI();
+        // Apply changes with error handling for each step
+        DBG("[RAND] Step 3: Applying step changes...");
+        try {
+            applyStepChanges();
+        } catch (const std::exception& e) {
+            DBG("[RAND] ERROR in applyStepChanges: " << e.what());
+        } catch (...) {
+            DBG("[RAND] ERROR in applyStepChanges: Unknown exception");
+        }
+        
+        DBG("[RAND] Step 4: Applying sequencer changes...");
+        try {
+            applySequencerChanges();
+        } catch (const std::exception& e) {
+            DBG("[RAND] ERROR in applySequencerChanges: " << e.what());
+        } catch (...) {
+            DBG("[RAND] ERROR in applySequencerChanges: Unknown exception");
+        }
+        
+        DBG("[RAND] Step 5: Applying parameter changes...");
+        try {
+            applyParamChanges();
+        } catch (const std::exception& e) {
+            DBG("[RAND] ERROR in applyParamChanges: " << e.what());
+        } catch (...) {
+            DBG("[RAND] ERROR in applyParamChanges: Unknown exception");
+        }
+        
+        // Verify and report
+        verifyAndReport();
+        
+        // Update effect selector dropdowns to reflect new router assignments
+        if (editor) {
+            DBG("[RAND] Step 6: Updating UI...");
+            try {
+                editor->updateAllEffectSelectors();
+                
+                // Refresh the current page to update backgrounds and visibility
+                editor->showPage(editor->getCurrentPage());
+                
+                // Refresh the current page's UI to show updated knobs and sequencer
+                editor->refreshCurrentPageUI();
+            } catch (const std::exception& e) {
+                DBG("[RAND] ERROR updating UI: " << e.what());
+            } catch (...) {
+                DBG("[RAND] ERROR updating UI: Unknown exception");
+            }
+        }
+    } catch (const std::exception& e) {
+        DBG("[RAND] FATAL ERROR in randomizeAll: " << e.what());
+        // Processing will still be resumed by ProcessingGuard
+    } catch (...) {
+        DBG("[RAND] FATAL ERROR in randomizeAll: Unknown exception");
+        // Processing will still be resumed by ProcessingGuard
     }
     
-    // Resume processing
-    processor.suspendProcessing(false);
+    // Processing will be resumed automatically by ProcessingGuard destructor
 }
 
 void RandomizationManager::randomizeEffectRouter()
 {
-    DBG("[RAND] Randomizing effect router assignments...");
-    
     // Get all available effects (excluding master/compressor and Form2)
     std::vector<EffectID> availableEffects;
     for (int i = 0; i <= 13; ++i) { // EffectID::SpaceDelay (0) to EffectID::Filter (13)
@@ -123,28 +213,23 @@ void RandomizationManager::randomizeEffectRouter()
     auto& router = processor.getEffectRouter();
     for (int slot = 0; slot < 4; ++slot) {
         router.assignEffectToSlot(selectedEffects[slot], static_cast<SlotID>(slot));
-        DBG("[RAND] Assigned " + juce::String(static_cast<int>(selectedEffects[slot])) + " to slot " + juce::String(slot));
     }
 }
 
 void RandomizationManager::collectTargets()
 {
-    DBG("[RAND] Collecting targets...");
-    
     // Get the currently active pages (after router randomization)
     auto activePages = registry.getActivePages(processor, apvts);
     
     for (int slot = 0; slot < 4; ++slot)
     {
         const auto& page = activePages[slot];
-        DBG("[RAND] Active Effect " + juce::String(slot) + ": " + page.pageId);
         
         // Collect knob parameters
         for (const auto& paramId : page.knobParamIds)
         {
             auto* param = apvts.getParameter(paramId);
             if (!param) {
-                DBG("[RAND]   WARNING: Parameter '" + paramId + "' not found!");
                 continue;
             }
             
@@ -187,10 +272,6 @@ void RandomizationManager::collectTargets()
         sequencerTargets.push_back(seqTarget);
         stats.sequencersExpected++;
     }
-    
-    DBG("[RAND] Collected " + juce::String(paramTargets.size()) + " params, " 
-        + juce::String(stepTargets.size()) + " steps, " 
-        + juce::String(sequencerTargets.size()) + " sequencers");
 }
 
 // Helper function to safely set parameter value directly (bypassing slider to avoid snapToLegalValue crash)
@@ -267,8 +348,6 @@ void RandomizationManager::applyParamChanges()
     
     if (!editor)
         return;
-    
-    DBG("[RAND] Reloading current steps into knobs...");
     
     // Set flag in editor to block onValueChange callbacks during this reload
     editor->isLoadingFromSnapshot.store(true);
@@ -502,44 +581,20 @@ void RandomizationManager::applyParamChanges()
             
             case EffectID::Filter:
             {
-                // Enable filter effect
+                // CRITICAL: Filter effect requires extra validation to prevent crashes
+                // CRITICAL FIX: Skip Filter parameter updates during rapid randomization
+                // Filter parameters are very sensitive to rapid changes and cause audio dropouts
+                // The step snapshots are still randomized, but we don't reload them into knobs
+                // This prevents rapid parameter changes that cause crashes
+                
+                // Only enable the filter, but skip parameter updates
                 auto* filterEnabledParam = apvts.getParameter("filterEnabled");
                 if (filterEnabledParam) {
                     safeSetParameterValue(filterEnabledParam, 1.0f);
                 }
                 
-                int step = editor->filterUiSelectedStep;
-                if (step >= 0 && step < 16) {
-                    auto s = processor.getFilterSafeSnapshot(step);
-                    // Filter uses special knobs: filterTypeKnob (0), filterKnobs[0-2] (Cutoff, Res, Drive), filterSlopeKnob (3), filterKnobs[3-4] (Key Track, Mix)
-                    // Parameter IDs: "fType", "cutoff", "res", "slope", "filterDrive", "keytrack", "filterMix"
-                    // Note: keytrack might not be a real parameter, it's stored in snapshot but may not have APVTS param
-                    auto* typeParam = apvts.getParameter("fType");
-                    auto* cutoffParam = apvts.getParameter("cutoff");
-                    auto* resParam = apvts.getParameter("res");
-                    auto* slopeParam = apvts.getParameter("slope");
-                    auto* driveParam = apvts.getParameter("filterDrive");
-                    auto* keytrackParam = apvts.getParameter("keytrack");
-                    auto* mixParam = apvts.getParameter("filterMix");
-                    
-                    // Type knob (special knob, not in filterKnobs array)
-                    safeSetParameterValue(typeParam, s.filter.type);
-                    // Cutoff (filterKnobs[0])
-                    safeSetParameterValue(cutoffParam, s.filter.cutoff);
-                    // Resonance (filterKnobs[1])
-                    safeSetParameterValue(resParam, s.filter.resonance);
-                    // Slope knob (special knob, not in filterKnobs array)
-                    safeSetParameterValue(slopeParam, s.filter.slope);
-                    // Drive (filterKnobs[2])
-                    safeSetParameterValue(driveParam, s.filter.drive);
-                    // Key Track (filterKnobs[3]) - only set if parameter exists
-                    if (keytrackParam) {
-                        safeSetParameterValue(keytrackParam, s.filter.keytrack);
-                    }
-                    // Mix (filterKnobs[4])
-                    safeSetParameterValue(mixParam, s.filter.mix);
-                    DBG("[RAND]   Filter step " + juce::String(step) + " reloaded");
-                }
+                // Skip reloading Filter parameters to prevent rapid changes
+                // The snapshots are still randomized, but won't be applied until user manually selects a step
                 break;
             }
             
@@ -576,7 +631,6 @@ void RandomizationManager::applyParamChanges()
     
     // Clear the flag
     editor->isLoadingFromSnapshot.store(false);
-    DBG("[RAND] isLoadingFromSnapshot flag cleared");
     
     stats.paramsRandomized = paramTargets.size() - stats.paramsLocked;
 }
@@ -588,7 +642,7 @@ void RandomizationManager::applyStepChanges()
     
     DBG("[RAND] Applying step changes...");
     
-    // Randomize each step's snapshot
+    // Randomize each step's snapshot with per-effect error handling
     for (const auto& target : stepTargets)
     {
         if (target.locked)
@@ -740,15 +794,79 @@ void RandomizationManager::applyStepChanges()
             
             case EffectID::Filter:
             {
+                // CRITICAL: Filter effect requires strict validation to prevent crashes
+                // CRITICAL FIX: NEVER randomize Filter type - keep it completely stable
+                // Rapid filter type changes cause audio dropouts and high-pitched sounds
+                // Only randomize other parameters (cutoff, resonance, etc.) but keep type unchanged
                 auto snapshot = processor.getFilterSafeSnapshot(target.stepIndex);
-                snapshot.filter.type = std::floor(rand01() * 5.0f); // 0-4 (LP, HP, BP, Comb-, Comb+)
-                snapshot.filter.cutoff = 20.0f + rand01() * 19980.0f; // 20-20000 Hz
-                snapshot.filter.resonance = rand01(); // 0-1
-                snapshot.filter.slope = rand01(); // 0-1 (12dB to 24dB)
-                snapshot.filter.drive = rand01() * 18.0f; // 0-18 dB (50% of 36 dB, displayed as 0-100%)
-                snapshot.filter.spread = -50.0f + rand01() * 100.0f; // -50 to +50 cents
-                snapshot.filter.keytrack = rand01(); // 0-1
-                snapshot.filter.mix = rand01(); // 0-1
+                
+                // Keep the existing filter type - DO NOT randomize it
+                int filterType = static_cast<int>(snapshot.filter.type);
+                filterType = juce::jlimit(0, 4, filterType);
+                snapshot.filter.type = static_cast<float>(filterType);
+                
+                // CRITICAL: Cutoff range depends on filter type
+                // Comb filters (type 3,4) have range 40-8000 Hz, others have 20-20000 Hz
+                // CRITICAL FIX: Use conservative ranges to prevent rapid changes that cause audio dropouts
+                float minCutoff = (filterType >= 3) ? 40.0f : 20.0f;
+                float maxCutoff = (filterType >= 3) ? 8000.0f : 20000.0f;
+                
+                // Get current cutoff and only randomize within a small range around it (±20%)
+                // This prevents large jumps that cause audio dropouts
+                float currentCutoff = snapshot.filter.cutoff;
+                if (!std::isfinite(currentCutoff) || currentCutoff <= 0.0f) {
+                    currentCutoff = (filterType >= 3) ? 2000.0f : 1200.0f; // Safe default
+                }
+                float cutoffRange = currentCutoff * 0.2f; // ±20% range
+                float newCutoff = currentCutoff + (rand01() - 0.5f) * cutoffRange * 2.0f;
+                
+                // Ensure cutoff is finite and within valid range
+                if (!std::isfinite(newCutoff) || newCutoff <= 0.0f) {
+                    newCutoff = currentCutoff; // Keep current if invalid
+                }
+                snapshot.filter.cutoff = juce::jlimit(minCutoff, maxCutoff, newCutoff);
+                
+                // Resonance: Use conservative range around current value (±30%) to prevent rapid changes
+                float currentRes = snapshot.filter.resonance;
+                if (!std::isfinite(currentRes) || currentRes < 0.0f) {
+                    currentRes = 0.35f; // Safe default
+                }
+                float resRange = currentRes * 0.3f; // ±30% range
+                float newRes = currentRes + (rand01() - 0.5f) * resRange * 2.0f;
+                if (!std::isfinite(newRes) || newRes < 0.0f) {
+                    newRes = currentRes; // Keep current if invalid
+                }
+                snapshot.filter.resonance = juce::jlimit(0.0f, 0.95f, newRes);
+                
+                // Slope: 0-1 (12dB to 24dB)
+                float slope = rand01();
+                snapshot.filter.slope = juce::jlimit(0.0f, 1.0f, slope);
+                
+                // Drive: 0-18 dB (safe range)
+                float drive = rand01() * 18.0f;
+                if (!std::isfinite(drive) || drive < 0.0f) {
+                    drive = 6.0f; // Safe default
+                }
+                snapshot.filter.drive = juce::jlimit(0.0f, 18.0f, drive);
+                
+                // Spread: -50 to +50 cents
+                float spread = -50.0f + rand01() * 100.0f;
+                if (!std::isfinite(spread)) {
+                    spread = 0.0f;
+                }
+                snapshot.filter.spread = juce::jlimit(-50.0f, 50.0f, spread);
+                
+                // Keytrack: 0-1
+                float keytrack = rand01();
+                snapshot.filter.keytrack = juce::jlimit(0.0f, 1.0f, keytrack);
+                
+                // Mix: 0-1
+                float mix = rand01();
+                if (!std::isfinite(mix) || mix < 0.0f) {
+                    mix = 1.0f; // Safe default
+                }
+                snapshot.filter.mix = juce::jlimit(0.0f, 1.0f, mix);
+                
                 processor.setFilterStepSnapshot(target.stepIndex, snapshot);
                 break;
             }
@@ -760,15 +878,12 @@ void RandomizationManager::applyStepChanges()
         stats.stepsRandomized++;
     }
     
-    DBG("[RAND] Randomized " + juce::String(stats.stepsRandomized) + " steps");
 }
 
 void RandomizationManager::applySequencerChanges()
 {
     if (sequencerTargets.empty())
         return;
-    
-    DBG("[RAND] Applying sequencer changes...");
     
     for (const auto& target : sequencerTargets)
     {
@@ -894,13 +1009,8 @@ void RandomizationManager::applySequencerChanges()
             processor.forceSequencerLockIn(target.effect);
         }
         
-        DBG("[RAND] " + target.pageId + ": enabled=" + (sequencerEnabled ? "ON" : "OFF") 
-            + ", steps=" + juce::String(stepsUsed) + ", division=" + juce::String(divisionIndex));
-        
         stats.sequencersRandomized++;
     }
-    
-    DBG("[RAND] Randomized " + juce::String(stats.sequencersRandomized) + " sequencers");
 }
 
 void RandomizationManager::verifyAndReport()

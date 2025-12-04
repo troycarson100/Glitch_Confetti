@@ -589,6 +589,9 @@ private:
     std::atomic<int> spacedelayUiSelectedStep { 0 };  // Space Delay editor's selected step
     
     // Step snapshots storage (shared structure, independent sequencing)
+    // CRITICAL: All writes to these arrays must happen when processing is suspended
+    // Reads in processBlock are safe because getSafeSnapshot() returns a copy
+    mutable juce::CriticalSection stepSnapshotLock; // Protects step snapshot writes
     std::array<StepSnapshot, 16> stepSnapshots;
     std::array<StepSnapshot, 16> autopanStepSnapshots;
     std::array<StepSnapshot, 16> dirtStepSnapshots;

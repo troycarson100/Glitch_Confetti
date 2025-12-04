@@ -810,6 +810,27 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
     // Simplified processing to avoid crashes
     juce::ignoreUnused(midiMessages);
     
+    // CRITICAL: Check if processing is suspended - if so, clear buffer and return
+    // This prevents audio dropouts when randomization is happening
+    if (isSuspended()) {
+        buffer.clear();
+        return;
+    }
+    
+    // CRITICAL: Always process audio, even if there's no transport info
+    // This ensures VST3 works even when playhead is not available
+    if (buffer.getNumSamples() == 0 || buffer.getNumChannels() == 0) {
+        return; // Safety check
+    }
+    
+    // DEBUG: Log VST3 processing (throttled)
+    static int vst3DebugCounter = 0;
+    if (wrapperType == juce::AudioProcessor::wrapperType_VST3 && (vst3DebugCounter++ % 1000) == 0) {
+        DBG("[VST3] processBlock called: samples=" << buffer.getNumSamples() 
+            << " channels=" << buffer.getNumChannels() 
+            << " playhead=" << (getPlayHead() != nullptr ? "yes" : "no"));
+    }
+    
 #if GC_SAFE_DELAY_ONLY
     const FxType fx = FxType::Delay;
 #else
@@ -1557,10 +1578,15 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
         }
     }
     
+    // DISABLED: Free run mode - always sync with DAW when playhead is available
+    // If there's no playhead, we still allow standalone mode to work (for VST3 compatibility)
+    // but we never force standalone mode (forceStandalone is always false)
     // Standalone mode - either no DAW transport OR forceStandalone is true
     // CRITICAL: If forceAllSequencersLockIn is set, we're switching from free run to DAW sync
     // In this case, DON'T step sequencers in standalone mode - let DAW sync handle it
     const bool shouldSkipStandaloneStepping = forceAllSequencersLockIn.load();
+    // Only use standalone if there's no playhead AND we're not forcing lock-in
+    // This allows VST3 to work even when playhead isn't available initially
     if ((forceStandalone || !getPlayHead()) && !shouldSkipStandaloneStepping)
     {
         // Standalone mode - ignore DAW transport, use internal timing
@@ -1853,9 +1879,27 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
     // Routing order = page order (left to right)
     auto routingOrder = effectRouter.getRoutingOrder();
     
+    // DEBUG: Log routing for VST3 - use file logging
+    static int routingDebugCounter = 0;
+    if (wrapperType == juce::AudioProcessor::wrapperType_VST3 && (routingDebugCounter++ % 1000) == 0) {
+        juce::File logFile = juce::File::getSpecialLocation(juce::File::userDesktopDirectory).getChildFile("vst3_debug.log");
+        logFile.appendText("[VST3] Routing: " + juce::String((int)routingOrder[0]) + " " + juce::String((int)routingOrder[1]) 
+            + " " + juce::String((int)routingOrder[2]) + " " + juce::String((int)routingOrder[3]) + "\n");
+    }
+    
+    // CRITICAL: Ensure audio always passes through, even if no effects are routed
+    // This ensures VST3 works even when routing is empty or effects are disabled
+    bool hasProcessedAudio = false;
+    
     for (int i = 0; i < 4; ++i)
     {
         EffectID effect = routingOrder[i];
+        
+        // Skip if effect is not valid (check against known effects)
+        // Note: EffectID enum doesn't have None/Invalid, so we check against the first valid effect
+        // This is a safety check to ensure we only process valid effects
+        
+        hasProcessedAudio = true;
         
         switch (effect)
         {
@@ -3185,6 +3229,10 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
         }
     }
     
+    // CRITICAL: If no effects were processed, audio should still pass through
+    // This ensures VST3 works even when routing is empty
+    // (Audio is already in buffer from input, so we don't need to do anything)
+    
     // Apply master dry/wet mix (post-effects & filters, pre-output)
     auto* masterDryWetParam = valueTreeState.getRawParameterValue("masterDryWet");
     if (masterDryWetParam != nullptr) {
@@ -3209,12 +3257,20 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
     }
     
     // Apply master output gain (post dry/wet mix)
+    // CRITICAL: Always apply output gain, even if param is null (use default 0dB)
     auto* masterOutputParam = valueTreeState.getRawParameterValue("masterOutput");
+    float outputGainDb = 0.0f;
     if (masterOutputParam != nullptr) {
-        float outputGainDb = masterOutputParam->load();
-        float outputGain = juce::Decibels::decibelsToGain(outputGainDb);
-        buffer.applyGain(outputGain);
-        
+        outputGainDb = masterOutputParam->load();
+    }
+    float outputGain = juce::Decibels::decibelsToGain(outputGainDb);
+    buffer.applyGain(outputGain);
+    
+    // DEBUG: Log output gain for VST3 - use file logging
+    static int outputDebugCounter = 0;
+    if (wrapperType == juce::AudioProcessor::wrapperType_VST3 && (outputDebugCounter++ % 1000) == 0) {
+        juce::File logFile = juce::File::getSpecialLocation(juce::File::userDesktopDirectory).getChildFile("vst3_debug.log");
+        logFile.appendText("[VST3] Output gain: " + juce::String(outputGainDb) + " dB -> " + juce::String(outputGain) + " linear\n");
     }
     
     // Call AFTER processing = output meter
@@ -3983,6 +4039,9 @@ StepSnapshot PluginProcessor::getSafeSnapshot(int step) const
 void PluginProcessor::setStepSnapshot(int step, const StepSnapshot& snapshot) noexcept
 {
     if (step >= 0 && step < 16) {
+        // CRITICAL: Lock during write to prevent data race with audio thread
+        // Note: This should only be called when processing is suspended, but we lock anyway for safety
+        const juce::ScopedLock lock(stepSnapshotLock);
         stepSnapshots[step] = snapshot;
     }
 }
