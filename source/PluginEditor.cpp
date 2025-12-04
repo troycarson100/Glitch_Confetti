@@ -381,9 +381,12 @@ PluginEditor::~PluginEditor()
     }
     
     // Fix: prevent RandomizationManager::handleAsyncUpdate() from firing after UI destruction
+    // CRITICAL: Do this BEFORE setting shutdown flags to ensure any pending updates are cancelled
     if (randomizationManager) {
-        randomizationManager->clearEditor();
-        randomizationManager->cancelPendingUpdate();
+        randomizationManager->cancelPendingUpdate(); // Cancel FIRST
+        randomizationManager->clearEditor(); // Then clear editor reference
+        // Reset the manager to ensure destructor runs and cleans up properly
+        randomizationManager.reset();
     }
     
     // Fix: Clear component groups BEFORE children are destroyed (they're just pointers)

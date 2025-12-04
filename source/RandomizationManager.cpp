@@ -79,6 +79,8 @@ void RandomizationManager::randomizeAll()
     // CRITICAL: Use RAII guard to ensure processing is ALWAYS resumed, even if an exception occurs
     // This prevents audio from being permanently suspended if randomization fails
     // Must be created FIRST before any early returns
+    // NOTE: We use critical section locks for step snapshots, so suspending processing may not be necessary
+    // However, we keep it for safety to prevent audio thread from reading during writes
     struct ProcessingGuard {
         PluginProcessor& proc;
         bool wasSuspended = false;
@@ -94,12 +96,18 @@ void RandomizationManager::randomizeAll()
         
         ~ProcessingGuard() {
             // Always resume processing, even if an exception occurred
-            if (shouldResume) {
-                proc.suspendProcessing(false);
-                // CRITICAL: Verify processing was actually resumed (VST3 can be finicky)
-                // If still suspended, force resume again
-                if (proc.isSuspended()) {
+            // CRITICAL: Do NOT use Thread::sleep() on message thread - it causes VST3 crashes!
+            // CRITICAL: Check shutdown flag before resuming - if shutdown is in progress,
+            // don't try to resume as the processor may be destroyed
+            if (shouldResume && !proc.globalShutdownFlag.load()) {
+                try {
                     proc.suspendProcessing(false);
+                    // Simple double-check without sleep (VST3 should resume immediately)
+                    if (proc.isSuspended() && !proc.globalShutdownFlag.load()) {
+                        proc.suspendProcessing(false);
+                    }
+                } catch (...) {
+                    // Ignore exceptions during shutdown - processor may be destroyed
                 }
             }
         }
@@ -894,7 +902,10 @@ void RandomizationManager::applySequencerChanges()
         }
         
         // Randomize sequencer enabled state (70% chance to be enabled)
-        bool sequencerEnabled = (rand01() < 0.7f);
+        // EXCEPTION: DubDelay and SpaceDelay sequencers are always disabled
+        bool sequencerEnabled = (target.effect == EffectID::DubDelay || target.effect == EffectID::SpaceDelay) 
+            ? false 
+            : (rand01() < 0.7f);
         
         // Randomize steps used (4-16, weighted toward higher values)
         int stepsUsed = 4 + static_cast<int>(rand01() * rand01() * 12); // Square for bias toward higher values

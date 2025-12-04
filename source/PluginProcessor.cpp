@@ -747,6 +747,10 @@ void PluginProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
     auto* lpParam = valueTreeState.getRawParameterValue("masterLPHz");
     if (hpParam) hpCutoffSmooth.setCurrentAndTargetValue(hpParam->load());
     if (lpParam) lpCutoffSmooth.setCurrentAndTargetValue(lpParam->load());
+    
+    // CRITICAL: Ensure processing is resumed after prepareToPlay
+    // VST3 can get stuck in suspended state if not explicitly resumed
+    suspendProcessing(false);
 }
 
 void PluginProcessor::releaseResources()
