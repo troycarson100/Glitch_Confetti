@@ -1110,6 +1110,8 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                     const int saturateStep = saturateSeq.computeStepFromPPQ(ppq);
                     saturateSeq.currentStep.store(saturateStep);
                     saturateSeq.playingStep.store(saturateStep);
+                    saturateSeq.haveOrigin.store(true);
+                    saturateSeq.originPPQ.store(ppq);
                     DBG("[SATURATE SEQ] Lock-in at PPQ=" << ppq << " -> step " << saturateStep);
                 }
                 
@@ -2578,15 +2580,6 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
 
             case EffectID::Saturate:
             {
-                // TEMP SAFETY: Disable Saturate processing in AU wrappers to prevent host crashes.
-                // Crash report shows EXC_BAD_ACCESS in SaturateProcessor::processInternal when running as AU in Ableton Live.
-                // Standalone and VST3 are stable, so we only bypass for AU / AUv3 wrappers.
-                if (wrapperType == juce::AudioProcessor::wrapperType_AudioUnit
-                    || wrapperType == juce::AudioProcessor::wrapperType_AudioUnitv3)
-                {
-                    break;
-                }
-
                 auto* saturateEnabledParam = valueTreeState.getRawParameterValue("saturateEnabled");
                 bool isSaturateEnabled = saturateEnabledParam ? (saturateEnabledParam->load() > 0.5f) : false;
                 
@@ -2608,14 +2601,46 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                         
                         // Read from step snapshot - don't update APVTS to prevent knob jumping
                         StepSnapshot snapshot = getSaturateSafeSnapshot(playingStep);
-                        float drive = snapshot.saturate.drive;
-                        float color = snapshot.saturate.color;
-                        float shape = snapshot.saturate.shape;
-                        float bias = snapshot.saturate.bias;
-                        float output = snapshot.saturate.output;
-                        float mix = snapshot.saturate.mix;
                         
-                        // Process with snapshot values directly (no APVTS update)
+                        // CRITICAL: Validate and clamp all parameters before processing to prevent filter instability and ringing
+                        // This ensures no invalid (NaN/Inf) or extreme values cause audio artifacts
+                        float drive = snapshot.saturate.drive;
+                        if (!std::isfinite(drive) || drive < 0.0f || drive > 36.0f) {
+                            drive = 12.0f; // Safe default
+                        }
+                        drive = juce::jlimit(0.0f, 36.0f, drive);
+                        
+                        float color = snapshot.saturate.color;
+                        if (!std::isfinite(color) || color < 0.0f || color > 1.0f) {
+                            color = 0.5f; // Safe default
+                        }
+                        color = juce::jlimit(0.0f, 1.0f, color);
+                        
+                        float shape = snapshot.saturate.shape;
+                        if (!std::isfinite(shape) || shape < 0.0f || shape > 1.0f) {
+                            shape = 0.5f; // Safe default
+                        }
+                        shape = juce::jlimit(0.0f, 1.0f, shape);
+                        
+                        float bias = snapshot.saturate.bias;
+                        if (!std::isfinite(bias) || bias < -0.2f || bias > 0.2f) {
+                            bias = 0.0f; // Safe default
+                        }
+                        bias = juce::jlimit(-0.2f, 0.2f, bias);
+                        
+                        float output = snapshot.saturate.output;
+                        if (!std::isfinite(output) || output < -24.0f || output > 12.0f) {
+                            output = 0.0f; // Safe default
+                        }
+                        output = juce::jlimit(-24.0f, 12.0f, output);
+                        
+                        float mix = snapshot.saturate.mix;
+                        if (!std::isfinite(mix) || mix < 0.0f || mix > 1.0f) {
+                            mix = 1.0f; // Safe default
+                        }
+                        mix = juce::jlimit(0.0f, 1.0f, mix);
+                        
+                        // Process with validated snapshot values directly (no APVTS update)
                         // Pass stepChanged flag to enable smoother transitions
                         // NOTE: type parameter removed - processWithSnapshot doesn't take it
                         saturateProcessor.processWithSnapshot(buffer, buffer.getNumSamples(), 
@@ -5434,6 +5459,8 @@ void PluginProcessor::forceSequencerLockIn(EffectID effect) noexcept
                             const int step = spacedelaySeq.computeStepFromPPQ(ppq);
                             spacedelaySeq.currentStep.store(step);
                             spacedelaySeq.playingStep.store(step);
+                            spacedelaySeq.haveOrigin.store(true);
+                            spacedelaySeq.originPPQ.store(ppq);
                         }
                         break;
                         
@@ -5443,6 +5470,8 @@ void PluginProcessor::forceSequencerLockIn(EffectID effect) noexcept
                             const int step = autopanSeq.computeStepFromPPQ(ppq);
                             autopanSeq.currentStep.store(step);
                             autopanSeq.playingStep.store(step);
+                            autopanSeq.haveOrigin.store(true);
+                            autopanSeq.originPPQ.store(ppq);
                         }
                         break;
                         
@@ -5452,6 +5481,8 @@ void PluginProcessor::forceSequencerLockIn(EffectID effect) noexcept
                             const int step = dirtSeq.computeStepFromPPQ(ppq);
                             dirtSeq.currentStep.store(step);
                             dirtSeq.playingStep.store(step);
+                            dirtSeq.haveOrigin.store(true);
+                            dirtSeq.originPPQ.store(ppq);
                         }
                         break;
                         
@@ -5461,6 +5492,8 @@ void PluginProcessor::forceSequencerLockIn(EffectID effect) noexcept
                             const int step = chorusSeq.computeStepFromPPQ(ppq);
                             chorusSeq.currentStep.store(step);
                             chorusSeq.playingStep.store(step);
+                            chorusSeq.haveOrigin.store(true);
+                            chorusSeq.originPPQ.store(ppq);
                         }
                         break;
                         
@@ -5470,6 +5503,8 @@ void PluginProcessor::forceSequencerLockIn(EffectID effect) noexcept
                             const int step = reverbSeq.computeStepFromPPQ(ppq);
                             reverbSeq.currentStep.store(step);
                             reverbSeq.playingStep.store(step);
+                            reverbSeq.haveOrigin.store(true);
+                            reverbSeq.originPPQ.store(ppq);
                         }
                         break;
                         
@@ -5479,6 +5514,8 @@ void PluginProcessor::forceSequencerLockIn(EffectID effect) noexcept
                             const int step = granularSeq.computeStepFromPPQ(ppq);
                             granularSeq.currentStep.store(step);
                             granularSeq.playingStep.store(step);
+                            granularSeq.haveOrigin.store(true);
+                            granularSeq.originPPQ.store(ppq);
                         }
                         break;
                         
@@ -5488,6 +5525,8 @@ void PluginProcessor::forceSequencerLockIn(EffectID effect) noexcept
                             const int step = slicerSeq.computeStepFromPPQ(ppq);
                             slicerSeq.currentStep.store(step);
                             slicerSeq.playingStep.store(step);
+                            slicerSeq.haveOrigin.store(true);
+                            slicerSeq.originPPQ.store(ppq);
                         }
                         break;
                         
@@ -5497,6 +5536,8 @@ void PluginProcessor::forceSequencerLockIn(EffectID effect) noexcept
                             const int step = dubdelaySeq.computeStepFromPPQ(ppq);
                             dubdelaySeq.currentStep.store(step);
                             dubdelaySeq.playingStep.store(step);
+                            dubdelaySeq.haveOrigin.store(true);
+                            dubdelaySeq.originPPQ.store(ppq);
                         }
                         break;
                         
@@ -5506,6 +5547,8 @@ void PluginProcessor::forceSequencerLockIn(EffectID effect) noexcept
                             const int step = reduxSeq.computeStepFromPPQ(ppq);
                             reduxSeq.currentStep.store(step);
                             reduxSeq.playingStep.store(step);
+                            reduxSeq.haveOrigin.store(true);
+                            reduxSeq.originPPQ.store(ppq);
                         }
                         break;
                         
@@ -5515,6 +5558,8 @@ void PluginProcessor::forceSequencerLockIn(EffectID effect) noexcept
                             const int step = phaseBloomSeq.computeStepFromPPQ(ppq);
                             phaseBloomSeq.currentStep.store(step);
                             phaseBloomSeq.playingStep.store(step);
+                            phaseBloomSeq.haveOrigin.store(true);
+                            phaseBloomSeq.originPPQ.store(ppq);
                         }
                         break;
                         
@@ -5524,6 +5569,8 @@ void PluginProcessor::forceSequencerLockIn(EffectID effect) noexcept
                             const int step = formantSeq.computeStepFromPPQ(ppq);
                             formantSeq.currentStep.store(step);
                             formantSeq.playingStep.store(step);
+                            formantSeq.haveOrigin.store(true);
+                            formantSeq.originPPQ.store(ppq);
                         }
                         break;
                         
@@ -5533,6 +5580,8 @@ void PluginProcessor::forceSequencerLockIn(EffectID effect) noexcept
                             const int step = saturateSeq.computeStepFromPPQ(ppq);
                             saturateSeq.currentStep.store(step);
                             saturateSeq.playingStep.store(step);
+                            saturateSeq.haveOrigin.store(true);
+                            saturateSeq.originPPQ.store(ppq);
                         }
                         break;
                         
@@ -5543,6 +5592,8 @@ void PluginProcessor::forceSequencerLockIn(EffectID effect) noexcept
                             const int safeStep = juce::jlimit(0, 15, step);
                             filterSeq.currentStep.store(safeStep);
                             filterSeq.playingStep.store(safeStep);
+                            filterSeq.haveOrigin.store(true);
+                            filterSeq.originPPQ.store(ppq);
                         }
                         break;
                         

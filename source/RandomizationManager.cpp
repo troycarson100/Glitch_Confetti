@@ -76,44 +76,10 @@ void RandomizationManager::handleAsyncUpdate()
 
 void RandomizationManager::randomizeAll()
 {
-    // CRITICAL: Use RAII guard to ensure processing is ALWAYS resumed, even if an exception occurs
-    // This prevents audio from being permanently suspended if randomization fails
-    // Must be created FIRST before any early returns
-    // NOTE: We use critical section locks for step snapshots, so suspending processing may not be necessary
-    // However, we keep it for safety to prevent audio thread from reading during writes
-    struct ProcessingGuard {
-        PluginProcessor& proc;
-        bool wasSuspended = false;
-        bool shouldResume = false;
-        
-        ProcessingGuard(PluginProcessor& p) : proc(p) {
-            wasSuspended = proc.isSuspended();
-            if (!wasSuspended) {
-                proc.suspendProcessing(true);
-                shouldResume = true;
-            }
-        }
-        
-        ~ProcessingGuard() {
-            // Always resume processing, even if an exception occurred
-            // CRITICAL: Do NOT use Thread::sleep() on message thread - it causes VST3 crashes!
-            // CRITICAL: Check shutdown flag before resuming - if shutdown is in progress,
-            // don't try to resume as the processor may be destroyed
-            if (shouldResume && !proc.globalShutdownFlag.load()) {
-                try {
-                    proc.suspendProcessing(false);
-                    // Simple double-check without sleep (VST3 should resume immediately)
-                    if (proc.isSuspended() && !proc.globalShutdownFlag.load()) {
-                        proc.suspendProcessing(false);
-                    }
-                } catch (...) {
-                    // Ignore exceptions during shutdown - processor may be destroyed
-                }
-            }
-        }
-    };
-    
-    ProcessingGuard guard(processor);
+    // CRITICAL: Step snapshots are already protected by CriticalSection locks in setStepSnapshot methods
+    // VST3's suspend/resume mechanism is unreliable and causes audio dropouts
+    // We rely on the critical section locks instead, which are thread-safe and don't interrupt audio processing
+    // This approach is safer and more reliable for VST3 hosts
     
     // Fix: Check global shutdown flag AFTER guard is created
     if (processor.globalShutdownFlag.load()) {
@@ -182,6 +148,24 @@ void RandomizationManager::randomizeAll()
                 
                 // Refresh the current page's UI to show updated knobs and sequencer
                 editor->refreshCurrentPageUI();
+                
+                // Force update all sequencer UIs to ensure step indicators are correct
+                // This is important because randomization might have changed sequencers on other pages
+                // The timer will continuously update these, but we call them once immediately to sync state
+                editor->updateSequencerUI();
+                editor->updateAutoPanSequencerUI();
+                editor->updateDirtSequencerUI();
+                editor->updateChorusSequencerUI();
+                editor->updateReduxSequencerUI();
+                editor->updatePhaseBloomSequencerUI();
+                editor->updateSaturateSequencerUI();
+                editor->updateGranularSequencerUI();
+                editor->updateReverbSequencerUI();
+                editor->updateSlicerSequencerUI();
+                editor->updateDubDelaySequencerUI();
+                editor->updateFormantSequencerUI();
+                editor->updateFilterSequencerUI();
+                editor->repaint(); // Force repaint to show updated step indicators
             } catch (const std::exception& e) {
                 DBG("[RAND] ERROR updating UI: " << e.what());
             } catch (...) {
@@ -370,9 +354,9 @@ void RandomizationManager::applyParamChanges()
         {
             case EffectID::SpaceDelay:
             {
-                int step = processor.getSelectedStep();
+                int step = processor.getSpaceDelayUiSelectedStep();
                 if (step >= 0 && step < 16) {
-                    auto s = processor.getSafeSnapshot(step);
+                    auto s = processor.getSpaceDelaySafeSnapshot(step);
                     std::vector<juce::String> paramIds = {"delayTimeMs", "delayFeedback", "delayWowDepth", "delayWowRate", 
                                                           "delaySaturation", "delayHighCut", "delayLowCut", "delayMix"};
                     safeSetParameterValue(apvts.getParameter(paramIds[0]), s.delay.timeMs);
@@ -661,7 +645,7 @@ void RandomizationManager::applyStepChanges()
         {
             case EffectID::SpaceDelay:
             {
-                auto snapshot = processor.getSafeSnapshot(target.stepIndex);
+                auto snapshot = processor.getSpaceDelaySafeSnapshot(target.stepIndex);
                 snapshot.delay.timeMs = 50.0f + rand01() * 950.0f;
                 snapshot.delay.feedback = rand01() * 95.0f;
                 snapshot.delay.wowDepth = rand01() * 100.0f;
@@ -670,7 +654,7 @@ void RandomizationManager::applyStepChanges()
                 snapshot.delay.highCut = 1000.0f + rand01() * 19000.0f;
                 snapshot.delay.lowCut = 20.0f + rand01() * 1980.0f;
                 snapshot.delay.mix = rand01() * 100.0f;
-                processor.setStepSnapshot(target.stepIndex, snapshot);
+                processor.setSpaceDelayStepSnapshot(target.stepIndex, snapshot);
                 break;
             }
             
@@ -789,13 +773,69 @@ void RandomizationManager::applyStepChanges()
             case EffectID::Saturate:
             {
                 auto snapshot = processor.getSaturateSafeSnapshot(target.stepIndex);
-                snapshot.saturate.type = std::floor(rand01() * 8.0f); // 0-7
-                snapshot.saturate.drive = rand01() * 36.0f; // 0-36 dB
-                snapshot.saturate.color = rand01(); // 0-1 (dynamic based on model)
-                snapshot.saturate.shape = rand01(); // 0-1 (dynamic based on model)
-                snapshot.saturate.bias = -0.2f + rand01() * 0.4f; // -0.2 to 0.2
-                snapshot.saturate.output = -24.0f + rand01() * 36.0f; // -24 to +12 dB
-                snapshot.saturate.mix = rand01(); // 0-1
+                
+                // CRITICAL: Never randomize Saturate type - keep it completely stable
+                // Rapid type changes (0-7) cause crashes during rapid randomization
+                // Only randomize other parameters but keep type unchanged from existing snapshot
+                // snapshot.saturate.type is NOT randomized - uses existing type
+                
+                // Conservative parameter randomization to prevent crashes
+                // Drive: ±30% of current value (or default 12.0f if current is invalid)
+                float currentDrive = snapshot.saturate.drive;
+                if (currentDrive <= 0.0f || currentDrive > 36.0f || !std::isfinite(currentDrive)) {
+                    currentDrive = 12.0f; // Safe default
+                }
+                float driveChange = (rand01() - 0.5f) * 0.6f; // ±30%
+                snapshot.saturate.drive = juce::jlimit(0.0f, 36.0f, currentDrive * (1.0f + driveChange));
+                
+                // Color: ±20% of current value
+                float currentColor = snapshot.saturate.color;
+                if (currentColor < 0.0f || currentColor > 1.0f || !std::isfinite(currentColor)) {
+                    currentColor = 0.5f; // Safe default
+                }
+                float colorChange = (rand01() - 0.5f) * 0.4f; // ±20%
+                snapshot.saturate.color = juce::jlimit(0.0f, 1.0f, currentColor * (1.0f + colorChange));
+                
+                // Shape: ±20% of current value
+                float currentShape = snapshot.saturate.shape;
+                if (currentShape < 0.0f || currentShape > 1.0f || !std::isfinite(currentShape)) {
+                    currentShape = 0.5f; // Safe default
+                }
+                float shapeChange = (rand01() - 0.5f) * 0.4f; // ±20%
+                snapshot.saturate.shape = juce::jlimit(0.0f, 1.0f, currentShape * (1.0f + shapeChange));
+                
+                // Bias: ±50% of current value (small range anyway)
+                float currentBias = snapshot.saturate.bias;
+                if (!std::isfinite(currentBias)) {
+                    currentBias = 0.0f; // Safe default
+                }
+                float biasChange = (rand01() - 0.5f) * 0.1f; // ±0.1
+                snapshot.saturate.bias = juce::jlimit(-0.2f, 0.2f, currentBias + biasChange);
+                
+                // Output: ±30% of current value
+                float currentOutput = snapshot.saturate.output;
+                if (!std::isfinite(currentOutput)) {
+                    currentOutput = 0.0f; // Safe default
+                }
+                float outputChange = (rand01() - 0.5f) * 0.6f; // ±30%
+                snapshot.saturate.output = juce::jlimit(-24.0f, 12.0f, currentOutput * (1.0f + outputChange));
+                
+                // Mix: ±20% of current value
+                float currentMix = snapshot.saturate.mix;
+                if (currentMix < 0.0f || currentMix > 1.0f || !std::isfinite(currentMix)) {
+                    currentMix = 1.0f; // Safe default
+                }
+                float mixChange = (rand01() - 0.5f) * 0.4f; // ±20%
+                snapshot.saturate.mix = juce::jlimit(0.0f, 1.0f, currentMix * (1.0f + mixChange));
+                
+                // Validate all parameters are finite
+                if (!std::isfinite(snapshot.saturate.drive)) snapshot.saturate.drive = 12.0f;
+                if (!std::isfinite(snapshot.saturate.color)) snapshot.saturate.color = 0.5f;
+                if (!std::isfinite(snapshot.saturate.shape)) snapshot.saturate.shape = 0.5f;
+                if (!std::isfinite(snapshot.saturate.bias)) snapshot.saturate.bias = 0.0f;
+                if (!std::isfinite(snapshot.saturate.output)) snapshot.saturate.output = 0.0f;
+                if (!std::isfinite(snapshot.saturate.mix)) snapshot.saturate.mix = 1.0f;
+                
                 processor.setSaturateStepSnapshot(target.stepIndex, snapshot);
                 break;
             }
@@ -902,8 +942,8 @@ void RandomizationManager::applySequencerChanges()
         }
         
         // Randomize sequencer enabled state (70% chance to be enabled)
-        // EXCEPTION: DubDelay and SpaceDelay sequencers are always disabled
-        bool sequencerEnabled = (target.effect == EffectID::DubDelay || target.effect == EffectID::SpaceDelay) 
+        // EXCEPTION: DubDelay sequencer is always disabled
+        bool sequencerEnabled = (target.effect == EffectID::DubDelay) 
             ? false 
             : (rand01() < 0.7f);
         
@@ -920,24 +960,55 @@ void RandomizationManager::applySequencerChanges()
                 processor.setSpaceDelaySequencerEnabled(sequencerEnabled);
                 processor.setSpaceDelayStepsUsed(stepsUsed);
                 processor.setSpaceDelayDivisionIndex(divisionIndex);
+                // Ensure sequencer is active (setSpaceDelaySequencerEnabled already sets active when enabled=true)
+                // Just ensure it will lock in properly by clearing origin if it was previously locked in
+                if (sequencerEnabled) {
+                    auto& spacedelaySeq = const_cast<SeqState&>(processor.getSpaceDelaySeqState());
+                    // Clear origin so it can lock in fresh on next play edge
+                    spacedelaySeq.haveOrigin.store(false);
+                    spacedelaySeq.originPPQ.store(0.0);
+                }
+                // Update main rate dropdown to match (SpaceDelay uses the main rateDropdown)
+                // IMPORTANT: Also manually call setSpaceDelayDivisionIndex again to ensure sequencer uses the correct value
+                if (editor && editor->rateDropdown) {
+                    editor->rateDropdown->setSelectedId(divisionIndex + 1, juce::dontSendNotification);
+                    // Manually call setSpaceDelayDivisionIndex again to ensure it's applied
+                    processor.setSpaceDelayDivisionIndex(divisionIndex);
+                    // Note: UI update will happen via timerCallback and refreshCurrentPageUI()
+                }
                 break;
                 
             case EffectID::AutoPan:
                 processor.setAutoPanSequencerEnabled(sequencerEnabled);
                 processor.setAutoPanStepsUsed(stepsUsed);
                 processor.setAutoPanDivisionIndex(divisionIndex);
+                // Update UI dropdown to match (dropdown IDs are 1-8, so add 1 to index)
+                if (editor && editor->autopanRateDropdown) {
+                    editor->autopanRateDropdown->setSelectedId(divisionIndex + 1, juce::dontSendNotification);
+                    // Note: UI update will happen via timerCallback and refreshCurrentPageUI()
+                }
                 break;
                 
             case EffectID::Dirt:
                 processor.setDirtSequencerEnabled(sequencerEnabled);
                 processor.setDirtStepsUsed(stepsUsed);
                 processor.setDirtDivisionIndex(divisionIndex);
+                // Update UI dropdown to match (dropdown IDs are 1-8, so add 1 to index)
+                if (editor && editor->dirtRateDropdown) {
+                    editor->dirtRateDropdown->setSelectedId(divisionIndex + 1, juce::dontSendNotification);
+                    // Note: UI update will happen via timerCallback and refreshCurrentPageUI()
+                }
                 break;
                 
             case EffectID::Chorus:
                 processor.setChorusSequencerEnabled(sequencerEnabled);
                 processor.setChorusStepsUsed(stepsUsed);
                 processor.setChorusDivisionIndex(divisionIndex);
+                // Update UI dropdown to match (dropdown IDs are 1-8, so add 1 to index)
+                if (editor && editor->chorusRateDropdown) {
+                    editor->chorusRateDropdown->setSelectedId(divisionIndex + 1, juce::dontSendNotification);
+                    // Note: UI update will happen via timerCallback and refreshCurrentPageUI()
+                }
                 break;
                 
             case EffectID::Reverb:
@@ -974,18 +1045,38 @@ void RandomizationManager::applySequencerChanges()
                 processor.setDubDelaySequencerEnabled(sequencerEnabled);
                 processor.setDubDelayStepsUsed(stepsUsed);
                 processor.setDubDelayDivisionIndex(divisionIndex);
+                // Update UI dropdown to match (dropdown IDs are 1-8, so add 1 to index)
+                if (editor && editor->dubdelayRateDropdown) {
+                    editor->dubdelayRateDropdown->setSelectedId(divisionIndex + 1, juce::dontSendNotification);
+                }
                 break;
                 
             case EffectID::Redux:
                 processor.setReduxSequencerEnabled(sequencerEnabled);
                 processor.setReduxStepsUsed(stepsUsed);
                 processor.setReduxDivisionIndex(divisionIndex);
+                // Update UI dropdown to match (dropdown IDs are 1-8, so add 1 to index)
+                // IMPORTANT: Also manually call setReduxDivisionIndex again to ensure sequencer uses the correct value
+                if (editor && editor->reduxRateDropdown) {
+                    editor->reduxRateDropdown->setSelectedId(divisionIndex + 1, juce::dontSendNotification);
+                    // Manually call setReduxDivisionIndex again to ensure it's applied
+                    processor.setReduxDivisionIndex(divisionIndex);
+                    // Note: UI update will happen via timerCallback and refreshCurrentPageUI()
+                }
                 break;
                 
             case EffectID::PhaseBloom:
                 processor.setPhaseBloomSequencerEnabled(sequencerEnabled);
                 processor.setPhaseBloomStepsUsed(stepsUsed);
                 processor.setPhaseBloomDivisionIndex(divisionIndex);
+                // Update UI dropdown to match (dropdown IDs are 1-8, so add 1 to index)
+                // IMPORTANT: Also manually call setPhaseBloomDivisionIndex again to ensure sequencer uses the correct value
+                if (editor && editor->phaseBloomRateDropdown) {
+                    editor->phaseBloomRateDropdown->setSelectedId(divisionIndex + 1, juce::dontSendNotification);
+                    // Manually call setPhaseBloomDivisionIndex again to ensure it's applied
+                    processor.setPhaseBloomDivisionIndex(divisionIndex);
+                    // Note: UI update will happen via timerCallback and refreshCurrentPageUI()
+                }
                 break;
                 
             case EffectID::Formant:
@@ -1005,12 +1096,24 @@ void RandomizationManager::applySequencerChanges()
                 processor.setSaturateSequencerEnabled(sequencerEnabled);
                 processor.setSaturateStepsUsed(stepsUsed);
                 processor.setSaturateDivisionIndex(divisionIndex);
+                // Update UI dropdown to match (dropdown IDs are 1-8, so add 1 to index)
+                // IMPORTANT: Also manually call setSaturateDivisionIndex again to ensure sequencer uses the correct value
+                if (editor && editor->saturateRateDropdown) {
+                    editor->saturateRateDropdown->setSelectedId(divisionIndex + 1, juce::dontSendNotification);
+                    // Manually call setSaturateDivisionIndex again to ensure it's applied
+                    processor.setSaturateDivisionIndex(divisionIndex);
+                    // Note: UI update will happen via timerCallback and refreshCurrentPageUI()
+                }
                 break;
                 
             case EffectID::Filter:
                 processor.setFilterSequencerEnabled(sequencerEnabled);
                 processor.setFilterStepsUsed(stepsUsed);
                 processor.setFilterDivisionIndex(divisionIndex);
+                // Update UI dropdown to match (dropdown IDs are 1-8, so add 1 to index)
+                if (editor && editor->filterRateDropdown) {
+                    editor->filterRateDropdown->setSelectedId(divisionIndex + 1, juce::dontSendNotification);
+                }
                 break;
         }
         
@@ -1018,6 +1121,9 @@ void RandomizationManager::applySequencerChanges()
         // This ensures it starts running right away if transport is already playing
         if (sequencerEnabled) {
             processor.forceSequencerLockIn(target.effect);
+            // Also set forceAllSequencersLockIn flag to ensure lock-in happens in next processBlock
+            // This handles the case where transport isn't playing yet or PPQ isn't valid
+            processor.setForceAllSequencersLockIn(true);
         }
         
         stats.sequencersRandomized++;

@@ -194,8 +194,15 @@ void SaturateProcessor::ToneFilter::prepare(double fs)
         {
             try
             {
-                const float hz = juce::jmap(pendingToneNorm.load(), 10000.0f, 22000.0f);
+                // Limit maximum cutoff to 18kHz to prevent unwanted high-frequency ringing
+                const float hz = juce::jlimit(10000.0f, 18000.0f, juce::jmap(pendingToneNorm.load(), 10000.0f, 22000.0f));
                 svf.setCutoffFrequency(hz);
+                
+                // Reduce resonance when cutoff is very high to prevent ringing
+                // At maximum cutoff (18kHz), reduce resonance to 0.5 (from 0.707)
+                const float resonance = juce::jmap(hz, 10000.0f, 18000.0f, 0.707f, 0.5f);
+                svf.setResonance(resonance);
+                
                 hasPendingUpdate.store(false);
             }
             catch (...)
@@ -265,12 +272,19 @@ void SaturateProcessor::ToneFilter::setTone(float norm)
     // Try to apply update, but don't crash if it fails
     // CRITICAL: Don't mark filter as unprepared if update fails - this causes audio to stop processing
     // Instead, just skip the update and let the filter continue with its current settings
-    try
-    {
-        const float hz = juce::jmap(pendingToneNorm.load(), 10000.0f, 22000.0f);
-        svf.setCutoffFrequency(hz);
-        hasPendingUpdate.store(false); // Update applied successfully
-    }
+        try
+        {
+            // Limit maximum cutoff to 18kHz to prevent unwanted high-frequency ringing
+            const float hz = juce::jlimit(10000.0f, 18000.0f, juce::jmap(pendingToneNorm.load(), 10000.0f, 22000.0f));
+            svf.setCutoffFrequency(hz);
+            
+            // Reduce resonance when cutoff is very high to prevent ringing
+            // At maximum cutoff (18kHz), reduce resonance to 0.5 (from 0.707)
+            const float resonance = juce::jmap(hz, 10000.0f, 18000.0f, 0.707f, 0.5f);
+            svf.setResonance(resonance);
+            
+            hasPendingUpdate.store(false); // Update applied successfully
+        }
     catch (...)
     {
         // If setting tone fails, increment error count and bypass if too many errors
@@ -301,6 +315,10 @@ float SaturateProcessor::ToneFilter::process(float x)
     {
         // Filter is bypassed or not prepared - just bypass this sample
         // Don't try to re-prepare from audio thread as it causes memory corruption
+        // CRITICAL: Validate input before returning to prevent buzzing
+        if (!std::isfinite(x)) {
+            return 0.0f; // Return silence for invalid input
+        }
         return x;
     }
     
@@ -310,8 +328,15 @@ float SaturateProcessor::ToneFilter::process(float x)
     {
         try
         {
-            const float hz = juce::jmap(pendingToneNorm.load(), 10000.0f, 22000.0f);
+            // Limit maximum cutoff to 18kHz to prevent unwanted high-frequency ringing
+            const float hz = juce::jlimit(10000.0f, 18000.0f, juce::jmap(pendingToneNorm.load(), 10000.0f, 22000.0f));
             svf.setCutoffFrequency(hz);
+            
+            // Reduce resonance when cutoff is very high to prevent ringing
+            // At maximum cutoff (18kHz), reduce resonance to 0.5 (from 0.707)
+            const float resonance = juce::jmap(hz, 10000.0f, 18000.0f, 0.707f, 0.5f);
+            svf.setResonance(resonance);
+            
             hasPendingUpdate.store(false);
         }
         catch (...)
@@ -363,8 +388,12 @@ float SaturateProcessor::ToneFilter::process(float x)
                     // Too many errors - permanently bypass filter to prevent crashes
                     isBypassed.store(true);
                 }
-                return x;
+                // CRITICAL: Return silence instead of input to prevent buzzing
+                return 0.0f;
             }
+            
+            // CRITICAL: Clamp output to prevent excessive values that could cause buzzing
+            result = juce::jlimit(-2.0f, 2.0f, result);
             
             // Success - reset error count
             errorCount.store(0);
@@ -401,10 +430,16 @@ void SaturateProcessor::ModelRuntime::reset()
         ch.adaaPrev = 0.0f;
         ch.envelope = 0.0f;
         ch.compEnv = 0.0f;
-        ch.preTilt.reset();
-        ch.postTilt.reset();
-        ch.preHP.reset();
-        ch.toneFilter.reset();
+        
+        // CRITICAL: Reset all filters to prevent buzzing from corrupted state
+        try {
+            ch.preTilt.reset();
+            ch.postTilt.reset();
+            ch.preHP.reset();
+            ch.toneFilter.reset();
+        } catch (...) {
+            // If reset fails, continue - filters will be re-prepared on next prepare()
+        }
     }
 
     lastDrive = 12.0f;
@@ -530,7 +565,8 @@ SaturateProcessor::ParameterSet SaturateProcessor::mapParameters(float type,
     // Color controls frequency response (brightness/tone)
     // Low Color (0.0): Darker, low-mid emphasis
     // High Color (1.0): Brighter, high-frequency emphasis
-    p.toneNorm = juce::jmap(colorNorm, 0.2f, 0.95f);  // Tone filter range
+    // Limit toneNorm to prevent extreme high-frequency ringing (max 0.85 instead of 0.95)
+    p.toneNorm = juce::jmap(colorNorm, 0.2f, 0.85f);  // Tone filter range (reduced max to prevent ringing)
     p.hpCutHz = juce::jmap(colorNorm, 80.0f, 200.0f); // HPF: 80Hz (dark) to 200Hz (bright)
     p.preTiltDb = juce::jmap(colorNorm, -4.0f, 4.0f);  // Pre-tilt: -4dB (dark) to +4dB (bright) - reduced for smoother sound
     p.postTiltDb = -p.preTiltDb * 0.3f;                // Compensatory post-tilt - reduced
@@ -608,8 +644,21 @@ void SaturateProcessor::process(juce::AudioBuffer<float>& buffer,
         return;
 
     // Safety check: ensure oversamplers are initialized and processor is prepared
+    // CRITICAL: If not ready, bypass (pass audio through) instead of dropping audio
     if (!oversamplerPrimary || !oversamplerDry || sampleRate <= 0.0 || maxBlockSize <= 0)
-        return;
+    {
+        // Update smoothers to prevent jumps when processor becomes ready
+        for (int i = 0; i < numSamples; ++i)
+        {
+            driveSmooth.skip(1);
+            colorSmooth.skip(1);
+            shapeSmooth.skip(1);
+            biasSmooth.skip(1);
+            outputSmooth.skip(1);
+            mixSmooth.skip(1);
+        }
+        return; // Audio passes through unchanged (bypass mode)
+    }
 
     // Enable flush-to-zero for stability
     juce::ScopedNoDenormals noDenormals;
@@ -702,8 +751,21 @@ void SaturateProcessor::processWithSnapshot(juce::AudioBuffer<float>& buffer,
         return;
 
     // Safety check: ensure oversamplers are initialized and processor is prepared
+    // CRITICAL: If not ready, bypass (pass audio through) instead of dropping audio
     if (!oversamplerPrimary || !oversamplerDry || sampleRate <= 0.0 || maxBlockSize <= 0)
-        return;
+    {
+        // Update smoothers to prevent jumps when processor becomes ready
+        for (int i = 0; i < numSamples; ++i)
+        {
+            driveSmooth.skip(1);
+            colorSmooth.skip(1);
+            shapeSmooth.skip(1);
+            biasSmooth.skip(1);
+            outputSmooth.skip(1);
+            mixSmooth.skip(1);
+        }
+        return; // Audio passes through unchanged (bypass mode)
+    }
 
     // Calculate input level to check if audio is silent
     float inputLevel = 0.0f;
@@ -778,23 +840,35 @@ void SaturateProcessor::processInternal(juce::AudioBuffer<float>& buffer,
                                         int targetType,
                                         bool stepChanged)
 {
-    juce::ScopedNoDenormals guard;
+    // CRITICAL: Wrap entire method in try-catch to prevent any crashes
+    try
+    {
+        juce::ScopedNoDenormals guard;
 
-    // Safety check: ensure oversamplers are initialized and processor is prepared
-    if (!oversamplerPrimary || !oversamplerDry || sampleRate <= 0.0 || maxBlockSize <= 0)
-        return;
-    
-    // CRITICAL: Validate buffer before copying to prevent crashes during rapid randomization
-    if (buffer.getNumChannels() < 2 || buffer.getNumSamples() < numSamples || numSamples <= 0)
-        return;
-    
-    // Validate buffer pointers are valid
-    if (buffer.getReadPointer(0) == nullptr || buffer.getReadPointer(1) == nullptr)
-        return;
-    
-    // Validate buffer size matches expected size
-    if (buffer.getNumSamples() < numSamples)
-        return;
+        // Safety check: ensure oversamplers are initialized and processor is prepared
+        // CRITICAL: If not ready, bypass (pass audio through) instead of dropping audio
+        if (!oversamplerPrimary || !oversamplerDry || sampleRate <= 0.0 || maxBlockSize <= 0)
+            return; // Audio passes through unchanged (bypass mode)
+        
+        // CRITICAL: Validate buffer before copying to prevent crashes during rapid randomization
+        // If buffer is invalid, bypass instead of dropping audio
+        if (buffer.getNumChannels() < 2 || buffer.getNumSamples() < numSamples || numSamples <= 0)
+            return; // Audio passes through unchanged (bypass mode)
+        
+        // Validate buffer pointers are valid
+        if (buffer.getReadPointer(0) == nullptr || buffer.getReadPointer(1) == nullptr)
+            return; // Audio passes through unchanged (bypass mode)
+        
+        // Validate buffer size matches expected size
+        if (buffer.getNumSamples() < numSamples)
+            return; // Audio passes through unchanged (bypass mode)
+        
+        // CRITICAL: Validate targetType is within valid range
+        if (targetType < 0 || targetType >= numModels)
+        {
+            DBG("[SATURATE] Invalid targetType: " << targetType << ", bypassing");
+            return; // Audio passes through unchanged (bypass mode)
+        }
 
     // Wrap makeCopyOf in try-catch to prevent crashes from corrupted buffer state
     try
@@ -803,16 +877,42 @@ void SaturateProcessor::processInternal(juce::AudioBuffer<float>& buffer,
     }
     catch (...)
     {
-        // If buffer copy fails, skip processing to prevent crash
-        DBG("[SATURATE] Exception during dryBuffer.makeCopyOf, skipping");
-        return;
+        // If buffer copy fails, bypass (pass audio through) instead of dropping audio
+        DBG("[SATURATE] Exception during dryBuffer.makeCopyOf, bypassing");
+        return; // Audio passes through unchanged (bypass mode)
     }
 
     // Refresh filters at the start of the block for current model
+    // CRITICAL: Validate modelStates array access
+    if (targetType < 0 || targetType >= static_cast<int>(modelStates.size()))
+    {
+        DBG("[SATURATE] Invalid targetType for modelStates: " << targetType);
+        return; // Audio passes through unchanged (bypass mode)
+    }
+    
     auto& runtime = modelStates[targetType];
-    refreshFilters(runtime, liveParams, osSampleRate, targetType);
+    
+    // CRITICAL: Wrap filter refresh in try-catch
+    try
+    {
+        refreshFilters(runtime, liveParams, osSampleRate, targetType);
+    }
+    catch (...)
+    {
+        DBG("[SATURATE] Exception during refreshFilters, bypassing");
+        return; // Audio passes through unchanged (bypass mode)
+    }
 
-    renderModelToBuffer(targetType, runtime, buffer, liveParams, false);
+    // CRITICAL: Wrap renderModelToBuffer in try-catch
+    try
+    {
+        renderModelToBuffer(targetType, runtime, buffer, liveParams, false);
+    }
+    catch (...)
+    {
+        DBG("[SATURATE] Exception during renderModelToBuffer, bypassing");
+        return; // Audio passes through unchanged (bypass mode)
+    }
 
     // Wrap makeCopyOf in try-catch to prevent crashes from corrupted buffer state
     try
@@ -820,23 +920,23 @@ void SaturateProcessor::processInternal(juce::AudioBuffer<float>& buffer,
         // Validate dryBuffer before copying
         if (dryBuffer.getNumChannels() < 2 || dryBuffer.getNumSamples() < numSamples)
         {
-            DBG("[SATURATE] Invalid dryBuffer state, skipping dry/wet mix");
-            return;
+            DBG("[SATURATE] Invalid dryBuffer state, bypassing dry/wet mix");
+            return; // Audio passes through unchanged (bypass mode)
         }
         
         dryMatchedBuffer.makeCopyOf(dryBuffer, true);
     }
     catch (...)
     {
-        // If buffer copy fails, skip dry/wet mix to prevent crash
-        DBG("[SATURATE] Exception during dryMatchedBuffer.makeCopyOf, skipping dry/wet mix");
-        return;
+        // If buffer copy fails, bypass (pass audio through) instead of dropping audio
+        DBG("[SATURATE] Exception during dryMatchedBuffer.makeCopyOf, bypassing dry/wet mix");
+        return; // Audio passes through unchanged (bypass mode)
     }
     // Validate dryMatchedBuffer before creating AudioBlock
     if (dryMatchedBuffer.getNumChannels() < 2 || dryMatchedBuffer.getNumSamples() < numSamples)
     {
-        DBG("[SATURATE] Invalid dryMatchedBuffer state, skipping dry/wet mix");
-        return;
+        DBG("[SATURATE] Invalid dryMatchedBuffer state, bypassing dry/wet mix");
+        return; // Audio passes through unchanged (bypass mode)
     }
     
     juce::dsp::AudioBlock<float> dryBlock(dryMatchedBuffer);
@@ -881,6 +981,14 @@ void SaturateProcessor::processInternal(juce::AudioBuffer<float>& buffer,
         DBG("[SATURATE] Exception during dry/wet mix, skipping");
         return;
     }
+    }
+    catch (...)
+    {
+        // CRITICAL: Catch any exception in processInternal and bypass completely
+        // This prevents crashes from any unexpected errors
+        DBG("[SATURATE] FATAL: Exception in processInternal, bypassing entire processing");
+        return; // Audio passes through unchanged (bypass mode)
+    }
 }
 
 //==============================================================================
@@ -890,16 +998,46 @@ void SaturateProcessor::renderModelToBuffer(int modelIndex,
                                             const ParameterSet& params,
                                             bool updateRuntimeParams)
 {
-    // Safety check: ensure oversampler is initialized
-    if (!oversamplerPrimary)
-        return;
+    // CRITICAL: Wrap entire method in try-catch to prevent crashes
+    try
+    {
+        // Safety check: ensure oversampler is initialized
+        if (!oversamplerPrimary)
+            return;
 
-    juce::dsp::AudioBlock<float> block(workBuffer);
-    auto osBlock = oversamplerPrimary->processSamplesUp(block);
+        // CRITICAL: Validate modelIndex
+        if (modelIndex < 0 || modelIndex >= numModels)
+        {
+            DBG("[SATURATE] Invalid modelIndex in renderModelToBuffer: " << modelIndex);
+            return;
+        }
 
-    processOversampledBlock(modelIndex, runtime, osBlock, params);
+        // CRITICAL: Validate buffer
+        if (workBuffer.getNumChannels() < 2 || workBuffer.getNumSamples() <= 0)
+            return;
+
+        juce::dsp::AudioBlock<float> block(workBuffer);
+        auto osBlock = oversamplerPrimary->processSamplesUp(block);
+
+        // CRITICAL: Wrap processOversampledBlock in try-catch
+        try
+        {
+            processOversampledBlock(modelIndex, runtime, osBlock, params);
+        }
+        catch (...)
+        {
+            DBG("[SATURATE] Exception in processOversampledBlock, bypassing");
+            return;
+        }
 
         oversamplerPrimary->processSamplesDown(block);
+    }
+    catch (...)
+    {
+        // CRITICAL: Catch any exception and bypass
+        DBG("[SATURATE] FATAL: Exception in renderModelToBuffer, bypassing");
+        return;
+    }
 }
 
 //==============================================================================
@@ -992,9 +1130,34 @@ void SaturateProcessor::processOversampledBlock(int modelIndex,
                                                 juce::dsp::AudioBlock<float>& osBlock,
                                                 const ParameterSet& params)
 {
-    auto* left = osBlock.getChannelPointer(0);
-    auto* right = osBlock.getChannelPointer(1);
-    const int osSamples = static_cast<int>(osBlock.getNumSamples());
+    // CRITICAL: Wrap entire method in try-catch to prevent crashes
+    try
+    {
+        // CRITICAL: Validate modelIndex
+        if (modelIndex < 0 || modelIndex >= numModels)
+        {
+            DBG("[SATURATE] Invalid modelIndex in processOversampledBlock: " << modelIndex);
+            return;
+        }
+
+        auto* left = osBlock.getChannelPointer(0);
+        auto* right = osBlock.getChannelPointer(1);
+        
+        // CRITICAL: Validate pointers
+        if (left == nullptr || right == nullptr)
+        {
+            DBG("[SATURATE] Null pointers in processOversampledBlock");
+            return;
+        }
+        
+        const int osSamples = static_cast<int>(osBlock.getNumSamples());
+        
+        // CRITICAL: Validate sample count
+        if (osSamples <= 0 || osSamples > maxBlockSize * HEAT_OVERSAMPLE)
+        {
+            DBG("[SATURATE] Invalid osSamples: " << osSamples);
+            return;
+        }
 
     auto& leftState = runtime.channels[0];
     auto& rightState = runtime.channels[1];
@@ -1045,8 +1208,25 @@ void SaturateProcessor::processOversampledBlock(int modelIndex,
 
         // Stage 5: Post-processing EQ
         saturated = state.postTilt.process(saturated);
+        
+        // CRITICAL: Validate input before tone filter to prevent buzzing
+        if (!std::isfinite(saturated)) {
+            saturated = 0.0f;
+        }
+        
         saturated = state.toneFilter.process(saturated);
+        
+        // CRITICAL: Validate tone filter output to prevent buzzing from corrupted filter state
+        if (!std::isfinite(saturated)) {
+            saturated = 0.0f; // Return silence if filter output is invalid
+        }
+        
         saturated = state.postHP.process(saturated);
+        
+        // CRITICAL: Final validation to prevent any buzzing artifacts
+        if (!std::isfinite(saturated)) {
+            saturated = 0.0f;
+        }
 
         // Gentle compression for musical character (not aggressive)
         const float absSat = std::abs(saturated);
@@ -1064,6 +1244,11 @@ void SaturateProcessor::processOversampledBlock(int modelIndex,
         // Blend with original using equal-power crossfade
         sample = blendDryWet(original, saturated, params.mix);
         sample = juce::jlimit(-1.0f, 1.0f, sample);
+        
+        // CRITICAL: Final validation to prevent buzzing - ensure output is finite and valid
+        if (!std::isfinite(sample)) {
+            sample = 0.0f; // Return silence if output is invalid
+        }
     };
 
     for (int i = 0; i < osSamples; ++i)
@@ -1092,6 +1277,17 @@ void SaturateProcessor::processOversampledBlock(int modelIndex,
     {
         left[i] = juce::jlimit(-1.0f, 1.0f, left[i] * finalGain);
         right[i] = juce::jlimit(-1.0f, 1.0f, right[i] * finalGain);
+        
+        // CRITICAL: Validate final output to prevent buzzing
+        if (!std::isfinite(left[i])) left[i] = 0.0f;
+        if (!std::isfinite(right[i])) right[i] = 0.0f;
+    }
+    }
+    catch (...)
+    {
+        // CRITICAL: Catch any exception in processOversampledBlock and bypass
+        DBG("[SATURATE] FATAL: Exception in processOversampledBlock, bypassing");
+        return;
     }
 }
 

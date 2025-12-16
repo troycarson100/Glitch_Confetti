@@ -4743,9 +4743,10 @@ void PluginEditor::updateSequencerUI()
         if (stepButtons[i] != nullptr) {
             // Only the selected step should show as selected
             stepButtons[i]->setSelected(i == selectedStep);
-            // Show playing highlight only if sequencer is enabled
+            // Show playing highlight only if sequencer is enabled AND active
             bool sequencerEnabled = processorRef.getSpaceDelaySeqState().enabled.load();
-            stepButtons[i]->setPlaying(sequencerEnabled && (i == playingStep));
+            bool sequencerActive = processorRef.getSpaceDelaySeqState().active.load();
+            stepButtons[i]->setPlaying(sequencerEnabled && sequencerActive && (i == playingStep));
             // Grey out inactive steps beyond stepsUsed
             bool shouldBeEnabled = i < stepsUsed;
             stepButtons[i]->setEnabledStep(shouldBeEnabled);
@@ -4766,7 +4767,7 @@ void PluginEditor::updateSequencerUI()
     // Update rate dropdown
     if (rateDropdown != nullptr) {
         int divisionIndex = processorRef.getSpaceDelaySeqState().divisionIndex.load();
-        rateDropdown->setSelectedId(divisionIndex + 1);
+        rateDropdown->setSelectedId(divisionIndex + 1, juce::dontSendNotification);
     }
 }
 
@@ -5759,6 +5760,14 @@ void PluginEditor::showPage(FxPageID id)
                 }
             }
             
+            // Update rate dropdown to match sequencer state (dropdown IDs are 1-8, so add 1 to index)
+            if (rateDropdown) {
+                int divisionIndex = processorRef.getSpaceDelaySeqState().divisionIndex.load();
+                rateDropdown->setSelectedId(divisionIndex + 1, juce::dontSendNotification);
+                // Manually call setSpaceDelayDivisionIndex again to ensure it's applied
+                processorRef.setSpaceDelayDivisionIndex(divisionIndex);
+            }
+            
             // Update sequencer UI to show first step as selected
             processorRef.setSpaceDelaySelectedStep(0);
             updateSequencerUI();
@@ -5806,6 +5815,15 @@ void PluginEditor::showPage(FxPageID id)
         case EffectID::Granular:
             setVisibleVec(granularGroup, true);
             DBG("[ROUTER] Showing Granular UI for slot " << slotIndex);
+            
+            // Restore UI state from processor/APVTS parameters
+            {
+                // Update rate dropdown to match sequencer state (dropdown IDs are 1-8, so add 1 to index)
+                if (granularRateDropdown) {
+                    int divisionIndex = processorRef.getGranularSeqState().divisionIndex.load();
+                    granularRateDropdown->setSelectedId(divisionIndex + 1, juce::dontSendNotification);
+                }
+            }
             break;
         case EffectID::Slicer:
             setVisibleVec(slicerGroup, true);
@@ -5860,6 +5878,12 @@ void PluginEditor::showPage(FxPageID id)
                     dubdelayStepPowerButton->setToggleState(dubdelayStepAreaEnabled, juce::dontSendNotification);
                 }
                 
+                // Update rate dropdown to match sequencer state (dropdown IDs are 1-8, so add 1 to index)
+                if (dubdelayRateDropdown) {
+                    int divisionIndex = processorRef.getDubDelaySeqState().divisionIndex.load();
+                    dubdelayRateDropdown->setSelectedId(divisionIndex + 1, juce::dontSendNotification);
+                }
+                
                 updateDubDelayFxAreaVisibility();
                 updateDubDelayStepAreaVisibility();
             }
@@ -5899,6 +5923,12 @@ void PluginEditor::showPage(FxPageID id)
                     reduxStepPowerButton->setToggleState(reduxStepAreaEnabled, juce::dontSendNotification);
                 }
                 
+                // Update rate dropdown to match sequencer state (dropdown IDs are 1-8, so add 1 to index)
+                if (reduxRateDropdown) {
+                    int divisionIndex = processorRef.getReduxSeqState().divisionIndex.load();
+                    reduxRateDropdown->setSelectedId(divisionIndex + 1, juce::dontSendNotification);
+                }
+                
                 updateReduxFxAreaVisibility();
                 updateReduxStepAreaVisibility();
             }
@@ -5933,6 +5963,12 @@ void PluginEditor::showPage(FxPageID id)
                 phaseBloomStepAreaEnabled = processorRef.getPhaseBloomSeqState().enabled.load();
                 if (phaseBloomStepPowerButton) {
                     phaseBloomStepPowerButton->setToggleState(phaseBloomStepAreaEnabled, juce::dontSendNotification);
+                }
+                
+                // Update rate dropdown to match sequencer state (dropdown IDs are 1-8, so add 1 to index)
+                if (phaseBloomRateDropdown) {
+                    int divisionIndex = processorRef.getPhaseBloomSeqState().divisionIndex.load();
+                    phaseBloomRateDropdown->setSelectedId(divisionIndex + 1, juce::dontSendNotification);
                 }
                 
                 updatePhaseBloomFxAreaVisibility();
@@ -6018,6 +6054,12 @@ void PluginEditor::showPage(FxPageID id)
                     saturateStepPowerButton->setToggleState(saturateStepAreaEnabled, juce::dontSendNotification);
                 }
                 
+                // Update rate dropdown to match sequencer state (dropdown IDs are 1-8, so add 1 to index)
+                if (saturateRateDropdown) {
+                    int divisionIndex = processorRef.getSaturateSeqState().divisionIndex.load();
+                    saturateRateDropdown->setSelectedId(divisionIndex + 1, juce::dontSendNotification);
+                }
+                
                 updateSaturateFxAreaVisibility();
                 updateSaturateStepAreaVisibility();
             }
@@ -6064,6 +6106,12 @@ void PluginEditor::showPage(FxPageID id)
                 filterStepAreaEnabled = processorRef.getFilterSeqState().enabled.load();
                 if (filterStepPowerButton) {
                     filterStepPowerButton->setToggleState(filterStepAreaEnabled, juce::dontSendNotification);
+                }
+                
+                // Update rate dropdown to match sequencer state (dropdown IDs are 1-8, so add 1 to index)
+                if (filterRateDropdown) {
+                    int divisionIndex = processorRef.getFilterSeqState().divisionIndex.load();
+                    filterRateDropdown->setSelectedId(divisionIndex + 1, juce::dontSendNotification);
                 }
                 
                 updateFilterFxAreaVisibility();
@@ -8310,7 +8358,8 @@ void PluginEditor::updateChorusSequencerUI()
         if (chorusStepButtons[i] != nullptr) {
             chorusStepButtons[i]->setSelected(i == selectedStep);
             bool sequencerEnabled = processorRef.getChorusSeqState().enabled.load();
-            chorusStepButtons[i]->setPlaying(sequencerEnabled && (i == playingStep) && (i != selectedStep));
+            bool sequencerActive = processorRef.getChorusSeqState().active.load();
+            chorusStepButtons[i]->setPlaying(sequencerEnabled && sequencerActive && (i == playingStep) && (i != selectedStep));
             bool shouldBeEnabled = i < stepsUsed;
             chorusStepButtons[i]->setEnabledStep(shouldBeEnabled);
         }
@@ -9346,6 +9395,15 @@ void PluginEditor::onEffectSelectorChanged(int slotIndex)
                     reduxStepPowerButton->setToggleState(reduxStepAreaEnabled, juce::dontSendNotification);
                 }
                 
+                // Update rate dropdown to match sequencer state (dropdown IDs are 1-8, so add 1 to index)
+                // IMPORTANT: Also manually call setReduxDivisionIndex again to ensure sequencer uses the correct value
+                if (reduxRateDropdown) {
+                    int divisionIndex = processorRef.getReduxSeqState().divisionIndex.load();
+                    reduxRateDropdown->setSelectedId(divisionIndex + 1, juce::dontSendNotification);
+                    // Manually call setReduxDivisionIndex again to ensure it's applied
+                    processorRef.setReduxDivisionIndex(divisionIndex);
+                }
+                
                 updateReduxFxAreaVisibility();
                 updateReduxStepAreaVisibility();
             }
@@ -9394,6 +9452,15 @@ void PluginEditor::onEffectSelectorChanged(int slotIndex)
                 phaseBloomStepAreaEnabled = processorRef.getPhaseBloomSeqState().enabled.load();
                 if (phaseBloomStepPowerButton) {
                     phaseBloomStepPowerButton->setToggleState(phaseBloomStepAreaEnabled, juce::dontSendNotification);
+                }
+                
+                // Update rate dropdown to match sequencer state (dropdown IDs are 1-8, so add 1 to index)
+                // IMPORTANT: Also manually call setPhaseBloomDivisionIndex again to ensure sequencer uses the correct value
+                if (phaseBloomRateDropdown) {
+                    int divisionIndex = processorRef.getPhaseBloomSeqState().divisionIndex.load();
+                    phaseBloomRateDropdown->setSelectedId(divisionIndex + 1, juce::dontSendNotification);
+                    // Manually call setPhaseBloomDivisionIndex again to ensure it's applied
+                    processorRef.setPhaseBloomDivisionIndex(divisionIndex);
                 }
                 
                 updatePhaseBloomFxAreaVisibility();
@@ -14870,7 +14937,8 @@ void PluginEditor::updateSaturateSequencerUI()
         if (saturateStepButtons[i] != nullptr) {
             saturateStepButtons[i]->setSelected(i == selectedStep);
             bool sequencerEnabled = processorRef.getSaturateSeqState().enabled.load();
-            saturateStepButtons[i]->setPlaying(sequencerEnabled && (i == playingStep) && (i != selectedStep));
+            bool sequencerActive = processorRef.getSaturateSeqState().active.load();
+            saturateStepButtons[i]->setPlaying(sequencerEnabled && sequencerActive && (i == playingStep) && (i != selectedStep));
             bool shouldBeEnabled = i < stepsUsed;
             saturateStepButtons[i]->setEnabledStep(shouldBeEnabled);
         }
@@ -16658,7 +16726,8 @@ void PluginEditor::updateReduxSequencerUI()
         if (reduxStepButtons[i] != nullptr) {
             reduxStepButtons[i]->setSelected(i == selectedStep);
             bool sequencerEnabled = processorRef.getReduxSeqState().enabled.load();
-            reduxStepButtons[i]->setPlaying(sequencerEnabled && (i == playingStep));
+            bool sequencerActive = processorRef.getReduxSeqState().active.load();
+            reduxStepButtons[i]->setPlaying(sequencerEnabled && sequencerActive && (i == playingStep));
             bool shouldBeEnabled = i < stepsUsed;
             reduxStepButtons[i]->setEnabledStep(shouldBeEnabled);
         }
@@ -17484,7 +17553,8 @@ void PluginEditor::updatePhaseBloomSequencerUI()
         if (phaseBloomStepButtons[i] != nullptr) {
             phaseBloomStepButtons[i]->setSelected(i == selectedStep);
             bool sequencerEnabled = processorRef.getPhaseBloomSeqState().enabled.load();
-            phaseBloomStepButtons[i]->setPlaying(sequencerEnabled && (i == playingStep));
+            bool sequencerActive = processorRef.getPhaseBloomSeqState().active.load();
+            phaseBloomStepButtons[i]->setPlaying(sequencerEnabled && sequencerActive && (i == playingStep));
             bool shouldBeEnabled = i < stepsUsed;
             phaseBloomStepButtons[i]->setEnabledStep(shouldBeEnabled);
         }
@@ -17500,6 +17570,7 @@ void PluginEditor::updatePhaseBloomSequencerUI()
         }
     }
     
+    // Force repaint to ensure step buttons update
     repaint();
 }
 

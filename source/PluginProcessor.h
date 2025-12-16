@@ -681,7 +681,12 @@ public:
     int getSaturateCurrentStep() const noexcept { return saturateSeq.currentStep.load(); }
     int getSaturateUiSelectedStep() const noexcept { return saturateUiSelectedStep.load(); }
     void setSaturateSelectedStep(int step) noexcept { saturateUiSelectedStep.store(step); }
-    void setSaturateSequencerEnabled(bool enabled) noexcept { saturateSeq.enabled.store(enabled); }
+    void setSaturateSequencerEnabled(bool enabled) noexcept { 
+        saturateSeq.enabled.store(enabled);
+        if (enabled) {
+            saturateSeq.active.store(true);
+        }
+    }
     void setSaturateStepsUsed(int steps) noexcept { saturateSeq.stepsUsed.store(juce::jlimit(1, 16, steps)); }
     void setSaturateDivisionIndex(int idx) noexcept { saturateSeq.divisionIndex.store(juce::jlimit(0, 7, idx)); }
     
@@ -697,7 +702,12 @@ public:
     int getFilterCurrentStep() const noexcept { return filterSeq.currentStep.load(); }
     int getFilterUiSelectedStep() const noexcept { return filterUiSelectedStep.load(); }
     void setFilterSelectedStep(int step) noexcept { filterUiSelectedStep.store(step); }
-    void setFilterSequencerEnabled(bool enabled) noexcept { filterSeq.enabled.store(enabled); }
+    void setFilterSequencerEnabled(bool enabled) noexcept { 
+        filterSeq.enabled.store(enabled);
+        if (enabled) {
+            filterSeq.active.store(true);
+        }
+    }
     void setFilterStepsUsed(int steps) noexcept { filterSeq.stepsUsed.store(juce::jlimit(1, 16, steps)); }
     void setFilterDivisionIndex(int idx) noexcept { filterSeq.divisionIndex.store(juce::jlimit(0, 7, idx)); }
     void setFilterStepAmount(int amount) noexcept { setFilterStepsUsed(amount); }
