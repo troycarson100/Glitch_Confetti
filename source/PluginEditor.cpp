@@ -34,6 +34,15 @@ PluginEditor::PluginEditor (PluginProcessor& p)
     licenseManager = std::make_unique<GumroadLicenseManager>("YJv8qP_umZv8fuNaDD5dQg==");
     licenseManager->loadLicenseState();
     
+    // Create settings (gear) button - visibility controlled by license state
+    licenseGearButton = std::make_unique<SettingsButton>();
+    addAndMakeVisible(licenseGearButton.get());
+    licenseGearButton->onClick = [this]()
+    {
+        showLicenseStatusPopup();
+    };
+    updateLicenseUI();
+    
     // Check license on startup (after a short delay to allow UI to initialize)
     // Fix: Use SafePointer to prevent accessing destroyed editor during shutdown
     // Fix: Check global shutdown flag before posting async callback
@@ -984,6 +993,14 @@ void PluginEditor::resized()
     if (freeRunBpmLabel) {
         freeRunBpmLabel->setVisible(false);
         removeChildComponent(freeRunBpmLabel.get());
+    }
+    
+    // Position license gear button in top-right corner
+    if (licenseGearButton)
+    {
+        const int gearSize = 22;
+        licenseGearButton->setBounds(getWidth() - gearSize - 12, 7, gearSize, gearSize);
+        licenseGearButton->toFront(false);
     }
 }
 
@@ -2293,6 +2310,54 @@ void PlayButton::paintButton(juce::Graphics& g, bool over, bool down)
     
     playPath.addTriangle(x, y, x, y + size, x + size, centre.y);
     g.fillPath(playPath);
+}
+
+//==============================================================================
+// SettingsButton Implementation (gear icon)
+//==============================================================================
+void SettingsButton::paintButton(juce::Graphics& g, bool over, bool down)
+{
+    juce::ignoreUnused(down);
+    
+    auto bounds = getLocalBounds().toFloat().reduced(1.0f);
+
+    // Try to load the SVG gear icon once and reuse it
+    static std::unique_ptr<juce::Drawable> gearSvg;
+    if (gearSvg == nullptr)
+    {
+        // Look for assets/ui/gear*.svg by walking up from the executable
+        auto exe = juce::File::getSpecialLocation(juce::File::currentApplicationFile);
+        juce::File searchDir = exe;
+        for (int i = 0; i < 6 && gearSvg == nullptr; ++i)
+        {
+            auto assetsDir = searchDir.getChildFile("assets").getChildFile("ui");
+            auto gearFileWhite = assetsDir.getChildFile("gear-white.svg");
+            auto gearFile = assetsDir.getChildFile("gear.svg");
+            
+            if (gearFileWhite.existsAsFile())
+                gearSvg = juce::Drawable::createFromImageFile(gearFileWhite);
+            else if (gearFile.existsAsFile())
+                gearSvg = juce::Drawable::createFromImageFile(gearFile);
+            
+            searchDir = searchDir.getParentDirectory();
+        }
+    }
+
+    g.fillAll(juce::Colours::transparentBlack);
+
+    if (gearSvg != nullptr)
+    {
+        auto alpha = over ? 1.0f : 0.9f;
+        gearSvg->drawWithin(g, bounds, juce::RectanglePlacement::centred, alpha);
+    }
+    else
+    {
+        // Fallback: simple circle if SVG missing
+        auto centre = bounds.getCentre();
+        auto r = juce::jmin(bounds.getWidth(), bounds.getHeight()) * 0.45f;
+        g.setColour(juce::Colours::white.withAlpha(over ? 0.95f : 0.8f));
+        g.drawEllipse(centre.x - r, centre.y - r, r * 2.0f, r * 2.0f, 1.5f);
+    }
 }
 
 //==============================================================================
@@ -18267,6 +18332,7 @@ void PluginEditor::checkLicenseOnStartup()
     if (licenseManager->isLicenseValid())
     {
         DBG("[LICENSE] Valid license found in saved state - no dialog needed");
+        updateLicenseUI();
         repaint(); // Update UI
         return;
     }
@@ -18290,6 +18356,7 @@ void PluginEditor::checkLicenseOnStartup()
                     DBG("[LICENSE] License verified successfully on startup");
                     // Fix: Only repaint if not shutting down
                     if (!self->isShuttingDown.load()) {
+                        self->updateLicenseUI();
                         self->repaint(); // Update UI
                     }
                 }
@@ -18329,8 +18396,53 @@ void PluginEditor::showLicenseDialog()
         // User dismissed the dialog - set flag to prevent immediate reopening
         licenseDialogDismissed = true;
         lastLicenseDialogShowTime = juce::Time::getCurrentTime();
+        updateLicenseUI();
         DBG("[LICENSE] Dialog dismissed by user");
     });
+}
+
+void PluginEditor::updateLicenseUI()
+{
+    bool isActive = false;
+    if (licenseManager)
+        isActive = licenseManager->isLicenseValid();
+    
+    if (licenseGearButton)
+        licenseGearButton->setVisible(isActive);
+}
+
+void PluginEditor::showLicenseStatusPopup()
+{
+    juce::String statusText = "Inactive";
+    juce::String detailText;
+    
+    if (licenseManager)
+    {
+        auto info = licenseManager->getCurrentLicense();
+        if (info.isValid())
+        {
+            statusText = "Active";
+            detailText = "Registered email: " + info.email;
+        }
+        else
+        {
+            statusText = "Inactive";
+            if (!info.email.isEmpty())
+                detailText = info.email;
+        }
+    }
+    
+    juce::String message;
+    message << "Registration status: " << statusText << "\n"
+            << "Version: " << JucePlugin_VersionString << "\n";
+    
+    if (detailText.isNotEmpty())
+        message << "\n" << detailText;
+    
+    juce::AlertWindow::showMessageBoxAsync(
+        juce::AlertWindow::InfoIcon,
+        "Stepper Info",
+        message);
 }
 
 //==============================================================================

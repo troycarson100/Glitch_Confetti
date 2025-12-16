@@ -234,6 +234,21 @@ private:
 };
 
 //==============================================================================
+// SettingsButton class (gear icon)
+//==============================================================================
+class SettingsButton : public juce::Button
+{
+public:
+    SettingsButton() : juce::Button("SettingsButton") {}
+    ~SettingsButton() override = default;
+    
+    void paintButton(juce::Graphics& g, bool over, bool down) override;
+    
+private:
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (SettingsButton)
+};
+
+//==============================================================================
 // PresetSelectorButton class
 //==============================================================================
 class PresetSelectorButton : public juce::Button
@@ -331,10 +346,13 @@ public:
     
     // License management
     std::unique_ptr<GumroadLicenseManager> licenseManager;
+    std::unique_ptr<SettingsButton> licenseGearButton;
     bool licenseDialogDismissed = false; // Track if user dismissed dialog
     juce::Time lastLicenseDialogShowTime;
     void checkLicenseOnStartup();
     void showLicenseDialog();
+    void updateLicenseUI();
+    void showLicenseStatusPopup();
     
     // Shutdown safety flag
     std::atomic<bool> isShuttingDown { false };
